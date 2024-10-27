@@ -7,13 +7,11 @@ from datetime import date
 from pathlib import Path
 from diffusers import  AutoPipelineForText2Image
 from diffusers import AutoPipelineForImage2Image
-from diffusers.utils import load_image
 import torch
-from langchain.llms.base import LLM
 from typing import Any, List, Mapping, Optional,Union
 from pydantic import  Field
 from agi.llms.base import CustomerLLM,MultiModalMessage,Image
-from agi.config import MODEL_PATH as model_root
+from agi.config import MODEL_PATH as model_root,CACHE_DIR
 
 from langchain_core.runnables import RunnableConfig
 
@@ -24,8 +22,8 @@ class Image2Image(CustomerLLM):
     refiner: Any = None
     n_steps: int = 20
     high_noise_frac: float = 0.8
-    file_path: str = "./pics/output"
-    save_image = True
+    file_path: str = CACHE_DIR
+    save_image: bool = True
 
     def __init__(self, model_path: str=os.path.join(model_root,"sdxl-turbo"),**kwargs):
         if model_path is not None:
@@ -67,17 +65,10 @@ class Image2Image(CustomerLLM):
         if image is not None:
             output = self.handle_output(image,prompt)
         return output
-
-    def get_inputs(self,prompt:str,batch_size=1):
-        generator = [torch.Generator("cuda").manual_seed(i) for i in range(batch_size)]
-        prompts = batch_size * [prompt]
-
-        return {"prompt": prompts, "generator": generator, "num_inference_steps": self.n_steps}
     
     def handle_output(self,image,prompt) -> MultiModalMessage:
         img = Image()
         img.pil_image =image
-        output = MultiModalMessage(image=image)
         if self.save_image:
             file = f'{date.today().strftime("%Y_%m_%d")}/{int(time.time())}'  # noqa: E501
             output_file = Path(f"{self.file_path}/{file}.png")
@@ -85,7 +76,6 @@ class Image2Image(CustomerLLM):
 
             image.save(output_file)
             image_source = f"file/{output_file}"
-            output.image = Image.new(image_source)
         else:
             # resize image to avoid huge logs
             image.thumbnail((512, 512 * image.height / image.width))
@@ -100,7 +90,8 @@ class Image2Image(CustomerLLM):
 
         formatted_result = f'<img src="{image_source}" {style}>\n'
         formatted_result += f'<p> {prompt} </p>'
-        output.content = formatted_result
+
+        output = MultiModalMessage(content=formatted_result,image=img)
         return output
     
     @property
@@ -108,10 +99,3 @@ class Image2Image(CustomerLLM):
         """Get the identifying parameters."""
         return {"model_path": self.model_path}
 
-
-
-
-# if __name__ == '__main__':
-#     sd = Image2Image()
-#     output = sd.predict("a strong man",image_path="../../pics/2023_12_09/1702100538.png")
-#     print(output)

@@ -1,25 +1,30 @@
-import torch
 import os
 
 from TTS.api import TTS
 from agi.config import MODEL_PATH as model_root
-from agi.llms.base import CustomerLLM
+from agi.llms.base import CustomerLLM,MultiModalMessage,Audio
+from langchain_core.runnables import RunnableConfig
+from typing import Any, List, Mapping, Optional,Union
+
 class TextToSpeech(CustomerLLM):
     def __init__(self, model_path: str = os.path.join(model_root,"tts_models--zh-CN--baker--tacotron2-DDC-GST"), 
                  speaker_wav: str = os.path.join(model_root,"XTTS-v2","samples/zh-cn-sample.wav"), 
                  language: str = "zh-cn"):
-        self.device = "gpu" if torch.cuda.is_available() else "cpu"
         config_path = os.path.join(model_path,"config.json")
         self.tts = TTS(model_path=model_path,config_path=config_path).to(self.device)
-        # self.tts = TTS(model_name=model_path).to(self.device)
         self.speaker_wav = speaker_wav
         self.language = language
+        self.model = self.tts.synthesizer
+        super(TextToSpeech, self).__init__(llm=self.model)
 
     def list_available_models(self):
         return self.tts.list_models()
 
-    def generate_audio(self, text: str):
-        return self.tts.tts(text=text, speaker_wav=self.speaker_wav, language=self.language)
+    def invoke(
+        self, input: MultiModalMessage, config: Optional[RunnableConfig] = None, **kwargs: Any
+    ) -> MultiModalMessage:
+        samples = self.tts.tts(text=input.content, speaker_wav=self.speaker_wav, language=self.language)
+        return MultiModalMessage(content=input.content,audio=Audio(samples=samples))
 
     def save_audio_to_file(self, text: str, file_path: str):
         # self.tts.tts_to_file(text=text, speaker_wav=self.speaker_wav, language=self.language, file_path=file_path)

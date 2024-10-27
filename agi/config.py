@@ -9,6 +9,8 @@ MODEL_PATH = os.environ.get(
     "MODEL_PATH", "/data/model"
 )
 
+CACHE_DIR = os.environ.get("CACHE_DIR","./cache")
+
 OLLAMA_API_BASE_URL = os.environ.get(
     "OLLAMA_API_BASE_URL", "http://localhost:11434"
 )

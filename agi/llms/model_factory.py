@@ -30,13 +30,13 @@ class ModelFactory:
     _lock = threading.Lock()
 
     @staticmethod
-    def get_model(model_name, model_path=""):
+    def get_model(model_type, model_name=""):
         """获取模型实例，并缓存"""
-        if model_name not in ModelFactory._instances or ModelFactory._instances[model_name] is None:
+        if model_type not in ModelFactory._instances or ModelFactory._instances[model_type] is None:
             with ModelFactory._lock:
-                if model_name not in ModelFactory._instances or ModelFactory._instances[model_name] is None:
-                    ModelFactory._instances[model_name] = ModelFactory._load_model(model_name, model_path)
-        return ModelFactory._instances[model_name]
+                if model_type not in ModelFactory._instances or ModelFactory._instances[model_type] is None:
+                    ModelFactory._instances[model_type] = ModelFactory._load_model(model_type, model_name)
+        return ModelFactory._instances[model_type]
 
     @staticmethod
     def _load_model(model_type, model_name=""):

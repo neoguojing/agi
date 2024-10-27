@@ -4,7 +4,8 @@ from pydantic import  Field
 from typing import Any,Union,Literal,List,Dict
 from langchain_core.runnables import Runnable, RunnableSerializable,RunnableConfig
 from langchain_core.messages.base import BaseMessage
-from pydantic import BaseModel, HttpUrl, constr
+from pydantic import BaseModel, HttpUrl, constr,ConfigDict
+
 import base64
 import requests
 from typing import Optional
@@ -14,13 +15,14 @@ from typing import Optional, List
 import requests
 from diffusers.utils import load_image
 
-class Image:
+class Image(BaseModel):
     url: Optional[str] = None  # 图片的 URL
     pil_image: Optional[PILImage.Image] = None  # 使用 PIL 图像对象
     filename: Optional[str] = None  # 文件名
     filetype: Optional[str] = None  # 文件类型 (如 'image/jpeg', 'image/png')
     size: Optional[int] = None  # 文件大小（字节）
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
     @classmethod
     def new(cls, url_or_path: str):
         """从本地文件创建 Image 实例"""
@@ -51,17 +53,6 @@ class Image:
         ]
         return lines
 
-
-
-# 使用示例
-# image_from_local = Image.from_local("path/to/local/image.png")  # 从本地文件创建 Image 实例
-# image_from_local.display_info()
-
-# image_from_url = Image.from_url("http://example.com/image.png")  # 从 URL 创建 Image 实例
-# image_from_url.display_info()
-
-# # 解码并保存
-# image_from_url.decode_image("path/to/save/decoded_image.png")
 
 from pydantic import BaseModel, HttpUrl
 import requests
@@ -125,26 +116,16 @@ class Audio(BaseModel):
         ]
 
         return lines
-
-# 使用示例
-# audio_from_local = Audio.from_local("path/to/local/audio.wav")  # 从本地文件创建 Audio 实例
-# print(audio_from_local.pretty_repr())  # 以文本形式打印信息
-# print(audio_from_local.pretty_repr(html=True))  # 以 HTML 格式打印信息
-
-# audio_from_url = Audio.from_url("http://example.com/audio.wav")  # 从 URL 创建 Audio 实例
-# print(audio_from_url.pretty_repr())
-# print(audio_from_url.pretty_repr(html=True))
-
-# # 将样本数据保存为音频文件
-# with open("path/to/save/decoded_audio.wav", "wb") as audio_file:
-#     audio_file.write(audio_from_url.to_binary())
-
-
+    
 class MultiModalMessage(BaseMessage):
     image: Image = None
     audio: Audio = None
     """The type of the message (used for deserialization). Defaults to "ai"."""
-
+    
+    type: Literal["agi"] = "agi"
+    
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+        
     def __init__(
         self, content: Union[str, list[Union[str, dict]]],image: Image =None,audio: Audio = None, **kwargs: Any
     ) -> None:
@@ -192,7 +173,8 @@ class MultiModalMessage(BaseMessage):
         
         return (base.strip() + "\n" + "\n".join(lines)).strip()
 
-class CustomerLLM(RunnableSerializable[BaseMessage]):
+
+class CustomerLLM(RunnableSerializable[BaseMessage,BaseMessage]):
     device: str = Field(torch.device('cpu'))
     model: Any = None
     tokenizer: Any = None
@@ -200,7 +182,7 @@ class CustomerLLM(RunnableSerializable[BaseMessage]):
     def __init__(self,llm,**kwargs):
         super(CustomerLLM, self).__init__()
         if torch.cuda.is_available():
-            self.device = torch.device(0)
+            self.device = torch.device("cuda")
         else:
             self.device = torch.device('cpu')
         self.model = llm
