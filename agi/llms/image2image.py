@@ -11,13 +11,11 @@ from diffusers.utils import load_image
 import torch
 from langchain.llms.base import LLM
 from typing import Any, List, Mapping, Optional,Union
-from langchain.callbacks.manager import (
-    CallbackManagerForLLMRun
-)
 from pydantic import  Field
-from agi.llms import CustomerLLM
+from agi.llms.base import CustomerLLM,MultiModalMessage,Image
 from agi.config import MODEL_PATH as model_root
 
+from langchain_core.runnables import RunnableConfig
 
 style = 'style="width: 100%; max-height: 100vh;"'
 
@@ -54,28 +52,17 @@ class Image2Image(CustomerLLM):
     def model_name(self) -> str:
         return "image2image"
     
-    def _call(
-        self,
-        prompt: str,
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
-        **kwargs: Any,
-    ) -> str:
-        output = ""
-        if prompt == "":
+    def invoke(
+        self, input: MultiModalMessage, config: Optional[RunnableConfig] = None, **kwargs: Any
+    ) -> MultiModalMessage:
+        output = MultiModalMessage(content="")
+        if input.content == "" or input.image is None:
             return output
         
-        image_path = kwargs.pop("image_path","")
-        image_obj = kwargs.pop("image_obj",None)
-        print(image_path)
         image = None
-        if image_path != "":
-            init_image = load_image(image_path).resize((512, 512))
-            print(type(init_image))
-            image = self.model(prompt, image=init_image, num_inference_steps=2, strength=0.5, guidance_scale=0.0).images[0]
-        if image_obj is not None:
-            image_obj.resize((512, 512))
-            image = self.model(prompt, image=image_obj, num_inference_steps=2, strength=0.5, guidance_scale=0.0).images[0]
+        prompt = input.content
+        input_image = input.image.pil_image.resize((512, 512))
+        image = self.model(prompt, image=input_image, num_inference_steps=2, strength=0.5, guidance_scale=0.0).images[0]
 
         if image is not None:
             output = self.handle_output(image,prompt)
@@ -87,7 +74,10 @@ class Image2Image(CustomerLLM):
 
         return {"prompt": prompts, "generator": generator, "num_inference_steps": self.n_steps}
     
-    def handle_output(self,image,prompt):
+    def handle_output(self,image,prompt) -> MultiModalMessage:
+        img = Image()
+        img.pil_image =image
+        output = MultiModalMessage(image=image)
         if self.save_image:
             file = f'{date.today().strftime("%Y_%m_%d")}/{int(time.time())}'  # noqa: E501
             output_file = Path(f"{self.file_path}/{file}.png")
@@ -95,6 +85,7 @@ class Image2Image(CustomerLLM):
 
             image.save(output_file)
             image_source = f"file/{output_file}"
+            output.image = Image.new(image_source)
         else:
             # resize image to avoid huge logs
             image.thumbnail((512, 512 * image.height / image.width))
@@ -109,7 +100,8 @@ class Image2Image(CustomerLLM):
 
         formatted_result = f'<img src="{image_source}" {style}>\n'
         formatted_result += f'<p> {prompt} </p>'
-        return formatted_result
+        output.content = formatted_result
+        return output
     
     @property
     def _identifying_params(self) -> Mapping[str, Any]:
