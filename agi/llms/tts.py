@@ -1,21 +1,24 @@
 import os
 
 from TTS.api import TTS
-from agi.config import MODEL_PATH as model_root
+from agi.config import MODEL_PATH as model_root,CACHE_DIR
 from agi.llms.base import CustomerLLM,MultiModalMessage,Audio
 from langchain_core.runnables import RunnableConfig
 from typing import Any, List, Mapping, Optional,Union
 
 class TextToSpeech(CustomerLLM):
-    def __init__(self, model_path: str = os.path.join(model_root,"tts_models--zh-CN--baker--tacotron2-DDC-GST"), 
+    def __init__(self, model_path: str = os.path.join(model_root,"tts_models--multilingual--multi-dataset--xtts_v2"), 
                  speaker_wav: str = os.path.join(model_root,"XTTS-v2","samples/zh-cn-sample.wav"), 
-                 language: str = "zh-cn"):
+                 language: str = "zh-cn",save_file: bool = True):
         config_path = os.path.join(model_path,"config.json")
-        self.tts = TTS(model_path=model_path,config_path=config_path).to(self.device)
+        tts = TTS(model_path=model_path,config_path=config_path)
+        # self.tts = TTS(model_name="tts_models--zh-CN--baker--tacotron2-DDC-GST").to(self.device)
+        
+        super(TextToSpeech, self).__init__(llm=tts.synthesizer)
+        self.tts = tts.to(self.device)
         self.speaker_wav = speaker_wav
         self.language = language
-        self.model = self.tts.synthesizer
-        super(TextToSpeech, self).__init__(llm=self.model)
+        self.save_file = save_file
 
     def list_available_models(self):
         return self.tts.list_models()
@@ -23,12 +26,18 @@ class TextToSpeech(CustomerLLM):
     def invoke(
         self, input: MultiModalMessage, config: Optional[RunnableConfig] = None, **kwargs: Any
     ) -> MultiModalMessage:
-        samples = self.tts.tts(text=input.content, speaker_wav=self.speaker_wav, language=self.language)
-        return MultiModalMessage(content=input.content,audio=Audio(samples=samples))
+        output = None
+        if self.save_file:
+            file_path = self.save_audio_to_file(text=input.content)
+            output = MultiModalMessage(content=input.content,audio=Audio(file_path=file_path))
+        else:
+            samples = self.tts.tts(text=input.content, speaker_wav=self.speaker_wav, language=self.language)
+            output = MultiModalMessage(content=input.content,audio=Audio(samples=samples))
+        return output
 
-    def save_audio_to_file(self, text: str, file_path: str):
+    def save_audio_to_file(self, text: str, file_path: str=CACHE_DIR):
         # self.tts.tts_to_file(text=text, speaker_wav=self.speaker_wav, language=self.language, file_path=file_path)
-        self.tts.tts_to_file(text=text, speaker_wav=self.speaker_wav, file_path=file_path)
+        return self.tts.tts_to_file(text=text, speaker_wav=self.speaker_wav, file_path=file_path)
 
 # 使用示例
 if __name__ == "__main__":

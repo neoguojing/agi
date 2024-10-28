@@ -61,6 +61,7 @@ from typing import List, Optional
 
 class Audio(BaseModel):
     url: Optional[HttpUrl] = None                  # 音频的 URL
+    file_path: Optional[str] = None
     samples: Optional[List[int]] = None             # 音频的样本数据
     filename: Optional[str] = None                  # 文件名
     filetype: Optional[str] = None                  # 文件类型 (如 'audio/mpeg', 'audio/wav')
@@ -77,7 +78,7 @@ class Audio(BaseModel):
             filetype = filename.split('.')[-1]  # 简单提取文件扩展名
             size = len(binary_data)
         
-        return cls(samples=samples, filename=filename, filetype=filetype, size=size)
+        return cls(samples=samples,file_path=audio_path, filename=filename, filetype=filetype, size=size)
 
     @classmethod
     def from_url(cls, url: HttpUrl):
@@ -174,17 +175,14 @@ class MultiModalMessage(BaseMessage):
         return (base.strip() + "\n" + "\n".join(lines)).strip()
 
 
-class CustomerLLM(RunnableSerializable[BaseMessage,BaseMessage]):
-    device: str = Field(torch.device('cpu'))
+class CustomerLLM(RunnableSerializable[BaseMessage, BaseMessage]):
+    device: str = Field(default_factory=lambda: str(torch.device('cpu')))
     model: Any = None
     tokenizer: Any = None
 
-    def __init__(self,llm,**kwargs):
-        super(CustomerLLM, self).__init__()
-        if torch.cuda.is_available():
-            self.device = torch.device("cuda")
-        else:
-            self.device = torch.device('cpu')
+    def __init__(self, llm, **kwargs):
+        super(CustomerLLM, self).__init__(**kwargs)
+        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device('cpu')
         self.model = llm
 
     def destroy(self):
