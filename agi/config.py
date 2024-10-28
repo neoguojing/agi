@@ -24,4 +24,6 @@ RAG_EMBEDDING_MODEL = os.environ.get("RAG_EMBEDDING_MODEL", "bge-m3:latest")
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
 WHISPER_MODEL_DIR = os.getenv("WHISPER_MODEL_DIR", f"{MODEL_PATH}/")
 
+TTS_SPEAKER_WAV = os.getenv("TTS_SPEAKER_WAV", os.path.join(MODEL_PATH,"XTTS-v2","samples/zh-cn-sample.wav"))
+
 # 其他配置项

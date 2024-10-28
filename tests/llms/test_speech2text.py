@@ -1,20 +1,24 @@
 import unittest
+from agi.llms.speech2text import Speech2Text
 
-
-class TestText2Image(unittest.TestCase):
+class TestSpeech2Text(unittest.TestCase):
 
     def setUp(self):
-        from agi.llms.speech2text import Speech2Text
+        
         from agi.llms.base import MultiModalMessage,Audio
-        import torch
-        self.instance = Speech2Text()
-        self.input = MultiModalMessage(content="a midlife crisis man")
+        
+        self.input = MultiModalMessage(audio=Audio.from_local("cache/2024_10_28/1730087840.wav"))
 
-    def test_image2image(self):
+    def test_speach2text(self):
+        self.instance = Speech2Text()
         output = self.instance.invoke(self.input)
         self.assertIsNotNone(output)
-        self.assertIsNotNone(output.image)
-        self.assertIsNotNone(output.image.pil_image)
+        self.assertIsNotNone(output.content)
+        print(output.content)
+        
+        self.instance = Speech2Text(device="cpu")
+        output = self.instance.invoke(self.input)
+        self.assertIsNotNone(output)
         self.assertIsNotNone(output.content)
         print(output.content)
 

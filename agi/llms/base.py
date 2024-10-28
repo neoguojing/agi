@@ -53,32 +53,34 @@ class Image(BaseModel):
         ]
         return lines
 
-
-from pydantic import BaseModel, HttpUrl
-import requests
+import os
 import numpy as np
-from typing import List, Optional
+import requests
+from pydantic import BaseModel, HttpUrl
+from typing import Optional, List
+from io import BytesIO
 
 class Audio(BaseModel):
-    url: Optional[HttpUrl] = None                  # 音频的 URL
+    url: Optional[HttpUrl] = None  # 音频的 URL
     file_path: Optional[str] = None
-    samples: Optional[List[int]] = None             # 音频的样本数据
-    filename: Optional[str] = None                  # 文件名
-    filetype: Optional[str] = None                  # 文件类型 (如 'audio/mpeg', 'audio/wav')
-    size: Optional[int] = None                      # 文件大小（字节）
+    samples: Optional[BytesIO] = None  # 音频的样本数据
+    filename: Optional[str] = None  # 文件名
+    filetype: Optional[str] = None  # 文件类型 (如 'audio/mpeg', 'audio/wav')
+    size: Optional[int] = None  # 文件大小（字节）
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    
     @classmethod
     def from_local(cls, audio_path: str):
         """从本地文件创建 Audio 实例"""
         with open(audio_path, "rb") as audio_file:
             binary_data = audio_file.read()
-            # 假设音频是 16-bit PCM
-            samples = np.frombuffer(binary_data, dtype=np.int16).tolist()
-            filename = audio_path.split('/')[-1]
+            samples = BytesIO(binary_data)  # 将二进制数据存储在 BytesIO 中
+            filename = os.path.basename(audio_path)
             filetype = filename.split('.')[-1]  # 简单提取文件扩展名
             size = len(binary_data)
         
-        return cls(samples=samples,file_path=audio_path, filename=filename, filetype=filetype, size=size)
+        return cls(samples=samples, file_path=audio_path, filename=filename, filetype=filetype, size=size)
 
     @classmethod
     def from_url(cls, url: HttpUrl):
@@ -86,9 +88,8 @@ class Audio(BaseModel):
         response = requests.get(url)
         if response.status_code == 200:
             binary_data = response.content
-            # 假设音频是 16-bit PCM
-            samples = np.frombuffer(binary_data, dtype=np.int16).tolist()
-            filename = url.split('/')[-1]
+            samples = BytesIO(binary_data)  # 将二进制数据存储在 BytesIO 中
+            filename = os.path.basename(url)
             filetype = filename.split('.')[-1]  # 简单提取文件扩展名
             size = len(binary_data)
             return cls(url=url, samples=samples, filename=filename, filetype=filetype, size=size)
@@ -97,7 +98,7 @@ class Audio(BaseModel):
 
     def to_binary(self) -> bytes:
         """将样本数据转换回二进制格式"""
-        return np.array(self.samples, dtype=np.int16).tobytes()
+        return self.samples.getvalue()  # 从 BytesIO 中获取二进制数据
 
     def pretty_repr(self, html: bool = False) -> List[str]:
         """返回音频的美观表示。
@@ -117,6 +118,7 @@ class Audio(BaseModel):
         ]
 
         return lines
+
     
 class MultiModalMessage(BaseMessage):
     image: Image = None
@@ -128,7 +130,7 @@ class MultiModalMessage(BaseMessage):
     model_config = ConfigDict(arbitrary_types_allowed=True)
         
     def __init__(
-        self, content: Union[str, list[Union[str, dict]]],image: Image =None,audio: Audio = None, **kwargs: Any
+        self, content: Union[str, list[Union[str, dict]]]="",image: Image =None,audio: Audio = None, **kwargs: Any
     ) -> None:
         """Pass in content as positional arg.
 

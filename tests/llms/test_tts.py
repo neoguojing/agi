@@ -6,7 +6,6 @@ class TestTextToSpeech(unittest.TestCase):
     def setUp(self):
         from agi.llms.tts import TextToSpeech
         from agi.llms.base import MultiModalMessage,Audio
-        import torch
         self.instance = TextToSpeech()
         print(self.instance.list_available_models())
         content = '''
