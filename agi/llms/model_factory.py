@@ -14,15 +14,6 @@ from agi.config import (
 
 import threading
 import gc
-from langchain_community.chat_models import QianfanChatEndpoint
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-# openai
-os.environ['OPENAI_API_KEY'] = ''
-# qianfan
-os.environ["QIANFAN_AK"] = "your_ak"
-os.environ["QIANFAN_SK"] = "your_sk"
-# tongyi
-os.environ["DASHSCOPE_API_KEY"] = ""
 
 from urllib.parse import urljoin
 class ModelFactory:

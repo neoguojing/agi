@@ -5,7 +5,6 @@ import io
 import time
 from datetime import date
 from pathlib import Path
-from diffusers import  AutoPipelineForText2Image
 from diffusers import AutoPipelineForImage2Image
 import torch
 from typing import Any, List, Mapping, Optional,Union
@@ -26,18 +25,14 @@ class Image2Image(CustomerLLM):
     save_image: bool = True
 
     def __init__(self, model_path: str=os.path.join(model_root,"sdxl-turbo"),**kwargs):
-        if model_path is not None:
-            super(Image2Image, self).__init__(
-                llm=AutoPipelineForImage2Image.from_pretrained(
-                    os.path.join(model_root,"sdxl-turbo"), torch_dtype=torch.float16, variant="fp16"
-            ))
-            # self.model.save_pretrained(os.path.join(model_root,"sdxl-turbo"))
-            self.model_path = model_path
-        else:
-            super(StableDiff, self).__init__(
-                llm=AutoPipelineForText2Image.from_pretrained(
-                    "stabilityai/sdxl-turbo", torch_dtype=torch.float16, variant="fp16"
-            ))
+        
+        super(Image2Image, self).__init__(
+            llm=AutoPipelineForImage2Image.from_pretrained(
+                os.path.join(model_root,"sdxl-turbo"), torch_dtype=torch.float16, variant="fp16"
+        ))
+        # self.model.save_pretrained(os.path.join(model_root,"sdxl-turbo"))
+        self.model_path = model_path
+        
         # self.model.to(self.device)
         # 使用cpu和to('cuda')互斥，内存减小一半
         self.model.enable_model_cpu_offload()

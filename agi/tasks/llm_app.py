@@ -7,8 +7,6 @@ from langchain_community.chat_message_histories import SQLChatMessageHistory
 from langchain.retrievers import EnsembleRetriever
 from langchain.chains import create_history_aware_retriever, create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain_ollama import OllamaEmbeddings
-from langchain_ollama.llms import OllamaLLM
 from langchain_core.messages.ai import AIMessage,AIMessageChunk
 from langchain_core.runnables.utils import AddableDict
 from langchain_core.runnables.base import Runnable
