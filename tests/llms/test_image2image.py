@@ -8,7 +8,7 @@ class TestImage2Image(unittest.TestCase):
         from agi.llms.base import MultiModalMessage,Image
         import torch
         self.instance = Image2Image()
-        img = Image.new("/win/agi/tests/cat.jpg")
+        img = Image.new("tests/cat.jpg")
         
         self.assertIsNotNone(img)
         

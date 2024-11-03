@@ -8,7 +8,7 @@ from typing import Any, List, Mapping, Optional,Union
 from agi.llms.base import CustomerLLM,MultiModalMessage
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
-
+import logging
 class Speech2Text(CustomerLLM):
     whisper: Optional[Any] = Field(default=None)
     beam_size: int = Field(default=5)
@@ -16,8 +16,11 @@ class Speech2Text(CustomerLLM):
         model_size = None
         if device == "cuda":
             model_size = os.path.join(model_root,"wisper-v3-turbo-c2")
+            logging.info("use wisper-v3-turbo-c2")
         else:
             model_size = "base"
+            logging.info("use base")
+            compute_type = "default"
             
         whisper = WhisperModel(model_size, device=device, compute_type=compute_type)
         super().__init__(llm=whisper.model)
@@ -26,8 +29,12 @@ class Speech2Text(CustomerLLM):
     def invoke(
         self, input: MultiModalMessage, config: Optional[RunnableConfig] = None, **kwargs: Any
     ) -> MultiModalMessage:
-        
-        segments, info = self.whisper.transcribe(input.audio.samples, beam_size=self.beam_size)
+        segments = None
+        info = None
+        if input.audio.samples is None:
+            segments, info = self.whisper.transcribe(input.audio.file_path, beam_size=self.beam_size)
+        else:
+            segments, info = self.whisper.transcribe(input.audio.samples, beam_size=self.beam_size)
         
         content = ""
         for segment in segments:

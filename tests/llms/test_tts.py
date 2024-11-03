@@ -1,5 +1,6 @@
 import unittest
 
+import logging
 
 class TestTextToSpeech(unittest.TestCase):
 
@@ -7,6 +8,7 @@ class TestTextToSpeech(unittest.TestCase):
         from agi.llms.tts import TextToSpeech
         from agi.llms.base import MultiModalMessage,Audio
         self.instance = TextToSpeech()
+        self.instance_gpu = TextToSpeech(is_gpu=True)
         print(self.instance.list_available_models())
         content = '''
         以下是每个缩写的简要解释：
@@ -30,14 +32,22 @@ hay: Haya — 指的是坦桑尼亚的一种语言，由Haya人使用，属于�
         self.input = MultiModalMessage(content=content)
 
     def test_text2speech(self):
+        output = self.instance_gpu.invoke(self.input)
+        self.assertIsNotNone(output)
+        self.assertIsNotNone(output.audio)
+        self.assertIsNotNone(output.audio.file_path)
+        self.assertIsNotNone(output.content)
+        logging.info(output.content)
+        logging.info(output.audio.file_path)
+
+    def test_text2speech_cpu(self):
         output = self.instance.invoke(self.input)
         self.assertIsNotNone(output)
         self.assertIsNotNone(output.audio)
         self.assertIsNotNone(output.audio.file_path)
         self.assertIsNotNone(output.content)
-        print(output.content)
-        print(output.audio.file_path)
-
+        logging.info(output.content)
+        logging.info(output.audio.file_path)
         
 if __name__ == "__main__":
     unittest.main()

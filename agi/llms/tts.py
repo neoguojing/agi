@@ -9,7 +9,7 @@ from agi.llms.base import CustomerLLM, MultiModalMessage, Audio
 from langchain_core.runnables import RunnableConfig
 from typing import Any, Optional
 from pydantic import BaseModel, Field
-
+import logging
 
 class TextToSpeech(CustomerLLM):
     tts: Optional[Any] = Field(default=None)
@@ -33,10 +33,15 @@ class TextToSpeech(CustomerLLM):
         if is_gpu:
             model_path = os.path.join(model_root, "tts_models--multilingual--multi-dataset--xtts_v2")
             config_path = os.path.join(model_path, "config.json")
+            logging.info("use ts_models--multilingual--multi-dataset--xtts_v2")
             return TTS(model_path=model_path, config_path=config_path).to(torch.device("cuda"))
         else:
-            return TTS(model_name="tts_models/zh-CN/baker/tacotron2-DDC-GST")
-
+            logging.info("use tts_models/zh-CN/baker/tacotron2-DDC-GST")
+            return TTS(model_name="tts_models/zh-CN/baker/tacotron2-DDC-GST").to(torch.device("cpu"))
+            # model_dir = os.path.join(model_root, "tts_models--zh-CN--baker--tacotron2-DDC-GST")
+            # model_path = os.path.join(model_dir, "model_file.pth")
+            # config_path = os.path.join(model_dir, "config.json")
+            # return TTS(model_path=model_path, config_path=config_path)
     def list_available_models(self):
         """Return a list of available TTS models."""
         return self.tts.list_models()
