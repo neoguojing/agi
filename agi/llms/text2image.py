@@ -13,10 +13,11 @@ from langchain.callbacks.manager import (
     CallbackManagerForLLMRun
 )
 from pydantic import  Field
-from agi.llms.base import CustomerLLM,MultiModalMessage,Image
+from agi.llms.base import CustomerLLM,ImageType
 from agi.config import MODEL_PATH as model_root,CACHE_DIR
 import hashlib
 from langchain_core.runnables import RunnableConfig
+from langchain_core.messages import AIMessage, HumanMessage
 
 style = 'style="width: 100%; max-height: 100vh;"'
 class Text2Image(CustomerLLM):
@@ -53,9 +54,9 @@ class Text2Image(CustomerLLM):
         return "text2image"
     
     def invoke(
-        self, input: MultiModalMessage, config: Optional[RunnableConfig] = None, **kwargs: Any
-    ) -> MultiModalMessage:
-        out = MultiModalMessage(content="")
+        self, input: HumanMessage, config: Optional[RunnableConfig] = None, **kwargs: Any
+    ) -> AIMessage:
+        out = AIMessage(content="")
         if input.content == "":
             return out
         
@@ -64,7 +65,7 @@ class Text2Image(CustomerLLM):
 
         return out
     
-    def handle_output(self,image) -> MultiModalMessage:
+    def handle_output(self,image) -> AIMessage:
         if self.save_image:
             file = f'{date.today().strftime("%Y_%m_%d")}/{int(time.time())}'  # noqa: E501
             output_file = Path(f"{self.file_path}/{file}.png")
@@ -85,7 +86,8 @@ class Text2Image(CustomerLLM):
             image_source = image_base64
 
         formatted_result = f'<img src="{image_source}" {style}>\n'
-        result = MultiModalMessage(content=formatted_result,image=Image(pil_image=image))
+        result = AIMessage(content=[{"type":"text","text":formatted_result},
+                                    {"type":ImageType.PIL_IMAGE,ImageType.PIL_IMAGE:image}])
         return result
     
     @property

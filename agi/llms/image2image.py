@@ -9,10 +9,11 @@ from diffusers import AutoPipelineForImage2Image
 import torch
 from typing import Any, List, Mapping, Optional,Union
 from pydantic import  Field
-from agi.llms.base import CustomerLLM,MultiModalMessage,Image
+from agi.llms.base import CustomerLLM,Image,ImageType
 from agi.config import MODEL_PATH as model_root,CACHE_DIR
 
 from langchain_core.runnables import RunnableConfig
+from langchain_core.messages import AIMessage, HumanMessage
 
 style = 'style="width: 100%; max-height: 100vh;"'
 
@@ -46,14 +47,27 @@ class Image2Image(CustomerLLM):
         return "image2image"
     
     def invoke(
-        self, input: MultiModalMessage, config: Optional[RunnableConfig] = None, **kwargs: Any
-    ) -> MultiModalMessage:
-        output = MultiModalMessage(content="")
-        if input.content == "" or input.image is None:
+        self, input: HumanMessage, config: Optional[RunnableConfig] = None, **kwargs: Any
+    ) -> AIMessage:
+        output = AIMessage(content="")
+        if isinstance(input.content,str):
             return output
-        
         image = None
-        prompt = input.content
+        prompt = None
+        input_image = None
+        
+        if isinstance(input.content,list):
+            for item in input.content:
+                media_type = item.get("type")
+                if isinstance(media_type,ImageType):
+                    data = item.get(media_type)
+                    input_image = Image.new(data,media_type).pil_image
+                if media_type == "text":
+                    prompt = item.get("text")
+                    
+        if input_image is None:
+            return output
+                   
         input_image = input.image.pil_image.resize((512, 512))
         image = self.model(prompt, image=input_image, num_inference_steps=2, strength=0.5, guidance_scale=0.0).images[0]
 
@@ -61,9 +75,7 @@ class Image2Image(CustomerLLM):
             output = self.handle_output(image,prompt)
         return output
     
-    def handle_output(self,image,prompt) -> MultiModalMessage:
-        img = Image()
-        img.pil_image =image
+    def handle_output(self,image,prompt) -> AIMessage:
         if self.save_image:
             file = f'{date.today().strftime("%Y_%m_%d")}/{int(time.time())}'  # noqa: E501
             output_file = Path(f"{self.file_path}/{file}.png")
@@ -86,7 +98,8 @@ class Image2Image(CustomerLLM):
         formatted_result = f'<img src="{image_source}" {style}>\n'
         formatted_result += f'<p> {prompt} </p>'
 
-        output = MultiModalMessage(content=formatted_result,image=img)
+        output = AIMessage(content=[{"type":"text","text":formatted_result},
+                                    {"type":ImageType.PIL_IMAGE,ImageType.PIL_IMAGE:image}])
         return output
     
     @property

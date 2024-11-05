@@ -5,9 +5,10 @@ from agi.config import (
     WHISPER_MODEL
 )
 from typing import Any, List, Mapping, Optional,Union
-from agi.llms.base import CustomerLLM,MultiModalMessage
+from agi.llms.base import CustomerLLM,AudioType,Audio
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
+from langchain_core.messages import AIMessage, HumanMessage
 import logging
 class Speech2Text(CustomerLLM):
     whisper: Optional[Any] = Field(default=None)
@@ -27,20 +28,35 @@ class Speech2Text(CustomerLLM):
         self.whisper = whisper
         
     def invoke(
-        self, input: MultiModalMessage, config: Optional[RunnableConfig] = None, **kwargs: Any
-    ) -> MultiModalMessage:
+        self, input: HumanMessage, config: Optional[RunnableConfig] = None, **kwargs: Any
+    ) -> AIMessage:
         segments = None
         info = None
-        if input.audio.samples is None:
-            segments, info = self.whisper.transcribe(input.audio.file_path, beam_size=self.beam_size)
-        else:
-            segments, info = self.whisper.transcribe(input.audio.samples, beam_size=self.beam_size)
+        audio_input = None
+        output = AIMessage(content="")
         
-        content = ""
-        for segment in segments:
-            content += segment.text
+        if isinstance(input.content,list):
+            for item in input.content:
+                media_type = item.get("type")
+                if isinstance(media_type,AudioType):
+                    data = item.get(media_type)
+                    if media_type == AudioType.URL:
+                        input = Audio.from_url(data).samples
+                    elif media_type == AudioType.FILE_PATH:
+                        input = Audio.from_local(data).samples
+                    elif media_type == AudioType.NUMPY:
+                        # TODO
+                        return output
+                    elif media_type == AudioType.BYTE_IO:
+                        audio_input = data
+                        
+            segments, info = self.whisper.transcribe(audio_input, beam_size=self.beam_size)
         
-        output = MultiModalMessage(content=content,response_metadata=info._asdict())
+            content = ""
+            for segment in segments:
+                content += segment.text
+            
+            output = AIMessage(content=content,response_metadata=info._asdict())
         return output
 
     def print(self, segments, info):

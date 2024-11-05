@@ -5,11 +5,12 @@ from pathlib import Path
 import torch
 from TTS.api import TTS
 from agi.config import MODEL_PATH as model_root, CACHE_DIR, TTS_SPEAKER_WAV
-from agi.llms.base import CustomerLLM, MultiModalMessage, Audio
+from agi.llms.base import CustomerLLM, Audio,AudioType
 from langchain_core.runnables import RunnableConfig
 from typing import Any, Optional
 from pydantic import BaseModel, Field
 import logging
+from langchain_core.messages import AIMessage, HumanMessage
 
 class TextToSpeech(CustomerLLM):
     tts: Optional[Any] = Field(default=None)
@@ -47,15 +48,17 @@ class TextToSpeech(CustomerLLM):
         return self.tts.list_models()
 
     def invoke(
-        self, input: MultiModalMessage, config: Optional[RunnableConfig] = None, **kwargs: Any
-    ) -> MultiModalMessage:
+        self, input: HumanMessage, config: Optional[RunnableConfig] = None, **kwargs: Any
+    ) -> AIMessage:
         """Invoke the TTS to generate audio from text."""
         if self.save_file:
             file_path = self.save_audio_to_file(text=input.content)
-            return MultiModalMessage(content=input.content, audio=Audio(file_path=file_path))
+            return AIMessage(content=[{"type":"text","text":input.content},
+                                  {"type":AudioType.FILE_PATH,AudioType.FILE_PATH:file_path}])
         
         samples = self.generate_audio_samples(input.content)
-        return MultiModalMessage(content=input.content, audio=Audio(samples=samples))
+        return AIMessage(content=[{"type":"text","text":input.content},
+                                  {"type":AudioType.BYTE_IO,AudioType.BYTE_IO:samples}])
 
     def generate_audio_samples(self, text: str) -> Any:
         """Generate audio samples from text."""

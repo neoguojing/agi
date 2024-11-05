@@ -3,9 +3,8 @@ from langchain.llms.base import LLM
 from pydantic import  Field
 from typing import Any,Union,Literal,List,Dict
 from langchain_core.runnables import Runnable, RunnableSerializable,RunnableConfig
-from langchain_core.messages.base import BaseMessage
 from pydantic import BaseModel, HttpUrl, constr,ConfigDict
-
+from langchain_core.messages import AIMessage, HumanMessage
 import base64
 import requests
 from typing import Optional
@@ -14,20 +13,47 @@ from io import BytesIO
 from typing import Optional, List
 import requests
 from diffusers.utils import load_image
+from enum import Enum
 
+
+class ImageType(Enum):
+    URL = "URL"  # 表示 URL 类型
+    FILE_PATH = "FILE_PATH"  # 表示文件路径类型
+    BASE64 = "BASE64"  # 表示 Base64 编码
+    PIL_IMAGE = "PIL_IMAGE"  # 表示 PIL 图片对象
+    
+class AudioType(Enum):
+    URL = "URL"  # 
+    FILE_PATH = "FILE_PATH" 
+    BYTE_IO = "BYTE_IO" 
+    NUMPY = "NUMPY" 
+    
 class Image(BaseModel):
     url: Optional[str] = None  # 图片的 URL
     pil_image: Optional[PILImage.Image] = None  # 使用 PIL 图像对象
     filename: Optional[str] = None  # 文件名
     filetype: Optional[str] = None  # 文件类型 (如 'image/jpeg', 'image/png')
     size: Optional[int] = None  # 文件大小（字节）
+    file_path: Optional[str] = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
     @classmethod
-    def new(cls, url_or_path: str):
+    def new(cls, input,type: ImageType):
         """从本地文件创建 Image 实例"""
-        pil_image = load_image(url_or_path)
-        filename = url_or_path.split('/')[-1]
+        pil_image = None
+        if type == ImageType.URL or type == ImageType.FILE_PATH:
+            pil_image = load_image(input)
+            filename = input.split('/')[-1]
+        elif type == ImageType.BASE64:
+            # 步骤1：解码 Base64 字符串为字节数据
+            image_data = base64.b64decode(input)
+            # 步骤2：将字节数据转换为 BytesIO 对象
+            image_bytes = BytesIO(image_data)
+            # 步骤3：使用 PIL.Image.open() 打开 BytesIO 对象
+            pil_image = PILImage.Image.open(image_bytes)
+        elif type == ImageType.PIL_IMAGE:
+            pil_image = input
+            
         filetype = pil_image.format  # 使用 PIL 提取文件格式
         size = pil_image.tobytes().__sizeof__()  # 计算字节大小
 
@@ -42,16 +68,6 @@ class Image(BaseModel):
         """保存 PIL 图像对象为图片文件"""
         if self.pil_image:
             self.pil_image.save(output_path)
-
-    def pretty_repr(self) -> List[str]:
-        """返回图片的美观表示"""
-        lines = [
-            f"URL: {self.url}" if self.url else "URL: None",
-            f"Filename: {self.filename}" if self.filename else "Filename: None",
-            f"Filetype: {self.filetype}" if self.filetype else "Filetype: None",
-            f"Size: {self.size} bytes" if self.size is not None else "Size: None"
-        ]
-        return lines
 
 import os
 import numpy as np
@@ -100,84 +116,8 @@ class Audio(BaseModel):
         """将样本数据转换回二进制格式"""
         return self.samples.getvalue()  # 从 BytesIO 中获取二进制数据
 
-    def pretty_repr(self, html: bool = False) -> List[str]:
-        """返回音频的美观表示。
 
-        Args:
-            html: 是否返回 HTML 格式的字符串。
-                  默认值为 False。
-
-        Returns:
-            音频的美观表示。
-        """
-        lines = [
-            f"URL: {self.url}" if self.url else "URL: None",
-            f"Filename: {self.filename}" if self.filename else "Filename: None",
-            f"Filetype: {self.filetype}" if self.filetype else "Filetype: None",
-            f"Size: {self.size} bytes" if self.size is not None else "Size: None"
-        ]
-
-        return lines
-
-    
-class MultiModalMessage(BaseMessage):
-    image: Image = None
-    audio: Audio = None
-    """The type of the message (used for deserialization). Defaults to "ai"."""
-    
-    type: Literal["agi"] = "agi"
-    
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-        
-    def __init__(
-        self, content: Union[str, list[Union[str, dict]]]="",image: Image =None,audio: Audio = None, **kwargs: Any
-    ) -> None:
-        """Pass in content as positional arg.
-
-        Args:
-            content: The content of the message.
-            kwargs: Additional arguments to pass to the parent class.
-        """
-        super().__init__(content=content, **kwargs)
-        self.audio = audio
-        self.image = image
-
-    @classmethod
-    def get_lc_namespace(cls) -> list[str]:
-        """Get the namespace of the langchain object.
-
-        Returns:
-            The namespace of the langchain object.
-            Defaults to ["langchain", "schema", "messages"].
-        """
-        return ["langchain", "schema", "messages"]
-
-    @property
-    def lc_attributes(self) -> dict:
-        """Attrs to be serialized even if they are derived from other init args."""
-        return {
-            "image": self.image,
-            "audio": self.audio,
-        }
-
-    def pretty_repr(self, html: bool = False) -> str:
-        """Return a pretty representation of the message.
-
-        Args:
-            html: Whether to return an HTML-formatted string.
-                 Defaults to False.
-
-        Returns:
-            A pretty representation of the message.
-        """
-        base = super().pretty_repr(html=html)
-        lines = self.image.pretty_repr()
-        lines.extend(self.audio.pretty_repr())
-        
-        return (base.strip() + "\n" + "\n".join(lines)).strip()
-
-
-class CustomerLLM(RunnableSerializable[BaseMessage, BaseMessage]):
+class CustomerLLM(RunnableSerializable[HumanMessage, AIMessage]):
     device: str = Field(default_factory=lambda: str(torch.device('cpu')))
     model: Any = None
     tokenizer: Any = None
