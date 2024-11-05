@@ -3,10 +3,12 @@ langchain-chroma==0.1.4
 langchain_openai==0.2.5
 langgraph==0.2.44
 langchain_community==0.3.5
-TTS==0.22.0
+fastapi==0.110 
+transformers==4.46.1
+spacy[ja]==3.8.2
+# TTS==0.22.0
 faster-whisper==1.0.3
 diffusers==0.21.2
 torch
-transformers
-spacy
+
 
