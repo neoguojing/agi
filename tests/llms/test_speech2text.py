@@ -6,9 +6,9 @@ class TestSpeech2Text(unittest.TestCase):
 
     def setUp(self):
         
-        from agi.llms.base import MultiModalMessage,Audio
+        from agi.llms.base import build_multi_modal_message,AudioType
         
-        self.input = MultiModalMessage(audio=Audio.from_local("tests/1730604079.wav"))
+        self.input = build_multi_modal_message("","tests/1730604079.wav",AudioType.FILE_PATH)
 
     def test_speach2text(self):
         self.instance = Speech2Text()

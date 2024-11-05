@@ -14,7 +14,11 @@ from typing import Optional, List
 import requests
 from diffusers.utils import load_image
 from enum import Enum
-
+import os
+import numpy as np
+import requests
+from pydantic import BaseModel, HttpUrl
+from typing import Optional, List
 
 class ImageType(Enum):
     URL = "URL"  # 表示 URL 类型
@@ -27,6 +31,8 @@ class AudioType(Enum):
     FILE_PATH = "FILE_PATH" 
     BYTE_IO = "BYTE_IO" 
     NUMPY = "NUMPY" 
+
+MultiModalMessageType = Union[ImageType,AudioType]
     
 class Image(BaseModel):
     url: Optional[str] = None  # 图片的 URL
@@ -69,13 +75,13 @@ class Image(BaseModel):
         if self.pil_image:
             self.pil_image.save(output_path)
 
-import os
-import numpy as np
-import requests
-from pydantic import BaseModel, HttpUrl
-from typing import Optional, List
-from io import BytesIO
-
+def build_multi_modal_message(text_input: str ,media_data,msg_type:MultiModalMessageType) -> HumanMessage:
+    
+    return HumanMessage(content=[
+        {"type":"text","text":text_input},
+        {"type":msg_type,msg_type:media_data},
+    ])
+    
 class Audio(BaseModel):
     url: Optional[HttpUrl] = None  # 音频的 URL
     file_path: Optional[str] = None
