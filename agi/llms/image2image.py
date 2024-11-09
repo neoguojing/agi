@@ -68,7 +68,7 @@ class Image2Image(CustomerLLM):
         if input_image is None:
             return output
                    
-        input_image = input.image.pil_image.resize((512, 512))
+        input_image = input_image.resize((512, 512))
         image = self.model(prompt, image=input_image, num_inference_steps=2, strength=0.5, guidance_scale=0.0).images[0]
 
         if image is not None:

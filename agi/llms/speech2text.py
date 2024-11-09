@@ -41,9 +41,9 @@ class Speech2Text(CustomerLLM):
                 if isinstance(media_type,AudioType):
                     data = item.get(media_type)
                     if media_type == AudioType.URL:
-                        input = Audio.from_url(data).samples
+                        audio_input = Audio.from_url(data).samples
                     elif media_type == AudioType.FILE_PATH:
-                        input = Audio.from_local(data).samples
+                        audio_input = Audio.from_local(data).samples
                     elif media_type == AudioType.NUMPY:
                         # TODO
                         return output

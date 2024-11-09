@@ -1,12 +1,11 @@
 import unittest
-
 import logging
-
+from langchain_core.messages import AIMessage, HumanMessage
+from agi.llms.base import AudioType
 class TestTextToSpeech(unittest.TestCase):
 
     def setUp(self):
         from agi.llms.tts import TextToSpeech
-        from agi.llms.base import build_multi_modal_message
         self.instance = TextToSpeech()
         self.instance_gpu = TextToSpeech(is_gpu=True)
         print(self.instance.list_available_models())
@@ -29,19 +28,27 @@ hvn: Hawu — 指的是印度尼西亚的一种语言，主要在西努沙登加
 
 hay: Haya — 指的是坦桑尼亚的一种语言，由Haya人使用，属于尼日尔-刚果语系。
     '''
-        self.input = build_multi_modal_message(content=content)
+        self.input = HumanMessage(content=content)
 
     def test_text2speech(self):
         output = self.instance_gpu.invoke(self.input)
         self.assertIsNotNone(output)
         self.assertIsNotNone(output.content)
         logging.info(output.content)
+        for item in output.content:
+            context_type = item.get("type") 
+            if context_type != "text":
+                self.assertIsNotNone(context_type,AudioType.FILE_PATH)
 
     def test_text2speech_cpu(self):
         output = self.instance.invoke(self.input)
         self.assertIsNotNone(output)
         self.assertIsNotNone(output.content)
         logging.info(output.content)
+        for item in output.content:
+            context_type = item.get("type") 
+            if context_type != "text":
+                self.assertIsNotNone(context_type,AudioType.FILE_PATH)
         
 if __name__ == "__main__":
     unittest.main()

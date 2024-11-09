@@ -1,5 +1,5 @@
 import unittest
-
+from langchain_core.messages import AIMessage, HumanMessage
 
 class TestText2Image(unittest.TestCase):
 
@@ -8,7 +8,7 @@ class TestText2Image(unittest.TestCase):
         from agi.llms.base import build_multi_modal_message,Image
         import torch
         self.instance = Text2Image()
-        self.input = build_multi_modal_message(content="a midlife crisis man")
+        self.input = HumanMessage(content="a midlife crisis man")
 
     def test_image2image(self):
         output = self.instance.invoke(self.input)
