@@ -3,16 +3,14 @@ langchain-chroma==0.1.4
 langchain_openai==0.2.5
 langgraph==0.2.44
 langchain_community==0.3.5
+langchain_ollama==0.2.0
 transformers==4.45.0
 spacy[ja]==3.8.2
-# --index-url https://download.pytorch.org/whl/cu121
-# torch==2.5.1+cu121
 torch==2.4.0
 torchaudio==2.4.0
-# TTS==0.22.0
+librosa==0.10.1
 git+https://github.com/neoguojing/TTS.git
 ctranslate2==4.4.0
-# nvidia-cudnn-cu12==8.*
 faster-whisper==1.0.3
 diffusers==0.21.2
 accelerate==1.1.1
