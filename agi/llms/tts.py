@@ -46,36 +46,53 @@ class TextToSpeech(CustomerLLM):
     def list_available_models(self):
         """Return a list of available TTS models."""
         return self.tts.list_models()
-
-    def invoke(
-        self, input: HumanMessage, config: Optional[RunnableConfig] = None, **kwargs: Any
-    ) -> AIMessage:
-        """Invoke the TTS to generate audio from text."""
+    
+    def invoke(self, input: HumanMessage, config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
+        """Generate speech audio from input text."""
+        if not input.content.strip():
+            return AIMessage(content="No input text provided.")
+        
         if self.save_file:
             file_path = self.save_audio_to_file(text=input.content)
-            return AIMessage(content=[{"type":"text","text":input.content},
-                                  {"type":AudioType.FILE_PATH,AudioType.FILE_PATH:file_path}])
+            return AIMessage(content=[
+                {"type": "text", "text": input.content},
+                {"type": AudioType.FILE_PATH, AudioType.FILE_PATH: file_path}
+            ])
         
+        # Generate audio samples and return as ByteIO
         samples = self.generate_audio_samples(input.content)
-        return AIMessage(content=[{"type":"text","text":input.content},
-                                  {"type":AudioType.BYTE_IO,AudioType.BYTE_IO:samples}])
+        return AIMessage(content=[
+            {"type": "text", "text": input.content},
+            {"type": AudioType.BYTE_IO, AudioType.BYTE_IO: samples}
+        ])
 
     def generate_audio_samples(self, text: str) -> Any:
-        """Generate audio samples from text."""
-        if self.is_gpu:
-            return self.tts.tts(text=text, speaker_wav=self.speaker_wav, language=self.language)
-        return self.tts.tts(text=text, speaker_wav=self.speaker_wav)
+        """Generate audio samples from the input text."""
+        try:
+            if self.is_gpu:
+                return self.tts.tts(text=text, speaker_wav=self.speaker_wav, language=self.language)
+            else:
+                return self.tts.tts(text=text, speaker_wav=self.speaker_wav)
+        except Exception as e:
+            logging.error(f"Error generating audio samples: {e}")
+            raise RuntimeError("Failed to generate audio samples.")
 
     def save_audio_to_file(self, text: str, file_path: str = "") -> str:
-        """Save the generated audio to a file."""
+        """Save the generated audio to a file and return the file path."""
         if not file_path:
             file_name = f'{date.today().strftime("%Y_%m_%d")}/{int(time.time())}.wav'
             file_path = os.path.join(CACHE_DIR, file_name)
             Path(file_path).parent.mkdir(parents=True, exist_ok=True)
         
-        return self.tts.tts_to_file(
-            text=text,
-            speaker_wav=self.speaker_wav,
-            language=self.language if self.is_gpu else None,
-            file_path=file_path
-        )
+        try:
+            self.tts.tts_to_file(
+                text=text,
+                speaker_wav=self.speaker_wav,
+                language=self.language if self.is_gpu else None,
+                file_path=file_path
+            )
+        except Exception as e:
+            logging.error(f"Error saving audio to file: {e}")
+            raise RuntimeError("Failed to save audio to file.")
+        
+        return file_path

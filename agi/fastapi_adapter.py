@@ -3,9 +3,9 @@ from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from typing import Optional, Union,Any,Dict
-from agi.llm_app import LangchainApp
-from agi.retriever import KnowledgeManager
-from agi.vectore_store import CollectionManager
+from agi.tasks.llm_app import LangchainApp
+from agi.tasks.retriever import KnowledgeManager
+from agi.tasks.vectore_store import CollectionManager
 import logging
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)

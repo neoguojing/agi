@@ -30,35 +30,47 @@ class Speech2Text(CustomerLLM):
     def invoke(
         self, input: HumanMessage, config: Optional[RunnableConfig] = None, **kwargs: Any
     ) -> AIMessage:
-        segments = None
-        info = None
-        audio_input = None
-        output = AIMessage(content="")
+        """Process the input, transcribe audio, and return the output message."""
+        audio_input = self._process_audio_input(input)
         
-        if isinstance(input.content,list):
+        if audio_input is None:
+            return AIMessage(content="No valid audio input found.")
+        
+        # Transcribe the audio input
+        content, response_metadata = self._transcribe_audio(audio_input)
+
+        # Return the transcription result
+        return AIMessage(content=content, response_metadata=response_metadata)
+
+    def _process_audio_input(self, input: HumanMessage) -> Optional[Audio]:
+        """Extract audio data from the input."""
+        audio_input = None
+        if isinstance(input.content, list):
             for item in input.content:
                 media_type = item.get("type")
-                if isinstance(media_type,AudioType):
+                if isinstance(media_type, AudioType):
                     data = item.get(media_type)
                     if media_type == AudioType.URL:
                         audio_input = Audio.from_url(data).samples
                     elif media_type == AudioType.FILE_PATH:
                         audio_input = Audio.from_local(data).samples
                     elif media_type == AudioType.NUMPY:
-                        # TODO
-                        return output
+                        # Handle Numpy audio input (TODO)
+                        return None
                     elif media_type == AudioType.BYTE_IO:
                         audio_input = data
-                        
-            segments, info = self.whisper.transcribe(audio_input, beam_size=self.beam_size)
-        
-            content = ""
-            for segment in segments:
-                content += segment.text
-            
-            output = AIMessage(content=content,response_metadata=info._asdict())
-        return output
+        return audio_input
 
+    def _transcribe_audio(self, audio_input) -> str:
+        """Transcribe the audio input using Whisper."""
+        segments, info = self.whisper.transcribe(audio_input, beam_size=self.beam_size)
+        return self._format_transcription(segments, info)
+
+    def _format_transcription(self, segments, info) -> str:
+        """Format the transcription into a readable string."""
+        content = "".join(segment.text for segment in segments)
+        return content, info._asdict()
+    
     def print(self, segments, info):
         print("Detected language '%s' with probability %f" % (info.language, info.language_probability))
         for segment in segments:

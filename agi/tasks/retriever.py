@@ -60,20 +60,6 @@ class FilterType(Enum):
 class SimAlgoType(Enum):
     MMR = "mmr"
     SST = "similarity_score_threshold"
-    
-# Load HTML
-# loader = AsyncChromiumLoader(["https://www.wsj.com"])
-# html = loader.load()
-# bs_transformer = BeautifulSoupTransformer()
-
-# from langchain.chains import RetrievalQAWithSourcesChain
-
-# user_input = "How do LLM Powered Autonomous Agents work?"
-# qa_chain = RetrievalQAWithSourcesChain.from_chain_type(
-#     llm, retriever=web_research_retriever
-# )
-# result = qa_chain({"question": user_input})
-# result
 
 class KnowledgeManager:
     def __init__(self, data_path,ollama_url="http://localhost:11434",model="qwen2.5:14b", tenant=None, database=None):

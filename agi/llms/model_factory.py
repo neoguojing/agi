@@ -1,4 +1,7 @@
 import os
+import threading
+import gc
+from urllib.parse import urljoin
 from agi.llms.image2image import Image2Image
 from agi.llms.text2image import Text2Image
 from agi.llms.tts import TextToSpeech
@@ -11,74 +14,81 @@ from agi.config import (
     RAG_EMBEDDING_MODEL,
     OLLAMA_DEFAULT_MODE
 )
+from langchain_openai import ChatOpenAI
+from langchain_ollama import OllamaEmbeddings
 
-import threading
-import gc
 
-from urllib.parse import urljoin
 class ModelFactory:
     _instances = {}
     _lock = threading.Lock()
 
     @staticmethod
-    def get_model(model_type, model_name=""):
-        """获取模型实例，并缓存"""
-        if model_type not in ModelFactory._instances or ModelFactory._instances[model_type] is None:
-            with ModelFactory._lock:
-                if model_type not in ModelFactory._instances or ModelFactory._instances[model_type] is None:
-                    ModelFactory._instances[model_type] = ModelFactory._load_model(model_type, model_name)
-        return ModelFactory._instances[model_type]
+    def get_model(model_type: str, model_name: str = "") -> CustomerLLM:
+        """Retrieve and cache the model instance."""
+        with ModelFactory._lock:
+            if model_type not in ModelFactory._instances or ModelFactory._instances[model_type] is None:
+                ModelFactory._instances[model_type] = ModelFactory._load_model(model_type, model_name)
+            return ModelFactory._instances[model_type]
 
     @staticmethod
-    def _load_model(model_type, model_name=""):
-        """实际负责模型加载的私有方法"""
-        print(f"Loading the model {model_type}, wait a minute...")
+    def _load_model(model_type: str, model_name: str = "") -> CustomerLLM:
+        """Load the model based on the model type."""
+        print(f"Loading the model: {model_type}...")
+        model = None
+        
         if model_type == "ollama":
-            from langchain_openai import ChatOpenAI
-            if model_name == "":
-                model_name = OLLAMA_DEFAULT_MODE
-            return ChatOpenAI(model=model_name,openai_api_key=OPENAI_API_KEY,base_url=urljoin(OLLAMA_API_BASE_URL,"/v1/"))
-        elif model_type == "text2image": 
-            return Text2Image()
-        elif model_type == "image2image": 
-            return Image2Image()
-        elif model_type == "speech2text": 
-            return Speech2Text()
-        elif model_type == "text2speech": 
-            return  TextToSpeech()
-        elif model_type == "embedding": 
-            from langchain_ollama import OllamaEmbeddings
-            if model_name == "":
-                model_name = RAG_EMBEDDING_MODEL
-            return OllamaEmbeddings(
+            model_name = model_name or OLLAMA_DEFAULT_MODE
+            model = ChatOpenAI(
+                model=model_name,
+                openai_api_key=OPENAI_API_KEY,
+                base_url=urljoin(OLLAMA_API_BASE_URL, "/v1/")
+            )
+        
+        elif model_type == "text2image":
+            model = Text2Image()
+        
+        elif model_type == "image2image":
+            model = Image2Image()
+        
+        elif model_type == "speech2text":
+            model = Speech2Text()
+        
+        elif model_type == "text2speech":
+            model = TextToSpeech()
+        
+        elif model_type == "embedding":
+            model_name = model_name or RAG_EMBEDDING_MODEL
+            model = OllamaEmbeddings(
                 model=model_name,
                 base_url=OLLAMA_API_BASE_URL,
-                # num_gpu=100
             )
-        else:
-            raise ValueError(f"Invalid model name: {model_type}")
+        
+        if not model:
+            raise ValueError(f"Invalid model type: {model_type}")
+
+        return model
 
     @staticmethod
-    def destroy(model_name):
-        """销毁模型实例"""
-        if model_name in ModelFactory._instances and ModelFactory._instances[model_name] is not None:
-            with ModelFactory._lock:
-                instance = ModelFactory._instances.pop(model_name, None)
-                if instance:
-                    ModelFactory._safe_destroy(instance)
+    def destroy(model_name: str) -> None:
+        """Destroy a specific model instance."""
+        with ModelFactory._lock:
+            instance = ModelFactory._instances.pop(model_name, None)
+            if instance:
+                ModelFactory._safe_destroy(instance)
 
     @staticmethod
-    def _safe_destroy(instance):
-        """安全销毁模型实例"""
+    def _safe_destroy(instance: CustomerLLM) -> None:
+        """Safely destroy the model instance if it is no longer referenced."""
         refcount = len(gc.get_referrers(instance))
-        if refcount <= 2:
+        if refcount <= 2:  # Safe to delete when there are no external references
             if isinstance(instance, CustomerLLM):
                 instance.destroy()
             del instance
             gc.collect()
 
     @staticmethod
-    def release():
-        """释放所有模型实例"""
-        for model_name in list(ModelFactory._instances.keys()):
-            ModelFactory.destroy(model_name)
+    def release() -> None:
+        """Release and destroy all cached model instances."""
+        with ModelFactory._lock:
+            for model_name in list(ModelFactory._instances.keys()):
+                ModelFactory.destroy(model_name)

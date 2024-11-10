@@ -53,45 +53,62 @@ class Text2Image(CustomerLLM):
     def model_name(self) -> str:
         return "text2image"
     
-    def invoke(
-        self, input: HumanMessage, config: Optional[RunnableConfig] = None, **kwargs: Any
-    ) -> AIMessage:
-        out = AIMessage(content="")
-        if input.content == "":
-            return out
+    
+    def invoke(self, input: HumanMessage, config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
+        """Generate an image from the input text."""
+        # Check if input is empty
+        if not input.content.strip():
+            return AIMessage(content="No prompt provided.")
         
-        image = self.model(prompt=input.content, num_inference_steps=1, guidance_scale=0.0).images[0]
-        out = self.handle_output(image)
+        # Generate image from the provided prompt
+        image = self._generate_image(input.content)
+        
+        # Handle and format the image for output
+        return self.handle_output(image)
 
-        return out
-    
-    def handle_output(self,image) -> AIMessage:
-        if self.save_image:
-            file = f'{date.today().strftime("%Y_%m_%d")}/{int(time.time())}'  # noqa: E501
-            output_file = Path(f"{self.file_path}/{file}.png")
-            output_file.parent.mkdir(parents=True, exist_ok=True)
+    def _generate_image(self, prompt: str) -> Any:
+        """Generate an image based on the given prompt."""
+        # Adjust the number of inference steps based on desired quality
+        image = self.model(prompt=prompt, num_inference_steps=self.n_steps, guidance_scale=7.5).images[0]
+        return image
 
-            image.save(output_file)
-            image_source = f"file/{output_file}"
-        else:
-            # resize image to avoid huge logs
-            image.thumbnail((512, 512 * image.height / image.width))
-            buffered = io.BytesIO()
-            image.save(buffered, format="JPEG")
-            buffered.seek(0)
-            image_bytes = buffered.getvalue()
-            image_base64 = (
-                "data:image/jpeg;base64," + base64.b64encode(image_bytes).decode()
-            )
-            image_source = image_base64
-
+    def handle_output(self, image: Any) -> AIMessage:
+        """Handle the image output (save or return base64)."""
+        image_source = self._save_or_resize_image(image)
+        
+        # Format the result as HTML with embedded image and prompt
         formatted_result = f'<img src="{image_source}" {style}>\n'
-        result = AIMessage(content=[{"type":"text","text":formatted_result},
-                                    {"type":ImageType.PIL_IMAGE,ImageType.PIL_IMAGE:image}])
+        result = AIMessage(content=[{"type": "text", "text": formatted_result},
+                                    {"type": ImageType.PIL_IMAGE, ImageType.PIL_IMAGE: image}])
         return result
-    
+
+    def _save_or_resize_image(self, image: Any) -> str:
+        """Save the image to disk or convert it to base64, depending on settings."""
+        if self.save_image:
+            return self._save_image(image)
+        else:
+            return self._convert_image_to_base64(image)
+
+    def _save_image(self, image: Any) -> str:
+        """Save the generated image to the file system."""
+        file_name = f'{date.today().strftime("%Y_%m_%d")}/{int(time.time())}.png'
+        output_file = Path(self.file_path) / file_name
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Save the image to the file system
+        image.save(output_file)
+        return f"file/{output_file}"
+
+    def _convert_image_to_base64(self, image: Any) -> str:
+        """Convert the image to a base64-encoded string."""
+        image.thumbnail((512, 512 * image.height / image.width))
+        buffered = io.BytesIO()
+        image.save(buffered, format="JPEG")
+        buffered.seek(0)
+        image_bytes = buffered.getvalue()
+        return f"data:image/jpeg;base64,{base64.b64encode(image_bytes).decode()}"
+
     @property
     def _identifying_params(self) -> Mapping[str, Any]:
-        """Get the identifying parameters."""
+        """Return identifying parameters for the model."""
         return {"model_path": self.model_path}
-    

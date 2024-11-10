@@ -10,12 +10,12 @@ class TestSpeech2Text(unittest.TestCase):
         
         self.input = build_multi_modal_message("","tests/1730604079.wav",AudioType.FILE_PATH)
 
-    # def test_speach2text(self):
-    #     self.instance = Speech2Text()
-    #     output = self.instance.invoke(self.input)
-    #     self.assertIsNotNone(output)
-    #     self.assertIsNotNone(output.content)
-    #     print("test_speach2text:",output.content)
+    def test_speach2text(self):
+        self.instance = Speech2Text()
+        output = self.instance.invoke(self.input)
+        self.assertIsNotNone(output)
+        self.assertIsNotNone(output.content)
+        print("test_speach2text:",output.content)
     
     def test_speach2text_cpu(self):  
         self.instance = Speech2Text(device="cpu")
