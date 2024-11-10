@@ -48,6 +48,14 @@ class TestModelFactory(unittest.TestCase):
         ModelFactory.destroy("text2speech")
         self.assertEqual(len(ModelFactory._instances),0)
         
+        instance = ModelFactory.get_model("embedding")
+        resp = instance.embed_query("岁的思考的加快速度为空军党委科技")
+        self.assertIsNotNone(resp)
+        print(resp)
+        self.assertEqual(len(ModelFactory._instances),1)
+        ModelFactory.destroy("embedding")
+        self.assertEqual(len(ModelFactory._instances),0)
+        
         
 if __name__ == "__main__":
     unittest.main()
