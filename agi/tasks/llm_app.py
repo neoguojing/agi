@@ -19,7 +19,7 @@ from langchain_core.retrievers import (
     RetrieverOutput,
 )
 from langchain_core.output_parsers import StrOutputParser
-from agi.prompt import default_template,contextualize_q_template,doc_qa_template
+from agi.tasks.prompt import default_template,contextualize_q_template,doc_qa_template
 import json
 from datetime import datetime,timezone
 from langchain.globals import set_debug

@@ -7,7 +7,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from agi.tasks import tools,TaskFactory,TASK_IMAGE_GEN,TASK_SPEECH
 import uuid
 from langgraph.prebuilt import create_react_agent
-from agi.prompt import AgentPromptTemplate,english_traslate_template,agent_prompt
+from agi.tasks.prompt import AgentPromptTemplate,english_traslate_template,agent_prompt
 from langchain_core.runnables import  RunnableConfig
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain.globals import set_debug

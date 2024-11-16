@@ -29,7 +29,7 @@ import urllib.parse
 from langchain.retrievers.document_compressors import DocumentCompressorPipeline,EmbeddingsFilter,LLMListwiseRerank,LLMChainFilter
 from langchain_community.document_transformers import EmbeddingsRedundantFilter
 from agi.tasks.vectore_store import CollectionManager
-from agi.prompt import DEFAULT_SEARCH_PROMPT,rag_filter_template
+from agi.tasks.prompt import DEFAULT_SEARCH_PROMPT,rag_filter_template
 from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 from langchain_community.tools import DuckDuckGoSearchResults
 from langchain_community.document_loaders import AsyncChromiumLoader,AsyncHtmlLoader
@@ -62,18 +62,10 @@ class SimAlgoType(Enum):
     SST = "similarity_score_threshold"
 
 class KnowledgeManager:
-    def __init__(self, data_path,ollama_url="http://localhost:11434",model="qwen2.5:14b", tenant=None, database=None):
-        self.embedding =OllamaEmbeddings(
-            model="bge-m3:latest",
-            base_url=ollama_url,
-            # num_gpu=100
-        )
+    def __init__(self, data_path,llm,embedding, tenant=None, database=None):
+        self.embedding = embedding
 
-        self.llm =ChatOpenAI(
-            model=model,
-            openai_api_key="121212",
-            base_url=f"{ollama_url}/v1",
-        )
+        self.llm =llm
         
         self.search_chain = DEFAULT_SEARCH_PROMPT | self.llm | QuestionListOutputParser()
 
@@ -164,9 +156,12 @@ class KnowledgeManager:
 
         return compression_retriever
     
-    def get_retriever(self,collection_names,k: int,bm25: bool=False,filter_type=FilterType.LLM_FILTER,
+    def get_retriever(self,collection_names="all",k: int=3,bm25: bool=False,filter_type=FilterType.LLM_FILTER,
                       sim_algo:SimAlgoType = SimAlgoType.MMR):
-        
+        # TODO
+        if collection_names == "all":
+            collection_names = self.collection_manager.list_collections()
+            
         if isinstance(collection_names, str):
             collection_names = [collection_names]  # 如果是字符串，转为列表
             

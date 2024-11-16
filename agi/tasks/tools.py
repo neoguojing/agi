@@ -10,7 +10,7 @@ from dataclasses import dataclass,asdict
 import requests
 import json
 from agi.llms.model_factory import ModelFactory
-from agi.prompt import stock_code_prompt
+from agi.tasks.prompt import stock_code_prompt
 from agi.tasks.task_factory import TaskFactory,TASK_IMAGE_GEN,TASK_SPEECH
 
 os.environ['WOLFRAM_ALPHA_APPID'] = 'QTJAQT-UPJ2R3KP89'

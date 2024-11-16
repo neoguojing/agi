@@ -1,7 +1,6 @@
 from typing import Union
 import threading
 import gc
-from urllib.parse import urljoin
 from agi.llms.image2image import Image2Image
 from agi.llms.text2image import Text2Image
 from agi.llms.tts import TextToSpeech
@@ -14,15 +13,13 @@ from agi.config import (
     RAG_EMBEDDING_MODEL,
     OLLAMA_DEFAULT_MODE
 )
-from langchain_openai import ChatOpenAI
-from langchain_ollama import OllamaEmbeddings
 from collections import OrderedDict
 from langchain_core.runnables import Runnable
 
 class ModelFactory:
     _instances =  OrderedDict()
     _lock = threading.Lock()
-    max_models = 1
+    max_models = 2
     
     @staticmethod
     def get_model(model_type: str, model_name: str = "") -> CustomerLLM:
@@ -33,8 +30,8 @@ class ModelFactory:
                 if len(ModelFactory._instances) >= ModelFactory.max_models:
                     # 如果超出了最大运行模型数，移除最久未使用的模型
                     removed_model = ModelFactory._instances.popitem(last=False)
-                    if isinstance(removed_model,CustomerLLM):
-                        removed_model.destroy()
+                    if isinstance(removed_model[1],CustomerLLM):
+                        removed_model[1].destroy()
             else:
                 ModelFactory._instances[model_type].move_to_end(ModelFactory._instances[model_type])
                 
@@ -46,15 +43,7 @@ class ModelFactory:
         print(f"Loading the model: {model_type}...")
         model = None
         
-        if model_type == "ollama":
-            model_name = model_name or OLLAMA_DEFAULT_MODE
-            model = ChatOpenAI(
-                model=model_name,
-                openai_api_key=OPENAI_API_KEY,
-                base_url=urljoin(OLLAMA_API_BASE_URL, "/v1/")
-            )
-        
-        elif model_type == "text2image":
+        if model_type == "text2image":
             model = Text2Image()
         
         elif model_type == "image2image":
@@ -65,14 +54,7 @@ class ModelFactory:
         
         elif model_type == "text2speech":
             model = TextToSpeech()
-        
-        elif model_type == "embedding":
-            model_name = model_name or RAG_EMBEDDING_MODEL
-            model = OllamaEmbeddings(
-                model=model_name,
-                base_url=OLLAMA_API_BASE_URL,
-            )
-        
+                
         if not model:
             raise ValueError(f"Invalid model type: {model_type}")
 

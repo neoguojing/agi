@@ -3,90 +3,70 @@ from typing import Any
 import threading
 from agi.llms.model_factory import ModelFactory
 from langchain_core.runnables import Runnable
-TASK_AGENT = 100
-TASK_TRANSLATE = 200
-TASK_DATA_HANDLER = 300
-TASK_IMAGE_GEN = 400
-TASK_SPEECH = 500
-TASK_GENERAL = 600
-TASK_RETRIEVER = 700
+from urllib.parse import urljoin
+from agi.config import (
+    OLLAMA_API_BASE_URL,
+    OPENAI_API_KEY,
+    RAG_EMBEDDING_MODEL,
+    OLLAMA_DEFAULT_MODE,
+    CACHE_DIR
+)
+from langchain_openai import ChatOpenAI
+from langchain_ollama import OllamaEmbeddings
 
-class ImageGenTask():
-
-    def init_model(self):
-        model = ModelFactory.get_model("text2image")
-        model1 = ModelFactory.get_model("image2image")
-        return [model,model1]
-    
-    @function_stats
-    def run(self,input:Any,**kwargs):
-        if input is None:
-            return ""
-        image_path = kwargs.pop("image_path","")
-        image_obj = kwargs.pop("image_obj",None)
-        if image_path != "" or image_obj is not None:
-            output = self.excurtor[1]._call(input.content,image_path=image_path,image_obj=image_obj)
-        else:
-            output = self.excurtor[0]._call(input.content,**kwargs)
-        
-        return output
-
-class Speech():
-    def init_model(self):
-        # model = ModelFactory.get_model("speech")
-        # return [model]
-        model = ModelFactory.get_model("speech2text")
-        model1 = ModelFactory.get_model("text2speech")
-        return [model,model1]
-        
-    def run(self,input:Any,**kwargs):
-        if input is None:
-            return ""
-        
-        # output = self.excurtor[0]._call(input,**kwargs)
-        if isinstance(input,str):
-            output = self.excurtor[1]._call(input,**kwargs)
-        else:
-            output = self.excurtor[0]._call(input,**kwargs)
-        
-        return output
-    
-    async def arun(self,input:Any,**kwargs):
-        return self.run(input,**kwargs)
-    
-    def set_tone(self,path:str):
-        self.excurtor[1].set_tone(path)
-
-    
-
-class TranslateTask():
-    def init_model(self):
-        model = ModelFactory.get_model("translate")
-        return [model]
-
+TASK_AGENT = "agent"
+TASK_TRANSLATE = "translate"
+TASK_IMAGE_GEN = "image_gen"
+TASK_TTS = "tts"
+TASK_SPEECH_TEXT = "speech2text"
+TASK_GENERAL = "llm"
+TASK_RETRIEVER = "rag"
+TASK_RETRIEVER = "embedding"
     
 class TaskFactory:
     _instances = {}
     _lock = threading.Lock()  # 异步锁
-
+    _llm = ChatOpenAI(
+            model=OLLAMA_DEFAULT_MODE,
+            openai_api_key=OPENAI_API_KEY,
+            base_url=urljoin(OLLAMA_API_BASE_URL, "/v1/")
+        )
+    _embeddin = OllamaEmbeddings(
+            model=RAG_EMBEDDING_MODEL,
+            base_url=OLLAMA_API_BASE_URL,
+        )
     @staticmethod
-    def create_task(task_type) -> Runnable:
+    def create_task(task_type,**kwargs) -> Runnable:
         if task_type not in TaskFactory._instances:
             with TaskFactory._lock:
                 if task_type not in TaskFactory._instances:
                     try:
                         if task_type == TASK_AGENT:
-                            instance = Agent()
+                            # instance = Agent()
+                            pass
                         elif task_type == TASK_TRANSLATE:
-                            instance = TranslateTask()
+                            from agi.tasks.common import create_translate_chain
+                            instance = create_translate_chain(TaskFactory._llm)
                         elif task_type == TASK_IMAGE_GEN:
-                            instance = ImageGenTask()
-                        elif task_type == TASK_SPEECH:
-                            instance = Speech()
+                            collection_names
                         elif task_type == TASK_GENERAL:
-                            instance = General()
+                            model_name = kwargs.get("model_name") or OLLAMA_DEFAULT_MODE
+                            instance = ChatOpenAI(
+                                model=model_name,
+                                openai_api_key=OPENAI_API_KEY,
+                                base_url=urljoin(OLLAMA_API_BASE_URL, "/v1/")
+                            )
+                        elif task_type == "embedding":
+                            model_name = kwargs.get("model_name") or RAG_EMBEDDING_MODEL
+                            instance = OllamaEmbeddings(
+                                model=model_name,
+                                base_url=OLLAMA_API_BASE_URL,
+                            )
                         elif task_type == TASK_RETRIEVER:
-                            instance = Retriever()
+                            from agi.tasks.retriever import KnowledgeManager
+                            collection_names = kwargs.get("collection_names","all")
+                            km = KnowledgeManager(CACHE_DIR,TaskFactory._llm,TaskFactory._embeddin)
+                            instance = km.get_retriever(collection_names)
 
                         TaskFactory._instances[task_type] = instance
                     except Exception as e:
