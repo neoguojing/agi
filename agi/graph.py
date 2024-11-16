@@ -3,7 +3,6 @@ from PIL import Image as PILImage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph, START
 from langchain_core.output_parsers import StrOutputParser
-from IPython.display import Image, display
 from langgraph.checkpoint.memory import MemorySaver
 from agi.tasks import tools,TaskFactory,TASK_IMAGE_GEN,TASK_SPEECH
 import uuid

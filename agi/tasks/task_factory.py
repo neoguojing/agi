@@ -1,9 +1,8 @@
 import time
 from typing import Any
 import threading
-from agi.tasks.base import Task,function_stats
 from agi.llms.model_factory import ModelFactory
-
+from langchain_core.runnables import Runnable
 TASK_AGENT = 100
 TASK_TRANSLATE = 200
 TASK_DATA_HANDLER = 300
@@ -12,15 +11,7 @@ TASK_SPEECH = 500
 TASK_GENERAL = 600
 TASK_RETRIEVER = 700
 
-
-
-class General(Task):
-    def init_model(self):
-        model = ModelFactory.get_model("qwen")
-        return [model]   
-
-import pdb
-class ImageGenTask(Task):
+class ImageGenTask():
 
     def init_model(self):
         model = ModelFactory.get_model("text2image")
@@ -33,11 +24,6 @@ class ImageGenTask(Task):
             return ""
         image_path = kwargs.pop("image_path","")
         image_obj = kwargs.pop("image_obj",None)
-
-        # translate = ModelFactory.get_model("qwen")
-        # translate = ModelFactory.get_model("llama3")
-        # en_prompt = translate_prompt(input)
-        # input = translate.invoke(en_prompt)
         if image_path != "" or image_obj is not None:
             output = self.excurtor[1]._call(input.content,image_path=image_path,image_obj=image_obj)
         else:
@@ -45,7 +31,7 @@ class ImageGenTask(Task):
         
         return output
 
-class Speech(Task):
+class Speech():
     def init_model(self):
         # model = ModelFactory.get_model("speech")
         # return [model]
@@ -53,8 +39,6 @@ class Speech(Task):
         model1 = ModelFactory.get_model("text2speech")
         return [model,model1]
         
-    
-    @function_stats
     def run(self,input:Any,**kwargs):
         if input is None:
             return ""
@@ -75,7 +59,7 @@ class Speech(Task):
 
     
 
-class TranslateTask(Task):
+class TranslateTask():
     def init_model(self):
         model = ModelFactory.get_model("translate")
         return [model]
@@ -86,7 +70,7 @@ class TaskFactory:
     _lock = threading.Lock()  # 异步锁
 
     @staticmethod
-    def create_task(task_type) -> Task:
+    def create_task(task_type) -> Runnable:
         if task_type not in TaskFactory._instances:
             with TaskFactory._lock:
                 if task_type not in TaskFactory._instances:
@@ -110,24 +94,6 @@ class TaskFactory:
 
         return TaskFactory._instances[task_type]
 
-    @staticmethod
-    def release():
-        with TaskFactory._lock:
-            for k,task in TaskFactory._instances.items():
-                last_call_time = task.get_last_call_time
-                if last_call_time is None:
-                    continue
-
-                elapsed_time = time.time() - last_call_time
-                elapsed_minutes = int(elapsed_time / 60)
-                # print("elapsed_time:",elapsed_time)
-                if elapsed_minutes >= 10:
-                    model_names = task.bind_model_name()
-                    print("ready to release ",model_names)
-                    if model_names is not None:
-                        task.destroy()
-                        for name in model_names:
-                            ModelFactory.destroy(name)
 
 
         

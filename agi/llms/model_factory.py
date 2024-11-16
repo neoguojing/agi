@@ -1,4 +1,4 @@
-import os
+from typing import Union
 import threading
 import gc
 from urllib.parse import urljoin
@@ -16,22 +16,32 @@ from agi.config import (
 )
 from langchain_openai import ChatOpenAI
 from langchain_ollama import OllamaEmbeddings
-
+from collections import OrderedDict
+from langchain_core.runnables import Runnable
 
 class ModelFactory:
-    _instances = {}
+    _instances =  OrderedDict()
     _lock = threading.Lock()
-
+    max_models = 1
+    
     @staticmethod
     def get_model(model_type: str, model_name: str = "") -> CustomerLLM:
         """Retrieve and cache the model instance."""
         with ModelFactory._lock:
             if model_type not in ModelFactory._instances or ModelFactory._instances[model_type] is None:
                 ModelFactory._instances[model_type] = ModelFactory._load_model(model_type, model_name)
+                if len(ModelFactory._instances) >= ModelFactory.max_models:
+                    # 如果超出了最大运行模型数，移除最久未使用的模型
+                    removed_model = ModelFactory._instances.popitem(last=False)
+                    if isinstance(removed_model,CustomerLLM):
+                        removed_model.destroy()
+            else:
+                ModelFactory._instances[model_type].move_to_end(ModelFactory._instances[model_type])
+                
             return ModelFactory._instances[model_type]
 
     @staticmethod
-    def _load_model(model_type: str, model_name: str = "") -> CustomerLLM:
+    def _load_model(model_type: str, model_name: str = "") -> Union[CustomerLLM,Runnable]:
         """Load the model based on the model type."""
         print(f"Loading the model: {model_type}...")
         model = None
@@ -69,14 +79,6 @@ class ModelFactory:
         return model
 
     @staticmethod
-    def destroy(model_name: str) -> None:
-        """Destroy a specific model instance."""
-        with ModelFactory._lock:
-            instance = ModelFactory._instances.pop(model_name, None)
-            if instance:
-                ModelFactory._safe_destroy(instance)
-
-    @staticmethod
     def _safe_destroy(instance: CustomerLLM) -> None:
         """Safely destroy the model instance if it is no longer referenced."""
         refcount = len(gc.get_referrers(instance))
@@ -85,10 +87,3 @@ class ModelFactory:
                 instance.destroy()
             del instance
             gc.collect()
-
-    @staticmethod
-    def release() -> None:
-        """Release and destroy all cached model instances."""
-        with ModelFactory._lock:
-            for model_name in list(ModelFactory._instances.keys()):
-                ModelFactory.destroy(model_name)
