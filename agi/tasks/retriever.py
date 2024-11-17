@@ -40,6 +40,9 @@ from langchain_core.runnables import (
     RunnablePassthrough,
 )
 import time
+from agi.config import (
+    CACHE_DIR
+)
 
 import logging
 log = logging.getLogger(__name__)
@@ -61,6 +64,16 @@ class SimAlgoType(Enum):
     MMR = "mmr"
     SST = "similarity_score_threshold"
 
+def create_retriever(llm,embedding,**kwargs):
+    collection_names = kwargs.get("collection_names","all")
+    top_k = kwargs.get("top_k",3)
+    bm25 = kwargs.get("bm25",3)
+    filter_type = kwargs.get("filter_type",FilterType.LLM_FILTER)
+    sim_algo = kwargs.get("sim_algo",SimAlgoType.MMR)
+    km = KnowledgeManager(CACHE_DIR,llm,embedding)
+    
+    return km.get_retriever(collection_names,k=top_k,bm25=bm25,filter_type=filter_type,sim_algo=sim_algo)
+    
 class KnowledgeManager:
     def __init__(self, data_path,llm,embedding, tenant=None, database=None):
         self.embedding = embedding

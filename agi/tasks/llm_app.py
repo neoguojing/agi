@@ -25,7 +25,9 @@ from datetime import datetime,timezone
 from langchain.globals import set_debug
 from collections import defaultdict
 import validators
-
+from agi.config import (
+    LANGCHAIN_DB_PATH
+)
 
 def is_valid_url(url):
     return validators.url(url)
@@ -36,6 +38,51 @@ log.setLevel(logging.DEBUG)
 
 set_debug(False)
 
+def get_session_history(user_id: str, conversation_id: str):
+    return SQLChatMessageHistory(f"{user_id}--{conversation_id}", LANGCHAIN_DB_PATH)
+
+def create_llm_with_history(runnable):
+    return RunnableWithMessageHistory(
+        runnable,
+        get_session_history,
+        input_messages_key="input",
+        history_messages_key="chat_history",
+        history_factory_config=[
+            ConfigurableFieldSpec(
+                id="user_id",
+                annotation=str,
+                name="User ID",
+                description="Unique identifier for the user.",
+                default="",
+                is_shared=True,
+            ),
+            ConfigurableFieldSpec(
+                id="conversation_id",
+                annotation=str,
+                name="Conversation ID",
+                description="Unique identifier for the conversation.",
+                default="",
+                is_shared=True,
+            )
+        ],
+    )
+        
+def create_chat_with_history(llm):
+    runnable = default_template | llm 
+    return create_llm_with_history(runnable=runnable)
+
+def create_chat_with_rag(llm,retrievers):
+    history_aware_retriever = create_history_aware_retriever(
+        llm, retrievers, contextualize_q_template
+    )
+           
+    question_answer_chain = create_stuff_documents_chain(llm, doc_qa_template)
+
+    # runnable = question_answer_chain
+    runnable = create_retrieval_chain(history_aware_retriever, question_answer_chain)
+    return create_llm_with_history(runnable=runnable)
+
+    
 class LangchainApp:
     
     llm: BaseChatModel
@@ -44,34 +91,15 @@ class LangchainApp:
     db_path: str
     retrievers: EnsembleRetriever
 
-    def __init__(self,model="qwen2.5:14b",db_path="sqlite:///langchain.db",
-                 retrievers=None,base_url="http://localhost:11434/v1/"):
-
+    def __init__(self,llm,db_path="sqlite:///langchain.db",retrievers=None):
         self.db_path = db_path
-        self.model = model
-        self.llm =ChatOpenAI(
-            model=model,
-            # model="phi3.5:3.8b-mini-instruct-fp16",
-            # model="llama3.1-local",
-            openai_api_key="121212",
-            base_url=base_url,
-        )
+        self.llm =llm
         
-        # self.llm  = OllamaLLM(model=model,base_url="http://localhost:11434")
         self.retrievers = retrievers
         self.history_aware_retriever = None
         
         if retrievers is not None:
-            # retrieve_documents: RetrieverOutputLike = RunnableBranch(
-            #     (
-            #         # Both empty string and empty list evaluate to False
-            #         lambda x: not x.get("chat_history", False),
-            #         # If no chat history, then we just pass input to retriever
-            #         (lambda x: x["input"]) | retriever,
-            #     ),
-            #     # If chat history, then we pass inputs to LLM chain, then to retriever
-            #     prompt | llm | StrOutputParser() | retriever,
-            # ).with_config(run_name="chat_retriever_chain")
+            
             self.history_aware_retriever = create_history_aware_retriever(
                 self.llm, self.retrievers, contextualize_q_template
             )
@@ -83,9 +111,14 @@ class LangchainApp:
         else:
             self.runnable = default_template | self.llm 
 
-        self.with_message_history = RunnableWithMessageHistory(
-            self.runnable ,
-            self.get_session_history,
+        self.with_message_history = LangchainApp.create_llm_with_history(self.runnable)
+        
+    @staticmethod
+    def create_llm_with_history(runnable=None):
+        
+        return RunnableWithMessageHistory(
+            runnable,
+            get_session_history,
             input_messages_key="input",
             history_messages_key="chat_history",
             history_factory_config=[
@@ -107,7 +140,7 @@ class LangchainApp:
                 )
             ],
         )
-
+        
     def get_session_history(self,user_id: str, conversation_id: str):
         return SQLChatMessageHistory(f"{user_id}--{conversation_id}", self.db_path)
     

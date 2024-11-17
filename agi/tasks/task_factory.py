@@ -13,13 +13,21 @@ from agi.config import (
 )
 from langchain_openai import ChatOpenAI
 from langchain_ollama import OllamaEmbeddings
+from agi.tasks.llm_app import (
+    create_chat_with_history,
+    create_chat_with_rag
+)
+from agi.tasks.retriever import FilterType,SimAlgoType
+TASK_LLM = "llm"
+TASK_LLM_WITH_HISTORY = "llm_with_history"
+TASK_LLM_WITH_RAG = "llm_with_rag"
 
+TASK_EMBEDDING = "embedding"
 TASK_AGENT = "agent"
 TASK_TRANSLATE = "translate"
 TASK_IMAGE_GEN = "image_gen"
 TASK_TTS = "tts"
 TASK_SPEECH_TEXT = "speech2text"
-TASK_GENERAL = "llm"
 TASK_RETRIEVER = "rag"
 TASK_RETRIEVER = "embedding"
     
@@ -31,7 +39,7 @@ class TaskFactory:
             openai_api_key=OPENAI_API_KEY,
             base_url=urljoin(OLLAMA_API_BASE_URL, "/v1/")
         )
-    _embeddin = OllamaEmbeddings(
+    _embedding = OllamaEmbeddings(
             model=RAG_EMBEDDING_MODEL,
             base_url=OLLAMA_API_BASE_URL,
         )
@@ -41,32 +49,42 @@ class TaskFactory:
             with TaskFactory._lock:
                 if task_type not in TaskFactory._instances:
                     try:
-                        if task_type == TASK_AGENT:
-                            # instance = Agent()
-                            pass
-                        elif task_type == TASK_TRANSLATE:
-                            from agi.tasks.common import create_translate_chain
-                            instance = create_translate_chain(TaskFactory._llm)
-                        elif task_type == TASK_IMAGE_GEN:
-                            collection_names
-                        elif task_type == TASK_GENERAL:
+                        if task_type == TASK_LLM:
                             model_name = kwargs.get("model_name") or OLLAMA_DEFAULT_MODE
                             instance = ChatOpenAI(
                                 model=model_name,
                                 openai_api_key=OPENAI_API_KEY,
                                 base_url=urljoin(OLLAMA_API_BASE_URL, "/v1/")
                             )
-                        elif task_type == "embedding":
+                            
+                        elif task_type == TASK_EMBEDDING:
                             model_name = kwargs.get("model_name") or RAG_EMBEDDING_MODEL
                             instance = OllamaEmbeddings(
                                 model=model_name,
                                 base_url=OLLAMA_API_BASE_URL,
                             )
+                            
+                        elif task_type == TASK_LLM_WITH_HISTORY:
+                            return create_chat_with_history(TaskFactory._llm)
+                        
+                        elif task_type == TASK_LLM_WITH_RAG:
+                            from agi.tasks.retriever import create_retriever
+                            retreiver = create_retriever(TaskFactory._llm,TaskFactory._embedding,kwargs=kwargs)
+                            return create_chat_with_rag(TaskFactory._llm,retreiver)
+                        
+                        elif task_type == TASK_TRANSLATE:
+                            from agi.tasks.common import create_translate_chain
+                            instance = create_translate_chain(TaskFactory._llm)
+                        elif task_type == TASK_IMAGE_GEN:
+                            pass
+                        
                         elif task_type == TASK_RETRIEVER:
-                            from agi.tasks.retriever import KnowledgeManager
-                            collection_names = kwargs.get("collection_names","all")
-                            km = KnowledgeManager(CACHE_DIR,TaskFactory._llm,TaskFactory._embeddin)
-                            instance = km.get_retriever(collection_names)
+                            from agi.tasks.retriever import create_retriever
+                            instance = create_retriever(TaskFactory._llm,TaskFactory._embedding,kwargs=kwargs)
+                
+                        elif task_type == TASK_AGENT:
+                            # instance = Agent()
+                            pass
 
                         TaskFactory._instances[task_type] = instance
                     except Exception as e:

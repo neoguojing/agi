@@ -44,7 +44,7 @@ class Image(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @classmethod
-    def new(cls, input, type: ImageType):
+    def new(cls, input: Any, type: ImageType):
         """Creates an Image instance from local file or other formats."""
         pil_image = None
         if type == ImageType.URL or type == ImageType.FILE_PATH:

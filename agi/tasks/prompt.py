@@ -110,3 +110,19 @@ def stock_code_prompt(input_text):
     template = """Stock Symbol or Ticker Symbol of {input}"""
     prompt = PromptTemplate.from_template(template)
     return prompt.format(input=input_text)
+
+image_input_template = ChatPromptTemplate.from_messages(
+    [
+        ("system", "You are a weather description assistant."),
+        ("user", [
+            {
+                "type": "text",
+                "text": "describe the weather in this image"
+            },
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{image_data}"},
+            }
+        ]),
+    ]
+)

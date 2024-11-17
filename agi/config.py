@@ -11,6 +11,8 @@ MODEL_PATH = os.environ.get(
 
 CACHE_DIR = os.environ.get("CACHE_DIR","./cache")
 
+LANGCHAIN_DB_PATH = os.environ.get("LANGCHAIN_DB_PATH",f"sqlite:///{CACHE_DIR}langchain.db")
+
 OLLAMA_API_BASE_URL = os.environ.get(
     "OLLAMA_API_BASE_URL", "http://localhost:11434"
 )
