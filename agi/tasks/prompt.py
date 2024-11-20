@@ -1,5 +1,6 @@
-from langchain.prompts import MessagesPlaceholder,ChatPromptTemplate,PromptTemplate,MessageLikeRepresentation
-from langchain_core.messages import HumanMessage, BaseMessage,SystemMessage,AIMessage,BasePromptTemplate
+from langchain.prompts import MessagesPlaceholder,ChatPromptTemplate,PromptTemplate,BaseChatPromptTemplate
+from langchain.prompts.chat import MessageLikeRepresentation,BaseMessagePromptTemplate
+from langchain_core.messages import HumanMessage, BaseMessage,SystemMessage,AIMessage
 from langchain.output_parsers.boolean import BooleanOutputParser
 from langchain_core.prompt_values import ChatPromptValue, ImageURL, PromptValue
 from langchain_core.prompts.string import (
@@ -11,7 +12,8 @@ from typing import (
     Any,
     List,
     Union,
-    Sequence
+    Sequence,
+    cast
 )
 
 english_traslate_template = ChatPromptTemplate.from_messages(
@@ -124,7 +126,10 @@ def stock_code_prompt(input_text):
 
 
 class MultiModalPromptTemplate(ChatPromptTemplate):
-
+    prompt: Union[
+        StringPromptTemplate, list[Union[StringPromptTemplate, ImagePromptTemplate]]
+    ]
+    
     # 来自于ChatPromptTemplate TODO
     def __init__(
         self,
@@ -232,7 +237,7 @@ class MultiModalPromptTemplate(ChatPromptTemplate):
                 raise ValueError(msg)
         return result
     
-    def format(self, **kwargs: Any) -> ChatPromptValue:
+    def _format(self, **kwargs: Any) -> ChatPromptValue:
         content: List[dict] = kwargs.get("content", [])
         messages = []  # 初始化为 ChatPromptValue 类型
 
@@ -277,8 +282,30 @@ class MultiModalPromptTemplate(ChatPromptTemplate):
         # 返回合并后的消息，确保是 ChatPromptValue 类型
         return messages
     
+    def _format(self, **kwargs: Any) -> BaseMessage:
+        """Format the prompt template.
 
-    def _create_template_from_message_type(
+        Args:
+            **kwargs: Keyword arguments to use for formatting.
+
+        Returns:
+            Formatted message.
+        """
+              
+        content: list = []
+        for prompt in self.prompt:
+            inputs = {var: kwargs[var] for var in prompt.input_variables}
+            if isinstance(prompt, StringPromptTemplate):
+                formatted: Union[str, ImageURL] = prompt.format(**inputs)
+                content.append({"type": "text", "text": formatted})
+            if isinstance(prompt, StringPromptTemplate):
+                formatted: Union[str, ImageURL] = prompt.format(**inputs)
+                content.append({"media_type": "text", "media_data": formatted})
+        return HumanMessage(
+            content=content, additional_kwargs=self.additional_kwargs
+        )
+            
+    def _create_template_from_message_type(self,
         message_type: str,
         template: Union[str, list],
         template_format: PromptTemplateFormat = "f-string",
@@ -300,48 +327,25 @@ class MultiModalPromptTemplate(ChatPromptTemplate):
             message: BaseMessagePromptTemplate = HumanMessagePromptTemplate.from_template(
                 template, template_format=template_format
             )
-        elif message_type in ("ai", "assistant"):
-            message = AIMessagePromptTemplate.from_template(
-                cast(str, template), template_format=template_format
-            )
-        elif message_type == "system":
-            message = SystemMessagePromptTemplate.from_template(
-                cast(str, template), template_format=template_format
-            )
-        elif message_type == "placeholder":
-            if isinstance(template, str):
-                if template[0] != "{" or template[-1] != "}":
-                    msg = (
-                        f"Invalid placeholder template: {template}."
-                        " Expected a variable name surrounded by curly braces."
-                    )
-                    raise ValueError(msg)
-                var_name = template[1:-1]
-                message = MessagesPlaceholder(variable_name=var_name, optional=True)
-            elif len(template) == 2 and isinstance(template[1], bool):
-                var_name_wrapped, is_optional = template
-                if not isinstance(var_name_wrapped, str):
-                    msg = (
-                        "Expected variable name to be a string." f" Got: {var_name_wrapped}"
-                    )
-                    raise ValueError(msg)
-                if var_name_wrapped[0] != "{" or var_name_wrapped[-1] != "}":
-                    msg = (
-                        f"Invalid placeholder template: {var_name_wrapped}."
-                        " Expected a variable name surrounded by curly braces."
-                    )
-                    raise ValueError(msg)
-                var_name = var_name_wrapped[1:-1]
-
-                message = MessagesPlaceholder(variable_name=var_name, optional=is_optional)
-            else:
-                msg = (
-                    "Unexpected arguments for placeholder message type."
-                    " Expected either a single string variable name"
-                    " or a list of [variable_name: str, is_optional: bool]."
-                    f" Got: {template}"
-                )
-                raise ValueError(msg)
+            for tmpl in template:
+                if isinstance(tmpl, dict) :
+                    if "text" in tmpl:
+                        text = tmpl["text"]
+                        prompt = PromptTemplate.from_template(
+                            text, template_format=template_format
+                        )
+                    if "media_type" in tmpl:
+                        media_type = tmpl["media_type"]
+                        prompt = PromptTemplate.from_template(
+                            media_type, template_format=template_format
+                        )
+                    if "media_data" in tmpl:
+                        media_data = tmpl["media_data"]
+                        prompt = PromptTemplate.from_template(
+                            media_data, template_format=template_format
+                        )
+                    self.prompt.append(prompt)
+            
         else:
             msg = (
                 f"Unexpected message type: {message_type}. Use one of 'human',"
@@ -351,6 +355,7 @@ class MultiModalPromptTemplate(ChatPromptTemplate):
         return message
 
     def _convert_to_message(
+        self,
         message: MessageLikeRepresentation,
         template_format: PromptTemplateFormat = "f-string",
     ) -> Union[BaseMessage, BaseMessagePromptTemplate, BaseChatPromptTemplate]:
@@ -375,23 +380,13 @@ class MultiModalPromptTemplate(ChatPromptTemplate):
             ValueError: If unexpected message type.
             ValueError: If 2-tuple does not have 2 elements.
         """
-        if isinstance(message, (BaseMessagePromptTemplate, BaseChatPromptTemplate)):
-            _message: Union[
-                BaseMessage, BaseMessagePromptTemplate, BaseChatPromptTemplate
-            ] = message
-        elif isinstance(message, BaseMessage):
-            _message = message
-        elif isinstance(message, str):
-            _message = _create_template_from_message_type(
-                "human", message, template_format=template_format
-            )
-        elif isinstance(message, tuple):
+        if isinstance(message, tuple):
             if len(message) != 2:
                 msg = f"Expected 2-tuple of (role, template), got {message}"
                 raise ValueError(msg)
             message_type_str, template = message
             if isinstance(message_type_str, str):
-                _message = _create_template_from_message_type(
+                _message = self._create_template_from_message_type(
                     message_type_str, template, template_format=template_format
                 )
             else:
@@ -414,11 +409,10 @@ multimodal_input_template = MultiModalPromptTemplate.from_messages(
                     "text": "{text}"
                 },
                 {
-                    "type": "{media_type}",
-                    "{media_type}": "{media_data}",
+                    "media_type": "{media_type}",
+                    "media_data": "{media_data}",
                 }
             ]
         )
-    ],
-    partial_variables={"text": None,"media_type":None,"media_data":None} 
+    ]
 )

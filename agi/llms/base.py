@@ -40,8 +40,8 @@ class Image(BaseModel):
     filetype: Optional[str] = None  # File type (e.g., 'image/jpeg', 'image/png')
     size: Optional[int] = None  # File size (in bytes)
     file_path: Optional[str] = None  # File path on disk
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    media_type: Optional[ImageType] = None
+    model_config = ConfigDict(arbitrary_types_allowed=True) 
 
     @classmethod
     def new(cls, input: Any, type: ImageType):
@@ -67,6 +67,7 @@ class Image(BaseModel):
         instance.filename = filename
         instance.filetype = filetype
         instance.size = size
+        instance.media_type = type
         return instance
 
     def save_image(self, output_path: str):
@@ -91,7 +92,7 @@ class Audio(BaseModel):
     filename: Optional[str] = None  # File name
     filetype: Optional[str] = None  # File type (e.g., 'audio/mpeg', 'audio/wav')
     size: Optional[int] = None  # File size (in bytes)
-
+    media_type: Optional[AudioType] = None
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @classmethod
@@ -104,7 +105,7 @@ class Audio(BaseModel):
             filetype = filename.split('.')[-1]  # Extract file extension
             size = len(binary_data)
 
-        return cls(samples=samples, file_path=audio_path, filename=filename, filetype=filetype, size=size)
+        return cls(samples=samples, file_path=audio_path, filename=filename, filetype=filetype, size=size,media_type = AudioType.BYTE_IO)
 
     @classmethod
     def from_url(cls, url: HttpUrl):
@@ -116,7 +117,7 @@ class Audio(BaseModel):
             filename = os.path.basename(url)
             filetype = filename.split('.')[-1]  # Extract file extension
             size = len(binary_data)
-            return cls(url=url, samples=samples, filename=filename, filetype=filetype, size=size)
+            return cls(url=url, samples=samples, filename=filename, filetype=filetype, size=size,media_type = AudioType.BYTE_IO)
         else:
             raise Exception(f"Failed to download audio: {response.status_code}")
 
