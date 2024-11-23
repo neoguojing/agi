@@ -8,7 +8,7 @@ from diffusers import AutoPipelineForImage2Image
 import torch
 from typing import Any, List, Mapping, Optional, Union
 from pydantic import Field
-from agi.llms.base import CustomerLLM, Image, ImageType
+from agi.llms.base import CustomerLLM, Image, ImageType,convert_to_pil_image
 from agi.config import MODEL_PATH as model_root, CACHE_DIR
 from langchain_core.runnables import RunnableConfig
 from langchain_core.messages import AIMessage, HumanMessage
@@ -71,9 +71,11 @@ class Image2Image(CustomerLLM):
         if isinstance(content, list):
             for item in content:
                 media_type = item.get("type")
-                if isinstance(media_type, ImageType):
+                if media_type == "media":
                     # Create Image instance based on media type
-                    input_image = Image.new(item.get(media_type), media_type).pil_image
+                    media = item.get("media")
+                    if media is not None:
+                        input_image = convert_to_pil_image()
                 elif media_type == "text":
                     prompt = item.get("text")
 
@@ -108,7 +110,7 @@ class Image2Image(CustomerLLM):
         # Return AIMessage containing formatted image response and the image itself
         return AIMessage(content=[
             {"type": "text", "text": formatted_result},
-            {"type": ImageType.PIL_IMAGE, ImageType.PIL_IMAGE: image}
+            {"type": "media", "media": image}
         ])
     
     @property

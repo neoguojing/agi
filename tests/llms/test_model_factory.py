@@ -23,7 +23,7 @@ class TestModelFactory(unittest.TestCase):
         self.assertEqual(len(ModelFactory._instances),0)
         
         instance = ModelFactory.get_model("image2image")
-        input = build_multi_modal_message("as a cat woman","tests/cat.jpg",ImageType.FILE_PATH) 
+        input = build_multi_modal_message("as a cat woman","tests/cat.jpg") 
         resp = instance.invoke(input)
         self.assertIsNotNone(resp.content)
         self.assertEqual(len(ModelFactory._instances),1)
@@ -31,7 +31,7 @@ class TestModelFactory(unittest.TestCase):
         self.assertEqual(len(ModelFactory._instances),0)
         
         instance = ModelFactory.get_model("speech2text")
-        input = self.input = build_multi_modal_message("","tests/1730604079.wav",AudioType.FILE_PATH)
+        input = self.input = build_multi_modal_message("","tests/1730604079.wav")
         resp = instance.invoke(input)
         self.assertIsNotNone(resp.content)
         print(resp.content)

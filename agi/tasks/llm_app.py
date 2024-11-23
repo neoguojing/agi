@@ -106,8 +106,8 @@ class LangchainApp:
            
             question_answer_chain = create_stuff_documents_chain(self.llm, doc_qa_template)
 
-            self.runnable = question_answer_chain
-            # self.runnable = create_retrieval_chain(self.history_aware_retriever, question_answer_chain)
+            # self.runnable = question_answer_chain
+            self.runnable = create_retrieval_chain(self.history_aware_retriever, question_answer_chain)
         else:
             self.runnable = default_template | self.llm 
 

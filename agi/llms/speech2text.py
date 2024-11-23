@@ -5,7 +5,7 @@ from agi.config import (
     WHISPER_MODEL
 )
 from typing import Any, List, Mapping, Optional,Union
-from agi.llms.base import CustomerLLM,AudioType,Audio
+from agi.llms.base import CustomerLLM,AudioType,Audio,convert_audio_to_byteio
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
 from langchain_core.messages import AIMessage, HumanMessage
@@ -49,17 +49,10 @@ class Speech2Text(CustomerLLM):
         if isinstance(input.content, list):
             for item in input.content:
                 media_type = item.get("type")
-                if isinstance(media_type, AudioType):
-                    data = item.get(media_type)
-                    if media_type == AudioType.URL:
-                        audio_input = Audio.from_url(data).samples
-                    elif media_type == AudioType.FILE_PATH:
-                        audio_input = Audio.from_local(data).samples
-                    elif media_type == AudioType.NUMPY:
-                        # Handle Numpy audio input (TODO)
-                        return None
-                    elif media_type == AudioType.BYTE_IO:
-                        audio_input = data
+                if media_type == "media":
+                    media = item.get("media")
+                    if media is not None:
+                        audio_input = convert_audio_to_byteio(media)
         return audio_input
 
     def _transcribe_audio(self, audio_input) -> str:

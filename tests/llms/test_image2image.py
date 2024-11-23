@@ -16,7 +16,7 @@ class TestImage2Image(unittest.TestCase):
         self.assertIsNotNone(self.img, "Failed to load image.")
 
         # Prepare the multi-modal message with text and image
-        self.input_message = build_multi_modal_message("as a tiger", self.image_path, ImageType.FILE_PATH)
+        self.input_message = build_multi_modal_message("as a tiger", self.image_path)
 
     def test_image2image_invoke(self):
         """Test the invocation of the Image2Image model."""

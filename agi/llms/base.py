@@ -14,6 +14,8 @@ import numpy as np
 from diffusers.utils import load_image
 from enum import Enum
 import os
+import re
+from scipy.io.wavfile import write
 
 # Enum for Image Types
 class ImageType(Enum):
@@ -76,11 +78,54 @@ class Image(BaseModel):
             self.pil_image.save(output_path)
 
 
+def is_url(input_data):
+    """判断是否是URL"""
+    url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
+    return isinstance(input_data, str) and bool(url_pattern.match(input_data))
+
+def is_file_path(input_data):
+    """判断是否是文件路径"""
+    return isinstance(input_data, str) and os.path.isfile(input_data)
+
+def is_base64(input_data):
+    """判断是否是Base64编码的字符串"""
+    if isinstance(input_data, str):
+        try:
+            # 尝试解码Base64字符串
+            base64.b64decode(input_data, validate=True)
+            return True
+        except (ValueError, TypeError):
+            return False
+    return False
+
+def is_pil_image(input_data):
+    """判断是否是PIL Image对象"""
+    return isinstance(input_data, PILImage.Image)
+
+def convert_to_pil_image(input_data) -> PILImage.Image:
+    """根据输入数据判断图片类型"""
+    if is_pil_image(input_data):
+        return input_data
+    elif is_url(input_data):
+        img = Image.new(input_data,ImageType.URL)
+        return img.pil_image
+    elif is_file_path(input_data):
+        img = Image.new(input_data,ImageType.FILE_PATH)
+        return img.pil_image
+    elif is_base64(input_data):
+        img = Image.new(input_data,ImageType.BASE64)
+        return img.pil_image
+    else:
+        return None
+
+
+
+    
 # Function to build a multi-modal message
-def build_multi_modal_message(text_input: str, media_data, msg_type: MultiModalMessageType) -> HumanMessage:
+def build_multi_modal_message(text_input: str, media_data: any) -> HumanMessage:
     return HumanMessage(content=[
         {"type": "text", "text": text_input},
-        {"type": msg_type, msg_type: media_data},
+        {"type": "media", "media": media_data},
     ])
 
 
@@ -121,10 +166,52 @@ class Audio(BaseModel):
         else:
             raise Exception(f"Failed to download audio: {response.status_code}")
 
+    @classmethod
+    def from_numpy(cls, numpy_audio_data: np.ndarray,sample_rate: int):
+        try:
+            # 创建一个 BytesIO 流
+            byte_io = BytesIO()
+
+            # 将 NumPy 数组保存为 WAV 格式，写入到 BytesIO 对象中
+            write(byte_io, sample_rate, numpy_audio_data)
+
+            # 将指针移动到流的开头，以便后续读取
+            byte_io.seek(0)
+
+            return cls(samples=byte_io, media_type = AudioType.NUMPY)
+        except Exception as e:
+            print(f"转换过程发生错误：{e}")
+            return None
+
+    
     def to_binary(self) -> bytes:
         """Convert the audio sample data to binary format."""
         return self.samples.getvalue()  # Get binary data from BytesIO
 
+def is_numpy_array(input_data):
+    """判断是否是NumPy数组"""
+    return isinstance(input_data, np.ndarray)
+
+def is_bytesio(input_data):
+    """判断是否是BytesIO对象"""
+    return isinstance(input_data, BytesIO)
+
+def convert_audio_to_byteio(input_data,sample_rate=None) -> BytesIO:
+    """根据输入数据判断音频类型"""
+    if is_url(input_data):
+        audio = Audio.from_url(input_data)
+        return audio.samples
+    elif is_file_path(input_data):
+        audio = Audio.from_local(input_data)
+        return audio.samples
+    elif is_numpy_array(input_data):
+        audio = Audio.from_numpy(input_data)
+        return audio.samples
+    elif is_bytesio(input_data):
+        return input_data
+    else:
+        return None
+    
 
 # Custom LLM class for integration with runnable modules
 class CustomerLLM(RunnableSerializable[HumanMessage, AIMessage]):

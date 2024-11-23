@@ -56,14 +56,14 @@ class TextToSpeech(CustomerLLM):
             file_path = self.save_audio_to_file(text=input.content)
             return AIMessage(content=[
                 {"type": "text", "text": input.content},
-                {"type": AudioType.FILE_PATH, AudioType.FILE_PATH: file_path}
+                {"type": "media", "media": file_path}
             ])
         
         # Generate audio samples and return as ByteIO
         samples = self.generate_audio_samples(input.content)
         return AIMessage(content=[
             {"type": "text", "text": input.content},
-            {"type": AudioType.BYTE_IO, AudioType.BYTE_IO: samples}
+            {"type": "media", "media": samples}
         ])
 
     def generate_audio_samples(self, text: str) -> Any:
