@@ -75,7 +75,7 @@ class Image2Image(CustomerLLM):
                     # Create Image instance based on media type
                     media = item.get("media")
                     if media is not None:
-                        input_image = convert_to_pil_image()
+                        input_image = convert_to_pil_image(media)
                 elif media_type == "text":
                     prompt = item.get("text")
 

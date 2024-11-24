@@ -7,7 +7,7 @@ from TTS.api import TTS
 from agi.config import MODEL_PATH as model_root, CACHE_DIR, TTS_SPEAKER_WAV
 from agi.llms.base import CustomerLLM, Audio,AudioType
 from langchain_core.runnables import RunnableConfig
-from typing import Any, Optional
+from typing import Any, Optional,Union
 from pydantic import BaseModel, Field
 import logging
 from langchain_core.messages import AIMessage, HumanMessage
@@ -47,20 +47,26 @@ class TextToSpeech(CustomerLLM):
         """Return a list of available TTS models."""
         return self.tts.list_models()
     
-    def invoke(self, input: HumanMessage, config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
+    def invoke(self, input: Union[HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
         """Generate speech audio from input text."""
-        if not input.content.strip():
-            return AIMessage(content="No input text provided.")
-        
+        input_str = None
+        if isinstance(input,str):
+            input_str = input
+        else:
+            if not input.content.strip():
+                return AIMessage(content="No input text provided.")
+            else:
+                input_str = input.content
+            
         if self.save_file:
-            file_path = self.save_audio_to_file(text=input.content)
+            file_path = self.save_audio_to_file(text=input_str)
             return AIMessage(content=[
                 {"type": "text", "text": input.content},
                 {"type": "media", "media": file_path}
             ])
         
         # Generate audio samples and return as ByteIO
-        samples = self.generate_audio_samples(input.content)
+        samples = self.generate_audio_samples(input_str)
         return AIMessage(content=[
             {"type": "text", "text": input.content},
             {"type": "media", "media": samples}

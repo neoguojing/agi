@@ -28,6 +28,7 @@ import validators
 from agi.config import (
     LANGCHAIN_DB_PATH
 )
+from agi.tasks.retriever import create_retriever
 
 def is_valid_url(url):
     return validators.url(url)
@@ -71,7 +72,8 @@ def create_chat_with_history(llm):
     runnable = default_template | llm 
     return create_llm_with_history(runnable=runnable)
 
-def create_chat_with_rag(llm,retrievers):
+def create_chat_with_rag(llm,embedding,**kwargs):
+    retrievers = create_retriever(llm,embedding,kwargs)
     history_aware_retriever = create_history_aware_retriever(
         llm, retrievers, contextualize_q_template
     )

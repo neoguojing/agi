@@ -38,7 +38,7 @@ hay: Haya — 指的是坦桑尼亚的一种语言，由Haya人使用，属于�
         for item in output.content:
             context_type = item.get("type") 
             if context_type != "text":
-                self.assertIsNotNone(context_type,AudioType.FILE_PATH)
+                self.assertIsNotNone(context_type,"media")
 
     def test_text2speech_cpu(self):
         output = self.instance.invoke(self.input)
@@ -48,7 +48,7 @@ hay: Haya — 指的是坦桑尼亚的一种语言，由Haya人使用，属于�
         for item in output.content:
             context_type = item.get("type") 
             if context_type != "text":
-                self.assertIsNotNone(context_type,AudioType.FILE_PATH)
+                self.assertIsNotNone(context_type,"media")
         
 if __name__ == "__main__":
     unittest.main()

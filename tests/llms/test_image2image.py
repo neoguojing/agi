@@ -33,8 +33,8 @@ class TestImage2Image(unittest.TestCase):
             context_type = item.get("type")
             if context_type == "text":
                 self.assertIsInstance(item.get("text"), str, "Text content should be a string.")
-            elif context_type == ImageType.PIL_IMAGE:
-                self.assertIsInstance(item.get(ImageType.PIL_IMAGE), PIL_Image.Image, "PIL image content should be an instance of Image.")
+            elif context_type == "media":
+                self.assertIsInstance(item.get("media"), PIL_Image.Image, "PIL image content should be an instance of Image.")
             else:
                 self.fail(f"Unexpected content type: {context_type}")
 

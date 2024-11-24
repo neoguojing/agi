@@ -17,6 +17,13 @@ from agi.tasks.llm_app import (
     create_chat_with_history,
     create_chat_with_rag
 )
+from agi.tasks.common import (
+    create_image_gen_chain,
+    create_text2image_chain,
+    create_translate_chain,
+    create_text2speech_chain,
+    create_speech2text_chain
+)
 from agi.tasks.retriever import FilterType,SimAlgoType
 TASK_LLM = "llm"
 TASK_LLM_WITH_HISTORY = "llm_with_history"
@@ -63,21 +70,18 @@ class TaskFactory:
                                 model=model_name,
                                 base_url=OLLAMA_API_BASE_URL,
                             )
-                            
                         elif task_type == TASK_LLM_WITH_HISTORY:
                             return create_chat_with_history(TaskFactory._llm)
-                        
                         elif task_type == TASK_LLM_WITH_RAG:
-                            from agi.tasks.retriever import create_retriever
-                            retreiver = create_retriever(TaskFactory._llm,TaskFactory._embedding,kwargs=kwargs)
-                            return create_chat_with_rag(TaskFactory._llm,retreiver)
-                        
+                            return create_chat_with_rag(TaskFactory._llm,TaskFactory._embedding,kwargs)
                         elif task_type == TASK_TRANSLATE:
-                            from agi.tasks.common import create_translate_chain
                             instance = create_translate_chain(TaskFactory._llm)
                         elif task_type == TASK_IMAGE_GEN:
-                            pass
-                        
+                            instance = create_image_gen_chain(TaskFactory._llm)
+                        elif task_type == TASK_TTS:
+                            instance = create_text2speech_chain()
+                        elif task_type == TASK_SPEECH_TEXT:
+                            instance = create_speech2text_chain()
                         elif task_type == TASK_RETRIEVER:
                             from agi.tasks.retriever import create_retriever
                             instance = create_retriever(TaskFactory._llm,TaskFactory._embedding,kwargs=kwargs)

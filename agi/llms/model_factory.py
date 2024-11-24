@@ -27,7 +27,7 @@ class ModelFactory:
         with ModelFactory._lock:
             if model_type not in ModelFactory._instances or ModelFactory._instances[model_type] is None:
                 ModelFactory._instances[model_type] = ModelFactory._load_model(model_type, model_name)
-                if len(ModelFactory._instances) >= ModelFactory.max_models:
+                if len(ModelFactory._instances) > ModelFactory.max_models:
                     # 如果超出了最大运行模型数，移除最久未使用的模型
                     removed_model = ModelFactory._instances.popitem(last=False)
                     if isinstance(removed_model[1],CustomerLLM):
