@@ -24,8 +24,6 @@ def parse_input(input: str):
     except json.JSONDecodeError:
         return input
 
-input_parse_runnable = RunnableBranch()
-        
 def create_translate_chain(llm):
     return english_traslate_template | llm | StrOutputParser()
 
