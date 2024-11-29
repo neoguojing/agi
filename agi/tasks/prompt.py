@@ -16,11 +16,9 @@ from typing import (
     cast
 )
 
-english_traslate_template = ChatPromptTemplate.from_messages(
-    [
-        HumanMessage(content="Translate the following into English and only return the translation result: {text}")
-    ]
-)
+english_traslate_template = ChatPromptTemplate.from_messages([
+        ("human", "Translate the following into English and only return the translation result: {text}"),
+    ])
 
 agent_prompt = ChatPromptTemplate.from_messages(
         [
@@ -402,6 +400,6 @@ def stock_code_prompt(input_text):
 #         return _message
 
 multimodal_input_template = PromptTemplate(
-    template='{"text":{text},"media":{media}}',
-    partial_variables={"text":None,"media":None}
+    template='{{"text":"{text}","media":{media}}}',
+    partial_variables={"text":None,"media":"null"}
 )

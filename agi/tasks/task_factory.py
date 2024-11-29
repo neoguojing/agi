@@ -25,6 +25,9 @@ from agi.tasks.common import (
     create_speech2text_chain
 )
 from agi.tasks.retriever import FilterType,SimAlgoType
+from langchain.globals import set_debug
+set_debug(True)
+
 TASK_LLM = "llm"
 TASK_LLM_WITH_HISTORY = "llm_with_history"
 TASK_LLM_WITH_RAG = "llm_with_rag"

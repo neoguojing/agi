@@ -8,6 +8,7 @@ from agi.llms.speech2text import Speech2Text
 from langchain_core.runnables import RunnablePassthrough,RunnableLambda,RunnableBranch
 import json
 from langchain_core.messages import HumanMessage
+from langchain_core.prompt_values import StringPromptValue
 
 def build_messages(input :dict):
     if input.get("media") is None:
@@ -17,12 +18,16 @@ def build_messages(input :dict):
         {"type": "media", "media": input.get("media")},
     ])
     
-def parse_input(input: str):
+def parse_input(input: StringPromptValue) -> dict:
     try:
-        data = json.loads(input)
+        
+        print(input.to_json())
+        data = json.loads(input.to_string())
+        print("**********",data)
         return data
-    except json.JSONDecodeError:
-        return input
+    except json.JSONDecodeError as e:
+        print(e,input.to_string())
+        return {}
 
 def create_translate_chain(llm):
     return english_traslate_template | llm | StrOutputParser()
