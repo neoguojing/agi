@@ -11,11 +11,21 @@ from langchain_core.messages import HumanMessage
 from langchain_core.prompt_values import StringPromptValue
 
 def build_messages(input :dict):
-    if input.get("media") is None:
+   
+    media = None
+    media_dict = input.get("media") 
+    if media_dict.get('data'):  # 首先检查 'data' 字段
+        media = media_dict['data']
+    elif media_dict.get('path'):  # 其次检查 'path' 字段
+        media =  media_dict['path']
+    elif media_dict.get('url'):  # 最后检查 'url' 字段
+        media =  media_dict['url'] 
+    else:
         return HumanMessage(content=input.get("text"))
+
     return HumanMessage(content=[
         {"type": "text", "text": input.get("text")},
-        {"type": "media", "media": input.get("media")},
+        {"type": "media", "media": media},
     ])
     
 def parse_input(input: StringPromptValue) -> dict:

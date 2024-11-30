@@ -86,7 +86,7 @@ class Text2Image(CustomerLLM):
         # Format the result as HTML with embedded image and prompt
         formatted_result = f'<img src="{image_source}" {style}>\n'
         result = AIMessage(content=[{"type": "text", "text": formatted_result},
-                                    {"type": ImageType.PIL_IMAGE, ImageType.PIL_IMAGE: image}])
+                                    {"type": "media", "media": image}])
         return result
 
     def _save_or_resize_image(self, image: Any) -> str:

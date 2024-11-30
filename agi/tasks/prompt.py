@@ -399,7 +399,10 @@ def stock_code_prompt(input_text):
 
 #         return _message
 
+# TODO media只能是字符串不能是对象
+# 使用字典对象,在传入渲染参数是将对象或者字符串包装在字典中
 multimodal_input_template = PromptTemplate(
-    template='{{"text":"{text}","media":{media}}}',
-    partial_variables={"text":None,"media":"null"}
+    template='{"media":{"url":"{{url}}","path":"{{path}}","data":{{data}}},"text":"{{text}}"}',
+    partial_variables={"text":None,"url":None,"path":None,"data":"null"},
+    template_format="mustache"
 )
