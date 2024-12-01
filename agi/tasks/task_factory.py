@@ -27,6 +27,8 @@ from agi.tasks.common import (
 )
 from agi.tasks.retriever import FilterType,SimAlgoType
 from langchain.globals import set_debug
+from agi.tasks.retriever import KnowledgeManager
+
 set_debug(True)
 
 TASK_LLM = "llm"
@@ -41,6 +43,7 @@ TASK_TTS = "tts"
 TASK_SPEECH_TEXT = "speech2text"
 TASK_RETRIEVER = "rag"
 TASK_RETRIEVER = "embedding"
+TASK_DOC_DB = "doc_db"
     
 class TaskFactory:
     _instances = {}
@@ -54,8 +57,10 @@ class TaskFactory:
             model=RAG_EMBEDDING_MODEL,
             base_url=OLLAMA_API_BASE_URL,
         )
+    
+    _knowledge_manager = KnowledgeManager(CACHE_DIR,_llm,_embedding)
     @staticmethod
-    def create_task(task_type,**kwargs) -> Union[Runnable,Embeddings]:
+    def create_task(task_type,**kwargs) -> Union[Runnable,Embeddings,KnowledgeManager]:
         if task_type not in TaskFactory._instances:
             with TaskFactory._lock:
                 if task_type not in TaskFactory._instances:
@@ -88,8 +93,9 @@ class TaskFactory:
                             instance = create_speech2text_chain()
                         elif task_type == TASK_RETRIEVER:
                             from agi.tasks.retriever import create_retriever
-                            instance = create_retriever(TaskFactory._llm,TaskFactory._embedding,kwargs=kwargs)
-                
+                            instance = create_retriever(TaskFactory._knowledge_manager,kwargs=kwargs)
+                        elif task_type == TASK_DOC_DB:
+                            instance = TaskFactory._knowledge_manager
                         elif task_type == TASK_AGENT:
                             # instance = Agent()
                             pass

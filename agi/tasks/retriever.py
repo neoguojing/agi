@@ -64,16 +64,7 @@ class SimAlgoType(Enum):
     MMR = "mmr"
     SST = "similarity_score_threshold"
 
-def create_retriever(llm,embedding,**kwargs):
-    collection_names = kwargs.get("collection_names","all")
-    top_k = kwargs.get("top_k",3)
-    bm25 = kwargs.get("bm25",3)
-    filter_type = kwargs.get("filter_type",FilterType.LLM_FILTER)
-    sim_algo = kwargs.get("sim_algo",SimAlgoType.MMR)
-    km = KnowledgeManager(CACHE_DIR,llm,embedding)
-    
-    return km.get_retriever(collection_names,k=top_k,bm25=bm25,filter_type=filter_type,sim_algo=sim_algo)
-    
+
 class KnowledgeManager:
     def __init__(self, data_path,llm,embedding, tenant=None, database=None):
         self.embedding = embedding
@@ -82,7 +73,7 @@ class KnowledgeManager:
         
         self.search_chain = DEFAULT_SEARCH_PROMPT | self.llm | QuestionListOutputParser()
 
-        self.collection_manager = CollectionManager(data_path)
+        self.collection_manager = CollectionManager(data_path,embedding)
 
     def store(self,collection_name: str, source: Union[str, List[str]], source_type: SourceType=SourceType.FILE, **kwargs):
         """
@@ -422,7 +413,7 @@ class KnowledgeManager:
         return docs
         
     def web_search(self,query,collection_name="web",region="cn-zh",time="d",max_results=2):
-        questions = self.search_chain.invoke({"input":query})
+        questions = self.search_chain.invoke({"text":query})
         print("questions:",questions)
         
         search = DuckDuckGoSearchAPIWrapper(region=region, time=time, max_results=max_results,source="news")
@@ -464,7 +455,6 @@ class KnowledgeManager:
                                                     "\u3001",  # Ideographic comma
                                                     "\uff0e",  # Fullwidth full stop
                                                     "\u3002",  # Ideographic full stop
-                                                    "",
                                                 ],
                                                 chunk_size=chunk_size, chunk_overlap=chunk_overlap,add_start_index=True)
         return text_splitter.split_documents(documents)
@@ -496,7 +486,13 @@ class SafeWebBaseLoader(WebBaseLoader):
                 # Log the error and continue with the next URL
                 log.error(f"Error loading {path}: {e}")
 
-
+def create_retriever(km: KnowledgeManager,**kwargs):
+    collection_names = kwargs.get("collection_names","all")
+    top_k = kwargs.get("top_k",3)
+    bm25 = kwargs.get("bm25",3)
+    filter_type = kwargs.get("filter_type",FilterType.LLM_FILTER)
+    sim_algo = kwargs.get("sim_algo",SimAlgoType.MMR)
+    return km.get_retriever(collection_names,k=top_k,bm25=bm25,filter_type=filter_type,sim_algo=sim_algo)
 
 # if __name__ == '__main__':
 #     knowledgeBase = KnowledgeManager(data_path="./test/")

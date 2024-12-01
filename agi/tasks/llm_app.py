@@ -39,6 +39,7 @@ log.setLevel(logging.DEBUG)
 
 set_debug(False)
 
+# TODO 历史数据压缩 数据实体抽取
 def get_session_history(user_id: str, conversation_id: str):
     return SQLChatMessageHistory(f"{user_id}--{conversation_id}", LANGCHAIN_DB_PATH)
 

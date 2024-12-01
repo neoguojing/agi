@@ -5,13 +5,13 @@ from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
 
 class CollectionManager:
-    def __init__(self, data_path, tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE, allow_reset=True, anonymized_telemetry=False):
+    def __init__(self, data_path, embedding,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE, allow_reset=True, anonymized_telemetry=False):
         self.client = chromadb.PersistentClient(
             path=data_path,
             settings=Settings(allow_reset=allow_reset, anonymized_telemetry=anonymized_telemetry),
             database=database
         )
-        self.embedding = OllamaEmbeddings(model="bge-m3:latest", base_url="http://localhost:11434")
+        self.embedding = embedding
 
     def get_or_create_collection(self, collection_name):
         """Get or create a collection by name."""
