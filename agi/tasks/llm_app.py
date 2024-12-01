@@ -46,7 +46,7 @@ def create_llm_with_history(runnable):
     return RunnableWithMessageHistory(
         runnable,
         get_session_history,
-        input_messages_key="input",
+        input_messages_key="text",
         history_messages_key="chat_history",
         history_factory_config=[
             ConfigurableFieldSpec(

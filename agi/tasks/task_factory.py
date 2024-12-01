@@ -1,7 +1,8 @@
 import time
-from typing import Any
+from typing import Any,Union
 import threading
 from agi.llms.model_factory import ModelFactory
+from langchain_core.embeddings import Embeddings
 from langchain_core.runnables import Runnable
 from urllib.parse import urljoin
 from agi.config import (
@@ -54,7 +55,7 @@ class TaskFactory:
             base_url=OLLAMA_API_BASE_URL,
         )
     @staticmethod
-    def create_task(task_type,**kwargs) -> Runnable:
+    def create_task(task_type,**kwargs) -> Union[Runnable,Embeddings]:
         if task_type not in TaskFactory._instances:
             with TaskFactory._lock:
                 if task_type not in TaskFactory._instances:

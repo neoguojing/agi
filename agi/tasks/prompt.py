@@ -45,7 +45,7 @@ default_template = ChatPromptTemplate.from_messages(
             system_prompt
         ),
         MessagesPlaceholder(variable_name="chat_history"),
-        ("human", "{input}")
+        ("human", "{text}")
     ]
 )
 
@@ -65,7 +65,7 @@ contextualize_q_template = ChatPromptTemplate.from_messages(
             contextualize_q_system_prompt
         ),
         MessagesPlaceholder("chat_history"),
-        ("human", "{input}")
+        ("human", "{text}")
     ]
 )
 
@@ -88,7 +88,7 @@ doc_qa_template = ChatPromptTemplate.from_messages(
             doc_qa_prompt
         ),
         MessagesPlaceholder("chat_history"),
-        ("human", "{input}")
+        ("human", "{text}")
     ]
 )
 
@@ -97,7 +97,7 @@ DEFAULT_SEARCH_PROMPT = PromptTemplate(
     template="""You are an assistant tasked with improving Google search \
 results. Generate THREE Google search queries that are similar to \
 this question. The output should be a numbered list of questions and each \
-should have a question mark at the end: {input}""",
+should have a question mark at the end: {text}""",
 )
 
 
@@ -118,7 +118,7 @@ rag_filter_template = PromptTemplate(
 
 
 def stock_code_prompt(input_text):
-    template = """Stock Symbol or Ticker Symbol of {input}"""
+    template = """Stock Symbol or Ticker Symbol of {text}"""
     prompt = PromptTemplate.from_template(template)
     return prompt.format(input=input_text)
 
@@ -399,8 +399,6 @@ def stock_code_prompt(input_text):
 
 #         return _message
 
-# TODO media只能是字符串不能是对象
-# 使用字典对象,在传入渲染参数是将对象或者字符串包装在字典中
 multimodal_input_template = PromptTemplate(
     template='{"media":{"url":"{{url}}","path":"{{path}}","data":{{data}}},"text":"{{text}}"}',
     partial_variables={"text":None,"url":None,"path":None,"data":"null"},
