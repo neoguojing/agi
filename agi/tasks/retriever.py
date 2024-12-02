@@ -75,6 +75,9 @@ class KnowledgeManager:
 
         self.collection_manager = CollectionManager(data_path,embedding)
 
+    def list_documets(self,collection_name):
+        return self.collection_manager.get_documents(collection_name)
+    
     def store(self,collection_name: str, source: Union[str, List[str]], source_type: SourceType=SourceType.FILE, **kwargs):
         """
         存储 URL 或文件，支持单个或多个 source。
@@ -99,8 +102,12 @@ class KnowledgeManager:
         loader = None
         known_type = None
         try:
+            exist_sources = self.collection_manager.get_sources(collection_name)
             store = self.collection_manager.get_vector_store(collection_name)
             for source in sources:
+                if source in exist_sources:
+                    continue
+                
                 if source_type == SourceType.YOUTUBE:
                     loader = self.get_youtube_loader(source)
                 elif source_type == SourceType.WEB:
@@ -134,6 +141,7 @@ class KnowledgeManager:
             if e.__class__.__name__ == "UniqueConstraintError":
                 return True
             log.exception(e)
+            print(e)
             return None,known_type
 
     def get_compress_retriever(self,retriever,filter_type:FilterType):

@@ -45,3 +45,11 @@ class CollectionManager:
         
         return [Document(page_content=document, metadata=metadata) 
                 for document, metadata in zip(result['documents'], result['metadatas'])]
+    
+    def get_sources(self, collection_name) -> list[str]:
+        """Retrieve all sources from the collection."""
+        collection = self.get_or_create_collection(collection_name)
+        result = collection.get()
+        
+        return [ metadata["source"]
+                for metadata in result['metadatas']]
