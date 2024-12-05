@@ -95,7 +95,7 @@ doc_qa_template = ChatPromptTemplate.from_messages(
 DEFAULT_SEARCH_PROMPT = PromptTemplate(
     input_variables=["input"],
     template="""You are an assistant tasked with improving Google search \
-results. Generate THREE Google search queries that are similar to \
+results. Generate {results_num} Google search queries that are similar to \
 this question. The output should be a numbered list of questions and each \
 should have a question mark at the end: {text}""",
 )

@@ -16,6 +16,9 @@ diffusers==0.21.2
 accelerate==1.1.1
 validators==0.34.0
 pypdf==5.1.0
+duckduckgo-search==6.3.7
+
 pytest
+
 
 

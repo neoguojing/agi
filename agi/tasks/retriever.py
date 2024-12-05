@@ -54,6 +54,7 @@ class SourceType(Enum):
     YOUTUBE = "youtube"
     WEB = "web"
     FILE = "file"
+    SEARCH_RESULT = "search_result"
 
 class FilterType(Enum):
     LLM_FILTER = "llm_chain_filter"
@@ -78,7 +79,7 @@ class KnowledgeManager:
     def list_documets(self,collection_name):
         return self.collection_manager.get_documents(collection_name)
     
-    def store(self,collection_name: str, source: Union[str, List[str]], source_type: SourceType=SourceType.FILE, **kwargs):
+    def store(self,collection_name: str, source: Union[str, List[str],List[dict]], source_type: SourceType=SourceType.FILE, **kwargs):
         """
         存储 URL 或文件，支持单个或多个 source。
         
@@ -101,6 +102,7 @@ class KnowledgeManager:
     
         loader = None
         known_type = None
+        raw_docs = []
         try:
             exist_sources = self.collection_manager.get_sources(collection_name)
             store = self.collection_manager.get_vector_store(collection_name)
@@ -112,6 +114,14 @@ class KnowledgeManager:
                     loader = self.get_youtube_loader(source)
                 elif source_type == SourceType.WEB:
                     loader = self.get_web_loader(source)
+                elif source_type == SourceType.SEARCH_RESULT:
+                    raw_docs.append(
+                        Document(
+                            page_content=f"date:{source.get('date')},title:{source.get('title')},snippet:{source.get('snippet')}",
+                            metadata={"source":source.get("source"),"link":source.get("link")},
+                        )
+                    )
+
                 else:
                     file_name = kwargs.get('filename')
                     content_type = kwargs.get('content_type')
@@ -120,7 +130,8 @@ class KnowledgeManager:
                     loader,known_type = self.get_loader(file_name,source,content_type)
                 
                 print("start load file---------")
-                raw_docs = loader.load()
+                if loader:
+                    raw_docs = loader.load()
 
                 for doc in raw_docs:
                     doc.page_content = doc.page_content.replace("\n", " ")
@@ -128,7 +139,8 @@ class KnowledgeManager:
                     doc.metadata["collection_name"] = collection_name
                     doc.metadata["type"] = source_type.value
                     doc.metadata["timestamp"] = str(time.time())
-                    doc.metadata["source"] = source
+                    if doc.metadata.get("source") is None:
+                        doc.metadata["source"] = source
                     doc.metadata = {**doc.metadata, **kwargs}
 
                 print("loader file count:",len(raw_docs))
@@ -136,13 +148,13 @@ class KnowledgeManager:
                 print("splited documents count:",len(docs))
                 store.add_documents(docs)
             print("add documents done------")
-            return collection_name,known_type
+            return collection_name,known_type,raw_docs
         except Exception as e:
             if e.__class__.__name__ == "UniqueConstraintError":
                 return True
             log.exception(e)
             print(e)
-            return None,known_type
+            return collection_name,known_type,raw_docs
 
     def get_compress_retriever(self,retriever,filter_type:FilterType):
         relevant_filter = None
@@ -420,14 +432,15 @@ class KnowledgeManager:
                 vector_store.add_documents(docs)
         return docs
         
-    def web_search(self,query,collection_name="web",region="cn-zh",time="d",max_results=2):
-        questions = self.search_chain.invoke({"text":query})
+    def web_search(self,query,collection_name="web",region="cn-zh",time="d",max_results=3):
+        questions = self.search_chain.invoke({"text":query,"results_num":max_results})
         print("questions:",questions)
         
-        search = DuckDuckGoSearchAPIWrapper(region=region, time=time, max_results=max_results,source="news")
+        search = DuckDuckGoSearchAPIWrapper(region=region, time=time, max_results=1,source="news")
         
         urls_to_look = []
         url_meta_map = {}
+        raw_results = []
         try:
             for query in questions:
                 print(query)
@@ -435,20 +448,22 @@ class KnowledgeManager:
                 log.info("Searching for relevant urls...")
                 log.info(f"Search results: {search_results}")
                 for res in search_results:
-                    print(res)
                     if res.get("link", None):
                         urls_to_look.append(res["link"])
                         # url_meta_map[res["link"]] = res
-        
+                raw_results.extend(search_results)
         except Exception as e:
             log.error(f"Error search: {e}")
         
         # print("url_meta_map:",url_meta_map)
         # Relevant urls
         urls = set(urls_to_look)
-        collection_name,known_type = self.store(collection_name,list(urls),SourceType.WEB)
+        collection_name,known_type,raw_docs = self.store(collection_name,list(urls),SourceType.WEB)
+        if len(raw_docs) == 0:
+            collection_name,known_type,raw_docs = self.store(collection_name,raw_results,SourceType.SEARCH_RESULT)
+            
         # docs = self.web_parser(urls,url_meta_map,collection_name)
-        return collection_name,known_type,urls
+        return collection_name,known_type,raw_results,raw_docs
          
 
     def split_documents(self, documents,chunk_size=1500,chunk_overlap=100):
