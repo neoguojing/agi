@@ -43,7 +43,7 @@ import time
 from agi.config import (
     CACHE_DIR
 )
-
+from datetime import datetime
 import logging
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
@@ -433,7 +433,7 @@ class KnowledgeManager:
         return docs
         
     def web_search(self,query,collection_name="web",region="cn-zh",time="d",max_results=3):
-        questions = self.search_chain.invoke({"text":query,"results_num":max_results})
+        questions = self.search_chain.invoke({"date":datetime.now().date(),"text":query,"results_num":max_results})
         print("questions:",questions)
         
         search = DuckDuckGoSearchAPIWrapper(region=region, time=time, max_results=1,source="news")
@@ -492,7 +492,6 @@ class SafeWebBaseLoader(WebBaseLoader):
             try:
                 soup = self._scrape(path, bs_kwargs=self.bs_kwargs)
                 text = soup.get_text(**self.bs_get_text_kwargs)
-
                 # Build metadata
                 metadata = {"source": path}
                 if title := soup.find("title"):
