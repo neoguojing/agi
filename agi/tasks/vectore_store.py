@@ -2,7 +2,6 @@ import chromadb
 from chromadb.config import Settings
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
-from langchain_ollama import OllamaEmbeddings
 
 class CollectionManager:
     def __init__(self, data_path, embedding,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE, allow_reset=True, anonymized_telemetry=False):

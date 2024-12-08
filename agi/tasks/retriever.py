@@ -19,8 +19,6 @@ from langchain_core.documents import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.retrievers import ContextualCompressionRetriever, EnsembleRetriever
 from langchain_community.retrievers import BM25Retriever
-from langchain_ollama import OllamaEmbeddings
-# from langchain_community.embeddings import OllamaEmbeddings
 from langchain_openai import ChatOpenAI,OpenAIEmbeddings
 from typing import Any,List,Dict,Iterator, Optional, Sequence, Union
 import validators
@@ -182,42 +180,46 @@ class KnowledgeManager:
     
     def get_retriever(self,collection_names="all",k: int=3,bm25: bool=False,filter_type=FilterType.LLM_FILTER,
                       sim_algo:SimAlgoType = SimAlgoType.MMR):
-        # TODO
-        if collection_names == "all":
-            collection_names = self.collection_manager.list_collections()
-            
-        if isinstance(collection_names, str):
-            collection_names = [collection_names]  # 如果是字符串，转为列表
-            
-        retrievers = []
-        docs = []
-        for collection_name in collection_names:
-            if sim_algo == SimAlgoType.MMR:
-                chroma_retriever = self.collection_manager.get_vector_store(collection_name).as_retriever(
-                    search_type="mmr",
-                    search_kwargs={'k': k, 'lambda_mult': 0.5}
-                )
-            elif sim_algo == SimAlgoType.SST:
-                chroma_retriever = self.collection_manager.get_vector_store(collection_name).as_retriever(
-                    search_type="similarity_score_threshold",
-                    search_kwargs={"score_threshold": 0.5}
-                )
-            retrievers.append(chroma_retriever)
+        try:
+            # TODO
+            if collection_names == "all":
+                collections = self.collection_manager.list_collections()
+                collection_names = [c.name for c in collections]
+                
+            if isinstance(collection_names, str):
+                collection_names = [collection_names]  # 如果是字符串，转为列表
+                
+            retrievers = []
+            docs = []
+            for collection_name in collection_names:
+                if sim_algo == SimAlgoType.MMR:
+                    chroma_retriever = self.collection_manager.get_vector_store(collection_name).as_retriever(
+                        search_type="mmr",
+                        search_kwargs={'k': k, 'lambda_mult': 0.5}
+                    )
+                elif sim_algo == SimAlgoType.SST:
+                    chroma_retriever = self.collection_manager.get_vector_store(collection_name).as_retriever(
+                        search_type="similarity_score_threshold",
+                        search_kwargs={"score_threshold": 0.5}
+                    )
+                retrievers.append(chroma_retriever)
+                if bm25:
+                    docs.extend(self.collection_manager.get_documents(collection_name))
+                
             if bm25:
-                docs.extend(self.collection_manager.get_documents(collection_name))
+                bm25_retriever = BM25Retriever.from_documents(documents=docs)
+                bm25_retriever.k = k
+                retrievers.append(bm25_retriever)
+            retriever = EnsembleRetriever(
+                retrievers=retrievers
+            )
             
-        if bm25:
-            bm25_retriever = BM25Retriever.from_documents(documents=docs)
-            bm25_retriever.k = k
-            retrievers.append(bm25_retriever)
-        retriever = EnsembleRetriever(
-            retrievers=retrievers
-        )
-        
-        # retriever = RunnableParallel(input=RunnablePassthrough(), docs=retriever)
+            # retriever = RunnableParallel(input=RunnablePassthrough(), docs=retriever)
 
-        if filter_type is not None:
-            retriever = self.get_compress_retriever(retriever,filter_type)
+            if filter_type is not None:
+                retriever = self.get_compress_retriever(retriever,filter_type)
+        except Exception as e:
+            print(e)
         return retriever
     
     
@@ -511,8 +513,8 @@ class SafeWebBaseLoader(WebBaseLoader):
 def create_retriever(km: KnowledgeManager,**kwargs):
     collection_names = kwargs.get("collection_names","all")
     top_k = kwargs.get("top_k",3)
-    bm25 = kwargs.get("bm25",3)
-    filter_type = kwargs.get("filter_type",FilterType.LLM_FILTER)
+    bm25 = kwargs.get("bm25",False)
+    filter_type = kwargs.get("filter_type",None)
     sim_algo = kwargs.get("sim_algo",SimAlgoType.MMR)
     return km.get_retriever(collection_names,k=top_k,bm25=bm25,filter_type=filter_type,sim_algo=sim_algo)
 

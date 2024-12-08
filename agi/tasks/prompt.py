@@ -93,7 +93,7 @@ doc_qa_template = ChatPromptTemplate.from_messages(
 )
 
 DEFAULT_SEARCH_PROMPT = PromptTemplate(
-    input_variables=["input"],
+    input_variables=["text","date","results_num"],
     template="""You are an assistant tasked with improving Google search results.\
 The current date is {date}.\
 Generate {results_num} Google search queries that are similar to this question.\

@@ -8,7 +8,7 @@
             "program": "${workspaceFolder}/tests/tasks/task_factory_rag.py",  // 指定测试目录
             "args": ["-v"],  // 可选，显示详细的测试输出
             "console": "integratedTerminal",
-            "justMyCode": true,
+            "justMyCode": false,
             "env": {
                 "PYTHONPATH": "${workspaceFolder}"
             }

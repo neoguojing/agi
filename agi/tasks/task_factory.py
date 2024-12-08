@@ -34,7 +34,6 @@ set_debug(True)
 TASK_LLM = "llm"
 TASK_LLM_WITH_HISTORY = "llm_with_history"
 TASK_LLM_WITH_RAG = "llm_with_rag"
-
 TASK_EMBEDDING = "embedding"
 TASK_AGENT = "agent"
 TASK_TRANSLATE = "translate"
@@ -42,7 +41,6 @@ TASK_IMAGE_GEN = "image_gen"
 TASK_TTS = "tts"
 TASK_SPEECH_TEXT = "speech2text"
 TASK_RETRIEVER = "rag"
-TASK_RETRIEVER = "embedding"
 TASK_DOC_DB = "doc_db"
     
 class TaskFactory:
@@ -80,9 +78,12 @@ class TaskFactory:
                                 base_url=OLLAMA_API_BASE_URL,
                             )
                         elif task_type == TASK_LLM_WITH_HISTORY:
-                            return create_chat_with_history(TaskFactory._llm)
+                            instance = create_chat_with_history(TaskFactory._llm)
+                        elif task_type == TASK_RETRIEVER:
+                            from agi.tasks.retriever import create_retriever
+                            instance = create_retriever(TaskFactory._knowledge_manager,**kwargs)
                         elif task_type == TASK_LLM_WITH_RAG:
-                            return create_chat_with_rag(TaskFactory._llm,TaskFactory._embedding,kwargs)
+                            instance =  create_chat_with_rag(TaskFactory._knowledge_manager,TaskFactory._llm,**kwargs)
                         elif task_type == TASK_TRANSLATE:
                             instance = create_translate_chain(TaskFactory._llm)
                         elif task_type == TASK_IMAGE_GEN:
@@ -91,9 +92,6 @@ class TaskFactory:
                             instance = create_text2speech_chain()
                         elif task_type == TASK_SPEECH_TEXT:
                             instance = create_speech2text_chain()
-                        elif task_type == TASK_RETRIEVER:
-                            from agi.tasks.retriever import create_retriever
-                            instance = create_retriever(TaskFactory._knowledge_manager,kwargs=kwargs)
                         elif task_type == TASK_DOC_DB:
                             instance = TaskFactory._knowledge_manager
                         elif task_type == TASK_AGENT:
@@ -104,7 +102,7 @@ class TaskFactory:
                     except Exception as e:
                         print(e)
 
-        return TaskFactory._instances[task_type]
+        return TaskFactory._instances.get(task_type)
 
 
 

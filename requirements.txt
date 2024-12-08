@@ -18,7 +18,7 @@ validators==0.34.0
 pypdf==5.1.0
 duckduckgo-search==6.3.7
 beautifulsoup4==4.12.3
-
+rank_bm25==0.2.2
 pytest
 
 

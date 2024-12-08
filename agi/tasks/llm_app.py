@@ -5,21 +5,28 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import ConfigurableFieldSpec
 from langchain_community.chat_message_histories import SQLChatMessageHistory
 from langchain.retrievers import EnsembleRetriever
-from langchain.chains import create_history_aware_retriever, create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.messages.ai import AIMessage,AIMessageChunk
 from langchain_core.runnables.utils import AddableDict
 from langchain_core.runnables.base import Runnable
+from langchain_core.language_models import LanguageModelLike
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import BasePromptTemplate
+from langchain_core.retrievers import RetrieverLike, RetrieverOutputLike
 from langchain_core.runnables import (
     RunnableParallel,
     RunnablePassthrough,
+    RunnableBranch
 )
 from langchain_core.retrievers import (
     BaseRetriever,
-    RetrieverOutput,
+    RetrieverOutput
 )
+
+from langchain.chains.retrieval import create_retrieval_chain
 from langchain_core.output_parsers import StrOutputParser
 from agi.tasks.prompt import default_template,contextualize_q_template,doc_qa_template
+from agi.tasks.retriever import KnowledgeManager
 import json
 from datetime import datetime,timezone
 from langchain.globals import set_debug
@@ -73,17 +80,51 @@ def create_chat_with_history(llm):
     runnable = default_template | llm 
     return create_llm_with_history(runnable=runnable)
 
-def create_chat_with_rag(llm,embedding,**kwargs):
-    retrievers = create_retriever(llm,embedding,kwargs)
+def create_history_aware_retriever(
+    llm: LanguageModelLike,
+    retriever: RetrieverLike,
+    prompt: BasePromptTemplate,
+) -> RetrieverOutputLike:
+    # The Runnable output is a list of Documents
+    
+    if "text" not in prompt.input_variables:
+        raise ValueError(
+            "Expected `input` to be a prompt variable, "
+            f"but got {prompt.input_variables}"
+        )
+
+    retrieve_documents: RetrieverOutputLike = RunnableBranch(
+        (
+            # Both empty string and empty list evaluate to False
+            lambda x: not x.get("chat_history", False),
+            # If no chat history, then we just pass input to retriever
+            (lambda x: x["text"]) | retriever,
+        ),
+        # If chat history, then we pass inputs to LLM chain, then to retriever
+        prompt | llm | StrOutputParser() | retriever,
+    ).with_config(run_name="chat_retriever_chain")
+    
+    return retrieve_documents
+    
+def create_chat_with_rag(km: KnowledgeManager,llm,**kwargs):
+    retrievers = create_retriever(km,**kwargs)
+    
     history_aware_retriever = create_history_aware_retriever(
         llm, retrievers, contextualize_q_template
     )
-           
-    question_answer_chain = create_stuff_documents_chain(llm, doc_qa_template)
+    
+    combine_docs_chain = create_stuff_documents_chain(llm, doc_qa_template)
+    
+    retrieval_chain = create_retrieval_chain(history_aware_retriever, combine_docs_chain)
+    # retrieval_docs = (lambda x: x["text"]) | history_aware_retriever
+    # retrieval_chain = (
+    #     RunnablePassthrough.assign(
+    #         context=retrieval_docs.with_config(run_name="retrieve_documents"),
+    #     ).assign(answer=combine_docs_chain)
+    # ).with_config(run_name="retrieval_chain")
 
-    # runnable = question_answer_chain
-    runnable = create_retrieval_chain(history_aware_retriever, question_answer_chain)
-    return create_llm_with_history(runnable=runnable)
+    # return retrieval_chain
+    return create_llm_with_history(runnable=retrieval_chain)
 
     
 class LangchainApp:
