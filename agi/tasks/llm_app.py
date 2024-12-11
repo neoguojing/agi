@@ -105,7 +105,15 @@ def create_history_aware_retriever(
     ).with_config(run_name="chat_retriever_chain")
     
     return retrieve_documents
-    
+
+# chain:RunnableWithMessageHistory
+# chain:insert_history
+# chain:RunnableParallel<chat_history>
+# chain:load_history
+# chain:check_sync_or_async 
+# chain:retrieval_chain 
+# chain:RunnableAssign<answer> 
+# chain:RunnableParallel<answer>
 def create_chat_with_rag(km: KnowledgeManager,llm,**kwargs):
     retrievers = create_retriever(km,**kwargs)
     

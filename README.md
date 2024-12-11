@@ -1,2 +1,11 @@
 # agi
 langchain based agi
+
+## RAG
+- history_chain = RunnableLambda(self._enter_history, self._aenter_history).with_config(run_name="load_history")
+- history_chain = RunnablePassthrough.assign(**{"chat_history": history_chain}).with_config(run_name="insert_history")
+- retrieval_docs = (lambda x: x["input"]) | retriever
+- retriever = (lambda x: x["input"]) | retriever  or  prompt | llm | StrOutputParser() | retriever, run_name="chat_retriever_chain"
+- context=retrieval_docs.with_config(run_name="retrieve_documents")
+- "context": format_docs run_name="format_inputs"
+- answer =  "context" | prompt | llm | _output_parser     run_name="stuff_documents_chain"
