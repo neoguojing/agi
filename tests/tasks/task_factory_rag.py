@@ -41,7 +41,7 @@ class TestTaskRagFactory(unittest.TestCase):
     #     ret = self.retreiver.invoke("上海未来一周天气如何？")
     #     self.assertIsNotNone(ret)
     #     self.assertNotEqual(len(ret),0)
-        
+    
     def test_rag(self):
         config={"configurable": {"user_id": "test", "conversation_id": "1"}}
         ret = self.rag.invoke({"text":"上海未来一周天气如何？","language":"chinese"},config=config)
@@ -49,6 +49,7 @@ class TestTaskRagFactory(unittest.TestCase):
         self.assertIsInstance(ret['chat_history'],list)
         self.assertIsInstance(ret['context'],list)
         self.assertIsNotNone(ret['answer'])
+        print(ret['citations'])
 
 if __name__ == '__main__':
     unittest.main()

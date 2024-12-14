@@ -83,7 +83,7 @@ class TaskFactory:
                             from agi.tasks.retriever import create_retriever
                             instance = create_retriever(TaskFactory._knowledge_manager,**kwargs)
                         elif task_type == TASK_LLM_WITH_RAG:
-                            instance =  create_chat_with_rag(TaskFactory._knowledge_manager,TaskFactory._llm,**kwargs)
+                            instance =  create_chat_with_rag(TaskFactory._knowledge_manager,TaskFactory._llm,debug=True,**kwargs)
                         elif task_type == TASK_TRANSLATE:
                             instance = create_translate_chain(TaskFactory._llm)
                         elif task_type == TASK_IMAGE_GEN:

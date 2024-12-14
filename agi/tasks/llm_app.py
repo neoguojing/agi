@@ -5,7 +5,6 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import ConfigurableFieldSpec
 from langchain_community.chat_message_histories import SQLChatMessageHistory
 from langchain.retrievers import EnsembleRetriever
-from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.messages.ai import AIMessage,AIMessageChunk
 from langchain_core.runnables.utils import AddableDict
 from langchain_core.runnables.base import Runnable
@@ -16,15 +15,22 @@ from langchain_core.retrievers import RetrieverLike, RetrieverOutputLike
 from langchain_core.runnables import (
     RunnableParallel,
     RunnablePassthrough,
-    RunnableBranch
+    RunnableBranch,
+    RunnableLambda
 )
 from langchain_core.retrievers import (
     BaseRetriever,
     RetrieverOutput
 )
-
-from langchain.chains.retrieval import create_retrieval_chain
-from langchain_core.output_parsers import StrOutputParser
+from langchain.chains.combine_documents.base import (
+    DEFAULT_DOCUMENT_SEPARATOR,
+    DOCUMENTS_KEY,
+    DEFAULT_DOCUMENT_PROMPT,
+    _validate_prompt,
+)
+# from langchain.chains.retrieval import create_retrieval_chain
+# from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.output_parsers import StrOutputParser,BaseOutputParser
 from agi.tasks.prompt import default_template,contextualize_q_template,doc_qa_template
 from agi.tasks.retriever import KnowledgeManager
 import json
@@ -36,7 +42,12 @@ from agi.config import (
     LANGCHAIN_DB_PATH
 )
 from agi.tasks.retriever import create_retriever
-
+from typing import (
+    Any,
+    Dict,
+    Optional,
+    Union
+)
 def is_valid_url(url):
     return validators.url(url)
 
@@ -46,11 +57,23 @@ log.setLevel(logging.DEBUG)
 
 set_debug(False)
 
+def debug_info(x : Any):
+    return f"type:{type(x)}\nmessage:{x}"
+    
 # TODO 历史数据压缩 数据实体抽取
 def get_session_history(user_id: str, conversation_id: str):
     return SQLChatMessageHistory(f"{user_id}--{conversation_id}", LANGCHAIN_DB_PATH)
 
-def create_llm_with_history(runnable):
+def create_llm_with_history(runnable,debug=False):
+    def debug_print(x: Any) :
+        print("create_llm_with_history\n:",debug_info(x))
+        return x
+
+    debug_tool = RunnableLambda(debug_print)
+    
+    if debug:
+        runnable = debug_tool | runnable
+        
     return RunnableWithMessageHistory(
         runnable,
         get_session_history,
@@ -76,23 +99,42 @@ def create_llm_with_history(runnable):
         ],
     )
         
-def create_chat_with_history(llm):
-    runnable = default_template | llm 
+def create_chat_with_history(llm,debug=False):
+    def debug_print(x: Any) :
+        print("create_chat_with_history\n:",debug_info(x))
+        return x
+
+    debug_tool = RunnableLambda(debug_print)
+    
+    runnable = (default_template | llm )
+    if debug:
+        runnable = (default_template | debug_tool | llm )
+    
     return create_llm_with_history(runnable=runnable)
 
 def create_history_aware_retriever(
     llm: LanguageModelLike,
     retriever: RetrieverLike,
-    prompt: BasePromptTemplate,
+    prompt: BasePromptTemplate=contextualize_q_template,
+    debug=False
 ) -> RetrieverOutputLike:
     # The Runnable output is a list of Documents
+    def debug_print(x: Any) :
+        print("create_history_aware_retriever\n:",debug_info(x))
+        return x
+
+    debug_tool = RunnableLambda(debug_print)
     
     if "text" not in prompt.input_variables:
         raise ValueError(
             "Expected `input` to be a prompt variable, "
             f"but got {prompt.input_variables}"
         )
-
+    chain = (prompt | llm | StrOutputParser() | retriever)
+    
+    if debug:
+        chain = (debug_tool | prompt | llm | StrOutputParser() | retriever)
+    
     retrieve_documents: RetrieverOutputLike = RunnableBranch(
         (
             # Both empty string and empty list evaluate to False
@@ -101,10 +143,113 @@ def create_history_aware_retriever(
             (lambda x: x["text"]) | retriever,
         ),
         # If chat history, then we pass inputs to LLM chain, then to retriever
-        prompt | llm | StrOutputParser() | retriever,
+        chain
     ).with_config(run_name="chat_retriever_chain")
     
+    
+    
     return retrieve_documents
+
+
+def create_stuff_documents_chain(
+    llm: LanguageModelLike,
+    prompt: BasePromptTemplate,
+    *,
+    output_parser: Optional[BaseOutputParser] = None,
+    document_prompt: Optional[BasePromptTemplate] = None,
+    document_separator: str = DEFAULT_DOCUMENT_SEPARATOR,
+    document_variable_name: str = DOCUMENTS_KEY,
+    debug=False
+) -> Runnable[Dict[str, Any], Any]:
+    
+    def debug_print(x: Any) :
+        print("create_stuff_documents_chain\n:",debug_info(x))
+        return x
+
+    debug_tool = RunnableLambda(debug_print)
+    
+    _validate_prompt(prompt, document_variable_name)
+    _document_prompt = document_prompt or DEFAULT_DOCUMENT_PROMPT
+    _output_parser = output_parser or StrOutputParser()
+
+    def format_docs(inputs: dict) -> str:
+        return document_separator.join(
+            format_document(doc, _document_prompt)
+            for doc in inputs[document_variable_name]
+        )
+            
+    chain = (
+        RunnablePassthrough.assign(**{document_variable_name: format_docs}).with_config(
+            run_name="format_inputs"
+        )
+        | prompt
+        | llm
+        | _output_parser
+    ).with_config(run_name="stuff_documents_chain")
+    
+    if debug:
+        return debug_tool | chain
+    return chain
+
+
+def create_retrieval_chain(
+    retriever: Union[BaseRetriever, Runnable[dict, RetrieverOutput]],
+    combine_docs_chain: Runnable[Dict[str, Any], str],
+    debug=False
+) -> Runnable:
+    def build_citations(inputs: dict):
+        citations = []
+        # 使用 defaultdict 来根据 source 聚合文档
+        source_dict = defaultdict(list)
+
+        # 将文档按 source 聚合
+        for doc in inputs["context"]:
+            source = doc.metadata.get('filename') or doc.metadata.get('link') or doc.metadata.get('source')
+            source_dict[source].append(doc)
+
+        # 对每个 source 下的文档进行排序，并整理成需要的格式
+        for source, docs in source_dict.items():
+            # 按照 start_index 排序（假设页面顺序可以通过 start_index 排序）
+            sorted_docs = sorted(docs, key=lambda doc: doc.metadata.get('page', 0))
+            
+            # 聚合 metadata 中的 page 字段，去重后存为列表
+            pages = list({doc.metadata.get('page') for doc in sorted_docs})  # 去重并转换成列表
+    
+            # 提取排序后的 document 内容
+            document_contents = [doc.page_content for doc in sorted_docs]
+            
+            # 提取 metadata，假设只取第一个文档的 metadata 信息
+            metadata = sorted_docs[0].metadata if sorted_docs else {}
+            metadata['pages'] = pages
+            citations.append({
+                "source": source,
+                "document": document_contents,
+                "metadata": metadata,
+            })
+        
+        return citations
+    
+    def debug_print(x: Any) :
+        print("create_retrieval_chain\n:",debug_info(x))
+        return x
+
+    debug_tool = RunnableLambda(debug_print)
+    
+    if not isinstance(retriever, BaseRetriever):
+        retrieval_docs: Runnable[dict, RetrieverOutput] = retriever
+    else:
+        retrieval_docs = (lambda x: x["text"]) | retriever
+
+    retrieval_chain = (
+        RunnablePassthrough.assign(
+            context=retrieval_docs.with_config(run_name="retrieve_documents"),
+            
+        ).assign(answer=combine_docs_chain,citations=build_citations)
+    ).with_config(run_name="retrieval_chain")
+
+    if debug:
+        return debug_tool | retrieval_chain
+    return retrieval_chain
 
 # chain:RunnableWithMessageHistory
 # chain:insert_history
@@ -114,25 +259,16 @@ def create_history_aware_retriever(
 # chain:retrieval_chain 
 # chain:RunnableAssign<answer> 
 # chain:RunnableParallel<answer>
-def create_chat_with_rag(km: KnowledgeManager,llm,**kwargs):
+def create_chat_with_rag(km: KnowledgeManager,llm,debug=False,**kwargs):
     retrievers = create_retriever(km,**kwargs)
     
     history_aware_retriever = create_history_aware_retriever(
-        llm, retrievers, contextualize_q_template
+        llm, retrievers, contextualize_q_template,debug=debug
     )
     
-    combine_docs_chain = create_stuff_documents_chain(llm, doc_qa_template)
-    
-    retrieval_chain = create_retrieval_chain(history_aware_retriever, combine_docs_chain)
-    # retrieval_docs = (lambda x: x["text"]) | history_aware_retriever
-    # retrieval_chain = (
-    #     RunnablePassthrough.assign(
-    #         context=retrieval_docs.with_config(run_name="retrieve_documents"),
-    #     ).assign(answer=combine_docs_chain)
-    # ).with_config(run_name="retrieval_chain")
-
-    # return retrieval_chain
-    return create_llm_with_history(runnable=retrieval_chain)
+    combine_docs_chain = create_stuff_documents_chain(llm, doc_qa_template,debug=debug)
+    retrieval_chain = create_retrieval_chain(history_aware_retriever, combine_docs_chain,debug=debug)
+    return create_llm_with_history(runnable=retrieval_chain,debug=debug)
 
     
 class LangchainApp:
