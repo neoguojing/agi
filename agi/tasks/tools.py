@@ -11,7 +11,7 @@ import requests
 import json
 from agi.llms.model_factory import ModelFactory
 from agi.tasks.prompt import stock_code_prompt
-from agi.tasks.task_factory import TaskFactory,TASK_IMAGE_GEN,TASK_SPEECH
+# from agi.tasks.task_factory import TaskFactory,TASK_IMAGE_GEN,TASK_SPEECH
 
 os.environ['WOLFRAM_ALPHA_APPID'] = 'QTJAQT-UPJ2R3KP89'
 os.environ["ALPHAVANTAGE_API_KEY"] = '1JXIUYN26HYID5Y9'
@@ -22,18 +22,18 @@ arxiv = ArxivAPIWrapper()
 alpha_vantage = AlphaVantageAPIWrapper()
 
 
-@tool("image generate", return_direct=True)
-def image_gen(input:str) ->str:
-    """Useful for when you need to generate or draw a picture by input text.
-    Text to image diffusion model capable of generating photo-realistic images given any text input."""
-    task = TaskFactory.create_task(TASK_IMAGE_GEN)
-    return task.run(input)
+# @tool("image generate", return_direct=True)
+# def image_gen(input:str) ->str:
+#     """Useful for when you need to generate or draw a picture by input text.
+#     Text to image diffusion model capable of generating photo-realistic images given any text input."""
+#     task = TaskFactory.create_task(TASK_IMAGE_GEN)
+#     return task.run(input)
 
-@tool("speech or audio generate", return_direct=True)
-def text2speech(input:str) ->str:
-    """Useful for when you need to transfer text to speech or audio.Speech to speech translation.Speech to text translation.Text to speech translation.Text to text translation.Automatic speech recognition."""
-    task = TaskFactory.create_task(TASK_SPEECH)
-    return task.run(input)
+# @tool("speech or audio generate", return_direct=True)
+# def text2speech(input:str) ->str:
+#     """Useful for when you need to transfer text to speech or audio.Speech to speech translation.Speech to text translation.Text to speech translation.Text to text translation.Automatic speech recognition."""
+#     task = TaskFactory.create_task(TASK_SPEECH)
+#     return task.run(input)
 
 
 @dataclass
@@ -132,7 +132,7 @@ tools = [
                 historical market data through Alpha Vantage, enabling them to perform technical analysis, modeling, and develop financial\
                 applications."
     ),
-    image_gen,
-    text2speech,
+    # image_gen,
+    # text2speech,
     get_stock,
 ]

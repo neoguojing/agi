@@ -2,6 +2,7 @@ import time
 from typing import Any,Union
 import threading
 from agi.llms.model_factory import ModelFactory
+from agi.tasks.agent import create_react_agent_task
 from langchain_core.embeddings import Embeddings
 from langchain_core.runnables import Runnable
 from urllib.parse import urljoin
@@ -95,8 +96,7 @@ class TaskFactory:
                         elif task_type == TASK_DOC_DB:
                             instance = TaskFactory._knowledge_manager
                         elif task_type == TASK_AGENT:
-                            # instance = Agent()
-                            pass
+                            instance = create_react_agent_task(TaskFactory._llm)
 
                         TaskFactory._instances[task_type] = instance
                     except Exception as e:
