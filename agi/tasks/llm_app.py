@@ -146,14 +146,12 @@ def create_history_aware_retriever(
         chain
     ).with_config(run_name="chat_retriever_chain")
     
-    
-    
     return retrieve_documents
 
 
 def create_stuff_documents_chain(
     llm: LanguageModelLike,
-    prompt: BasePromptTemplate,
+    prompt: BasePromptTemplate = doc_qa_template,
     *,
     output_parser: Optional[BaseOutputParser] = None,
     document_prompt: Optional[BasePromptTemplate] = None,

@@ -87,7 +87,7 @@ doc_qa_template = ChatPromptTemplate.from_messages(
             "system",
             doc_qa_prompt
         ),
-        MessagesPlaceholder("chat_history"),
+        # MessagesPlaceholder("chat_history"),
         ("human", "{text}")
     ]
 )
