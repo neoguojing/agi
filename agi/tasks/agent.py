@@ -14,7 +14,7 @@ prompt = ChatPromptTemplate.from_messages(
 )
 
 def _modify_state_messages(state: AgentState):
-    return prompt.invoke({"messages": state["messages"]}).to_messages() + [
+    return prompt.invoke({"messages": state["messages"],"language":"chinese"}).to_messages() + [
         ("user", "Also say 'Pandamonium!' after the answer.")
     ]
 
@@ -24,11 +24,6 @@ def create_react_agent_task(llm):
                                                   tools,state_modifier=_modify_state_messages,
                                                   checkpointer=memory,
                                                   store=InMemoryStore())
-    langgraph_agent_executor.step_timeout = 2
+    # langgraph_agent_executor.step_timeout = 2
     return langgraph_agent_executor
 
-# messages = langgraph_agent_executor.invoke({"messages": [("human", query)]})
-# {
-#     "input": query,
-#     "output": messages["messages"][-1].content,
-# }

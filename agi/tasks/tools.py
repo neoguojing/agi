@@ -17,7 +17,7 @@ os.environ['WOLFRAM_ALPHA_APPID'] = 'QTJAQT-UPJ2R3KP89'
 os.environ["ALPHAVANTAGE_API_KEY"] = '1JXIUYN26HYID5Y9'
 
 search = DuckDuckGoSearchRun()
-WolframAlpha = WolframAlphaAPIWrapper()
+# WolframAlpha = WolframAlphaAPIWrapper()
 arxiv = ArxivAPIWrapper()
 alpha_vantage = AlphaVantageAPIWrapper()
 
@@ -112,11 +112,11 @@ tools = [
         func=search.run,
         description="Useful for when you need to answer questions about current events"
     ),
-    Tool(
-        name="Math",
-        func=WolframAlpha.run,
-        description="Useful for when you need to answer questions about Math, Science, Technology, Culture, Society and Everyday Life."
-    ),
+    # Tool(
+    #     name="Math",
+    #     func=WolframAlpha.run,
+    #     description="Useful for when you need to answer questions about Math, Science, Technology, Culture, Society and Everyday Life."
+    # ),
     Tool(
         name="arxiv",
         func=arxiv.run,
