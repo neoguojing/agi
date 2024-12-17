@@ -1,13 +1,10 @@
 import io
 from PIL import Image as PILImage
-from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph, START
-from langchain_core.output_parsers import StrOutputParser
-from langgraph.checkpoint.memory import MemorySaver
 from agi.tasks import tools,TaskFactory,TASK_IMAGE_GEN,TASK_SPEECH
 import uuid
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import create_react_agent
-from agi.tasks.prompt import AgentPromptTemplate,english_traslate_template,agent_prompt
 from langchain_core.runnables import  RunnableConfig
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain.globals import set_debug
@@ -15,6 +12,7 @@ from langchain.globals import set_verbose
 from typing_extensions import TypedDict
 from langgraph.graph.message import AnyMessage, add_messages
 from typing import Annotated
+from agi.tasks.task_factory import TaskFactory,TASK_AGENT,TASK_IMAGE_GEN,TASK_LLM_WITH_RAG,TASK_SPEECH_TEXT,TASK_TTS
 
 set_verbose(True)
 set_debug(True)
@@ -28,53 +26,28 @@ class State(TypedDict):
     
 class AgentGraph:
     def __init__(self):
+        
         checkpointer = MemorySaver()
-        self.llm = ChatOpenAI(model="llama3.1-fp16:latest",base_url="http://localhost:11434/v1/",api_key="xxx",verbose=True)
-        self.qwen2 = ChatOpenAI(model="qwen2",base_url="http://localhost:11434/v1/",api_key="xxx",verbose=True)
-        self.llm_with_tools = self.llm.bind_tools(tools=tools)
-        # prompt = hub.pull("wfh/react-agent-executor")
-        # prompt.pretty_print()
-        self.translate_chain = english_traslate_template | self.llm | StrOutputParser()
-        self.prompt = agent_prompt
-        self.prompt = self.prompt.partial(system_message="You should provide accurate data for the chart_generator to use.")
-        self.prompt = self.prompt.partial(tool_names=", ".join([tool.name for tool in tools]))
-        self.agent_executor = create_react_agent(self.llm, tools, state_modifier=self.prompt,checkpointer=checkpointer)
-
+        # self.prompt = agent_prompt
+        # self.prompt = self.prompt.partial(system_message="You should provide accurate data for the chart_generator to use.")
+        # self.prompt = self.prompt.partial(tool_names=", ".join([tool.name for tool in tools]))
+        # self.agent_executor = create_react_agent(self.llm, tools, state_modifier=self.prompt,checkpointer=checkpointer)
         self.builder = StateGraph(State)
         
-        self.builder.add_node("tranlate", self.translate_node)
-        self.builder.add_node("speech2text", TaskFactory.create_task(TASK_SPEECH))
-        self.builder.add_node("text2image", TaskFactory.create_task(TASK_IMAGE_GEN))
-        self.builder.add_node("text2speech", TaskFactory.create_task(TASK_SPEECH))
-        self.builder.add_node("image2image", TaskFactory.create_task(TASK_IMAGE_GEN))
-        self.builder.add_node("agent", self.agent_executor)
-
-        self.builder.add_conditional_edges("tranlate", self.translate_edge_control,
-                                           {"image2image": "image2image", "text2image": "text2image"})
-        self.builder.add_edge("speech2text", "agent")
-
-        self.builder.add_conditional_edges("agent", self.agent_edge_control, {END: END, "text2speech": "text2speech"})
-        self.builder.add_edge("image2image", END)
-        self.builder.add_edge("text2image", END)
-        self.builder.add_edge("text2speech", END)
+        self.builder.add_node("speech2text", TaskFactory.create_task(TASK_SPEECH_TEXT))
+        self.builder.add_node("tts", TaskFactory.create_task(TASK_TTS))
+        self.builder.add_node("image_gen", TaskFactory.create_task(TASK_IMAGE_GEN))
+        self.builder.add_node("agent", TaskFactory.create_task(TASK_AGENT))
         
-        # self.builder.add_conditional_edges(START, self.routes,
-        #                                    {"tranlate": "tranlate", "speech2text": "speech2text","agent":"agent"})
+        self.builder.add_edge("speech2text", "agent")
+        self.builder.add_conditional_edges("agent", self.agent_edge_control, {END: END, "tts": "tts"})
+        self.builder.add_edge("image_gen", END)
+        self.builder.add_edge("tts", END)
         
         self.builder.add_conditional_edges(START, self.routes)
         self.graph = self.builder.compile(checkpointer=checkpointer)
-        # self.graph = self.builder.compile()
-
-    def translate_node(self,state: State):
-        messages = state["messages"]
-        if messages:
-            if isinstance(messages, list):
-                messages = messages[-1]
-            result = self.translate_chain.invoke({"text": messages.content})
-            return {"messages": AIMessage(content=result)}
         
     def routes(self,state: State, config: RunnableConfig):
-        # messages = state["messages"]
         msg_type = state["input_type"]
         if msg_type == "text":
             return "agent"
@@ -90,17 +63,7 @@ class AgentGraph:
             return "text2speech"
         return END
     
-    def translate_edge_control(self,state: State):
-        messages = state["messages"]
-        if messages:
-            if isinstance(messages, list):
-                messages = messages[-1]
-        if messages.additional_kwargs.get('image') is None:
-            return "text2image"
-        
-        return 'image2image'
-    
-    def run(self,input:State):
+    def invoke(self,input:State):
         config = {"configurable": {"thread_id": str(uuid.uuid4())}}
         events = self.graph.stream(input, config)
         print(events)
@@ -177,5 +140,5 @@ if __name__ == '__main__':
         "need_speech": False,
         "status": "in_progress",
     }
-    resp = g.run(input_example)
+    resp = g.invoke(input_example)
     # print(resp)

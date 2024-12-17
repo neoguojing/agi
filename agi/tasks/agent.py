@@ -14,9 +14,7 @@ prompt = ChatPromptTemplate.from_messages(
 )
 
 def _modify_state_messages(state: AgentState):
-    return prompt.invoke({"messages": state["messages"],"language":"chinese"}).to_messages() + [
-        ("user", "Also say 'Pandamonium!' after the answer.")
-    ]
+    return prompt.invoke({"messages": state["messages"],"language":"chinese"}).to_messages()
 
 memory = MemorySaver()
 def create_react_agent_task(llm):

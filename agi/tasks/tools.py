@@ -1,8 +1,6 @@
 import os
 from langchain.tools import tool
-from langchain_community.utilities import WolframAlphaAPIWrapper
 from langchain_community.utilities import ArxivAPIWrapper
-from langchain_community.utilities import AlphaVantageAPIWrapper
 from langchain.agents import Tool
 from langchain_community.tools import DuckDuckGoSearchRun
 from langchain.tools import tool
@@ -13,14 +11,9 @@ from agi.llms.model_factory import ModelFactory
 from agi.tasks.prompt import stock_code_prompt
 # from agi.tasks.task_factory import TaskFactory,TASK_IMAGE_GEN,TASK_SPEECH
 
-os.environ['WOLFRAM_ALPHA_APPID'] = 'QTJAQT-UPJ2R3KP89'
-os.environ["ALPHAVANTAGE_API_KEY"] = '1JXIUYN26HYID5Y9'
 
 search = DuckDuckGoSearchRun()
-# WolframAlpha = WolframAlphaAPIWrapper()
 arxiv = ArxivAPIWrapper()
-alpha_vantage = AlphaVantageAPIWrapper()
-
 
 # @tool("image generate", return_direct=True)
 # def image_gen(input:str) ->str:
@@ -112,25 +105,12 @@ tools = [
         func=search.run,
         description="Useful for when you need to answer questions about current events"
     ),
-    # Tool(
-    #     name="Math",
-    #     func=WolframAlpha.run,
-    #     description="Useful for when you need to answer questions about Math, Science, Technology, Culture, Society and Everyday Life."
-    # ),
     Tool(
         name="arxiv",
         func=arxiv.run,
         description="A wrapper around Arxiv.org Useful for when you need to answer questions about Physics, Mathematics, Computer Science, \
             Quantitative Biology, Quantitative Finance, Statistics, Electrical Engineering, and Economics from scientific articles \
             on arxiv.org."
-    ),
-    Tool(
-        name="alphaVantage",
-        func=alpha_vantage.run,
-        description ="Alpha Vantage is a platform useful for provides financial market data and related services. It offers a wide range \
-              of financial data, including stock market data, cryptocurrency data, and forex data. Developers can access real-time and \
-                historical market data through Alpha Vantage, enabling them to perform technical analysis, modeling, and develop financial\
-                applications."
     ),
     # image_gen,
     # text2speech,
