@@ -13,7 +13,7 @@ from langchain.callbacks.manager import (
     CallbackManagerForLLMRun
 )
 from pydantic import  Field
-from agi.llms.base import CustomerLLM,ImageType
+from agi.llms.base import CustomerLLM,parse_input_messages
 from agi.config import MODEL_PATH as model_root,CACHE_DIR
 import hashlib
 from langchain_core.runnables import RunnableConfig
@@ -60,7 +60,7 @@ class Text2Image(CustomerLLM):
         input_str = ""
         
         if isinstance(input,HumanMessage):
-            input_str = input.content
+            _, input_str = parse_input_messages(input)
         else:
             input_str = input
             
@@ -86,7 +86,7 @@ class Text2Image(CustomerLLM):
         # Format the result as HTML with embedded image and prompt
         formatted_result = f'<img src="{image_source}" {style}>\n'
         result = AIMessage(content=[{"type": "text", "text": formatted_result},
-                                    {"type": "media", "media": image}])
+                                    {"type": "image", "image": image}])
         return result
 
     def _save_or_resize_image(self, image: Any) -> str:

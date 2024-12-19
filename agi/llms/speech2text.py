@@ -5,7 +5,7 @@ from agi.config import (
     WHISPER_MODEL
 )
 from typing import Any, List, Mapping, Optional,Union
-from agi.llms.base import CustomerLLM,AudioType,Audio,convert_audio_to_byteio
+from agi.llms.base import CustomerLLM,parse_input_messages
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
 from langchain_core.messages import AIMessage, HumanMessage
@@ -32,28 +32,17 @@ class Speech2Text(CustomerLLM):
         self, input: HumanMessage, config: Optional[RunnableConfig] = None, **kwargs: Any
     ) -> AIMessage:
         """Process the input, transcribe audio, and return the output message."""
-        audio_input = self._process_audio_input(input)
+        audio_input = parse_input_messages(input)
         
         if audio_input is None:
             return AIMessage(content="No valid audio input found.")
         
         # Transcribe the audio input
-        content, response_metadata = self._transcribe_audio(audio_input)
+        content, response_metadata = self._transcribe_audio(audio_input.data)
 
         # Return the transcription result
         return AIMessage(content=content, response_metadata=response_metadata)
 
-    def _process_audio_input(self, input: HumanMessage) -> Optional[Audio]:
-        """Extract audio data from the input."""
-        audio_input = None
-        if isinstance(input.content, list):
-            for item in input.content:
-                media_type = item.get("type")
-                if media_type == "media":
-                    media = item.get("media")
-                    if media is not None:
-                        audio_input = convert_audio_to_byteio(media)
-        return audio_input
 
     def _transcribe_audio(self, audio_input) -> str:
         """Transcribe the audio input using Whisper."""

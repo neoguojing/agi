@@ -406,3 +406,15 @@ multimodal_input_template = PromptTemplate(
     partial_variables={"text":None,"url":None,"path":None,"data":"null"},
     template_format="mustache"
 )
+
+# multimodal_input_template1 = ChatPromptTemplate(
+#     [
+#         ("human", [
+#                 {"type": "text", "text": "{text}"},
+#                 {"type": "image", "image": "{image}"},
+#                 {"type": "audio", "audio": "{audio}"},
+#             ]
+#         )
+#     ],
+#     optional_variables=["text","image","audio"]
+# )

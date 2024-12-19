@@ -5,7 +5,7 @@ from pathlib import Path
 import torch
 from TTS.api import TTS
 from agi.config import MODEL_PATH as model_root, CACHE_DIR, TTS_SPEAKER_WAV
-from agi.llms.base import CustomerLLM, Audio,AudioType
+from agi.llms.base import CustomerLLM,parse_input_messages
 from langchain_core.runnables import RunnableConfig
 from typing import Any, Optional,Union
 from pydantic import BaseModel, Field
@@ -53,23 +53,20 @@ class TextToSpeech(CustomerLLM):
         if isinstance(input,str):
             input_str = input
         else:
-            if not input.content.strip():
-                return AIMessage(content="No input text provided.")
-            else:
-                input_str = input.content
+            _,input_str = parse_input_messages(input)
             
         if self.save_file:
             file_path = self.save_audio_to_file(text=input_str)
             return AIMessage(content=[
                 {"type": "text", "text": input.content},
-                {"type": "media", "media": file_path}
+                {"type": "audio", "audio": file_path}
             ])
         
         # Generate audio samples and return as ByteIO
         samples = self.generate_audio_samples(input_str)
         return AIMessage(content=[
             {"type": "text", "text": input.content},
-            {"type": "media", "media": samples}
+            {"type": "audio", "audio": samples}
         ])
 
     def generate_audio_samples(self, text: str) -> Any:

@@ -9,6 +9,7 @@ import base64
 import requests
 from typing import Optional
 from PIL import Image as PILImage
+import PIL.ImageOps
 from io import BytesIO
 import numpy as np
 from diffusers.utils import load_image
@@ -17,201 +18,167 @@ import os
 import re
 from scipy.io.wavfile import write
 
-# Enum for Image Types
-class ImageType(Enum):
-    URL = "URL"  # Represents a URL type
-    FILE_PATH = "FILE_PATH"  # Represents a file path type
-    BASE64 = "BASE64"  # Represents a Base64 encoded type
-    PIL_IMAGE = "PIL_IMAGE"  # Represents a PIL image object
 
-# Enum for Audio Types
-class AudioType(Enum):
-    URL = "URL"  # Represents URL for audio
-    FILE_PATH = "FILE_PATH"  # Represents file path for audio
-    BYTE_IO = "BYTE_IO"  # Represents byte data for audio
-    NUMPY = "NUMPY"  # Represents NumPy array for audio
-
-# Multi-modal message type
-MultiModalMessageType = Union[ImageType, AudioType]
-
-# Image class for handling different image types
-class Image(BaseModel):
-    url: Optional[str] = None  # Image URL
-    pil_image: Optional[PILImage.Image] = None  # PIL Image object
-    filename: Optional[str] = None  # File name
-    filetype: Optional[str] = None  # File type (e.g., 'image/jpeg', 'image/png')
-    size: Optional[int] = None  # File size (in bytes)
-    file_path: Optional[str] = None  # File path on disk
-    media_type: Optional[ImageType] = None
-    model_config = ConfigDict(arbitrary_types_allowed=True) 
-
-    @classmethod
-    def new(cls, input: Any, type: ImageType):
-        """Creates an Image instance from local file or other formats."""
-        pil_image = None
-        if type == ImageType.URL or type == ImageType.FILE_PATH:
-            pil_image = load_image(input)
-            filename = input.split('/')[-1]
-        elif type == ImageType.BASE64:
-            # Decode Base64 string to bytes and load as PIL image
-            image_data = base64.b64decode(input)
-            image_bytes = BytesIO(image_data)
-            pil_image = PILImage.Image.open(image_bytes)
-        elif type == ImageType.PIL_IMAGE:
-            pil_image = input
-
-        # Extract file info
-        filetype = pil_image.format  # Extract file format
-        size = pil_image.tobytes().__sizeof__()  # Calculate image size
-
-        instance = cls()
-        instance.pil_image = pil_image
-        instance.filename = filename
-        instance.filetype = filetype
-        instance.size = size
-        instance.media_type = type
-        return instance
-
-    def save_image(self, output_path: str):
-        """Save PIL Image object to a file."""
-        if self.pil_image:
-            self.pil_image.save(output_path)
-
-
-def is_url(input_data):
-    """判断是否是URL"""
-    url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
-    return isinstance(input_data, str) and bool(url_pattern.match(input_data))
-
-def is_file_path(input_data):
-    """判断是否是文件路径"""
-    return isinstance(input_data, str) and os.path.isfile(input_data)
-
-def is_base64(input_data):
-    """判断是否是Base64编码的字符串"""
-    if isinstance(input_data, str):
-        try:
-            # 尝试解码Base64字符串
-            base64.b64decode(input_data, validate=True)
-            return True
-        except (ValueError, TypeError):
-            return False
-    return False
-
-def is_pil_image(input_data):
-    """判断是否是PIL Image对象"""
-    return isinstance(input_data, PILImage.Image)
-
-def convert_to_pil_image(input_data) -> PILImage.Image:
-    """根据输入数据判断图片类型"""
-    if is_pil_image(input_data):
-        return input_data
-    elif is_url(input_data):
-        img = Image.new(input_data,ImageType.URL)
-        return img.pil_image
-    elif is_file_path(input_data):
-        img = Image.new(input_data,ImageType.FILE_PATH)
-        return img.pil_image
-    elif is_base64(input_data):
-        img = Image.new(input_data,ImageType.BASE64)
-        return img.pil_image
-    else:
-        return None
-
-
-
-    
-# Function to build a multi-modal message
-def build_multi_modal_message(text_input: str, media_data: any) -> HumanMessage:
-    return HumanMessage(content=[
-        {"type": "text", "text": text_input},
-        {"type": "media", "media": media_data},
-    ])
-
-
-# Audio class for handling different audio types
-class Audio(BaseModel):
-    url: Optional[HttpUrl] = None  # Audio URL
-    file_path: Optional[str] = None  # File path to audio
-    samples: Optional[BytesIO] = None  # Audio sample data in BytesIO
-    filename: Optional[str] = None  # File name
-    filetype: Optional[str] = None  # File type (e.g., 'audio/mpeg', 'audio/wav')
-    size: Optional[int] = None  # File size (in bytes)
-    media_type: Optional[AudioType] = None
+class Media(BaseModel):
+    data: Optional[Union[BytesIO, PILImage.Image]] = None
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @classmethod
-    def from_local(cls, audio_path: str):
-        """Create an Audio instance from a local file."""
-        with open(audio_path, "rb") as audio_file:
-            binary_data = audio_file.read()
-            samples = BytesIO(binary_data)  # Store binary data in BytesIO
-            filename = os.path.basename(audio_path)
-            filetype = filename.split('.')[-1]  # Extract file extension
-            size = len(binary_data)
-
-        return cls(samples=samples, file_path=audio_path, filename=filename, filetype=filetype, size=size,media_type = AudioType.BYTE_IO)
-
-    @classmethod
-    def from_url(cls, url: HttpUrl):
-        """Create an Audio instance from a URL."""
-        response = requests.get(url)
-        if response.status_code == 200:
-            binary_data = response.content
-            samples = BytesIO(binary_data)  # Store binary data in BytesIO
-            filename = os.path.basename(url)
-            filetype = filename.split('.')[-1]  # Extract file extension
-            size = len(binary_data)
-            return cls(url=url, samples=samples, filename=filename, filetype=filetype, size=size,media_type = AudioType.BYTE_IO)
+    def from_data(cls, input_data: Union[str,PILImage.Image,BytesIO, np.ndarray], media_type: str = "image") -> 'Media':
+        """
+        Unified method to handle different data sources for media (image or audio).
+        Returns a Media instance with the corresponding data.
+        """
+        if media_type == "image":
+            media_data = cls.load_image(input_data)
+        elif media_type == "audio":
+            media_data = cls.load_audio(input_data)
         else:
-            raise Exception(f"Failed to download audio: {response.status_code}")
+            raise ValueError(f"Unsupported media type: {media_type}")
+        
+        # Now we create an instance of Media with the loaded data
+        return cls(data=media_data)
 
-    @classmethod
-    def from_numpy(cls, numpy_audio_data: np.ndarray,sample_rate: int):
-        try:
-            # 创建一个 BytesIO 流
+    @staticmethod
+    def load_image(image: Union[str, PILImage.Image, bytes]) -> PILImage.Image:
+        """
+        Loads `image` to a PIL Image.
+        
+        Args:
+            image (`str`, `PIL.Image.Image`, `bytes`):
+                - If `str`, it could be a URL or file path.
+                - If `bytes`, it is expected to be Base64 encoded image data.
+                - If `PIL.Image.Image`, it is a PIL image already.
+        
+        Returns:
+            `PIL.Image.Image`:
+                A PIL Image.
+        """
+        if isinstance(image, str):
+            if image.startswith(('http://', 'https://')):
+                # Load image from URL
+                image = PILImage.open(requests.get(image, stream=True).raw)
+            elif os.path.isfile(image):
+                # Load image from file path
+                image = PILImage.open(image)
+            else:
+                # Decode Base64 to image
+                try:
+                    image_data = base64.b64decode(image)
+                    image_bytes = BytesIO(image_data)
+                    image = PILImage.open(image_bytes)
+                except (ValueError, TypeError):
+                    raise ValueError(f"Invalid URL or file path or base64: {image}")
+               
+                
+            
+        elif isinstance(image, PILImage.Image):
+            # Return already loaded PIL image
+            return image
+        
+        else:
+            raise ValueError("Invalid image format. Should be a URL, file path, Base64, or PIL image.")
+
+        # Handle EXIF data and convert to RGB
+        image = PIL.ImageOps.exif_transpose(image)
+        image = image.convert("RGB")
+        return image
+
+
+    @staticmethod
+    def load_audio(audio: Union[str, np.ndarray,BytesIO]) -> BytesIO:
+        """
+        Loads audio from different data sources (URL, File Path, Base64, or NumPy).
+        
+        Args:
+            audio (`str`, `np.ndarray`):
+                - If `str`, it could be a URL or file path.
+                - If `base64`, it is expected to be Base64 encoded audio.
+                - If `np.ndarray`, it represents a NumPy array of audio data.
+        
+        Returns:
+            `BytesIO`: A BytesIO object containing the audio data.
+        """
+        if isinstance(audio, str):
+            if audio.startswith(('http://', 'https://')):
+                # Load audio from URL
+                response = requests.get(audio)
+                response.raise_for_status()  # Ensure successful request
+                return BytesIO(response.content)
+            elif os.path.isfile(audio):
+                # Load audio from file path
+                with open(audio, 'rb') as file:
+                    return BytesIO(file.read())
+            else:
+                try:
+                    audio_data = base64.b64decode(audio)
+                    return BytesIO(audio_data)
+                except (ValueError, TypeError):
+                    raise ValueError(f"Invalid URL or file path or base64: {audio}")
+        
+        elif isinstance(audio, np.ndarray):
+            # Convert NumPy array to audio (e.g., WAV format)
             byte_io = BytesIO()
-
-            # 将 NumPy 数组保存为 WAV 格式，写入到 BytesIO 对象中
-            write(byte_io, sample_rate, numpy_audio_data)
-
-            # 将指针移动到流的开头，以便后续读取
+            write(byte_io, 44100, audio)  # Assuming a sample rate of 44100 for WAV format
             byte_io.seek(0)
+            return byte_io
+        
+        elif isinstance(audio, BytesIO):
+            # Return already loaded BytesIO
+            return audio
+        
+        else:
+            raise ValueError("Unsupported audio format. Should be URL, file path, Base64, or NumPy array.")
 
-            return cls(samples=byte_io, media_type = AudioType.NUMPY)
-        except Exception as e:
-            print(f"转换过程发生错误：{e}")
-            return None
 
-    
     def to_binary(self) -> bytes:
-        """Convert the audio sample data to binary format."""
-        return self.samples.getvalue()  # Get binary data from BytesIO
+        """Convert the media data to binary format (if applicable)."""
+        if isinstance(self.data, BytesIO):
+            return self.data.getvalue()
+        elif isinstance(self.data, PILImage.Image):
+            byte_io = BytesIO()
+            self.data.save(byte_io, format="PNG")  # Assume PNG format for simplicity
+            byte_io.seek(0)
+            return byte_io.getvalue()
+        else:
+            raise TypeError("Unsupported media data format")
 
-def is_numpy_array(input_data):
-    """判断是否是NumPy数组"""
-    return isinstance(input_data, np.ndarray)
+    def save_to_file(self, file_path: str) -> None:
+        """Save the media to a file (image or audio)."""
+        if isinstance(self.data, PILImage.Image):
+            self.data.save(file_path)
+        elif isinstance(self.data, BytesIO):
+            with open(file_path, "wb") as file:
+                file.write(self.data.getvalue())
+        else:
+            raise TypeError("Unsupported media format for saving.")
 
-def is_bytesio(input_data):
-    """判断是否是BytesIO对象"""
-    return isinstance(input_data, BytesIO)
-
-def convert_audio_to_byteio(input_data,sample_rate=None) -> BytesIO:
-    """根据输入数据判断音频类型"""
-    if is_url(input_data):
-        audio = Audio.from_url(input_data)
-        return audio.samples
-    elif is_file_path(input_data):
-        audio = Audio.from_local(input_data)
-        return audio.samples
-    elif is_numpy_array(input_data):
-        audio = Audio.from_numpy(input_data)
-        return audio.samples
-    elif is_bytesio(input_data):
-        return input_data
-    else:
-        return None
+def parse_input_messages(input: HumanMessage):
+    """
+    Parse the content of the HumanMessage to extract the image and prompt.
+    """
+    media = None
+    prompt = None
     
+    if isinstance(input.content, list):
+        for item in input.content:
+            media_type = item.get("type")
+            if media_type == "image":
+                # Create Image instance based on media type
+                media = item.get("image")
+                if media is not None:
+                    media = Media.from_data(media)
+            if media_type == "audio":
+                # Create Image instance based on media type
+                media = item.get("audio")
+                if media is not None:
+                    media = Media.from_data(media)
+            elif media_type == "text":
+                prompt = item.get("text")
+    elif isinstance(input.content, str):
+        prompt = input.content
+        
+    return media, prompt
 
 # Custom LLM class for integration with runnable modules
 class CustomerLLM(RunnableSerializable[HumanMessage, AIMessage]):

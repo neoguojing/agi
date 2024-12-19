@@ -8,7 +8,7 @@ from diffusers import AutoPipelineForImage2Image
 import torch
 from typing import Any, List, Mapping, Optional, Union
 from pydantic import Field
-from agi.llms.base import CustomerLLM, Image, ImageType,convert_to_pil_image
+from agi.llms.base import CustomerLLM,parse_input_messages
 from agi.config import MODEL_PATH as model_root, CACHE_DIR
 from langchain_core.runnables import RunnableConfig
 from langchain_core.messages import AIMessage, HumanMessage
@@ -45,13 +45,13 @@ class Image2Image(CustomerLLM):
         output = AIMessage(content="")
 
         # Extract image and text prompt from input content
-        input_image, prompt = self._parse_input_content(input.content)
+        input_image, prompt = parse_input_messages(input)
         
         if input_image is None:
             return output  # No valid image found in input
 
         # Resize image to fit model input requirements
-        input_image = input_image.resize((512, 512))
+        input_image = input_image.data.resize((512, 512))
         
         # Generate the image using the model
         generated_image = self.model(prompt, image=input_image, num_inference_steps=2, strength=0.5, guidance_scale=0.0).images[0]
@@ -61,25 +61,6 @@ class Image2Image(CustomerLLM):
 
         return output
     
-    def _parse_input_content(self, content: Union[str, list]) -> tuple[Optional[PILImage.Image], Optional[str]]:
-        """
-        Parse the content of the HumanMessage to extract the image and prompt.
-        """
-        input_image = None
-        prompt = None
-        
-        if isinstance(content, list):
-            for item in content:
-                media_type = item.get("type")
-                if media_type == "media":
-                    # Create Image instance based on media type
-                    media = item.get("media")
-                    if media is not None:
-                        input_image = convert_to_pil_image(media)
-                elif media_type == "text":
-                    prompt = item.get("text")
-
-        return input_image, prompt
     
     def handle_output(self, image: PILImage.Image, prompt: str) -> AIMessage:
         """
@@ -110,7 +91,7 @@ class Image2Image(CustomerLLM):
         # Return AIMessage containing formatted image response and the image itself
         return AIMessage(content=[
             {"type": "text", "text": formatted_result},
-            {"type": "media", "media": image}
+            {"type": "image", "image": image}
         ])
     
     @property
