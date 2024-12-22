@@ -65,7 +65,7 @@ class TextToSpeech(CustomerLLM):
         # Generate audio samples and return as ByteIO
         samples = self.generate_audio_samples(input_str)
         return AIMessage(content=[
-            {"type": "text", "text": input.content},
+            {"type": "text", "text": input_str},
             {"type": "audio", "audio": samples}
         ])
 
