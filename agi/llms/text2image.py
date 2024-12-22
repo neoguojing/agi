@@ -54,15 +54,15 @@ class Text2Image(CustomerLLM):
         return "text2image"
     
     
-    def invoke(self, input: Union[HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
+    def invoke(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
         """Generate an image from the input text."""
         # Check if input is empty
         input_str = ""
         
-        if isinstance(input,HumanMessage):
-            _, input_str = parse_input_messages(input)
-        else:
+        if isinstance(input,str):
             input_str = input
+        else:
+            _, input_str = parse_input_messages(input)
             
         if not input_str.strip():
             return AIMessage(content="No prompt provided.")

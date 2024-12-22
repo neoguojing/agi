@@ -7,7 +7,7 @@ from agi.llms.tts import TextToSpeech
 from agi.llms.speech2text import Speech2Text
 from langchain_core.runnables import RunnablePassthrough,RunnableLambda,RunnableBranch
 import json
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage,BaseMessage
 from langchain_core.prompt_values import StringPromptValue,PromptValue,ChatPromptValue
 
 def build_messages(input :dict):
@@ -28,13 +28,13 @@ def build_messages(input :dict):
         {"type": type, type: media},
     ])
     
-def parse_input(input: PromptValue) -> dict:
+def parse_input(input: PromptValue) -> list[BaseMessage]:
     try:
         if isinstance(input,StringPromptValue):
             print(input.to_json())
             data = json.loads(input.to_string())
             print("**********",data)
-            return data
+            return [build_messages(data)]
         elif isinstance(input,ChatPromptValue):
             return input.to_messages()
     except json.JSONDecodeError as e:
@@ -56,13 +56,26 @@ def create_image_gen_chain(llm):
     image2image = Image2Image()
     text2image = Text2Image()
     
-    chain = (multimodal_input_template
+    def is_image2image(x: list[BaseMessage]):
+        for message in x:
+            if isinstance(message.content,str):
+                return False
+            elif isinstance(message.content,list):
+                for content in message.content:
+                    image = content.get("image")
+                    if image is None or image == "":
+                        return False
+        return True
+    
+    chain = (
+        RunnablePassthrough.assign(text=translate.with_config(run_name="translate"))
+        | multimodal_input_template
         | RunnableLambda(parse_input)
-        | RunnablePassthrough.assign(text=translate.with_config(run_name="translate"))
-        | RunnableLambda(build_messages)
-        | RunnableBranch((
-            (lambda x: isinstance(x.content, str),text2image)
-        ),image2image)
+        | RunnableBranch(
+            (
+                (lambda x: not is_image2image(x),text2image)
+            ),
+            image2image)
     )
     
     return chain
@@ -71,7 +84,6 @@ def create_text2speech_chain():
     text2speech = TextToSpeech()
     chain = (multimodal_input_template
         | RunnableLambda(parse_input)
-        # | RunnableLambda(build_messages)
         | text2speech
     )
     return chain
@@ -80,7 +92,6 @@ def create_speech2text_chain():
     speech2text = Speech2Text()
     chain = (multimodal_input_template
         | RunnableLambda(parse_input)
-        | RunnableLambda(build_messages)
         | speech2text
     )
     return chain

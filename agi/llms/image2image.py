@@ -41,7 +41,7 @@ class Image2Image(CustomerLLM):
     def model_name(self) -> str:
         return "image2image"
     
-    def invoke(self, input: HumanMessage, config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
+    def invoke(self, input: Union[HumanMessage,list[HumanMessage]], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
         output = AIMessage(content="")
 
         # Extract image and text prompt from input content

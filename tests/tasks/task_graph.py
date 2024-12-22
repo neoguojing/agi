@@ -9,28 +9,27 @@ class TestAgent(unittest.TestCase):
     def test_agi(self):
         self.graph.display()
         input_example = {
+            "messages":  [],
+            "text":"俄乌局势",
+            "image":"",
+            "audio":"",
+            "input_type": "text",
+            "need_speech": False,
+            "status": "in_progress",
+        }
+        resp = self.graph.invoke(input_example)
+        print(resp)
+        input_example = {
             "messages":  [
                 HumanMessage(
-                    content="画一幅太阳",
+                    content="超人拯救了太阳",
+                    additional_kwargs={"image":"/win/text-generation-webui/apps/pics/output/2024_09_16/1726452758.png"}
                 )
             ],
             "input_type": "image",
             "need_speech": False,
             "status": "in_progress",
         }
-        resp = self.graph.invoke(input_example)
-        print(resp)
-        # input_example = {
-        #     "messages":  [
-        #         HumanMessage(
-        #             content="超人拯救了太阳",
-        #             additional_kwargs={"image":"/win/text-generation-webui/apps/pics/output/2024_09_16/1726452758.png"}
-        #         )
-        #     ],
-        #     "input_type": "image",
-        #     "need_speech": False,
-        #     "status": "in_progress",
-        # }
 
         # input_example = {
         #     "messages":  [
