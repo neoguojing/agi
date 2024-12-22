@@ -47,7 +47,7 @@ class TextToSpeech(CustomerLLM):
         """Return a list of available TTS models."""
         return self.tts.list_models()
     
-    def invoke(self, input: Union[HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
+    def invoke(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
         """Generate speech audio from input text."""
         input_str = None
         if isinstance(input,str):
@@ -58,7 +58,7 @@ class TextToSpeech(CustomerLLM):
         if self.save_file:
             file_path = self.save_audio_to_file(text=input_str)
             return AIMessage(content=[
-                {"type": "text", "text": input.content},
+                {"type": "text", "text": input_str},
                 {"type": "audio", "audio": file_path}
             ])
         

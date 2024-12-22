@@ -114,15 +114,16 @@ def stock_code_prompt(input_text):
     return prompt.format(input=input_text)
 
 
-multimodal_input_template = PromptTemplate(
-    template='{"type":"{{type}}","data":"{{data}}","text":"{{text}}"}',
-    partial_variables={"text":None,"type":None,"data":None},
-    template_format="mustache"
-)
+# multimodal_input_template = PromptTemplate(
+#     template='{"type":"{{type}}","data":"{{data}}","text":"{{text}}"}',
+#     partial_variables={"text":None,"type":None,"data":None},
+#     template_format="mustache"
+# )
 
-multimodal_input_template1 = MultiModalChatPromptTemplate(
+multimodal_input_template = MultiModalChatPromptTemplate(
     [
-        ("human", [
+        (
+            "human", [
                 {"type": "text", "text": "{text}"},
                 {"type": "image", "image": "{image}"},
                 {"type": "audio", "audio": "{audio}"},

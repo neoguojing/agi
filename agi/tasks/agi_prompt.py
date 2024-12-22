@@ -216,10 +216,12 @@ class MultiModalMessagePromptTemplate(BaseMessagePromptTemplate):
                 inputs = {var: kwargs[var] for var in prompt.input_variables}
                 if isinstance(prompt, StringPromptTemplate):
                     formatted: Union[str, ImageURL] = prompt.format(**inputs)
-                    content.append({"type": "text", "text": formatted})
-                elif isinstance(prompt, ImagePromptTemplate):
-                    formatted = prompt.format(**inputs)
-                    content.append({"type": "image_url", "image_url": formatted})
+                    if "text" in inputs:
+                        content.append({"type": "text", "text": formatted})
+                    elif "image" in inputs:
+                        content.append({"type": "image", "image": formatted})
+                    elif "audio" in inputs:
+                        content.append({"type": "audio", "audio": formatted})
             return self._msg_class(
                 content=content, additional_kwargs=self.additional_kwargs
             )
@@ -245,9 +247,10 @@ class MultiModalMessagePromptTemplate(BaseMessagePromptTemplate):
                 if isinstance(prompt, StringPromptTemplate):
                     formatted: Union[str, ImageURL] = await prompt.aformat(**inputs)
                     content.append({"type": "text", "text": formatted})
-                elif isinstance(prompt, ImagePromptTemplate):
-                    formatted = await prompt.aformat(**inputs)
-                    content.append({"type": "image_url", "image_url": formatted})
+                elif "image" in inputs:
+                        content.append({"type": "image", "image": formatted})
+                elif "audio" in inputs:
+                    content.append({"type": "audio", "audio": formatted})
             return self._msg_class(
                 content=content, additional_kwargs=self.additional_kwargs
             )
@@ -397,4 +400,4 @@ class MultiModalChatPromptTemplate(ChatPromptTemplate):
             "partial_variables": partial_vars,
             **kwargs,
         }
-        # cast(type[ChatPromptTemplate], super()).__init__(messages=_messages, **kwargs)
+        cast(type[ChatPromptTemplate], super()).__init__(messages=_messages, **kwargs)

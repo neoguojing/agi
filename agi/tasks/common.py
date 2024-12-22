@@ -8,7 +8,7 @@ from agi.llms.speech2text import Speech2Text
 from langchain_core.runnables import RunnablePassthrough,RunnableLambda,RunnableBranch
 import json
 from langchain_core.messages import HumanMessage
-from langchain_core.prompt_values import StringPromptValue
+from langchain_core.prompt_values import StringPromptValue,PromptValue,ChatPromptValue
 
 def build_messages(input :dict):
    
@@ -28,13 +28,15 @@ def build_messages(input :dict):
         {"type": type, type: media},
     ])
     
-def parse_input(input: StringPromptValue) -> dict:
+def parse_input(input: PromptValue) -> dict:
     try:
-        
-        print(input.to_json())
-        data = json.loads(input.to_string())
-        print("**********",data)
-        return data
+        if isinstance(input,StringPromptValue):
+            print(input.to_json())
+            data = json.loads(input.to_string())
+            print("**********",data)
+            return data
+        elif isinstance(input,ChatPromptValue):
+            return input.to_messages()
     except json.JSONDecodeError as e:
         print(e,input.to_string())
         return {}
@@ -69,7 +71,7 @@ def create_text2speech_chain():
     text2speech = TextToSpeech()
     chain = (multimodal_input_template
         | RunnableLambda(parse_input)
-        | RunnableLambda(build_messages)
+        # | RunnableLambda(build_messages)
         | text2speech
     )
     return chain

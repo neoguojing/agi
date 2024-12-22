@@ -153,14 +153,32 @@ class Media(BaseModel):
         else:
             raise TypeError("Unsupported media format for saving.")
 
-def parse_input_messages(input: HumanMessage):
+def parse_input_messages(input: Union[HumanMessage,list[HumanMessage]]):
     """
     Parse the content of the HumanMessage to extract the image and prompt.
     """
     media = None
     prompt = None
-    
-    if isinstance(input.content, list):
+    if isinstance(input, list):
+        for items in input:
+            if isinstance(items.content, str):
+                prompt = input.content
+            elif isinstance(items.content, list):
+                for content in items.content:
+                    media_type = content.get("type")
+                    if media_type == "image":
+                        # Create Image instance based on media type
+                        media = content.get("image")
+                        if media is not None and media != "":
+                            media = Media.from_data(media,media_type)
+                    if media_type == "audio":
+                        # Create Image instance based on media type
+                        media = content.get("audio")
+                        if media is not None and media != "":
+                            media = Media.from_data(media,media_type)
+                    elif media_type == "text":
+                        prompt = content.get("text")
+    elif isinstance(input.content, list):
         for item in input.content:
             media_type = item.get("type")
             if media_type == "image":
@@ -177,7 +195,7 @@ def parse_input_messages(input: HumanMessage):
                 prompt = item.get("text")
     elif isinstance(input.content, str):
         prompt = input.content
-        
+    
     return media, prompt
 
 # Custom LLM class for integration with runnable modules
