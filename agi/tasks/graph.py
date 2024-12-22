@@ -1,12 +1,10 @@
 import io
 from PIL import Image as PILImage
 from langgraph.graph import END, StateGraph, START
-from agi.tasks import tools,TaskFactory,TASK_IMAGE_GEN,TASK_SPEECH
 import uuid
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import create_react_agent
 from langchain_core.runnables import  RunnableConfig
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain.globals import set_debug
 from langchain.globals import set_verbose
 from typing_extensions import TypedDict
@@ -15,7 +13,7 @@ from typing import Annotated
 from agi.tasks.task_factory import TaskFactory,TASK_AGENT,TASK_IMAGE_GEN,TASK_LLM_WITH_RAG,TASK_SPEECH_TEXT,TASK_TTS
 
 set_verbose(True)
-set_debug(True)
+# set_debug(True)
 
 class State(TypedDict):
     # Append-only chat memory so the agent can try to recover from initial mistakes.
@@ -24,7 +22,7 @@ class State(TypedDict):
     need_speech: bool
     status: str
     
-class AgentGraph:
+class AgiGraph:
     def __init__(self):
         
         checkpointer = MemorySaver()
@@ -52,15 +50,15 @@ class AgentGraph:
         if msg_type == "text":
             return "agent"
         elif msg_type == "image":
-            return "tranlate"
-        elif msg_type == "speech":
+            return "image_gen"
+        elif msg_type == "audio":
             return "speech2text"
 
         return END
     
     def agent_edge_control(self,state: State):
         if state["need_speech"]:
-            return "text2speech"
+            return "tts"
         return END
     
     def invoke(self,input:State):
@@ -98,47 +96,3 @@ class AgentGraph:
         except Exception:
             # This requires some extra dependencies and is optional
             pass
-
-
-if __name__ == '__main__':
-    input_example = {
-        "messages":  [
-            HumanMessage(
-                content="画一幅太阳",
-            )
-        ],
-        "input_type": "image",
-        "need_speech": False,
-        "status": "in_progress",
-    }
-    
-    g = AgentGraph()
-    # g.display()
-    # resp = g.translate_chain.invoke({"text":"请画一张地球的图片"})
-    # resp = g.llm_with_tools.invoke("draw a earth picture")
-    # resp = g.agent_executor.invoke(input_example)e
-    # resp = g.run(input_example)
-    input_example = {
-        "messages":  [
-            HumanMessage(
-                content="超人拯救了太阳",
-                additional_kwargs={"image":"/win/text-generation-webui/apps/pics/output/2024_09_16/1726452758.png"}
-            )
-        ],
-        "input_type": "image",
-        "need_speech": False,
-        "status": "in_progress",
-    }
-    # resp = g.run(input_example)
-    input_example = {
-        "messages":  [
-            HumanMessage(
-                content="俄乌战争进展",
-            )
-        ],
-        "input_type": "text",
-        "need_speech": False,
-        "status": "in_progress",
-    }
-    resp = g.invoke(input_example)
-    # print(resp)

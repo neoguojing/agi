@@ -10,12 +10,6 @@ import json
 from langchain_core.messages import HumanMessage
 from langchain_core.prompt_values import StringPromptValue
 
-# TODO
-def input_branch():
-    return RunnableBranch(
-        (),
-        
-    )
 def build_messages(input :dict):
    
     media = None
