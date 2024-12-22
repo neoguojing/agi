@@ -167,12 +167,12 @@ def parse_input_messages(input: HumanMessage):
                 # Create Image instance based on media type
                 media = item.get("image")
                 if media is not None:
-                    media = Media.from_data(media)
+                    media = Media.from_data(media,media_type)
             if media_type == "audio":
                 # Create Image instance based on media type
                 media = item.get("audio")
                 if media is not None:
-                    media = Media.from_data(media)
+                    media = Media.from_data(media,media_type)
             elif media_type == "text":
                 prompt = item.get("text")
     elif isinstance(input.content, str):

@@ -19,19 +19,19 @@ def input_branch():
 def build_messages(input :dict):
    
     media = None
-    media_dict = input.get("media") 
-    if media_dict.get('data'):  # 首先检查 'data' 字段
-        media = media_dict['data']
-    elif media_dict.get('path'):  # 其次检查 'path' 字段
-        media =  media_dict['path']
-    elif media_dict.get('url'):  # 最后检查 'url' 字段
-        media =  media_dict['url'] 
-    else:
+    type = ""
+    if input.get('type'):  # 首先获取type
+        type = input['type']
+        
+    if input.get('data'):  # 获取媒体数据
+        media =  input['data']
+    
+    if media is None:
         return HumanMessage(content=input.get("text"))
 
     return HumanMessage(content=[
         {"type": "text", "text": input.get("text")},
-        {"type": "media", "media": media},
+        {"type": type, type: media},
     ])
     
 def parse_input(input: StringPromptValue) -> dict:

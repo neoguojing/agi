@@ -402,8 +402,8 @@ def stock_code_prompt(input_text):
 #         return _message
 
 multimodal_input_template = PromptTemplate(
-    template='{"media":{"url":"{{url}}","path":"{{path}}","data":{{data}}},"text":"{{text}}"}',
-    partial_variables={"text":None,"url":None,"path":None,"data":"null"},
+    template='{"type":"{{type}}","data":"{{data}}","text":"{{text}}"}',
+    partial_variables={"text":None,"type":None,"data":None},
     template_format="mustache"
 )
 

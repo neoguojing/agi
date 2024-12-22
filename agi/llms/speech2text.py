@@ -32,7 +32,7 @@ class Speech2Text(CustomerLLM):
         self, input: HumanMessage, config: Optional[RunnableConfig] = None, **kwargs: Any
     ) -> AIMessage:
         """Process the input, transcribe audio, and return the output message."""
-        audio_input = parse_input_messages(input)
+        audio_input,_ = parse_input_messages(input)
         
         if audio_input is None:
             return AIMessage(content="No valid audio input found.")
