@@ -63,9 +63,9 @@ def create_image_gen_chain(llm):
             elif isinstance(message.content,list):
                 for content in message.content:
                     image = content.get("image")
-                    if image is None or image == "":
-                        return False
-        return True
+                    if image is not None and image != "":
+                        return True
+        return False
     
     chain = (
         RunnablePassthrough.assign(text=translate.with_config(run_name="translate"))
