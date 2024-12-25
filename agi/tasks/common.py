@@ -28,13 +28,16 @@ def build_messages(input :dict):
         {"type": type, type: media},
     ])
     
+
 def parse_input(input: PromptValue) -> list[BaseMessage]:
     try:
+        # 使用json模板输入
         if isinstance(input,StringPromptValue):
             print(input.to_json())
             data = json.loads(input.to_string())
             print("**********",data)
             return [build_messages(data)]
+        # 使用message模板输入
         elif isinstance(input,ChatPromptValue):
             return input.to_messages()
     except json.JSONDecodeError as e:
