@@ -7,7 +7,7 @@ from agi.llms.tts import TextToSpeech
 from agi.llms.speech2text import Speech2Text
 from langchain_core.runnables import RunnablePassthrough,RunnableLambda,RunnableBranch
 import json
-from langchain_core.messages import HumanMessage,BaseMessage
+from langchain_core.messages import HumanMessage,BaseMessage,AIMessage
 from langchain_core.prompt_values import StringPromptValue,PromptValue,ChatPromptValue
 from langgraph.prebuilt.chat_agent_executor import AgentState
 from agi.llms.base import parse_input_messages
@@ -138,6 +138,12 @@ def create_speech2text_chain(graph=False):
     )
     
     if graph:
-        chain = graph_input_format | speech2text | graph_parser
+        def _convert_ai_huiman(x:AIMessage):
+            if isinstance(x,list):
+                x = x[-1]
+            if isinstance(x,AIMessage):
+                return HumanMessage(content=x.content)
+            
+        chain = graph_input_format | speech2text | _convert_ai_huiman | graph_parser
         
     return chain

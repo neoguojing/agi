@@ -3,13 +3,9 @@ from PIL import Image as PILImage
 from langgraph.graph import END, StateGraph, START
 import uuid
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.prebuilt import create_react_agent
 from langchain_core.runnables import  RunnableConfig,Runnable,RunnablePassthrough
 from langchain.globals import set_debug
 from langchain.globals import set_verbose
-from typing_extensions import TypedDict
-from langgraph.graph.message import AnyMessage, add_messages
-from typing import Annotated
 from agi.tasks.task_factory import TaskFactory,TASK_AGENT,TASK_IMAGE_GEN,TASK_LLM_WITH_RAG,TASK_SPEECH_TEXT,TASK_TTS
 from langgraph.prebuilt.chat_agent_executor import AgentState
 set_verbose(True)
@@ -62,10 +58,10 @@ class AgiGraph:
             return "tts"
         return END
     
-    def invoke(self,input:State):
+    def invoke(self,input:State) -> State:
         config = {"configurable": {"thread_id": str(uuid.uuid4())}}
         events = self.graph.invoke(input, config)
-        print(events)
+        return events
     
     def display(self):
         try:

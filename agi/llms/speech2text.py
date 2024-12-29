@@ -29,7 +29,7 @@ class Speech2Text(CustomerLLM):
         self.whisper = whisper
         
     def invoke(
-        self, input: HumanMessage, config: Optional[RunnableConfig] = None, **kwargs: Any
+        self, input: Union[HumanMessage,list[HumanMessage]], config: Optional[RunnableConfig] = None, **kwargs: Any
     ) -> AIMessage:
         """Process the input, transcribe audio, and return the output message."""
         audio_input,_ = parse_input_messages(input)

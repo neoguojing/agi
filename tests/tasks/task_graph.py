@@ -16,20 +16,26 @@ class TestAgent(unittest.TestCase):
             "need_speech": False,
             "status": "in_progress",
         }
-        # resp = self.graph.invoke(input_example)
-        # print(resp)
-        # input_example = {
-        #     "messages":  [
-        #         HumanMessage(
-        #             content="超人拯救了太阳",
-        #         )
-        #     ],
-        #     "input_type": "image",
-        #     "need_speech": False,
-        #     "status": "in_progress",
-        # }
-        # resp = self.graph.invoke(input_example)
-        # print(resp)
+        resp = self.graph.invoke(input_example)
+        self.assertIsInstance(resp,dict)
+        self.assertIsInstance(resp["messages"],list)
+        self.assertEqual(resp["input_type"],"text")
+        self.assertIsInstance(resp["messages"][-1],AIMessage)
+        input_example = {
+            "messages":  [
+                HumanMessage(
+                    content="超人拯救了太阳",
+                )
+            ],
+            "input_type": "image",
+            "need_speech": False,
+            "status": "in_progress",
+        }
+        resp = self.graph.invoke(input_example)
+        self.assertIsInstance(resp,dict)
+        self.assertIsInstance(resp["messages"],list)
+        self.assertEqual(resp["input_type"],"image")
+        self.assertIsInstance(resp["messages"][-1],AIMessage)
         input_example = {
             "messages":  [
                 HumanMessage(
@@ -44,5 +50,27 @@ class TestAgent(unittest.TestCase):
             "status": "in_progress",
         }
         resp = self.graph.invoke(input_example)
-        print(resp)
+        self.assertIsInstance(resp,dict)
+        self.assertIsInstance(resp["messages"],list)
+        self.assertEqual(resp["input_type"],"image")
+        self.assertIsInstance(resp["messages"][-1],AIMessage)
+        
+        input_example = {
+            "messages":  [
+                HumanMessage(
+                    content=[
+                        {"type":"audio","audio":"tests/1730604079.wav"},
+                    ],
+                )
+            ],
+            "input_type": "audio",
+            "need_speech": True,
+            "status": "in_progress",
+        }
+        resp = self.graph.invoke(input_example)
+        self.assertIsInstance(resp,dict)
+        self.assertIsInstance(resp["messages"],list)
+        self.assertEqual(resp["need_speech"],True)
+        self.assertEqual(resp["input_type"],"audio")
+        self.assertIsInstance(resp["messages"][-1],AIMessage)
         

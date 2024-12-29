@@ -14,6 +14,8 @@ prompt = ChatPromptTemplate.from_messages(
 )
 
 def _modify_state_messages(state: AgentState):
+    # 过滤掉非法的消息类型
+    state["messages"] = list(filter(lambda x: not isinstance(x.content,list), state["messages"])) 
     return prompt.invoke({"messages": state["messages"],"language":"chinese"}).to_messages()
 
 memory = MemorySaver()
@@ -21,7 +23,8 @@ def create_react_agent_task(llm):
     langgraph_agent_executor = create_react_agent(llm, 
                                                   tools,state_modifier=_modify_state_messages,
                                                   checkpointer=memory,
-                                                  store=InMemoryStore())
+                                                  store=InMemoryStore()
+                                                  )
     # langgraph_agent_executor.step_timeout = 2
     return langgraph_agent_executor
 
