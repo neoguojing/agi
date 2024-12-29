@@ -9,7 +9,18 @@ from langchain_core.runnables import RunnablePassthrough,RunnableLambda,Runnable
 import json
 from langchain_core.messages import HumanMessage,BaseMessage
 from langchain_core.prompt_values import StringPromptValue,PromptValue,ChatPromptValue
+from langgraph.prebuilt.chat_agent_executor import AgentState
+from agi.llms.base import parse_input_messages
 
+def graph_input_format(state: AgentState):
+    return state["messages"]
+    
+def graph_parser(x):
+    if isinstance(x,BaseMessage):
+        return AgentState(messages=[x])
+    elif isinstance(x,list[BaseMessage]):
+        return AgentState(messages=x)
+    
 def build_messages(input :dict):
    
     media = None
@@ -35,7 +46,6 @@ def parse_input(input: PromptValue) -> list[BaseMessage]:
         if isinstance(input,StringPromptValue):
             print(input.to_json())
             data = json.loads(input.to_string())
-            print("**********",data)
             return [build_messages(data)]
         # 使用message模板输入
         elif isinstance(input,ChatPromptValue):
@@ -44,57 +54,90 @@ def parse_input(input: PromptValue) -> list[BaseMessage]:
         print(e,input.to_string())
         return {}
 
-def create_translate_chain(llm):
-    return english_traslate_template | llm | StrOutputParser()
+
+        
+def create_translate_chain(llm,graph):
+    chain = english_traslate_template | llm | StrOutputParser()
+    if graph:
+        def translate_node(state: AgentState):
+            messages = state["messages"]
+            if messages:
+                if isinstance(messages, list):
+                    messages = messages[-1]
+                _,text = parse_input_messages(messages)
+                result = chain.invoke({"text": text})
+                if isinstance(messages.content,str):
+                    return [HumanMessage(content=result)]
+                elif isinstance(messages.content,list):
+                    for content in messages.content:
+                        media_type = content.get("type")
+                        if media_type == "text":
+                            content["text"] = result
+                            return [messages]
+        return RunnableLambda(translate_node)
+        
+    return chain
 
 
-def create_text2image_chain(llm):
-    translate = create_translate_chain(llm)
+def create_text2image_chain(llm,graph=False):
+    translate = create_translate_chain(llm,graph)
     text2image = Text2Image()
     
     return translate | text2image
 
-def create_image_gen_chain(llm):
-    translate = create_translate_chain(llm)
+def create_image_gen_chain(llm,graph=False):
+    translate = create_translate_chain(llm,graph)
     image2image = Image2Image()
     text2image = Text2Image()
     
     def is_image2image(x: list[BaseMessage]):
         for message in x:
-            if isinstance(message.content,str):
-                return False
-            elif isinstance(message.content,list):
+            if isinstance(message.content,list):
                 for content in message.content:
                     image = content.get("image")
                     if image is not None and image != "":
                         return True
         return False
     
+    branch = RunnableBranch(
+            (
+                (lambda x: not is_image2image(x),text2image)
+            ),
+            image2image
+    )
+    
     chain = (
         RunnablePassthrough.assign(text=translate.with_config(run_name="translate"))
         | multimodal_input_template
         | RunnableLambda(parse_input)
-        | RunnableBranch(
-            (
-                (lambda x: not is_image2image(x),text2image)
-            ),
-            image2image)
+        | branch
     )
     
+    if graph:
+        chain = translate | branch | graph_parser
+        
     return chain
 
-def create_text2speech_chain():
+def create_text2speech_chain(graph=False):
     text2speech = TextToSpeech()
     chain = (multimodal_input_template
         | RunnableLambda(parse_input)
         | text2speech
     )
+    
+    if graph:
+        chain = graph_input_format | text2speech | graph_parser
+        
     return chain
 
-def create_speech2text_chain():
+def create_speech2text_chain(graph=False):
     speech2text = Speech2Text()
     chain = (multimodal_input_template
         | RunnableLambda(parse_input)
         | speech2text
     )
+    
+    if graph:
+        chain = graph_input_format | speech2text | graph_parser
+        
     return chain

@@ -73,7 +73,7 @@ class Image2Image(CustomerLLM):
             output_file.parent.mkdir(parents=True, exist_ok=True)
 
             image.save(output_file)
-            image_source = f"file/{output_file}"
+            image_source = f"{output_file}"
         else:
             # Resize image and convert to base64
             image.thumbnail((512, 512 * image.height / image.width))
@@ -91,7 +91,7 @@ class Image2Image(CustomerLLM):
         # Return AIMessage containing formatted image response and the image itself
         return AIMessage(content=[
             {"type": "text", "text": formatted_result},
-            {"type": "image", "image": image}
+            {"type": "image", "image": image_source}
         ])
     
     @property

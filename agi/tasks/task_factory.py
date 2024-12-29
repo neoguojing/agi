@@ -60,6 +60,7 @@ class TaskFactory:
     _knowledge_manager = KnowledgeManager(CACHE_DIR,_llm,_embedding)
     @staticmethod
     def create_task(task_type,**kwargs) -> Union[Runnable,Embeddings,KnowledgeManager]:
+        graph = kwargs.get("graph",False) 
         if task_type not in TaskFactory._instances:
             with TaskFactory._lock:
                 if task_type not in TaskFactory._instances:
@@ -86,13 +87,13 @@ class TaskFactory:
                         elif task_type == TASK_LLM_WITH_RAG:
                             instance =  create_chat_with_rag(TaskFactory._knowledge_manager,TaskFactory._llm,debug=True,**kwargs)
                         elif task_type == TASK_TRANSLATE:
-                            instance = create_translate_chain(TaskFactory._llm)
+                            instance = create_translate_chain(TaskFactory._llm,graph=graph)
                         elif task_type == TASK_IMAGE_GEN:
-                            instance = create_image_gen_chain(TaskFactory._llm)
+                            instance = create_image_gen_chain(TaskFactory._llm,graph=graph)
                         elif task_type == TASK_TTS:
-                            instance = create_text2speech_chain()
+                            instance = create_text2speech_chain(graph=graph)
                         elif task_type == TASK_SPEECH_TEXT:
-                            instance = create_speech2text_chain()
+                            instance = create_speech2text_chain(graph=graph)
                         elif task_type == TASK_DOC_DB:
                             instance = TaskFactory._knowledge_manager
                         elif task_type == TASK_AGENT:

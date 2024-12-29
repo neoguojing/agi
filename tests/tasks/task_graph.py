@@ -9,36 +9,40 @@ class TestAgent(unittest.TestCase):
     def test_agi(self):
         self.graph.display()
         input_example = {
-            "messages":  [],
-            "text":"俄乌局势",
-            "image":"",
-            "audio":"",
+            "messages":  [
+                HumanMessage(content="俄乌局势")
+            ],
             "input_type": "text",
             "need_speech": False,
             "status": "in_progress",
         }
-        resp = self.graph.invoke(input_example)
-        print(resp)
+        # resp = self.graph.invoke(input_example)
+        # print(resp)
+        # input_example = {
+        #     "messages":  [
+        #         HumanMessage(
+        #             content="超人拯救了太阳",
+        #         )
+        #     ],
+        #     "input_type": "image",
+        #     "need_speech": False,
+        #     "status": "in_progress",
+        # }
+        # resp = self.graph.invoke(input_example)
+        # print(resp)
         input_example = {
             "messages":  [
                 HumanMessage(
-                    content="超人拯救了太阳",
-                    additional_kwargs={"image":"/win/text-generation-webui/apps/pics/output/2024_09_16/1726452758.png"}
+                    content=[
+                        {"type":"text","text":"猫咪是黑猫警长"},
+                        {"type":"image","image":"tests/cat.jpg"},
+                    ],
                 )
             ],
             "input_type": "image",
             "need_speech": False,
             "status": "in_progress",
         }
-
-        # input_example = {
-        #     "messages":  [
-        #         HumanMessage(
-        #             content="俄乌战争进展",
-        #         )
-        #     ],
-        #     "input_type": "text",
-        #     "need_speech": False,
-        #     "status": "in_progress",
-        # }
+        resp = self.graph.invoke(input_example)
+        print(resp)
         

@@ -11,33 +11,27 @@ from typing_extensions import TypedDict
 from langgraph.graph.message import AnyMessage, add_messages
 from typing import Annotated
 from agi.tasks.task_factory import TaskFactory,TASK_AGENT,TASK_IMAGE_GEN,TASK_LLM_WITH_RAG,TASK_SPEECH_TEXT,TASK_TTS
-
+from langgraph.prebuilt.chat_agent_executor import AgentState
 set_verbose(True)
-# set_debug(True)
+set_debug(True)
 
-class State(TypedDict):
-    # Append-only chat memory so the agent can try to recover from initial mistakes.
-    messages: Annotated[list[AnyMessage], add_messages]
-    text: str
-    image: str
-    audio: str
+class State(AgentState):
     input_type: str
     need_speech: bool
     status: str
     
 class AgiGraph:
     def __init__(self):
-        
+        # TODO 
         checkpointer = MemorySaver()
         # self.prompt = agent_prompt
         # self.prompt = self.prompt.partial(system_message="You should provide accurate data for the chart_generator to use.")
         # self.prompt = self.prompt.partial(tool_names=", ".join([tool.name for tool in tools]))
         # self.agent_executor = create_react_agent(self.llm, tools, state_modifier=self.prompt,checkpointer=checkpointer)
         self.builder = StateGraph(State)
-        print("**********",type(TaskFactory.create_task(TASK_SPEECH_TEXT)))
-        self.builder.add_node("speech2text", TaskFactory.create_task(TASK_SPEECH_TEXT))
-        self.builder.add_node("tts", TaskFactory.create_task(TASK_TTS))
-        self.builder.add_node("image_gen", TaskFactory.create_task(TASK_IMAGE_GEN))
+        self.builder.add_node("speech2text", TaskFactory.create_task(TASK_SPEECH_TEXT,graph=True))
+        self.builder.add_node("tts", TaskFactory.create_task(TASK_TTS,graph=True))
+        self.builder.add_node("image_gen", TaskFactory.create_task(TASK_IMAGE_GEN,graph=True))
         self.builder.add_node("agent", TaskFactory.create_task(TASK_AGENT))
         
         self.builder.add_edge("speech2text", "agent")
@@ -51,8 +45,6 @@ class AgiGraph:
             # interrupt_before=["tools"],
             # interrupt_after=["tools"]
             )
-    def node_wrapper(self,node: Runnable):
-        return RunnablePassthrough.assign(messages=node)
         
     def routes(self,state: State, config: RunnableConfig):
         msg_type = state["input_type"]

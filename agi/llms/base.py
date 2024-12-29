@@ -160,39 +160,23 @@ def parse_input_messages(input: Union[HumanMessage,list[HumanMessage]]):
     media = None
     prompt = None
     if isinstance(input, list):
-        for items in input:
-            if isinstance(items.content, str):
-                prompt = input.content
-            elif isinstance(items.content, list):
-                for content in items.content:
-                    media_type = content.get("type")
-                    if media_type == "image":
-                        # Create Image instance based on media type
-                        media_data = content.get("image")
-                        if media_data is not None and media_data != "":
-                            media = Media.from_data(media_data,media_type)
-                    if media_type == "audio":
-                        # Create Image instance based on media type
-                        media_data = content.get("audio")
-                        if media_data is not None and media_data != "":
-                            media = Media.from_data(media_data,media_type)
-                    elif media_type == "text":
-                        prompt = content.get("text")
-    elif isinstance(input.content, list):
-        for item in input.content:
-            media_type = item.get("type")
+        input = input[-1]
+        
+    if isinstance(input.content, list):
+        for content in input.content:
+            media_type = content.get("type")
             if media_type == "image":
                 # Create Image instance based on media type
-                media_data = item.get("image")
-                if media_data is not None:
+                media_data = content.get("image")
+                if media_data is not None and media_data != "":
                     media = Media.from_data(media_data,media_type)
             if media_type == "audio":
                 # Create Image instance based on media type
-                media_data = item.get("audio")
-                if media_data is not None:
+                media_data = content.get("audio")
+                if media_data is not None and media_data != "":
                     media = Media.from_data(media_data,media_type)
             elif media_type == "text":
-                prompt = item.get("text")
+                prompt = content.get("text")
     elif isinstance(input.content, str):
         prompt = input.content
     

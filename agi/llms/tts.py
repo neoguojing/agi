@@ -11,7 +11,7 @@ from typing import Any, Optional,Union
 from pydantic import BaseModel, Field
 import logging
 from langchain_core.messages import AIMessage, HumanMessage
-
+import base64
 class TextToSpeech(CustomerLLM):
     tts: Optional[Any] = Field(default=None)
     speaker_wav: str = Field(default=TTS_SPEAKER_WAV)
@@ -66,7 +66,7 @@ class TextToSpeech(CustomerLLM):
         samples = self.generate_audio_samples(input_str)
         return AIMessage(content=[
             {"type": "text", "text": input_str},
-            {"type": "audio", "audio": samples}
+            {"type": "audio", "audio": base64.b64encode(samples.read()).decode('utf-8')}
         ])
 
     def generate_audio_samples(self, text: str) -> Any:

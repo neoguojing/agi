@@ -58,7 +58,7 @@ class Text2Image(CustomerLLM):
         """Generate an image from the input text."""
         # Check if input is empty
         input_str = ""
-        
+        print("#########",input)
         if isinstance(input,str):
             input_str = input
         else:
@@ -86,7 +86,8 @@ class Text2Image(CustomerLLM):
         # Format the result as HTML with embedded image and prompt
         formatted_result = f'<img src="{image_source}" {style}>\n'
         result = AIMessage(content=[{"type": "text", "text": formatted_result},
-                                    {"type": "image", "image": image}])
+                                    {"type": "image", "image": image_source}])
+        print("#########1",result)
         return result
 
     def _save_or_resize_image(self, image: Any) -> str:
@@ -104,7 +105,7 @@ class Text2Image(CustomerLLM):
 
         # Save the image to the file system
         image.save(output_file)
-        return f"file/{output_file}"
+        return f"{output_file}"
 
     def _convert_image_to_base64(self, image: Any) -> str:
         """Convert the image to a base64-encoded string."""
