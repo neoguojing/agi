@@ -81,14 +81,17 @@ def create_translate_chain(llm,graph):
 
 def create_text2image_chain(llm,graph=False):
     translate = create_translate_chain(llm,graph)
-    text2image = Text2Image()
+    # text2image = Text2Image()
+    text2image = ModelFactory.get_model("text2image")
     
     return translate | text2image
 
 def create_image_gen_chain(llm,graph=False):
     translate = create_translate_chain(llm,graph)
-    image2image = Image2Image()
-    text2image = Text2Image()
+    # image2image = Image2Image()
+    image2image = ModelFactory.get_model("image2image")
+    # text2image = Text2Image()
+    text2image = ModelFactory.get_model("text2image")
     
     def is_image2image(x: list[BaseMessage]):
         for message in x:
@@ -119,7 +122,8 @@ def create_image_gen_chain(llm,graph=False):
     return chain
 
 def create_text2speech_chain(graph=False):
-    text2speech = TextToSpeech()
+    # text2speech = TextToSpeech()
+    text2speech = ModelFactory.get_model("text2speech")
     chain = (multimodal_input_template
         | RunnableLambda(parse_input)
         | text2speech
@@ -131,7 +135,8 @@ def create_text2speech_chain(graph=False):
     return chain
 
 def create_speech2text_chain(graph=False):
-    speech2text = Speech2Text()
+    # speech2text = Speech2Text()
+    speech2text = ModelFactory.get_model("speech2text")
     chain = (multimodal_input_template
         | RunnableLambda(parse_input)
         | speech2text

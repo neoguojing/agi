@@ -33,7 +33,7 @@ class ModelFactory:
                     if isinstance(removed_model[1],CustomerLLM):
                         removed_model[1].destroy()
             else:
-                ModelFactory._instances[model_type].move_to_end(ModelFactory._instances[model_type])
+                ModelFactory._instances.move_to_end(model_type)
                 
             return ModelFactory._instances[model_type]
 
