@@ -12,6 +12,7 @@ class TestAgent(unittest.TestCase):
         query = "查询tesla股票价格"
         try:
             messages = self.agent.invoke({"messages": [("human", query)]},config=self.config)
+            print(messages)
             self.assertIsInstance(messages,list)
             self.assertIsInstance(messages[-1],AIMessage)
             self.assertIsInstance(messages[-1].content,str)

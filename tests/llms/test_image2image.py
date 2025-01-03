@@ -1,7 +1,7 @@
 import unittest
-from agi.llms.base import Image, build_multi_modal_message, ImageType
+from agi.llms.base import Media
 from agi.llms.image2image import Image2Image
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage,HumanMessage
 from PIL import Image as PIL_Image
 
 class TestImage2Image(unittest.TestCase):
@@ -12,11 +12,14 @@ class TestImage2Image(unittest.TestCase):
         
         # Prepare input image
         self.image_path = "tests/cat.jpg"  # Path to the test image
-        self.img = Image.new(self.image_path, ImageType.FILE_PATH)
+        self.img = Media.from_data(self.image_path, media_type="image")
         self.assertIsNotNone(self.img, "Failed to load image.")
 
         # Prepare the multi-modal message with text and image
-        self.input_message = build_multi_modal_message("as a tiger", self.image_path)
+        self.input_message = HumanMessage(content=[
+            {"type":"text","text":"as a tiger"},
+            {"type":"image","image":self.image_path}
+        ])
 
     def test_image2image_invoke(self):
         """Test the invocation of the Image2Image model."""
@@ -33,8 +36,8 @@ class TestImage2Image(unittest.TestCase):
             context_type = item.get("type")
             if context_type == "text":
                 self.assertIsInstance(item.get("text"), str, "Text content should be a string.")
-            elif context_type == "media":
-                self.assertIsInstance(item.get("media"), PIL_Image.Image, "PIL image content should be an instance of Image.")
+            elif context_type == "image":
+                self.assertIsInstance(item.get("image"), str, "PIL image content should be an instance of Image.")
             else:
                 self.fail(f"Unexpected content type: {context_type}")
 

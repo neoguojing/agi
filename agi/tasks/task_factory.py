@@ -43,9 +43,54 @@ TASK_TTS = "tts"
 TASK_SPEECH_TEXT = "speech2text"
 TASK_RETRIEVER = "rag"
 TASK_DOC_DB = "doc_db"
-    
+
+
+# Helper functions for each task type creation
+def create_llm_task(**kwargs):
+    model_name = kwargs.get("model_name") or OLLAMA_DEFAULT_MODE
+    return ChatOpenAI(
+        model=model_name,
+        openai_api_key=OPENAI_API_KEY,
+        base_url=urljoin(OLLAMA_API_BASE_URL, "/v1/")
+    )
+
+def create_embedding_task(**kwargs):
+    model_name = kwargs.get("model_name") or RAG_EMBEDDING_MODEL
+    return OllamaEmbeddings(
+        model=model_name,
+        base_url=OLLAMA_API_BASE_URL,
+    )
+
+def create_llm_with_history_task(**kwargs):
+    return create_chat_with_history(TaskFactory._llm)
+
+def create_retriever_task(**kwargs):
+    from agi.tasks.retriever import create_retriever
+    return create_retriever(TaskFactory._knowledge_manager, **kwargs)
+
+def create_llm_with_rag_task(**kwargs):
+    return create_chat_with_rag(TaskFactory._knowledge_manager, TaskFactory._llm, debug=True, **kwargs)
+
+def create_translate_task(**kwargs):
+    return create_translate_chain(TaskFactory._llm, graph=kwargs.get("graph"))
+
+def create_image_gen_task(**kwargs):
+    return create_image_gen_chain(TaskFactory._llm, graph=kwargs.get("graph"))
+
+def create_tts_task(**kwargs):
+    return create_text2speech_chain(graph=kwargs.get("graph"))
+
+def create_speech_text_task(**kwargs):
+    return create_speech2text_chain(graph=kwargs.get("graph"))
+
+def create_doc_db_task(**kwargs):
+    return TaskFactory._knowledge_manager
+
+def create_agent_task(**kwargs):
+    return create_react_agent_task(TaskFactory._llm)
+
 class TaskFactory:
-    _instances = {}
+    _instances = {"graph":{}}
     _lock = threading.Lock()  # 异步锁
     _llm = ChatOpenAI(
             model=OLLAMA_DEFAULT_MODE,
@@ -57,54 +102,61 @@ class TaskFactory:
             base_url=OLLAMA_API_BASE_URL,
         )
     
+    task_creators = {
+        TASK_LLM: create_llm_task,
+        TASK_EMBEDDING: create_embedding_task,
+        TASK_LLM_WITH_HISTORY: create_llm_with_history_task,
+        TASK_RETRIEVER: create_retriever_task,
+        TASK_LLM_WITH_RAG: create_llm_with_rag_task,
+        TASK_TRANSLATE: create_translate_task,
+        TASK_IMAGE_GEN: create_image_gen_task,
+        TASK_TTS: create_tts_task,
+        TASK_SPEECH_TEXT: create_speech_text_task,
+        TASK_DOC_DB: create_doc_db_task,
+        TASK_AGENT: create_agent_task
+    }
+    
     _knowledge_manager = KnowledgeManager(CACHE_DIR,_llm,_embedding)
     @staticmethod
     def create_task(task_type,**kwargs) -> Union[Runnable,Embeddings,KnowledgeManager]:
         graph = kwargs.get("graph",False) 
+         # Task creation logic
+        if graph:
+            # Check if task exists in the graph-specific instances
+            if task_type not in TaskFactory._instances.get("graph", {}):
+                with TaskFactory._lock:
+                    if task_type not in TaskFactory._instances.get("graph", {}):
+                        try:
+                            instance = TaskFactory.task_creators.get(task_type, lambda *args, **kwargs: None)(**kwargs)
+
+                            if instance is None:
+                                raise ValueError(f"Task type {task_type} not supported or invalid.")
+                            
+                            # Store the instance in graph-specific dictionary
+                            if "graph" not in TaskFactory._instances:
+                                TaskFactory._instances["graph"] = {}
+                            TaskFactory._instances["graph"][task_type] = instance
+
+                        except Exception as e:
+                            raise RuntimeError(f"Error creating task of type {task_type} for graph: {e}")
+            # Return the graph-specific instance
+            return TaskFactory._instances["graph"].get(task_type)
+        
+        # Non-graph tasks
         if task_type not in TaskFactory._instances:
             with TaskFactory._lock:
                 if task_type not in TaskFactory._instances:
                     try:
-                        if task_type == TASK_LLM:
-                            model_name = kwargs.get("model_name") or OLLAMA_DEFAULT_MODE
-                            instance = ChatOpenAI(
-                                model=model_name,
-                                openai_api_key=OPENAI_API_KEY,
-                                base_url=urljoin(OLLAMA_API_BASE_URL, "/v1/")
-                            )
-                            
-                        elif task_type == TASK_EMBEDDING:
-                            model_name = kwargs.get("model_name") or RAG_EMBEDDING_MODEL
-                            instance = OllamaEmbeddings(
-                                model=model_name,
-                                base_url=OLLAMA_API_BASE_URL,
-                            )
-                        elif task_type == TASK_LLM_WITH_HISTORY:
-                            instance = create_chat_with_history(TaskFactory._llm)
-                        elif task_type == TASK_RETRIEVER:
-                            from agi.tasks.retriever import create_retriever
-                            instance = create_retriever(TaskFactory._knowledge_manager,**kwargs)
-                        elif task_type == TASK_LLM_WITH_RAG:
-                            instance =  create_chat_with_rag(TaskFactory._knowledge_manager,TaskFactory._llm,debug=True,**kwargs)
-                        elif task_type == TASK_TRANSLATE:
-                            instance = create_translate_chain(TaskFactory._llm,graph=graph)
-                        elif task_type == TASK_IMAGE_GEN:
-                            instance = create_image_gen_chain(TaskFactory._llm,graph=graph)
-                        elif task_type == TASK_TTS:
-                            instance = create_text2speech_chain(graph=graph)
-                        elif task_type == TASK_SPEECH_TEXT:
-                            instance = create_speech2text_chain(graph=graph)
-                        elif task_type == TASK_DOC_DB:
-                            instance = TaskFactory._knowledge_manager
-                        elif task_type == TASK_AGENT:
-                            instance = create_react_agent_task(TaskFactory._llm)
+                        instance = TaskFactory.task_creators.get(task_type, lambda *args, **kwargs: None)(**kwargs)
 
+                        if instance is None:
+                            raise ValueError(f"Task type {task_type} not supported or invalid.")
+                        
+                        # Store the instance in the main instances dictionary
                         TaskFactory._instances[task_type] = instance
+
                     except Exception as e:
-                        print(e)
+                        raise RuntimeError(f"Error creating task of type {task_type}: {e}")
 
+        # Return the main instance
         return TaskFactory._instances.get(task_type)
-
-
-
-        

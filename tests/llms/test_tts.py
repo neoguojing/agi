@@ -1,7 +1,6 @@
 import unittest
 import logging
 from langchain_core.messages import AIMessage, HumanMessage
-from agi.llms.base import AudioType
 class TestTextToSpeech(unittest.TestCase):
 
     def setUp(self):
@@ -37,8 +36,8 @@ hay: Haya — 指的是坦桑尼亚的一种语言，由Haya人使用，属于�
         logging.info(output.content)
         for item in output.content:
             context_type = item.get("type") 
-            if context_type != "text":
-                self.assertIsNotNone(context_type,"media")
+            if context_type != "audio":
+                self.assertIsNotNone(context_type,"audio")
 
     def test_text2speech_cpu(self):
         output = self.instance.invoke(self.input)
@@ -47,8 +46,8 @@ hay: Haya — 指的是坦桑尼亚的一种语言，由Haya人使用，属于�
         logging.info(output.content)
         for item in output.content:
             context_type = item.get("type") 
-            if context_type != "text":
-                self.assertIsNotNone(context_type,"media")
+            if context_type != "audio":
+                self.assertIsNotNone(context_type,"audio")
         
 if __name__ == "__main__":
     unittest.main()

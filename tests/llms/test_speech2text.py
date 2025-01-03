@@ -1,14 +1,14 @@
 import unittest
 from agi.llms.speech2text import Speech2Text
 import logging
-
+from langchain_core.messages import AIMessage,HumanMessage
 class TestSpeech2Text(unittest.TestCase):
 
     def setUp(self):
-        
-        from agi.llms.base import build_multi_modal_message,AudioType
-        
-        self.input = build_multi_modal_message("","tests/1730604079.wav")
+        self.input = HumanMessage(content=[
+                {"type":"audio","audio":"tests/1730604079.wav"}
+            ]
+        )
 
     def test_speach2text(self):
         self.instance = Speech2Text()

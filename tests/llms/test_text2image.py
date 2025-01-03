@@ -5,8 +5,6 @@ class TestText2Image(unittest.TestCase):
 
     def setUp(self):
         from agi.llms.text2image import Text2Image
-        from agi.llms.base import build_multi_modal_message,Image
-        import torch
         self.instance = Text2Image()
         self.input = HumanMessage(content="a midlife crisis man")
 
