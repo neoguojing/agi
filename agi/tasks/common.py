@@ -11,6 +11,15 @@ from langchain_core.messages import HumanMessage,BaseMessage,AIMessage
 from langchain_core.prompt_values import StringPromptValue,PromptValue,ChatPromptValue
 from langgraph.prebuilt.chat_agent_executor import AgentState
 from agi.llms.base import parse_input_messages
+from agi.config import (
+    OLLAMA_API_BASE_URL,
+    OPENAI_API_KEY,
+    RAG_EMBEDDING_MODEL,
+    OLLAMA_DEFAULT_MODE,
+)
+from langchain_openai import ChatOpenAI
+from langchain_ollama import OllamaEmbeddings
+from urllib.parse import urljoin
 
 def graph_input_format(state: AgentState):
     return state["messages"]
@@ -152,3 +161,19 @@ def create_speech2text_chain(graph=False):
         chain = graph_input_format | speech2text | _convert_ai_huiman | graph_parser
         
     return chain
+
+def create_llm_task(**kwargs):
+    model_name = kwargs.get("model_name") or OLLAMA_DEFAULT_MODE
+    return ChatOpenAI(
+        model=model_name,
+        openai_api_key=OPENAI_API_KEY,
+        base_url=urljoin(OLLAMA_API_BASE_URL, "/v1/")
+    )
+    
+# Helper functions for each task type creation
+def create_embedding_task(**kwargs):
+    model_name = kwargs.get("model_name") or RAG_EMBEDDING_MODEL
+    return OllamaEmbeddings(
+        model=model_name,
+        base_url=OLLAMA_API_BASE_URL,
+    )

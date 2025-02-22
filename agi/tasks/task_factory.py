@@ -24,7 +24,9 @@ from agi.tasks.common import (
     create_text2image_chain,
     create_translate_chain,
     create_text2speech_chain,
-    create_speech2text_chain
+    create_speech2text_chain,
+    create_embedding_task,
+    create_llm_task,
 )
 from agi.tasks.retriever import FilterType,SimAlgoType
 from langchain.globals import set_debug
@@ -45,21 +47,6 @@ TASK_RETRIEVER = "rag"
 TASK_DOC_DB = "doc_db"
 
 
-# Helper functions for each task type creation
-def create_llm_task(**kwargs):
-    model_name = kwargs.get("model_name") or OLLAMA_DEFAULT_MODE
-    return ChatOpenAI(
-        model=model_name,
-        openai_api_key=OPENAI_API_KEY,
-        base_url=urljoin(OLLAMA_API_BASE_URL, "/v1/")
-    )
-
-def create_embedding_task(**kwargs):
-    model_name = kwargs.get("model_name") or RAG_EMBEDDING_MODEL
-    return OllamaEmbeddings(
-        model=model_name,
-        base_url=OLLAMA_API_BASE_URL,
-    )
 
 def create_llm_with_history_task(**kwargs):
     return create_chat_with_history(TaskFactory._llm)

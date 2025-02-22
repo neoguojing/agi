@@ -9,18 +9,19 @@ import requests
 import json
 from agi.llms.model_factory import ModelFactory
 from agi.tasks.prompt import stock_code_prompt
-# from agi.tasks.task_factory import TaskFactory,TASK_IMAGE_GEN,TASK_SPEECH
+from agi.tasks.common import create_text2image_chain,create_llm_task
 
 
 search = DuckDuckGoSearchRun()
 arxiv = ArxivAPIWrapper()
 
-# @tool("image generate", return_direct=True)
-# def image_gen(input:str) ->str:
-#     """Useful for when you need to generate or draw a picture by input text.
-#     Text to image diffusion model capable of generating photo-realistic images given any text input."""
-#     task = TaskFactory.create_task(TASK_IMAGE_GEN)
-#     return task.run(input)
+@tool("image generate", return_direct=True)
+def image_gen(input:str) ->str:
+    """Useful for when you need to generate or draw a picture by input text.
+    Text to image diffusion model capable of generating photo-realistic images given any text input."""
+    llm = create_llm_task()
+    chain = create_text2image_chain(llm)
+    return chain.invoke({"text":input})
 
 # @tool("speech or audio generate", return_direct=True)
 # def text2speech(input:str) ->str:
@@ -112,7 +113,7 @@ tools = [
             Quantitative Biology, Quantitative Finance, Statistics, Electrical Engineering, and Economics from scientific articles \
             on arxiv.org."
     ),
-    # image_gen,
+    image_gen,
     # text2speech,
     get_stock,
 ]

@@ -8,6 +8,7 @@ from langchain.globals import set_debug
 from langchain.globals import set_verbose
 from agi.tasks.task_factory import TaskFactory,TASK_AGENT,TASK_IMAGE_GEN,TASK_LLM_WITH_RAG,TASK_SPEECH_TEXT,TASK_TTS
 from langgraph.prebuilt.chat_agent_executor import AgentState
+from typing import Dict, Any, Iterator
 set_verbose(True)
 set_debug(True)
 
@@ -41,7 +42,7 @@ class AgiGraph:
             # interrupt_before=["tools"],
             # interrupt_after=["tools"]
             )
-        
+    # 通过用户指定input_type，来决定使用哪个分支
     def routes(self,state: State, config: RunnableConfig):
         msg_type = state["input_type"]
         if msg_type == "text":
@@ -62,6 +63,26 @@ class AgiGraph:
         config = {"configurable": {"thread_id": str(uuid.uuid4())}}
         events = self.graph.invoke(input, config)
         return events
+
+    def stream(self, input: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
+        config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+        events = self.graph.stream(input, config, stream_mode="values")
+
+        try:
+            for event in events:
+                if "messages" in event and event["messages"]:
+                    last_message = event["messages"][-1]
+                    if hasattr(last_message, "pretty_print"):
+                        last_message.pretty_print()
+                    else:
+                        print(f"Last message: {last_message}")
+                    yield event  # 返回当前事件
+                else:
+                    print(f"Event missing messages: {event}")
+                    yield event # 返回当前事件
+        except Exception as e:
+            print(f"Error during streaming: {e}")
+            yield {"error": str(e)}  # 返回错误信息
     
     def display(self):
         try:
