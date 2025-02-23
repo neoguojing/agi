@@ -22,7 +22,7 @@ class Image2Image(CustomerLLM):
     n_steps: int = 20
     high_noise_frac: float = 0.8
     file_path: str = CACHE_DIR
-    save_image: bool = True
+    save_image: bool = False
 
     def __init__(self, model_path: str = os.path.join(model_root, "sdxl-turbo"), **kwargs):
         super().__init__(llm=AutoPipelineForImage2Image.from_pretrained(
@@ -62,7 +62,7 @@ class Image2Image(CustomerLLM):
         return output
     
     
-    def handle_output(self, image: PILImage.Image, prompt: str) -> AIMessage:
+    def handle_output(self, image: PILImage.Image, prompt: str,html:bool = False) -> AIMessage:
         """
         Handle the output by either saving the image or returning a base64-encoded image.
         """
@@ -85,14 +85,12 @@ class Image2Image(CustomerLLM):
             image_source = image_base64
 
         # Create HTML-embedded response
-        formatted_result = f'<img src="{image_source}" {STYLE}>\n'
-        formatted_result += f'<p>{prompt}</p>'
+        if html:
+            image_source = f'<img src="{image_source}" {STYLE}>\n'
+            image_source += f'<p>{prompt}</p>'
 
         # Return AIMessage containing formatted image response and the image itself
-        return AIMessage(content=[
-            {"type": "text", "text": formatted_result},
-            {"type": "image", "image": image_source}
-        ])
+        return AIMessage(content=[{"type": "image", "image": image_source}])
     
     @property
     def _identifying_params(self) -> Mapping[str, Any]:

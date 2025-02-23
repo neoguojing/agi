@@ -19,6 +19,22 @@ import re
 from scipy.io.wavfile import write
 
 
+def remove_data_uri_prefix(data_uri):
+    """
+    通用地移除 Data URI 前缀。
+
+    Args:
+        data_uri (str): Data URI 字符串。
+
+    Returns:
+        str: 去除前缀后的 Base64 编码数据。
+    """
+    match = re.match(r"data:([a-z]+/[a-z]+(?:;[a-z]+=[a-z]+)?)?(;base64)?,(.*)", data_uri)
+    if match:
+        return match.group(3)  # 返回 Base64 编码数据部分
+    else:
+        return data_uri  # 如果不是 Data URI，则返回原始字符串
+    
 class Media(BaseModel):
     data: Optional[Union[BytesIO, PILImage.Image]] = None
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -64,6 +80,7 @@ class Media(BaseModel):
             else:
                 # Decode Base64 to image
                 try:
+                    image = remove_data_uri_prefix(image)
                     image_data = base64.b64decode(image)
                     image_bytes = BytesIO(image_data)
                     image = PILImage.open(image_bytes)

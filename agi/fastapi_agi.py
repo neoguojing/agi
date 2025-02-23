@@ -170,6 +170,10 @@ async def generate_stream_response(state_data: State) -> AsyncGenerator[str, Non
 
             if isinstance(event, BaseMessage):
                 role = "user" if event.__class__.__name__ == "HumanMessage" else "assistant"
+                # 跳过用户消息
+                if role == "user":
+                    continue
+                
                 chunk["choices"][0]["delta"] = {"role": role, "content": event.content}
                 finish_reason = getattr(event, "response_metadata", {}).get("finish_reason")
                 if finish_reason:

@@ -20,7 +20,7 @@ arxiv = ArxivAPIWrapper()
 def image_gen(input:str) ->str:
     """Useful for when you need to generate or draw a picture by input text.
     Text to image diffusion model capable of generating photo-realistic images given any text input."""
-    def parse(ai_message: AIMessage) -> list:
+    def parse(ai_message: AIMessage) -> any:
         """Parse the AI message."""
         return ai_message.content
     

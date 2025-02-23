@@ -79,14 +79,15 @@ class Text2Image(CustomerLLM):
         image = self.model(prompt=prompt, num_inference_steps=self.n_steps, guidance_scale=7.5).images[0]
         return image
 
-    def handle_output(self, image: Any) -> AIMessage:
+    def handle_output(self, image: Any,html:bool=False) -> AIMessage:
         """Handle the image output (save or return base64)."""
         image_source = self._save_or_resize_image(image)
         
         # Format the result as HTML with embedded image and prompt
-        formatted_result = f'<img src="{image_source}" {style}>\n'
-        result = AIMessage(content=[{"type": "text", "text": formatted_result},
-                                    {"type": "image", "image": image_source}])
+        if html:
+            image_source = f'<img src="{image_source}" {style}>\n'
+            
+        result = AIMessage(content=[{"type": "image", "image": image_source}])
         # print("#########1",result)
         return result
 
