@@ -26,7 +26,7 @@ class Text2Image(CustomerLLM):
     n_steps: int = 20
     high_noise_frac: float = 0.8
     file_path: str = CACHE_DIR
-    save_image: bool = True
+    save_image: bool = False
 
     def __init__(self, model_path: str=os.path.join(model_root,"sdxl-turbo"),**kwargs):
         if model_path is not None:
@@ -58,7 +58,7 @@ class Text2Image(CustomerLLM):
         """Generate an image from the input text."""
         # Check if input is empty
         input_str = ""
-        print("#########",input)
+        # print("#########",input)
         if isinstance(input,str):
             input_str = input
         else:
@@ -87,7 +87,7 @@ class Text2Image(CustomerLLM):
         formatted_result = f'<img src="{image_source}" {style}>\n'
         result = AIMessage(content=[{"type": "text", "text": formatted_result},
                                     {"type": "image", "image": image_source}])
-        print("#########1",result)
+        # print("#########1",result)
         return result
 
     def _save_or_resize_image(self, image: Any) -> str:

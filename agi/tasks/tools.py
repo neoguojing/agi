@@ -4,6 +4,7 @@ from langchain_community.utilities import ArxivAPIWrapper
 from langchain.agents import Tool
 from langchain_community.tools import DuckDuckGoSearchRun
 from langchain.tools import tool
+from langchain_core.messages import AIMessage
 from dataclasses import dataclass,asdict
 import requests
 import json
@@ -19,8 +20,12 @@ arxiv = ArxivAPIWrapper()
 def image_gen(input:str) ->str:
     """Useful for when you need to generate or draw a picture by input text.
     Text to image diffusion model capable of generating photo-realistic images given any text input."""
+    def parse(ai_message: AIMessage) -> list:
+        """Parse the AI message."""
+        return ai_message.content
+    
     llm = create_llm_task()
-    chain = create_text2image_chain(llm)
+    chain = create_text2image_chain(llm) | parse
     return chain.invoke({"text":input})
 
 # @tool("speech or audio generate", return_direct=True)

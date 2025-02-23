@@ -2,11 +2,12 @@ import uuid
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import StreamingResponse
+from typing import AsyncGenerator
 from typing import List, Union, Dict, Any
 from pydantic import BaseModel, Field
 import json
 import time
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage,BaseMessage
 
 # 假设的 AgiGraph 模块（需要根据实际情况调整）
 from agi.tasks.graph import AgiGraph, State
@@ -101,7 +102,28 @@ def format_non_stream_response(resp: Dict[str, Any]) -> Dict[str, Any]:
     """
     将内部响应格式化为 OpenAI 兼容的非流式响应。
     """
-    assistant_content = resp["messages"][-1].content if resp.get("messages") else "No response"
+    last_message = resp.get("messages")
+    assistant_content = "No response"
+    finish_reason = "stop"
+    completion_tokens = 0
+    prompt_tokens = 0
+    total_tokens = 0
+    
+    if last_message is not None:
+        last_message = resp["messages"][-1]
+        assistant_content = last_message.content
+        
+        response_metadata = last_message.response_metadata
+        if response_metadata is not None and "finish_reason" in response_metadata:
+            finish_reason = response_metadata["finish_reason"]
+        
+        # 从 resp 中获取 token_usage
+        token_usage = response_metadata.get("token_usage")  # 假设在顶级响应中
+        if token_usage:
+            completion_tokens = token_usage["completion_tokens"]  # 字典访问
+            prompt_tokens = token_usage["prompt_tokens"]
+            total_tokens = token_usage["total_tokens"]
+    
     return {
         "id": f"chatcmpl-{uuid.uuid4()}",
         "object": "chat.completion",
@@ -114,50 +136,77 @@ def format_non_stream_response(resp: Dict[str, Any]) -> Dict[str, Any]:
                     "role": "assistant",
                     "content": assistant_content
                 },
-                "finish_reason": "stop"
+                "finish_reason": finish_reason
             }
         ],
         "usage": {
-            "prompt_tokens": 0,    # 可根据实际情况计算
-            "completion_tokens": 0, # 可根据实际情况计算
-            "total_tokens": 0      # 可根据实际情况计算
+            "prompt_tokens": prompt_tokens,    # 可根据实际情况计算
+            "completion_tokens": completion_tokens, # 可根据实际情况计算
+            "total_tokens": total_tokens      # 可根据实际情况计算
         }
     }
-
-# 生成流式响应
-async def generate_stream_response(state_data: State):
+        
+async def generate_stream_response(state_data: State) -> AsyncGenerator[str, None]:
     """
-    生成 OpenAI 兼容的流式响应，使用 SSE 格式。
+    生成 OpenAI 兼容的流式响应，使用 SSE 格式，调用 stream 方法。
+    
+    Args:
+        state_data (Dict[str, Any]): 输入的状态数据，用于生成事件流。
+    
+    Yields:
+        str: SSE 格式的流式响应块，符合 OpenAI API 规范。
     """
-    events = graph.stream(state_data)  # 假设 graph.stream 返回事件流
+    events = graph.stream(state_data)
+    index = 0  # 初始化 index
     try:
         for event in events:
-            # 假设 event 是 {"content": "部分内容"}
             chunk = {
                 "id": f"chatcmpl-{uuid.uuid4()}",
                 "object": "chat.completion.chunk",
                 "created": int(time.time()),
                 "model": "agi-model",
-                "choices": [
-                    {
-                        "index": 0,
-                        "delta": {"content": event.get("content", "")},
-                        "finish_reason": None
-                    }
-                ]
+                "choices": [{"index": index, "delta": {}, "finish_reason": None}] # 使用递增的index
             }
-            yield f"data: {json.dumps(chunk)}\n\n"
-        # 发送结束标志
+
+            if isinstance(event, BaseMessage):
+                role = "user" if event.__class__.__name__ == "HumanMessage" else "assistant"
+                chunk["choices"][0]["delta"] = {"role": role, "content": event.content}
+                finish_reason = getattr(event, "response_metadata", {}).get("finish_reason")
+                if finish_reason:
+                    chunk["choices"][0]["finish_reason"] = finish_reason
+            elif isinstance(event, dict):
+                if "error" in event:
+                    chunk["choices"] = []
+                    chunk["error"] = {"message": event["error"], "type": "server_error"}
+                else:
+                    content = event.get("content", str(event))
+                    chunk["choices"][0]["delta"] = {"content": content}
+
+            yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+            index += 1 #index递增
+
+        final_chunk = {
+            "id": f"chatcmpl-{uuid.uuid4()}",
+            "object": "chat.completion.chunk",
+            "created": int(time.time()),
+            "model": "agi-model",
+            "choices": [{"index": index, "delta": {}, "finish_reason": "stop"}]
+        }
+        yield f"data: {json.dumps(final_chunk, ensure_ascii=False)}\n\n"
         yield "data: [DONE]\n\n"
+
     except Exception as e:
         error_chunk = {
-            "error": {
-                "message": str(e),
-                "type": "server_error"
-            }
+            "id": f"chatcmpl-{uuid.uuid4()}",
+            "object": "chat.completion.chunk",
+            "created": int(time.time()),
+            "model": "agi-model",
+            "choices": [],
+            "error": {"message": str(e), "type": "server_error"}
         }
-        yield f"data: {json.dumps(error_chunk)}\n\n"
-
+        yield f"data: {json.dumps(error_chunk, ensure_ascii=False)}\n\n"
+        # 记录错误日志
+        print(f"Error in generate_stream_response: {e}")
 # 启动服务
 if __name__ == "__main__":
     import uvicorn

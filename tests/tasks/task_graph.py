@@ -1,7 +1,7 @@
 import unittest
 from agi.tasks.task_factory import TaskFactory,TASK_AGENT
 from langgraph.errors import GraphRecursionError
-from langchain_core.messages import AIMessage,HumanMessage
+from langchain_core.messages import AIMessage,HumanMessage,ToolMessage
 from agi.tasks.graph import AgiGraph
 class TestAgent(unittest.TestCase):
     def setUp(self):        
@@ -17,25 +17,28 @@ class TestAgent(unittest.TestCase):
             "status": "in_progress",
         }
         resp = self.graph.invoke(input_example)
+        print(resp["messages"][-1],AIMessage)
         self.assertIsInstance(resp,dict)
         self.assertIsInstance(resp["messages"],list)
         self.assertEqual(resp["input_type"],"text")
         self.assertIsInstance(resp["messages"][-1],AIMessage)
+        # 使用agent，由agent决策是否调用图片生成工具
         input_example = {
             "messages":  [
                 HumanMessage(
-                    content="超人拯救了太阳",
+                    content="生成一张超人拯救了太阳",
                 )
             ],
-            "input_type": "image",
+            "input_type": "text",
             "need_speech": False,
             "status": "in_progress",
         }
         resp = self.graph.invoke(input_example)
+        print(resp["messages"][-1])
         self.assertIsInstance(resp,dict)
         self.assertIsInstance(resp["messages"],list)
-        self.assertEqual(resp["input_type"],"image")
-        self.assertIsInstance(resp["messages"][-1],AIMessage)
+        self.assertEqual(resp["input_type"],"text")
+        self.assertIsInstance(resp["messages"][-1],ToolMessage)
         input_example = {
             "messages":  [
                 HumanMessage(

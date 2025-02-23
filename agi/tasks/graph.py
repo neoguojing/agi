@@ -8,7 +8,8 @@ from langchain.globals import set_debug
 from langchain.globals import set_verbose
 from agi.tasks.task_factory import TaskFactory,TASK_AGENT,TASK_IMAGE_GEN,TASK_LLM_WITH_RAG,TASK_SPEECH_TEXT,TASK_TTS
 from langgraph.prebuilt.chat_agent_executor import AgentState
-from typing import Dict, Any, Iterator
+from typing import Dict, Any, Iterator,Union
+from langchain_core.messages import BaseMessage
 set_verbose(True)
 set_debug(True)
 
@@ -64,19 +65,16 @@ class AgiGraph:
         events = self.graph.invoke(input, config)
         return events
 
-    def stream(self, input: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
+    def stream(self, input: Dict[str, Any]) -> Iterator[Union[BaseMessage, Dict[str, Any]]]:
         config = {"configurable": {"thread_id": str(uuid.uuid4())}}
         events = self.graph.stream(input, config, stream_mode="values")
 
         try:
             for event in events:
+                print(event)
                 if "messages" in event and event["messages"]:
-                    last_message = event["messages"][-1]
-                    if hasattr(last_message, "pretty_print"):
-                        last_message.pretty_print()
-                    else:
-                        print(f"Last message: {last_message}")
-                    yield event  # 返回当前事件
+                    for message in event["messages"]:
+                        yield message  # 返回当前事件
                 else:
                     print(f"Event missing messages: {event}")
                     yield event # 返回当前事件

@@ -1,6 +1,6 @@
 from agi.llms.model_factory import ModelFactory
 from agi.tasks.prompt import english_traslate_template,multimodal_input_template
-from langchain_core.output_parsers import StrOutputParser
+from langchain_core.output_parsers import StrOutputParser,ListOutputParser
 from agi.llms.text2image import Text2Image
 from agi.llms.image2image import Image2Image
 from agi.llms.tts import TextToSpeech
@@ -93,7 +93,7 @@ def create_text2image_chain(llm,graph=False):
     # text2image = Text2Image()
     text2image = ModelFactory.get_model("text2image")
     
-    return translate | text2image
+    return translate | text2image 
 
 def create_image_gen_chain(llm,graph=False):
     translate = create_translate_chain(llm,graph)
