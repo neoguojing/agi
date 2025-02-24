@@ -19,7 +19,7 @@ class TextToSpeech(CustomerLLM):
     language: str = Field(default="zh-cn")
     save_file: bool = Field(default=True)
     
-    def __init__(self,is_gpu = False, save_file: bool = True):
+    def __init__(self,is_gpu = False, save_file: bool = False):
         
         tts = self.initialize_tts(is_gpu)
         super().__init__(llm=tts.synthesizer)
@@ -58,15 +58,20 @@ class TextToSpeech(CustomerLLM):
         if self.save_file:
             file_path = self.save_audio_to_file(text=input_str)
             return AIMessage(content=[
-                {"type": "text", "text": input_str},
+                # {"type": "text", "text": input_str},
                 {"type": "audio", "audio": file_path}
             ])
         
         # Generate audio samples and return as ByteIO
-        samples = self.generate_audio_samples(input_str)
+        # 原始音频需要编码，不方便使用
+        # samples = self.generate_audio_samples(input_str)
+        file_path = self.save_audio_to_file(text=input_str)
+        with open(file_path, 'rb') as audio_file:
+            audio_bytes = audio_file.read()
+        audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
         return AIMessage(content=[
-            {"type": "text", "text": input_str},
-            {"type": "audio", "audio": base64.b64encode(samples.read()).decode('utf-8')}
+            # {"type": "text", "text": input_str},
+            {"type": "audio", "audio": audio_base64}
         ])
 
     def generate_audio_samples(self, text: str) -> Any:

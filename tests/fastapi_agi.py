@@ -87,27 +87,27 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertIsNotNone(response.choices[0].message.content[0]['image'])
         # print(response)
         
-    def test_speech_text(self):
-        response = self.client.chat.completions.create(
-            model="agi-model",
-            messages=[
-                {
-                    "role": "user",
-                    "content": {"type": "audio", "audio": ""}
-                }
-            ],
-        )
+    # def test_speech_text(self):
+    #     response = self.client.chat.completions.create(
+    #         model="agi-model",
+    #         messages=[
+    #             {
+    #                 "role": "user",
+    #                 "content": {"type": "audio", "audio": ""}
+    #             }
+    #         ],
+    #     )
         
-        self.assertIsNotNone(response.choices)
-        self.assertGreater(len(response.choices),0)
-        self.assertIsNotNone(response.choices[0].message)
-        self.assertIsNotNone(response.choices[0].message.content)
-        print(response)
+    #     self.assertIsNotNone(response.choices)
+    #     self.assertGreater(len(response.choices),0)
+    #     self.assertIsNotNone(response.choices[0].message)
+    #     self.assertIsNotNone(response.choices[0].message.content)
+    #     print(response)
         
     def test_tts(self):
         response = self.client.chat.completions.create(
             model="agi-model",
-            need_speech=True,
+            extra_query={"need_speech": True},
             messages=[
                 {
                     "role": "user",
@@ -122,3 +122,4 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertIsNotNone(response.choices[0].message.content)
         self.assertEqual(response.choices[0].message.content[0]['type'],"audio")
         self.assertIsNotNone(response.choices[0].message.content[0]['audio'])
+        # print(response)

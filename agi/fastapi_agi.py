@@ -1,5 +1,5 @@
 import uuid
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request,Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import StreamingResponse
 from typing import AsyncGenerator
@@ -43,18 +43,28 @@ class ChatCompletionRequest(BaseModel):
     messages: List[ChatMessage] = Field(description="对话历史")
     stream: bool = Field(default=False, description="是否使用流式响应")
     max_tokens: int = Field(default=1024, ge=1, description="最大生成 token 数", optional=True)
-    need_speech: bool = Field(default=False, description="是否需要语音输出", optional=True)
 
 
 @app.post("/v1/chat/completions", summary="兼容 OpenAI 的聊天完成接口")
 async def chat_completions(
     request: ChatCompletionRequest,
+    # http_request: Request,  # 添加 Request 对象
+    need_speech: bool = Query(default=False, description="是否需要语音输出"),
     api_key: str = Depends(verify_api_key)
 ):
     """
     处理聊天完成请求，支持流式和非流式响应，兼容 OpenAI API。
     """
-    if request.need_speech and request.stream:
+    # 获取额外参数
+    # extra_query = dict(http_request.query_params)
+    # print("extra_query:", extra_query)
+    # need_speech = extra_query.get("need_speech",False)
+    # if isinstance(need_speech, str):
+    #     need_speech = need_speech.lower() == "true"  # 转换为布尔值
+    
+    print("need_speech:", need_speech)
+        
+    if need_speech and request.stream:
         raise HTTPException(status_code=400, detail="语音输出不支持流式响应")
 
 
@@ -88,7 +98,7 @@ async def chat_completions(
     state_data = State(
         messages=internal_messages,
         input_type=input_type,
-        need_speech=request.need_speech
+        need_speech=need_speech
     )
 
     if request.stream:
