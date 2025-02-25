@@ -85,7 +85,7 @@ async def chat_completions(
                         # 假设 item["audio"] 是音频数据的某种表示
                         content.append({"type": "audio", "audio": item["audio"]})
                         input_type = "audio"
-                    elif item["type"] == "text": #TODO 生成图片的请求，输出类型应该是图片，但是输入类型是text，此处无法兼容
+                    elif item["type"] == "text": 
                         content.append({"type":"text","text":item["text"]})
                     else:
                         # 处理不支持的类型
