@@ -43,6 +43,7 @@ class ChatCompletionRequest(BaseModel):
     messages: List[ChatMessage] = Field(description="对话历史")
     stream: bool = Field(default=False, description="是否使用流式响应")
     max_tokens: int = Field(default=1024, ge=1, description="最大生成 token 数", optional=True)
+    user: str = Field(default="", description="用户名")
 
 
 @app.post("/v1/chat/completions", summary="兼容 OpenAI 的聊天完成接口")
@@ -50,6 +51,7 @@ async def chat_completions(
     request: ChatCompletionRequest,
     # http_request: Request,  # 添加 Request 对象
     need_speech: bool = Query(default=False, description="是否需要语音输出"),
+    conversation_id: str = Query(default="", description="会话id"),
     api_key: str = Depends(verify_api_key)
 ):
     """
@@ -98,7 +100,9 @@ async def chat_completions(
     state_data = State(
         messages=internal_messages,
         input_type=input_type,
-        need_speech=need_speech
+        need_speech=need_speech,
+        user_id=request.user,
+        conversation_id=conversation_id
     )
 
     if request.stream:
