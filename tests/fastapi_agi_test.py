@@ -61,11 +61,11 @@ class TestFastApiAgi(unittest.TestCase):
             messages=[
                 {
                     "role": "user",
-                    "content": "生成一张战争的图片",
+                    "content": "中国神话哪吒的图片",
                 }
             ],
         )
-        
+        # print(response)
         self.assertIsNotNone(response.choices)
         self.assertGreater(len(response.choices),0)
         self.assertIsNotNone(response.choices[0].message)
@@ -73,7 +73,13 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertGreater(len(response.choices[0].message.content),0)
         self.assertEqual(response.choices[0].message.content[0]['type'],"image")
         self.assertIsNotNone(response.choices[0].message.content[0]['image'])
-        # print(response)
+        # 去掉头部信息，只保留 Base64 编码的部分
+        # base64_image = response.choices[0].message.content[0]['image'].split(',')[1]
+        # image_data = base64.b64decode(base64_image)
+        # # 保存为 JPEG 文件
+        # with open("output_image.jpeg", "wb") as f:
+        #     f.write(image_data)
+        
         
     def test_image_image(self):
         response = self.client.chat.completions.create(
@@ -82,10 +88,10 @@ class TestFastApiAgi(unittest.TestCase):
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "猫咪是黑猫警长"},
+                        {"type": "text", "text": "变成人首蛇身"},
                         {
                             "type": "image",
-                            "image": image_to_base64("tests/cat.jpg")
+                            "image": image_to_base64("tests/cat.jpeg")
                         }
                     ]
                 }
@@ -99,6 +105,13 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertEqual(response.choices[0].message.content[0]['type'],"image")
         self.assertIsNotNone(response.choices[0].message.content[0]['image'])
         # print(response)
+             # 去掉头部信息，只保留 Base64 编码的部分
+        base64_image = response.choices[0].message.content[0]['image'].split(',')[1]
+        image_data = base64.b64decode(base64_image)
+        # 保存为 JPEG 文件
+        with open("output_image.jpeg", "wb") as f:
+            f.write(image_data)
+        print(response)
         
     def test_speech_text(self):
         response = self.client.chat.completions.create(
