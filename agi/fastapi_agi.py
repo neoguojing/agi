@@ -226,6 +226,6 @@ async def generate_stream_response(state_data: State) -> AsyncGenerator[str, Non
         # 记录错误日志
         print(f"Error in generate_stream_response: {e}")
 # 启动服务
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+# if __name__ == "__main__":
+#     import uvicorn
+#     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -65,12 +65,14 @@ class AgiGraph:
         return END
     
     def invoke(self,input:State) -> State:
-        config={"configurable": {"user_id": input.user_id, "conversation_id": input.conversation_id}}
+        config={"configurable": {"user_id": input.get("user_id",""), "conversation_id": input.get("conversation_id",""),
+                                 "thread_id": str(uuid.uuid4())}}
         events = self.graph.invoke(input, config)
         return events
 
     def stream(self, input: State) -> Iterator[Union[BaseMessage, Dict[str, Any]]]:
-        config={"configurable": {"user_id": input.user_id, "conversation_id": input.conversation_id}}
+        config={"configurable": {"user_id": input.get("user_id",""), "conversation_id": input.get("conversation_id",""),
+                                 "thread_id": str(uuid.uuid4())}}
         events = self.graph.stream(input, config, stream_mode="values")
 
         try:

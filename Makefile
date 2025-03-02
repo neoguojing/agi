@@ -4,8 +4,10 @@
 PYTHON = python3
 PIP = pip3
 TEST_DIR = tests
-APP_DIR = app
-TARGET = app.main:app
+TEST_LLMS = tests/llms
+TEST_TASKS = tests/tasks
+APP_DIR = agi
+TARGET = agi.fastapi_agi:app
 
 # 默认目标
 .PHONY: all
@@ -24,7 +26,19 @@ package:
 # 运行单元测试
 .PHONY: test
 test:
-	$(PYTHON) -m pytest -s $(TEST_DIR)
+	@$(PYTHON) -m pytest -s $(TEST_DIR)
+
+.PHONY: test_llms
+test_llms:
+	@$(PYTHON) -m pytest -s $(TEST_LLMS)
+
+.PHONY: test_tasks
+test_tasks:
+	@$(PYTHON) -m pytest -s $(TEST_TASKS)
+
+.PHONY: test_api
+test_api:
+	@$(PYTHON) -m pytest -s tests/fastapi_agi_test.py
 
 # 启动 FastAPI 服务
 .PHONY: run

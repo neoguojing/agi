@@ -85,7 +85,7 @@ class TestFastApiAgi(unittest.TestCase):
                         {"type": "text", "text": "猫咪是黑猫警长"},
                         {
                             "type": "image",
-                            "image": image_to_base64("./cat.jpg")
+                            "image": image_to_base64("tests/cat.jpg")
                         }
                     ]
                 }
