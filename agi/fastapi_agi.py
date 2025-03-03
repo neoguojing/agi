@@ -74,29 +74,31 @@ async def chat_completions(
 
     internal_messages: List[Union[HumanMessage, Dict[str, Union[str, List[Dict[str, str]]]]]] = []
     input_type = "text"  # 默认输入类型
-    for msg in request.messages:
-        if msg.role == "user":
-            if isinstance(msg.content, str):
-                internal_messages.append(HumanMessage(content=msg.content))
-            else:
-                content: List[Dict[str, str]] = []
-                for item in msg.content:
-                    if item["type"] == "image":
-                        # 假设 item["image"] 是图像数据的某种表示（例如，文件路径或 base64 编码）
-                        content.append({"type": "image", "image": item["image"]})
-                        input_type = "image"
-                    elif item["type"] == "audio":
-                        # 假设 item["audio"] 是音频数据的某种表示
-                        content.append({"type": "audio", "audio": item["audio"]})
-                        input_type = "audio"
-                    elif item["type"] == "text": 
-                        content.append({"type":"text","text":item["text"]})
-                    else:
-                        # 处理不支持的类型
-                        raise ValueError(f"不支持的多模态类型: {item['type']}")
-                internal_messages.append(HumanMessage(content=content))
-        elif msg.role == "assistant":
-            internal_messages.append({"role": "assistant", "content": msg.content})
+    # 只处理最后一条消息
+    # for msg in request.messages:
+    msg = request.messages[-1]
+    if msg.role == "user":
+        if isinstance(msg.content, str):
+            internal_messages.append(HumanMessage(content=msg.content))
+        else:
+            content: List[Dict[str, str]] = []
+            for item in msg.content:
+                if item["type"] == "image":
+                    # 假设 item["image"] 是图像数据的某种表示（例如，文件路径或 base64 编码）
+                    content.append({"type": "image", "image": item["image"]})
+                    input_type = "image"
+                elif item["type"] == "audio":
+                    # 假设 item["audio"] 是音频数据的某种表示
+                    content.append({"type": "audio", "audio": item["audio"]})
+                    input_type = "audio"
+                elif item["type"] == "text": 
+                    content.append({"type":"text","text":item["text"]})
+                else:
+                    # 处理不支持的类型
+                    raise ValueError(f"不支持的多模态类型: {item['type']}")
+            internal_messages.append(HumanMessage(content=content))
+        # elif msg.role == "assistant":
+        #     internal_messages.append({"role": "assistant", "content": msg.content})
             
         
     state_data = State(
