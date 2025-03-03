@@ -1,10 +1,12 @@
 import uuid
-from fastapi import FastAPI, Depends, HTTPException, Request,Query
+import base64
+from fastapi import FastAPI, Depends, HTTPException, Request,Query,UploadFile,File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import StreamingResponse
 from typing import AsyncGenerator
-from typing import List, Union, Dict, Any
+from typing import List, Union, Dict, Any,Optional
 from pydantic import BaseModel, Field
+import openai
 import json
 import time
 from langchain_core.messages import HumanMessage,BaseMessage
@@ -225,6 +227,91 @@ async def generate_stream_response(state_data: State) -> AsyncGenerator[str, Non
         yield f"data: {json.dumps(error_chunk, ensure_ascii=False)}\n\n"
         # 记录错误日志
         print(f"Error in generate_stream_response: {e}")
+
+class Model(BaseModel):
+    id: str                # 模型的唯一标识符，例如 "gpt-3.5-turbo"
+    object: str            # 固定为 "model"
+    created: int           # 模型创建时间的 UNIX 时间戳
+    owned_by: str          # 模型的所有者，例如 "openai"
+
+# 定义模型列表的响应结构
+class ModelListResponse(BaseModel):
+    object: str            # 固定为 "list"
+    data: List[Model]      # 模型对象数组
+
+
+@app.get("/v1/models", response_model=ModelListResponse, summary="模型列表接口")
+async def list_models(api_key: str = Depends(verify_api_key)):
+    # 构造固定的模型列表
+    fixed_models = [
+        Model(
+            id="agi",
+            object="model",
+            created=1677654321,  # 示例时间戳，可根据需要调整
+            owned_by="neo"       # 示例所有者，可根据需要调整
+        )
+    ]
+    # 返回符合 ModelListResponse 结构的响应
+    return ModelListResponse(
+        object="list",
+        data=fixed_models
+    )
+
+class TranscriptionResponse(BaseModel):
+    text: str
+
+class TranscriptionRequest(BaseModel):
+    model: Optional[str] = "whisper-1"
+    prompt: Optional[str] = None
+    response_format: Optional[str] = "json"
+    temperature: Optional[float] = 0.0
+
+def convert_to_base64(file: UploadFile = File(...)):
+    try:
+        # 异步读取文件内容为字节数据
+        audio_bytes = file.read()
+        
+        # 将字节数据编码为 Base64
+        base64_encoded = base64.b64encode(audio_bytes)
+        
+        # 将 Base64 字节转换为字符串（UTF-8 解码）
+        base64_string = base64_encoded.decode("utf-8")
+        
+        # 返回 Base64 编码结果
+        return base64_string
+    except Exception as e:
+        print(e)
+        return ""
+    
+@app.post("/v1/audio/transcriptions",response_model=ModelListResponse, summary="语音转文本")
+async def create_transcription(file: UploadFile, request: TranscriptionRequest, api_key: str = Depends(verify_api_key)):
+
+    try:
+        internal_messages: List[Union[HumanMessage, Dict[str, Union[str, List[Dict[str, str]]]]]] = []
+        input_type = "audio"  # 默认输入类型
+        content: List[Dict[str, str]] = []
+        content.append({"type": "audio", "audio": convert_to_base64(file)})
+        internal_messages.append(HumanMessage(content=content))
+
+            
+        state_data = State(
+            messages=internal_messages,
+            input_type=input_type,
+            need_speech=False,
+            user_id="transcriptions",
+            conversation_id="",
+        )
+
+        resp = graph.invoke(state_data)
+        last_message = resp.get("messages")
+        assistant_content = ""
+        if last_message is not None:
+            last_message = resp["messages"][-1]
+            assistant_content = last_message.content
+        return {"text": assistant_content}
+    
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 # 启动服务
 # if __name__ == "__main__":
 #     import uvicorn
