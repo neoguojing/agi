@@ -2,7 +2,7 @@ import unittest
 from langchain_core.messages import AIMessage, HumanMessage
 
 # Assuming we import the TaskFactory and constants like TASK_LLM, TASK_EMBEDDING, etc.
-from agi.tasks.task_factory import TaskFactory, TASK_LLM_WITH_RAG,TASK_RETRIEVER,TASK_DOC_DB
+from agi.tasks.task_factory import TaskFactory, TASK_LLM_WITH_RAG,TASK_RETRIEVER,TASK_DOC_DB,TASK_CUSTOM_RAG,TASK_WEB_SEARCH
 from agi.tasks.retriever import KnowledgeManager,SourceType
 from agi.tasks.llm_app import create_history_aware_retriever,create_stuff_documents_chain,create_retrieval_chain
 from agi.config import CACHE_DIR
@@ -12,6 +12,8 @@ class TestTaskRagFactory(unittest.TestCase):
         self.kmanager = TaskFactory.create_task(TASK_DOC_DB)
         self.retreiver = TaskFactory.create_task(TASK_RETRIEVER)
         self.rag = TaskFactory.create_task(TASK_LLM_WITH_RAG)
+        self.crag = TaskFactory.create_task(TASK_CUSTOM_RAG)
+        self.web = TaskFactory.create_task(TASK_WEB_SEARCH)
     def test_add_doc(self):
         param = {"filename" : "test.pdf"}
         collect_name,know_type,raw_docs = self.kmanager.store("test","./tests/test.pdf",**param)
@@ -36,7 +38,7 @@ class TestTaskRagFactory(unittest.TestCase):
         self.assertEqual(docs[0].metadata["page"],0)
         self.assertEqual(docs[0].metadata["source"],"./tests/test.pdf")
         self.assertIn("平衡计算模块",docs[0].page_content)
-    
+    # retreiver 不能指定库
     def test_retreiver(self):
         ret = self.retreiver.invoke("上海未来一周天气如何？")
         self.assertIsNotNone(ret)
@@ -53,6 +55,27 @@ class TestTaskRagFactory(unittest.TestCase):
     def test_rag(self):
         config={"configurable": {"user_id": "test", "conversation_id": "1"}}
         ret = self.rag.invoke({"text":"上海未来一周天气如何？","language":"chinese"},config=config)
+        self.assertIsNotNone(ret)
+        self.assertIsInstance(ret['chat_history'],list)
+        self.assertIsInstance(ret['context'],list)
+        self.assertIsNotNone(ret['answer'])
+        self.assertIsInstance(ret['citations'],list)
+
+    def test_custom_rag(self):
+        config={"configurable": {"user_id": "test", "conversation_id": "1"}}
+        collecttions =  str(["",""])
+        ret = self.crag.invoke({"text":"上海未来一周天气如何？","language":"chinese","collection_names":collecttions},config=config)
+        print(ret)
+        self.assertIsNotNone(ret)
+        self.assertIsInstance(ret['chat_history'],list)
+        self.assertIsInstance(ret['context'],list)
+        self.assertIsNotNone(ret['answer'])
+        self.assertIsInstance(ret['citations'],list)
+
+    def test_web_search_chat(self):
+        config={"configurable": {"user_id": "test", "conversation_id": "1"}}
+        ret = self.crag.invoke({"text":"上海未来一周天气如何？","language":"chinese"},config=config)
+        print(ret)
         self.assertIsNotNone(ret)
         self.assertIsInstance(ret['chat_history'],list)
         self.assertIsInstance(ret['context'],list)

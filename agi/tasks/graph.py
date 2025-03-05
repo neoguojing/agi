@@ -6,7 +6,16 @@ from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.runnables import  RunnableConfig,Runnable,RunnablePassthrough
 from langchain.globals import set_debug
 from langchain.globals import set_verbose
-from agi.tasks.task_factory import TaskFactory,TASK_AGENT,TASK_IMAGE_GEN,TASK_LLM_WITH_RAG,TASK_SPEECH_TEXT,TASK_TTS
+from agi.tasks.task_factory import (
+    TaskFactory,
+    TASK_AGENT,
+    TASK_IMAGE_GEN,
+    TASK_LLM_WITH_RAG,
+    TASK_SPEECH_TEXT,
+    TASK_TTS,
+    TASK_WEB_SEARCH,
+    TASK_CUSTOM_RAG,
+    )
 from langgraph.prebuilt.chat_agent_executor import AgentState
 from typing import Dict, Any, Iterator,Union
 from langchain_core.messages import BaseMessage
@@ -19,6 +28,7 @@ class State(AgentState):
     status: str
     user_id: str
     conversation_id: str
+    feature: str  # 支持的特性，1.agent，2.web 3.rag，默认为agent
 
 
     
@@ -34,10 +44,12 @@ class AgiGraph:
         self.builder.add_node("speech2text", TaskFactory.create_task(TASK_SPEECH_TEXT,graph=True))
         self.builder.add_node("tts", TaskFactory.create_task(TASK_TTS,graph=True))
         self.builder.add_node("image_gen", TaskFactory.create_task(TASK_IMAGE_GEN,graph=True))
+        self.builder.add_node("rag", TaskFactory.create_task(TASK_CUSTOM_RAG,graph=True))
+        self.builder.add_node("web_search", TaskFactory.create_task(TASK_WEB_SEARCH,graph=True))
         self.builder.add_node("agent", TaskFactory.create_task(TASK_AGENT))
         
-        self.builder.add_edge("speech2text", "agent")
-        self.builder.add_conditional_edges("agent", self.agent_edge_control, {END: END, "tts": "tts"})
+        self.builder.add_conditional_edges("speech2text",self.speech_edge_control, {END: END, "agent": "agent","rag": "rag","web": "web_search"})
+        self.builder.add_conditional_edges("agent", self.llm_edge_control, {END: END, "tts": "tts"})
         self.builder.add_edge("image_gen", END)
         self.builder.add_edge("tts", END)
         
@@ -59,7 +71,18 @@ class AgiGraph:
 
         return END
     
-    def agent_edge_control(self,state: State):
+    def speech_edge_control(self,state: State):
+        feature = state["feature"]
+        if feature == "agent":
+            return "agent"
+        elif feature == "rag":
+            return "rag"
+        elif feature == "web":
+            return "web_search"
+
+        return END
+    
+    def llm_edge_control(self,state: State):
         if state["need_speech"]:
             return "tts"
         return END

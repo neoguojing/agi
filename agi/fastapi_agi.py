@@ -11,6 +11,7 @@ import json
 import time
 import os
 from langchain_core.messages import HumanMessage,BaseMessage
+from agi.tasks.task_factory import TaskFactory, TASK_EMBEDDING
 
 # 假设的 AgiGraph 模块（需要根据实际情况调整）
 from agi.tasks.graph import AgiGraph, State
@@ -54,6 +55,8 @@ async def chat_completions(
     request: ChatCompletionRequest,
     # http_request: Request,  # 添加 Request 对象
     need_speech: bool = Query(default=False, description="是否需要语音输出"),
+    feature: str = Query(default="agent", description="支持的特性：agent,web,rag"),
+    db_ids: Union[list[str], None] = Query(default=None, description="是否知识库检索"),
     conversation_id: str = Query(default="", description="会话id"),
     api_key: str = Depends(verify_api_key)
 ):
@@ -100,14 +103,14 @@ async def chat_completions(
             internal_messages.append(HumanMessage(content=content))
         # elif msg.role == "assistant":
         #     internal_messages.append({"role": "assistant", "content": msg.content})
-            
         
     state_data = State(
         messages=internal_messages,
         input_type=input_type,
         need_speech=need_speech,
         user_id=request.user,
-        conversation_id=conversation_id
+        conversation_id=conversation_id,
+        feature=feature
     )
 
     if request.stream:
@@ -376,6 +379,20 @@ async def generate_speech(text: str, voice: str = "alloy", response_format: str 
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# 定义请求体模型
+class EmbeddingRequest(BaseModel):
+    text: str
+
+@app.post("/v1/embedding",summary="文本向量")
+async def get_embedding(request: EmbeddingRequest):
+    if not request.text:
+        raise HTTPException(status_code=400, detail="Text cannot be empty.")
+    # 生成嵌入向量
+    llm_task = TaskFactory.create_task(TASK_EMBEDDING)
+    embedding = llm_task.embed_query(request.text)
+    return {"embedding": embedding}
+
 # 启动服务
 # if __name__ == "__main__":
 #     import uvicorn

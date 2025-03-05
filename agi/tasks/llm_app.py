@@ -31,7 +31,7 @@ from langchain.chains.combine_documents.base import (
 # from langchain.chains.retrieval import create_retrieval_chain
 # from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.output_parsers import StrOutputParser,BaseOutputParser
-from agi.tasks.prompt import default_template,contextualize_q_template,doc_qa_template
+from agi.tasks.prompt import default_template,contextualize_q_template,doc_qa_template,cumstom_rag_default_template
 from agi.tasks.retriever import KnowledgeManager
 import json
 from datetime import datetime,timezone
@@ -189,43 +189,43 @@ def create_stuff_documents_chain(
         return debug_tool | chain
     return chain
 
+def build_citations(inputs: dict):
+    citations = []
+    # 使用 defaultdict 来根据 source 聚合文档
+    source_dict = defaultdict(list)
+
+    # 将文档按 source 聚合
+    for doc in inputs["context"]:
+        source = doc.metadata.get('filename') or doc.metadata.get('link') or doc.metadata.get('source')
+        source_dict[source].append(doc)
+
+    # 对每个 source 下的文档进行排序，并整理成需要的格式
+    for source, docs in source_dict.items():
+        # 按照 start_index 排序（假设页面顺序可以通过 start_index 排序）
+        sorted_docs = sorted(docs, key=lambda doc: doc.metadata.get('page', 0))
+        
+        # 聚合 metadata 中的 page 字段，去重后存为列表
+        pages = list({doc.metadata.get('page') for doc in sorted_docs})  # 去重并转换成列表
+
+        # 提取排序后的 document 内容
+        document_contents = [doc.page_content for doc in sorted_docs]
+        
+        # 提取 metadata，假设只取第一个文档的 metadata 信息
+        metadata = sorted_docs[0].metadata if sorted_docs else {}
+        metadata['pages'] = pages
+        citations.append({
+            "source": source,
+            "document": document_contents,
+            "metadata": metadata,
+        })
+    
+    return citations
 
 def create_retrieval_chain(
     retriever: Union[BaseRetriever, Runnable[dict, RetrieverOutput]],
     combine_docs_chain: Runnable[Dict[str, Any], str],
     debug=False
 ) -> Runnable:
-    def build_citations(inputs: dict):
-        citations = []
-        # 使用 defaultdict 来根据 source 聚合文档
-        source_dict = defaultdict(list)
-
-        # 将文档按 source 聚合
-        for doc in inputs["context"]:
-            source = doc.metadata.get('filename') or doc.metadata.get('link') or doc.metadata.get('source')
-            source_dict[source].append(doc)
-
-        # 对每个 source 下的文档进行排序，并整理成需要的格式
-        for source, docs in source_dict.items():
-            # 按照 start_index 排序（假设页面顺序可以通过 start_index 排序）
-            sorted_docs = sorted(docs, key=lambda doc: doc.metadata.get('page', 0))
-            
-            # 聚合 metadata 中的 page 字段，去重后存为列表
-            pages = list({doc.metadata.get('page') for doc in sorted_docs})  # 去重并转换成列表
-    
-            # 提取排序后的 document 内容
-            document_contents = [doc.page_content for doc in sorted_docs]
-            
-            # 提取 metadata，假设只取第一个文档的 metadata 信息
-            metadata = sorted_docs[0].metadata if sorted_docs else {}
-            metadata['pages'] = pages
-            citations.append({
-                "source": source,
-                "document": document_contents,
-                "metadata": metadata,
-            })
-        
-        return citations
     
     def debug_print(x: Any) :
         print("create_retrieval_chain\n:",debug_info(x))
@@ -268,7 +268,68 @@ def create_chat_with_rag(km: KnowledgeManager,llm,debug=False,**kwargs):
     retrieval_chain = create_retrieval_chain(history_aware_retriever, combine_docs_chain,debug=debug)
     return create_llm_with_history(runnable=retrieval_chain,debug=debug)
 
+# 1. 知识库名称（列表），可以作为参数传入
+def create_chat_with_custom_rag(
+        km: KnowledgeManager,llm,
+        prompt: BasePromptTemplate=cumstom_rag_default_template,
+        debug=False
+):
+    # 1.引入新的prompt
+    # 2.构建创建retrever的runnable,返回docs
+    # 3.组合chain
+
+    def debug_print(x: Any) :
+        print("create_chat_with_custom_rag\n:",debug_info(x))
+        return x
     
+    debug_tool = RunnableLambda(debug_print)
+    
+    def query_docs(inputs: dict) :
+        print("debug----",input)
+        collection_names = inputs.get("collection_names",None)
+        if collection_names is None:
+            return []
+        
+        collections = "all"
+        if isinstance(collection_names,str):
+            collections = json.load(collection_names)
+        retriever = create_retriever(km,collection_names=collections)
+        return retriever.invoke(inputs.get("text",""))
+    
+    combine_docs_chain = create_stuff_documents_chain(llm, doc_qa_template,debug=debug)
+
+    retrieval_docs = RunnableLambda(query_docs)
+    retrieval_chain = (
+        RunnablePassthrough.assign(
+            context=retrieval_docs.with_config(run_name="retrieve_documents"),
+            
+        ).assign(answer=combine_docs_chain,citations=build_citations)
+    ).with_config(run_name="custom_rag_chain")
+    retrieval_chain = prompt | retrieval_chain
+    if debug:
+        retrieval_chain = debug_tool | retrieval_chain
+    
+    return create_llm_with_history(runnable=retrieval_chain,debug=debug)
+
+# 支持网页检索的对答 chain
+def create_chat_with_websearch(km: KnowledgeManager,llm,debug=False):
+
+    def web_search(inputs: dict) :
+        _,_,_,raw_docs = km.web_search(inputs.get("text",""))
+        return raw_docs
+    
+    combine_docs_chain = create_stuff_documents_chain(llm, doc_qa_template,debug=debug)
+
+    web_search_runable = RunnableLambda(web_search)
+    web_search_chain = (
+        RunnablePassthrough.assign(
+            context=web_search_runable.with_config(run_name="web_search_runable"),
+            
+        ).assign(answer=combine_docs_chain,citations=build_citations)
+    ).with_config(run_name="custom_rag_chain")
+    
+    return create_llm_with_history(runnable=web_search_chain,debug=debug)
+
 class LangchainApp:
     
     llm: BaseChatModel

@@ -38,6 +38,26 @@ default_template = ChatPromptTemplate.from_messages(
     ]
 )
 
+# 支持collection_names作为系统参数
+custome_rag_system_prompt = (
+    "You are a helpful assistant. Answer all questions to the best of your ability."
+    "\n\n"
+    "{collection_names}"
+    "\n\n"
+    "Please use {language} as default language."
+)
+
+cumstom_rag_default_template = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            custome_rag_system_prompt
+        ),
+        MessagesPlaceholder(variable_name="chat_history"),
+        ("human", "{text}")
+    ]
+)
+
 contextualize_q_system_prompt = (
     "Given a chat history and the latest user question "
     "which might reference context in the chat history, "
