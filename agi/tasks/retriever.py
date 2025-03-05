@@ -77,6 +77,9 @@ class KnowledgeManager:
     def list_documets(self,collection_name):
         return self.collection_manager.get_documents(collection_name)
     
+    def list_collections(self):
+        return self.collection_manager.list_collections()
+    
     def store(self,collection_name: str, source: Union[str, List[str],List[dict]], source_type: SourceType=SourceType.FILE, **kwargs):
         """
         存储 URL 或文件，支持单个或多个 source。
@@ -435,6 +438,10 @@ class KnowledgeManager:
         return docs
         
     def web_search(self,query,collection_name="web",region="cn-zh",time="d",max_results=3):
+        # TODO 
+        if query is None:
+            return 
+        
         questions = self.search_chain.invoke({"date":datetime.now().date(),"text":query,"results_num":max_results})
         print("questions:",questions)
         

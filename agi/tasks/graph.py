@@ -45,11 +45,13 @@ class AgiGraph:
         self.builder.add_node("tts", TaskFactory.create_task(TASK_TTS,graph=True))
         self.builder.add_node("image_gen", TaskFactory.create_task(TASK_IMAGE_GEN,graph=True))
         self.builder.add_node("rag", TaskFactory.create_task(TASK_CUSTOM_RAG,graph=True))
-        self.builder.add_node("web_search", TaskFactory.create_task(TASK_WEB_SEARCH,graph=True))
+        self.builder.add_node("web", TaskFactory.create_task(TASK_WEB_SEARCH,graph=True))
         self.builder.add_node("agent", TaskFactory.create_task(TASK_AGENT))
-        
-        self.builder.add_conditional_edges("speech2text",self.speech_edge_control, {END: END, "agent": "agent","rag": "rag","web": "web_search"})
+    
+        self.builder.add_conditional_edges("speech2text",self.speech_edge_control)
         self.builder.add_conditional_edges("agent", self.llm_edge_control, {END: END, "tts": "tts"})
+        self.builder.add_conditional_edges("rag", self.llm_edge_control, {END: END, "tts": "tts"})
+        self.builder.add_conditional_edges("web", self.llm_edge_control, {END: END, "tts": "tts"})
         self.builder.add_edge("image_gen", END)
         self.builder.add_edge("tts", END)
         
@@ -61,9 +63,9 @@ class AgiGraph:
             )
     # 通过用户指定input_type，来决定使用哪个分支
     def routes(self,state: State, config: RunnableConfig):
-        msg_type = state["input_type"]
+        msg_type = state.get("input_type")
         if msg_type == "text":
-            return "agent"
+            return self.speech_edge_control(state)
         elif msg_type == "image":
             return "image_gen"
         elif msg_type == "audio":
@@ -72,13 +74,13 @@ class AgiGraph:
         return END
     
     def speech_edge_control(self,state: State):
-        feature = state["feature"]
+        feature = state.get("feature","agent")
         if feature == "agent":
             return "agent"
         elif feature == "rag":
             return "rag"
         elif feature == "web":
-            return "web_search"
+            return "web"
 
         return END
     

@@ -14,6 +14,7 @@ class TestTaskRagFactory(unittest.TestCase):
         self.rag = TaskFactory.create_task(TASK_LLM_WITH_RAG)
         self.crag = TaskFactory.create_task(TASK_CUSTOM_RAG)
         self.web = TaskFactory.create_task(TASK_WEB_SEARCH)
+        print(self.kmanager.list_collections())
     def test_add_doc(self):
         param = {"filename" : "test.pdf"}
         collect_name,know_type,raw_docs = self.kmanager.store("test","./tests/test.pdf",**param)
@@ -62,8 +63,9 @@ class TestTaskRagFactory(unittest.TestCase):
         self.assertIsInstance(ret['citations'],list)
 
     def test_custom_rag(self):
-        config={"configurable": {"user_id": "test", "conversation_id": "1"}}
-        collecttions =  str(["",""])
+        config={"configurable": {"user_id": "test", "conversation_id": "2"}}
+        import json
+        collecttions =  json.dumps(["web"])
         ret = self.crag.invoke({"text":"上海未来一周天气如何？","language":"chinese","collection_names":collecttions},config=config)
         print(ret)
         self.assertIsNotNone(ret)
@@ -73,8 +75,8 @@ class TestTaskRagFactory(unittest.TestCase):
         self.assertIsInstance(ret['citations'],list)
 
     def test_web_search_chat(self):
-        config={"configurable": {"user_id": "test", "conversation_id": "1"}}
-        ret = self.crag.invoke({"text":"上海未来一周天气如何？","language":"chinese"},config=config)
+        config={"configurable": {"user_id": "test", "conversation_id": "3"}}
+        ret = self.web.invoke({"text":"上海未来一周天气如何？","language":"chinese"},config=config)
         print(ret)
         self.assertIsNotNone(ret)
         self.assertIsInstance(ret['chat_history'],list)

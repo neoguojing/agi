@@ -5,7 +5,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import ConfigurableFieldSpec
 from langchain_community.chat_message_histories import SQLChatMessageHistory
 from langchain.retrievers import EnsembleRetriever
-from langchain_core.messages.ai import AIMessage,AIMessageChunk
+from langchain_core.messages import HumanMessage,BaseMessage,AIMessage
 from langchain_core.runnables.utils import AddableDict
 from langchain_core.runnables.base import Runnable
 from langchain_core.language_models import LanguageModelLike
@@ -272,7 +272,7 @@ def create_chat_with_rag(km: KnowledgeManager,llm,debug=False,**kwargs):
 def create_chat_with_custom_rag(
         km: KnowledgeManager,llm,
         prompt: BasePromptTemplate=cumstom_rag_default_template,
-        debug=False
+        debug=True
 ):
     # 1.引入新的prompt
     # 2.构建创建retrever的runnable,返回docs
@@ -285,14 +285,14 @@ def create_chat_with_custom_rag(
     debug_tool = RunnableLambda(debug_print)
     
     def query_docs(inputs: dict) :
-        print("debug----",input)
+        print("query_docs----",inputs)
         collection_names = inputs.get("collection_names",None)
         if collection_names is None:
             return []
         
         collections = "all"
         if isinstance(collection_names,str):
-            collections = json.load(collection_names)
+            collections = json.loads(collection_names)
         retriever = create_retriever(km,collection_names=collections)
         return retriever.invoke(inputs.get("text",""))
     
@@ -305,15 +305,39 @@ def create_chat_with_custom_rag(
             
         ).assign(answer=combine_docs_chain,citations=build_citations)
     ).with_config(run_name="custom_rag_chain")
-    retrieval_chain = prompt | retrieval_chain
+    # retrieval_chain = prompt | retrieval_chain
     if debug:
         retrieval_chain = debug_tool | retrieval_chain
     
     return create_llm_with_history(runnable=retrieval_chain,debug=debug)
 
+ # 创建将字典转换为 AIMessage 的函数
+def dict_to_ai_message(output: dict) -> AIMessage:
+    return AIMessage(
+        content=output.get('answer', ''),
+        additional_kwargs={
+            'context': output.get('context', ''),
+            'citations': output.get('citations', [])
+        }
+    )
+    
+def message_to_dict(message: Union[list,HumanMessage,dict]):
+    if isinstance(message,dict):
+        return message
+    elif isinstance(message,HumanMessage):
+        return {
+            "text": message.content,
+            "language": "chinese",
+        }
+    else:
+        last_message = message[-1]
+        return {
+            "text": last_message.content,
+            "language": "chinese",
+        }
 # 支持网页检索的对答 chain
 def create_chat_with_websearch(km: KnowledgeManager,llm,debug=False):
-
+    
     def web_search(inputs: dict) :
         _,_,_,raw_docs = km.web_search(inputs.get("text",""))
         return raw_docs
@@ -324,11 +348,14 @@ def create_chat_with_websearch(km: KnowledgeManager,llm,debug=False):
     web_search_chain = (
         RunnablePassthrough.assign(
             context=web_search_runable.with_config(run_name="web_search_runable"),
-            
-        ).assign(answer=combine_docs_chain,citations=build_citations)
+        )
+        .assign(answer=combine_docs_chain,citations=build_citations)
     ).with_config(run_name="custom_rag_chain")
     
-    return create_llm_with_history(runnable=web_search_chain,debug=debug)
+    begin = RunnableLambda(message_to_dict)
+    output = RunnableLambda(dict_to_ai_message)
+    runnable = begin | web_search_chain | output
+    return create_llm_with_history(runnable=runnable,debug=debug)
 
 class LangchainApp:
     
