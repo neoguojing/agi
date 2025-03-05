@@ -66,7 +66,7 @@ async def chat_completions(
     # if isinstance(need_speech, str):
     #     need_speech = need_speech.lower() == "true"  # 转换为布尔值
     
-    print("need_speech:", need_speech)
+    print("request:", request,need_speech,conversation_id)
         
     if need_speech and request.stream:
         raise HTTPException(status_code=400, detail="语音输出不支持流式响应")
@@ -115,8 +115,30 @@ async def chat_completions(
         resp = graph.invoke(state_data)
         return format_non_stream_response(resp)
 
+image_style = 'style="width: 100%; max-height: 100vh;"'
+audio_style = "width: 300px; height: 50px;"  # 添加样式
+def handle_response_content_as_string(content: Union[str,List]) -> str:
+    if isinstance(content,str):
+        return content
+    elif isinstance(content,List):
+        ret = ""
+        for item in content:
+            if item.get("type") == "text":
+                ret =  item.get("text")
+            elif item.get("type") == "image":
+                image_source =  item.get("image")
+                ret = f'<img src="{image_source}" {image_style}>\n'
+                
+            elif item.get("type") == "audio":
+                audio_source_base64=  item.get("audio")
+                ret = f'<audio src="{audio_source_base64}" {audio_style} controls></audio>\n'
+
+        return ret
+    return ""
+
+
 # 格式化非流式响应
-def format_non_stream_response(resp: Dict[str, Any]) -> Dict[str, Any]:
+def format_non_stream_response(resp: Dict[str, Any],web: bool = True) -> Dict[str, Any]:
     """
     将内部响应格式化为 OpenAI 兼容的非流式响应。
     """
@@ -130,6 +152,8 @@ def format_non_stream_response(resp: Dict[str, Any]) -> Dict[str, Any]:
     if last_message is not None:
         last_message = resp["messages"][-1]
         assistant_content = last_message.content
+        if web:
+            assistant_content = handle_response_content_as_string(assistant_content)
         
         response_metadata = last_message.response_metadata
         if response_metadata is not None and "finish_reason" in response_metadata:
@@ -164,7 +188,7 @@ def format_non_stream_response(resp: Dict[str, Any]) -> Dict[str, Any]:
         }
     }
         
-async def generate_stream_response(state_data: State) -> AsyncGenerator[str, None]:
+async def generate_stream_response(state_data: State,web: bool= True) -> AsyncGenerator[str, None]:
     """
     生成 OpenAI 兼容的流式响应，使用 SSE 格式，调用 stream 方法。
     
@@ -192,6 +216,8 @@ async def generate_stream_response(state_data: State) -> AsyncGenerator[str, Non
                 if role == "user":
                     continue
                 
+                if web:
+                    event.content = handle_response_content_as_string(event.content)
                 chunk["choices"][0]["delta"] = {"role": role, "content": event.content}
                 finish_reason = getattr(event, "response_metadata", {}).get("finish_reason")
                 if finish_reason:

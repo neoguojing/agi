@@ -12,6 +12,9 @@ from pydantic import BaseModel, Field
 import logging
 from langchain_core.messages import AIMessage, HumanMessage
 import base64
+
+audio_style = "width: 300px; height: 50px;"  # 添加样式
+
 class TextToSpeech(CustomerLLM):
     tts: Optional[Any] = Field(default=None)
     speaker_wav: str = Field(default=TTS_SPEAKER_WAV)
@@ -69,9 +72,15 @@ class TextToSpeech(CustomerLLM):
         with open(file_path, 'rb') as audio_file:
             audio_bytes = audio_file.read()
         audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+        audio_source_base64 = f"data:audio/wav;base64,{audio_base64}"
+        if kwargs.get('html') is True:
+            return AIMessage(content=[
+                {"type": "audio", "audio": f'<audio src="{audio_source_base64}" {audio_style} controls></audio>\n'}
+            ])
+        
         return AIMessage(content=[
             # {"type": "text", "text": input_str},
-            {"type": "audio", "audio": audio_base64}
+            {"type": "audio", "audio": audio_source_base64}
         ])
 
     def generate_audio_samples(self, text: str) -> Any:
