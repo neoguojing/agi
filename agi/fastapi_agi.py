@@ -2,13 +2,14 @@ import uuid
 import base64
 from fastapi import FastAPI, Depends, HTTPException, Request,Query,UploadFile,File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse,FileResponse
 from typing import AsyncGenerator
 from typing import List, Union, Dict, Any,Optional
 from pydantic import BaseModel, Field
 import openai
 import json
 import time
+import os
 from langchain_core.messages import HumanMessage,BaseMessage
 
 # 假设的 AgiGraph 模块（需要根据实际情况调整）
@@ -339,7 +340,42 @@ async def create_transcription(file: UploadFile, request: TranscriptionRequest, 
         return {"text": assistant_content}
     
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.post("/v1/audio/speech",summary="文本转语音")
+async def generate_speech(text: str, voice: str = "alloy", response_format: str = "wav"):
+    """
+    接收文本并生成语音文件。
+    """
+    try:
+        internal_messages: List[Union[HumanMessage, Dict[str, Union[str, List[Dict[str, str]]]]]] = []
+        input_type = "text"  # 默认输入类型
+        internal_messages.append(HumanMessage(content=text))
+
+            
+        state_data = State(
+            messages=internal_messages,
+            input_type=input_type,
+            need_speech=True,
+            user_id="speech",
+            conversation_id="",
+        )
+
+        resp = graph.invoke(state_data)
+        last_message = resp.get("messages")
+        file_path = ""
+        if last_message is not None:
+            last_message = resp["messages"][-1]
+            if isinstance(last_message.content,dict):
+                file_path = last_message.content.get("file_path","")
+
+        if not file_path or not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        return FileResponse(file_path, media_type=f"audio/{response_format}", filename=file_path)
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 # 启动服务
 # if __name__ == "__main__":
 #     import uvicorn

@@ -62,7 +62,7 @@ class TextToSpeech(CustomerLLM):
             file_path = self.save_audio_to_file(text=input_str)
             return AIMessage(content=[
                 # {"type": "text", "text": input_str},
-                {"type": "audio", "audio": file_path}
+                {"type": "audio", "audio": file_path,"text":input_str}
             ])
         
         # Generate audio samples and return as ByteIO
@@ -75,12 +75,11 @@ class TextToSpeech(CustomerLLM):
         audio_source_base64 = f"data:audio/wav;base64,{audio_base64}"
         if kwargs.get('html') is True:
             return AIMessage(content=[
-                {"type": "audio", "audio": f'<audio src="{audio_source_base64}" {audio_style} controls></audio>\n'}
+                {"type": "audio", "audio": f'<audio src="{audio_source_base64}" {audio_style} controls></audio>\n',"file_path":file_path,"text":input_str}
             ])
         
         return AIMessage(content=[
-            # {"type": "text", "text": input_str},
-            {"type": "audio", "audio": audio_source_base64}
+            {"type": "audio", "audio": audio_source_base64,"file_path":file_path,"text":input_str}
         ])
 
     def generate_audio_samples(self, text: str) -> Any:
