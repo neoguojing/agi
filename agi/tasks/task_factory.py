@@ -59,14 +59,14 @@ def create_retriever_task(**kwargs):
 
 def create_custom_rag_task(**kwargs):
     from agi.tasks.llm_app import create_chat_with_custom_rag
-    return create_chat_with_custom_rag(TaskFactory._knowledge_manager,TaskFactory._llm)
+    return create_chat_with_custom_rag(TaskFactory._knowledge_manager,TaskFactory._llm,debug=True,graph=kwargs.get("graph"))
 
 def create_web_search_task(**kwargs):
     from agi.tasks.llm_app import create_chat_with_websearch
-    return create_chat_with_websearch(TaskFactory._knowledge_manager,TaskFactory._llm)
+    return create_chat_with_websearch(TaskFactory._knowledge_manager,TaskFactory._llm, debug=True,graph=kwargs.get("graph"))
 
 def create_llm_with_rag_task(**kwargs):
-    return create_chat_with_rag(TaskFactory._knowledge_manager, TaskFactory._llm, debug=True, **kwargs)
+    return create_chat_with_rag(TaskFactory._knowledge_manager, TaskFactory._llm, debug=True,graph=kwargs.get("graph"))
 
 def create_translate_task(**kwargs):
     return create_translate_chain(TaskFactory._llm, graph=kwargs.get("graph"))

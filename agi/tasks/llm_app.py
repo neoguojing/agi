@@ -270,7 +270,8 @@ def create_chat_with_rag(km: KnowledgeManager,llm,debug=False,**kwargs):
     retrieval_chain = create_retrieval_chain(history_aware_retriever, combine_docs_chain,debug=debug)
     return create_llm_with_history(runnable=retrieval_chain,debug=debug)
 
-# 1. 知识库名称（列表），可以作为参数传入
+# 知识库名称（列表），可以作为参数传入
+# TODO 无法和llm history 融合
 def create_chat_with_custom_rag(
         km: KnowledgeManager,llm,
         debug=True,
@@ -299,28 +300,68 @@ def create_chat_with_custom_rag(
         return retriever.invoke(inputs.get("text",""))
     
     combine_docs_chain = create_stuff_documents_chain(llm, doc_qa_template,debug=debug)
-
+     # 获取正确的输入格式
+    begin = RunnableLambda(message_to_dict)
+    # 获取合理的输出格式
+    output = RunnableLambda(dict_to_ai_message)
     retrieval_docs = RunnableLambda(query_docs)
+    
     retrieval_chain = (
-        RunnablePassthrough.assign(
+        begin
+        | RunnablePassthrough.assign(
             context=retrieval_docs.with_config(run_name="retrieve_documents"),
             
         ).assign(answer=combine_docs_chain,citations=build_citations)
+        | output
     ).with_config(run_name="custom_rag_chain")
+   
+    if debug:
+        retrieval_chain = debug_tool | retrieval_chain
+    
+    # 转换graph格式
+    if graph:
+        return retrieval_chain | graph_parser
+    
+    # return create_llm_with_history(runnable=retrieval_chain,debug=debug)
+    return retrieval_chain
+
+# 支持网页检索的对答 chain
+# TODO 无法和llm history 融合
+def create_chat_with_websearch(km: KnowledgeManager,llm,debug=True,graph: bool = False):
+    
+    def web_search(inputs: dict) :
+        print("web_search----",inputs)
+        _,_,_,raw_docs = km.web_search(inputs.get("text",""))
+        return raw_docs
+    
+    # 期望combine_docs_chain 能够存储历史
+    # llm_with_histoty = create_llm_with_history(runnable=llm,debug=debug)
+    combine_docs_chain = create_stuff_documents_chain(llm, doc_qa_template,debug=debug)
     # 获取正确的输入格式
     begin = RunnableLambda(message_to_dict)
     # 获取合理的输出格式
     output = RunnableLambda(dict_to_ai_message)
-    chain = begin | retrieval_chain | output
-    if debug:
-        retrieval_chain = debug_tool | chain
+
+    web_search_runable = RunnableLambda(web_search)
+    web_search_chain = (
+        begin
+        | RunnablePassthrough.assign(
+            context=web_search_runable.with_config(run_name="web_search_runable"),
+        )
+        .assign(answer=combine_docs_chain,citations=build_citations)
+        | output
+    ).with_config(run_name="custom_rag_chain")
     
-    # return create_llm_with_history(runnable=retrieval_chain,debug=debug)
-    return chain
+
+    # 转换graph格式
+    if graph:
+        return web_search_chain | graph_parser
+    
+    return web_search_chain
 
  # 将输出的字典格式转换为BaseMessage 或者 graph的格式
 def dict_to_ai_message(output: dict):
-     ai = AIMessage(
+    ai = AIMessage(
         content=output.get('answer', ''),
         additional_kwargs={
             'context': output.get('context', ''),
@@ -333,10 +374,17 @@ def dict_to_ai_message(output: dict):
 # 用于将各种格式的输入，转换为dict格式，供chain使用
 def message_to_dict(message: Union[list,HumanMessage,dict,AgentState]):
     # 若是graph，则从state中抽取消息
-    if isinstance(message,AgentState):
+    # AgentState 是typedict ，不支持类型检查
+    if "messages" in message:
         message = graph_input_format(message)
-        
-    if isinstance(message,dict):
+        last_message = message[-1]
+        if isinstance(last_message,HumanMessage):
+            return {
+                "text": last_message.content,
+                "language": "chinese",
+                "collection_names": last_message.additional_kwargs.get("collection_names",None),
+            }
+    elif isinstance(message,dict):
         return message
     elif isinstance(message,HumanMessage):
         message.additional_kwargs.get("collection_names",None)
@@ -353,44 +401,13 @@ def message_to_dict(message: Union[list,HumanMessage,dict,AgentState]):
                 "language": "chinese",
                 "collection_names": last_message.additional_kwargs.get("collection_names",None),
             }
-    
+            
     return {
         "text": "user dont say anything",
         "language": "chinese",
     } 
         
 
-# 支持网页检索的对答 chain
-def create_chat_with_websearch(km: KnowledgeManager,llm,debug=False,graph: bool = False):
-    
-    def web_search(inputs: dict) :
-        _,_,_,raw_docs = km.web_search(inputs.get("text",""))
-        return raw_docs
-    
-    # 期望combine_docs_chain 能够存储历史
-    llm_with_histoty = create_llm_with_history(runnable=llm,debug=debug)
-    combine_docs_chain = create_stuff_documents_chain(llm_with_histoty, doc_qa_template,debug=debug)
-
-    web_search_runable = RunnableLambda(web_search)
-    web_search_chain = (
-        RunnablePassthrough.assign(
-            context=web_search_runable.with_config(run_name="web_search_runable"),
-        )
-        .assign(answer=combine_docs_chain,citations=build_citations)
-    ).with_config(run_name="custom_rag_chain")
-    
-    # 获取正确的输入格式
-    begin = RunnableLambda(message_to_dict)
-    # 获取合理的输出格式
-    output = RunnableLambda(dict_to_ai_message)
-    # 组合chain
-    runnable = begin | web_search_chain | output
-
-    # 转换graph格式
-    if graph:
-        return runnable | graph_parser
-    
-    return runnable
 
 class LangchainApp:
     

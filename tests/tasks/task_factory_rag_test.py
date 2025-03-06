@@ -69,20 +69,20 @@ class TestTaskRagFactory(unittest.TestCase):
         ret = self.crag.invoke({"text":"上海未来一周天气如何？","language":"chinese","collection_names":collecttions},config=config)
         print(ret)
         self.assertIsNotNone(ret)
-        self.assertIsInstance(ret['chat_history'],list)
-        self.assertIsInstance(ret['context'],list)
-        self.assertIsNotNone(ret['answer'])
-        self.assertIsInstance(ret['citations'],list)
+        self.assertIsInstance(ret,AIMessage)
+        self.assertIsInstance(ret.additional_kwargs['context'],list)
+        self.assertIsNotNone(ret.content)
+        self.assertIsInstance(ret.additional_kwargs['citations'],list)
 
     def test_web_search_chat(self):
         config={"configurable": {"user_id": "test", "conversation_id": "3"}}
         ret = self.web.invoke({"text":"上海未来一周天气如何？","language":"chinese"},config=config)
         print(ret)
         self.assertIsNotNone(ret)
-        self.assertIsInstance(ret['chat_history'],list)
-        self.assertIsInstance(ret['context'],list)
-        self.assertIsNotNone(ret['answer'])
-        self.assertIsInstance(ret['citations'],list)
+        self.assertIsInstance(ret,AIMessage)
+        self.assertIsInstance(ret.additional_kwargs['context'],list)
+        self.assertIsNotNone(ret.content)
+        self.assertIsInstance(ret.additional_kwargs['citations'],list)
         
         
 
