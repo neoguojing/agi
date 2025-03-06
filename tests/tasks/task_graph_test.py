@@ -95,3 +95,22 @@ class TestAgent(unittest.TestCase):
         # self.assertEqual(resp["need_speech"],True)
         # self.assertEqual(resp["input_type"],"audio")
         # self.assertIsInstance(resp["messages"][-1],AIMessage)
+
+    def test_custom_rag(self):
+        input_example = {
+            "messages":  [
+                HumanMessage(
+                    content="今天上海天气如何？"
+                )
+            ],
+            "input_type": "text",
+            "need_speech": False,
+            "feature": "rag",
+        }
+        resp = self.graph.invoke(input_example)
+        print(resp)
+        # self.assertIsInstance(resp,dict)
+        # self.assertIsInstance(resp["messages"],list)
+        # self.assertEqual(resp["need_speech"],True)
+        # self.assertEqual(resp["input_type"],"audio")
+        # self.assertIsInstance(resp["messages"][-1],AIMessage)
