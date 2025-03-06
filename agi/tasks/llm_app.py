@@ -66,7 +66,8 @@ def debug_info(x : Any):
 def get_session_history(user_id: str, conversation_id: str):
     return SQLChatMessageHistory(f"{user_id}--{conversation_id}", LANGCHAIN_DB_PATH)
 
-def create_llm_with_history(runnable,debug=False):
+# dict_input = True时，只能输入dict
+def create_llm_with_history(runnable,debug=False,dict_input=True):
     def debug_print(x: Any) :
         print("create_llm_with_history\n:",debug_info(x))
         return x
@@ -75,12 +76,18 @@ def create_llm_with_history(runnable,debug=False):
     
     if debug:
         runnable = debug_tool | runnable
+    
+    input_key = "text"
+    history_key = "chat_history"
+    if not dict_input:
+        input_key = None
+        history_key = None
         
     return RunnableWithMessageHistory(
         runnable,
         get_session_history,
-        input_messages_key="text",
-        history_messages_key="chat_history",
+        input_messages_key=input_key,
+        history_messages_key=history_key,
         history_factory_config=[
             ConfigurableFieldSpec(
                 id="user_id",
@@ -100,7 +107,8 @@ def create_llm_with_history(runnable,debug=False):
             )
         ],
     )
-        
+
+# 记录历史的聊天，单纯添加了模板
 def create_chat_with_history(llm,debug=False):
     def debug_print(x: Any) :
         print("create_chat_with_history\n:",debug_info(x))
@@ -177,12 +185,16 @@ def create_stuff_documents_chain(
             format_document(doc, _document_prompt)
             for doc in inputs[document_variable_name]
         )
-            
+    # 经过prompt 之后，变为了ChatPromptValue，需要转换为List[BaseMessage]
+    def format_history_chain_input(x: Any):
+        print("format_history_chain_input:",x)
+        return x.to_messages()
     chain = (
         RunnablePassthrough.assign(**{document_variable_name: format_docs}).with_config(
             run_name="format_inputs"
         )
         | prompt
+        | format_history_chain_input
         | llm
         | _output_parser
     ).with_config(run_name="stuff_documents_chain")
@@ -299,6 +311,7 @@ def create_chat_with_custom_rag(
         retriever = create_retriever(km,collection_names=collections)
         return retriever.invoke(inputs.get("text",""))
     
+    llm = create_llm_with_history(runnable=llm,debug=debug,dict_input=False)
     combine_docs_chain = create_stuff_documents_chain(llm, doc_qa_template,debug=debug)
      # 获取正确的输入格式
     begin = RunnableLambda(message_to_dict)
@@ -322,11 +335,11 @@ def create_chat_with_custom_rag(
     if graph:
         return retrieval_chain | graph_parser
     
-    # return create_llm_with_history(runnable=retrieval_chain,debug=debug)
+    
     return retrieval_chain
 
 # 支持网页检索的对答 chain
-# TODO 无法和llm history 融合
+# DONE 无法和llm history 融合
 def create_chat_with_websearch(km: KnowledgeManager,llm,debug=True,graph: bool = False):
     
     def web_search(inputs: dict) :
@@ -335,7 +348,7 @@ def create_chat_with_websearch(km: KnowledgeManager,llm,debug=True,graph: bool =
         return raw_docs
     
     # 期望combine_docs_chain 能够存储历史
-    # llm_with_histoty = create_llm_with_history(runnable=llm,debug=debug)
+    llm = create_llm_with_history(runnable=llm,debug=debug,dict_input=False)
     combine_docs_chain = create_stuff_documents_chain(llm, doc_qa_template,debug=debug)
     # 获取正确的输入格式
     begin = RunnableLambda(message_to_dict)

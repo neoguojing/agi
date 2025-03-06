@@ -76,7 +76,7 @@ class TestTaskRagFactory(unittest.TestCase):
 
     def test_web_search_chat(self):
         config={"configurable": {"user_id": "test", "conversation_id": "3"}}
-        ret = self.web.invoke({"text":"上海未来一周天气如何？","language":"chinese"},config=config)
+        ret = self.web.invoke({"text":"今天的科技新闻","language":"chinese"},config=config)
         print(ret)
         self.assertIsNotNone(ret)
         self.assertIsInstance(ret,AIMessage)
