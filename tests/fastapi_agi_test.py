@@ -199,7 +199,7 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertGreater(len(response.data),0)
         self.assertIsNotNone(response.data[0].embedding)
     
-    语音转文本
+    # 语音转文本
     def test_transcription(self):  
         with open('tests/zh-cn-sample.wav', 'rb') as audio_file:
             response = self.client.audio.transcriptions.create(
