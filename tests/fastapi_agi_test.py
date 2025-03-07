@@ -149,3 +149,45 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertEqual(response.choices[0].message.content[0]['type'],"audio")
         self.assertIsNotNone(response.choices[0].message.content[0]['audio'])
         # print(response)
+
+    def test_web_search(self):
+        response = self.client.chat.completions.create(
+            model="agi-model",
+            extra_query={"need_speech": False,"feature": "web"},
+            messages=[
+                {
+                    "role": "user",
+                    "content": "今天的科技新闻"
+                }
+            ],
+        )
+        
+        print(response)
+        self.assertIsNotNone(response.choices)
+        self.assertGreater(len(response.choices),0)
+        self.assertIsNotNone(response.choices[0].message)
+        self.assertIsNotNone(response.choices[0].message.content)
+        self.assertEqual(response.choices[0].message.content[0]['type'],"text")
+        self.assertIsNotNone(response.choices[0].message.content[0]['audio'])
+        
+
+    def test_rag(self):
+        response = self.client.chat.completions.create(
+            model="agi-model",
+            extra_query={"need_speech": False,"feature": "rag","db_ids": ["web"]},
+            messages=[
+                {
+                    "role": "user",
+                    "content": "上海今天的天气"
+                }
+            ],
+        )
+        
+        print(response)
+        self.assertIsNotNone(response.choices)
+        self.assertGreater(len(response.choices),0)
+        self.assertIsNotNone(response.choices[0].message)
+        self.assertIsNotNone(response.choices[0].message.content)
+        self.assertEqual(response.choices[0].message.content[0]['type'],"text")
+        self.assertIsNotNone(response.choices[0].message.content[0]['audio'])
+        

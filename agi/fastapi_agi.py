@@ -70,7 +70,7 @@ async def chat_completions(
     # if isinstance(need_speech, str):
     #     need_speech = need_speech.lower() == "true"  # 转换为布尔值
     
-    print("request:", request,need_speech,conversation_id)
+    print("request:", request,need_speech,conversation_id,db_ids,feature)
         
     if need_speech and request.stream:
         raise HTTPException(status_code=400, detail="语音输出不支持流式响应")
