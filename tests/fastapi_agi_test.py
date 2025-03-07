@@ -190,4 +190,33 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertIsNotNone(response.choices[0].message.content)
         self.assertEqual(response.choices[0].message.content[0]['type'],"text")
         self.assertIsNotNone(response.choices[0].message.content[0]['audio'])
+
+    def test_embedding(self):  
+        response = self.client.embeddings.create(
+            model='text-embedding-ada-002',
+            input="我爱北京天安门"
+        )
+
+        print(response)
+        # embedding = response['data'][0]['embedding']
+        # print(response)
+    
+    # 语音转文本
+    def test_transcription(self):  
+        response = self.client.audio.transcriptions.create(
+            model="whisper-1",
+            file="tests/zh-cn-sample.wav",
+        )
+
+        print(response)
+        print(response.text)
+
         
+    # 文本转语音
+    def test_speech(self):  
+        with self.client.audio.speech.with_streaming_response.create(
+            model="tts-1",
+            voice="alloy",
+            input="the quick brown fox jumped over the lazy dogs",
+        ) as response:
+            response.stream_to_file("tests/test.wav")
