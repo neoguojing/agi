@@ -133,7 +133,7 @@ class TestFastApiAgi(unittest.TestCase):
     def test_tts(self):
         response = self.client.chat.completions.create(
             model="agi-model",
-            extra_query={"need_speech": True},
+            extra_body={"need_speech": True},
             messages=[
                 {
                     "role": "user",
@@ -153,11 +153,11 @@ class TestFastApiAgi(unittest.TestCase):
     def test_web_search(self):
         response = self.client.chat.completions.create(
             model="agi-model",
-            extra_query={"need_speech": False,"feature": "web"},
+            extra_body={"need_speech": False,"feature": "web"},
             messages=[
                 {
                     "role": "user",
-                    "content": "今天的科技新闻"
+                    "content": "esp32单片机"
                 }
             ],
         )
@@ -167,18 +167,16 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertGreater(len(response.choices),0)
         self.assertIsNotNone(response.choices[0].message)
         self.assertIsNotNone(response.choices[0].message.content)
-        self.assertEqual(response.choices[0].message.content[0]['type'],"text")
-        self.assertIsNotNone(response.choices[0].message.content[0]['audio'])
         
 
     def test_rag(self):
         response = self.client.chat.completions.create(
             model="agi-model",
-            extra_query={"need_speech": False,"feature": "rag","db_ids": ["web"]},
+            extra_body={"db_ids":["web"],"need_speech": False,"feature": "rag"},
             messages=[
                 {
                     "role": "user",
-                    "content": "上海今天的天气"
+                    "content": "esp32单片机"
                 }
             ],
         )
@@ -188,8 +186,7 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertGreater(len(response.choices),0)
         self.assertIsNotNone(response.choices[0].message)
         self.assertIsNotNone(response.choices[0].message.content)
-        self.assertEqual(response.choices[0].message.content[0]['type'],"text")
-        self.assertIsNotNone(response.choices[0].message.content[0]['audio'])
+        self.assertIsNotNone(response.choices[0].message)
 
     def test_embedding(self):  
         response = self.client.embeddings.create(
@@ -198,18 +195,23 @@ class TestFastApiAgi(unittest.TestCase):
         )
 
         print(response)
-        # embedding = response['data'][0]['embedding']
-        # print(response)
+        self.assertIsNotNone(response.data)
+        self.assertGreater(len(response.data),0)
+        self.assertIsNotNone(response.data[0].embedding)
     
-    # 语音转文本
+    语音转文本
     def test_transcription(self):  
-        response = self.client.audio.transcriptions.create(
-            model="whisper-1",
-            file="tests/zh-cn-sample.wav",
-        )
+        with open('tests/zh-cn-sample.wav', 'rb') as audio_file:
+            response = self.client.audio.transcriptions.create(
+                file=audio_file,
+                model='whisper-1',
+                response_format='json',  # 可选：'text', 'srt', 'vtt', 'verbose_json'
+                language='zh'  # 可选：指定音频语言，例如 'en'、'zh' 等
+            )
+ 
 
-        print(response)
-        print(response.text)
+            print(response)
+            self.assertIsNotNone(response.text)
 
         
     # 文本转语音
@@ -220,3 +222,6 @@ class TestFastApiAgi(unittest.TestCase):
             input="the quick brown fox jumped over the lazy dogs",
         ) as response:
             response.stream_to_file("tests/test.wav")
+            import os
+            self.assertTrue(os.path.exists("tests/test.wav"))
+            

@@ -48,31 +48,22 @@ class ChatCompletionRequest(BaseModel):
     stream: bool = Field(default=False, description="是否使用流式响应")
     max_tokens: int = Field(default=1024, ge=1, description="最大生成 token 数", optional=True)
     user: str = Field(default="", description="用户名")
+    db_ids: List[str] = Field(default=None, description="知识库列表")
+    need_speech: bool = Field(default=False, description="是否需要语音输出")
+    feature: str = Field(default="agent", description="支持的特性：agent,web,rag")
+    conversation_id: str = Field(default="", description="会话id")
 
 
 @app.post("/v1/chat/completions", summary="兼容 OpenAI 的聊天完成接口")
 async def chat_completions(
     request: ChatCompletionRequest,
-    # http_request: Request,  # 添加 Request 对象
-    need_speech: bool = Query(default=False, description="是否需要语音输出"),
-    feature: str = Query(default="agent", description="支持的特性：agent,web,rag"),
-    db_ids: Union[list[str], None] = Query(default=None, description="是否知识库检索"),
-    conversation_id: str = Query(default="", description="会话id"),
     api_key: str = Depends(verify_api_key)
 ):
     """
     处理聊天完成请求，支持流式和非流式响应，兼容 OpenAI API。
     """
-    # 获取额外参数
-    # extra_query = dict(http_request.query_params)
-    # print("extra_query:", extra_query)
-    # need_speech = extra_query.get("need_speech",False)
-    # if isinstance(need_speech, str):
-    #     need_speech = need_speech.lower() == "true"  # 转换为布尔值
     
-    print("request:", request,need_speech,conversation_id,db_ids,feature)
-        
-    if need_speech and request.stream:
+    if request.need_speech and request.stream:
         raise HTTPException(status_code=400, detail="语音输出不支持流式响应")
 
 
@@ -80,8 +71,8 @@ async def chat_completions(
     input_type = "text"  # 默认输入类型
     # 处理知识库参数
     additional_kwargs = {}
-    if db_ids is not None:
-        additional_kwargs["collection_names"] = json.dumps(db_ids)
+    if request.db_ids is not None:
+        additional_kwargs["collection_names"] = json.dumps(request.db_ids)
         
     # 只处理最后一条消息
     # for msg in request.messages:
@@ -112,16 +103,19 @@ async def chat_completions(
     state_data = State(
         messages=internal_messages,
         input_type=input_type,
-        need_speech=need_speech,
+        need_speech=request.need_speech,
         user_id=request.user,
-        conversation_id=conversation_id,
-        feature=feature
+        conversation_id=request.conversation_id,
+        feature=request.feature
     )
 
+    # TODO 文章的引用信息如何处理
     if request.stream:
         return StreamingResponse(generate_stream_response(state_data), media_type="text/event-stream")
     else:
         resp = graph.invoke(state_data)
+        print("request:", request)
+        print("response:", resp)
         return format_non_stream_response(resp)
 
 image_style = 'style="width: 100%; max-height: 100vh;"'
@@ -296,17 +290,12 @@ async def list_models(api_key: str = Depends(verify_api_key)):
 
 class TranscriptionResponse(BaseModel):
     text: str
+   
 
-class TranscriptionRequest(BaseModel):
-    model: Optional[str] = "whisper-1"
-    prompt: Optional[str] = None
-    response_format: Optional[str] = "json"
-    temperature: Optional[float] = 0.0
-
-def convert_to_base64(file: UploadFile = File(...)):
+async def convert_to_base64(file: UploadFile = File(...)):
     try:
         # 异步读取文件内容为字节数据
-        audio_bytes = file.read()
+        audio_bytes = await file.read()
         
         # 将字节数据编码为 Base64
         base64_encoded = base64.b64encode(audio_bytes)
@@ -320,14 +309,15 @@ def convert_to_base64(file: UploadFile = File(...)):
         print(e)
         return ""
     
-@app.post("/v1/audio/transcriptions",response_model=ModelListResponse, summary="语音转文本")
-async def create_transcription(file: UploadFile, request: TranscriptionRequest, api_key: str = Depends(verify_api_key)):
+@app.post("/v1/audio/transcriptions", summary="语音转文本")
+async def create_transcription(file: UploadFile, api_key: str = Depends(verify_api_key)):
 
     try:
         internal_messages: List[Union[HumanMessage, Dict[str, Union[str, List[Dict[str, str]]]]]] = []
         input_type = "audio"  # 默认输入类型
         content: List[Dict[str, str]] = []
-        content.append({"type": "audio", "audio": convert_to_base64(file)})
+        base64_audio = await convert_to_base64(file)
+        content.append({"type": "audio", "audio": base64_audio})
         internal_messages.append(HumanMessage(content=content))
 
             
@@ -349,16 +339,23 @@ async def create_transcription(file: UploadFile, request: TranscriptionRequest, 
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+class SpeechRequest(BaseModel):
+    model: Optional[str] = "whisper-1"
+    input: Optional[str] = None
+    voice: Optional[str] = None
+    response_format: Optional[str] = "wav"
+    speed: Optional[float] = 0.0
     
 @app.post("/v1/audio/speech",summary="文本转语音")
-async def generate_speech(text: str, voice: str = "alloy", response_format: str = "wav"):
+async def generate_speech(request: SpeechRequest, api_key: str = Depends(verify_api_key)):
     """
     接收文本并生成语音文件。
     """
     try:
         internal_messages: List[Union[HumanMessage, Dict[str, Union[str, List[Dict[str, str]]]]]] = []
         input_type = "text"  # 默认输入类型
-        internal_messages.append(HumanMessage(content=text))
+        internal_messages.append(HumanMessage(content=request.input))
 
             
         state_data = State(
@@ -370,33 +367,49 @@ async def generate_speech(text: str, voice: str = "alloy", response_format: str 
         )
 
         resp = graph.invoke(state_data)
+        
         last_message = resp.get("messages")
         file_path = ""
         if last_message is not None:
-            last_message = resp["messages"][-1]
-            if isinstance(last_message.content,dict):
-                file_path = last_message.content.get("file_path","")
-
+            last_message = last_message[-1]
+            if isinstance(last_message.content[0],dict):
+                file_path = last_message.content[0].get("file_path","")
         if not file_path or not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="File not found")
         
-        return FileResponse(file_path, media_type=f"audio/{response_format}", filename=file_path)
+        return FileResponse(file_path, media_type=f"audio/{request.response_format}", filename=file_path)
     
     except Exception as e:
+        print(e)
         raise HTTPException(status_code=500, detail=str(e))
 
 # 定义请求体模型
 class EmbeddingRequest(BaseModel):
-    text: str
+    input: str
 
-@app.post("/v1/embedding",summary="文本向量")
+@app.post("/v1/embeddings",summary="文本向量")
 async def get_embedding(request: EmbeddingRequest):
-    if not request.text:
+    if not request.input:
         raise HTTPException(status_code=400, detail="Text cannot be empty.")
     # 生成嵌入向量
     llm_task = TaskFactory.create_task(TASK_EMBEDDING)
-    embedding = llm_task.embed_query(request.text)
-    return {"embedding": embedding}
+    embedding = llm_task.embed_query(request.input)
+    
+    return {
+        "object": "list",
+        "data": [
+            {
+            "object": "embedding",
+            "embedding": embedding,
+            "index": 0
+            }
+        ],
+        "model": "bge-m3",
+        "usage": {
+            "prompt_tokens": 0,
+            "total_tokens": 0
+        }
+    }
 
 # 启动服务
 # if __name__ == "__main__":

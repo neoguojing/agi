@@ -163,3 +163,4 @@ cython_debug/
 cache/*
 output_image.jpeg
 tests/snake.jpeg
+tests/test.wav
