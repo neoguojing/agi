@@ -20,10 +20,61 @@ class TestFastApiAgi(unittest.TestCase):
             api_key="123", # This is the default and can be omitted
             base_url="http://localhost:8000/v1",
         )
+    # 设置类级别的启动参数
+    @classmethod
+    def setUpClass(cls):
+        
+        import uvicorn
+        from agi.fastapi_agi import app
+        import asyncio
+        import threading
+        cls.client = OpenAI(
+            api_key="123", # This is the default and can be omitted
+            base_url="http://localhost:8000/v1",
+        )
+         # 创建一个异步函数来启动Uvicorn服务器
+        def start_uvicorn():
+            config = uvicorn.Config(app, host="0.0.0.0", port=8000)
+            server = uvicorn.Server(config)
+            asyncio.run(server.serve())
+        
+        # 启动Uvicorn服务器的线程
+        cls.server_thread = threading.Thread(target=start_uvicorn)
+        cls.server_thread.daemon = True  # 设置为daemon线程，这样主程序结束时会自动退出
+        cls.server_thread.start()
+
+        # 等待服务器启动
+        cls.wait_for_server_start()
+        
+    @classmethod
+    def wait_for_server_start(cls, timeout=60):
+        """等待Uvicorn服务器完全启动"""
+        import time
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            try:
+                # 尝试发送一个请求来检查服务器是否已启动
+                response = cls.client.chat.completions.create(
+                    model="agi-model",
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": "hello",
+                        }
+                    ],
+                )
+                if response:
+                    print("Server started successfully!")
+                    return True
+            except Exception as e:
+                # 如果发生连接错误，继续等待
+                print("Waiting for server to start...")
+                time.sleep(1)
+        raise TimeoutError("Uvicorn server did not start within the timeout period.")
+    
     def test_text(self):
         response = self.client.chat.completions.create(
             model="agi-model",
-            # stream=True,
             messages=[
                 {
                     "role": "user",
@@ -65,20 +116,22 @@ class TestFastApiAgi(unittest.TestCase):
                 }
             ],
         )
-        # print(response)
+        print(response)
         self.assertIsNotNone(response.choices)
         self.assertGreater(len(response.choices),0)
         self.assertIsNotNone(response.choices[0].message)
         self.assertIsNotNone(response.choices[0].message.content)
-        self.assertGreater(len(response.choices[0].message.content),0)
-        self.assertEqual(response.choices[0].message.content[0]['type'],"image")
-        self.assertIsNotNone(response.choices[0].message.content[0]['image'])
-        # 去掉头部信息，只保留 Base64 编码的部分
-        # base64_image = response.choices[0].message.content[0]['image'].split(',')[1]
-        # image_data = base64.b64decode(base64_image)
-        # # 保存为 JPEG 文件
-        # with open("output_image.jpeg", "wb") as f:
-        #     f.write(image_data)
+        self.assertRegexpMatches(response.choices[0].message.content,r'^<img src="data:image/jpeg;base64,')
+        import re
+        # 提取img标签内的src值
+        src = re.findall(r'<img[^>]*src="([^"]*)"', response.choices[0].message.content)
+        base64_image = src[0].split(',')[1]
+        image_data = base64.b64decode(base64_image)
+        # 保存为 JPEG 文件
+        with open("output_image.jpeg", "wb") as f:
+            f.write(image_data)
+        import os
+        self.assertTrue(os.path.exists("output_image.jpeg"))
         
         
     def test_image_image(self):
@@ -91,28 +144,31 @@ class TestFastApiAgi(unittest.TestCase):
                         {"type": "text", "text": "变成人首蛇身"},
                         {
                             "type": "image",
-                            "image": image_to_base64("tests/cat.jpeg")
+                            "image": image_to_base64("tests/cat.jpg")
                         }
                     ]
                 }
             ]
         )
+        print(response)
         self.assertIsNotNone(response.choices)
         self.assertGreater(len(response.choices),0)
         self.assertIsNotNone(response.choices[0].message)
         self.assertIsNotNone(response.choices[0].message.content)
-        self.assertGreater(len(response.choices[0].message.content),0)
-        self.assertEqual(response.choices[0].message.content[0]['type'],"image")
-        self.assertIsNotNone(response.choices[0].message.content[0]['image'])
+        self.assertRegexpMatches(response.choices[0].message.content,r'^<img src="data:image/jpeg;base64,')
         # print(response)
              # 去掉头部信息，只保留 Base64 编码的部分
-        base64_image = response.choices[0].message.content[0]['image'].split(',')[1]
+        # base64_image = response.choices[0].message.content.split(',')[1]
+        import re
+        # 提取img标签内的src值
+        src = re.findall(r'<img[^>]*src="([^"]*)"', response.choices[0].message.content)
+        base64_image = src[0].split(',')[1]
         image_data = base64.b64decode(base64_image)
         # 保存为 JPEG 文件
         with open("output_image.jpeg", "wb") as f:
             f.write(image_data)
-        print(response)
-        
+        import os
+        self.assertTrue(os.path.exists("output_image.jpeg"))
     def test_speech_text(self):
         response = self.client.chat.completions.create(
             model="agi-model",
@@ -141,14 +197,13 @@ class TestFastApiAgi(unittest.TestCase):
                 }
             ],
         )
-        
+        # print(response)
         self.assertIsNotNone(response.choices)
         self.assertGreater(len(response.choices),0)
         self.assertIsNotNone(response.choices[0].message)
         self.assertIsNotNone(response.choices[0].message.content)
-        self.assertEqual(response.choices[0].message.content[0]['type'],"audio")
-        self.assertIsNotNone(response.choices[0].message.content[0]['audio'])
-        # print(response)
+        self.assertRegexpMatches(response.choices[0].message.content,r'^<audio src="data:audio/wav;base64,')
+        
 
     def test_web_search(self):
         response = self.client.chat.completions.create(

@@ -1,5 +1,8 @@
 # agi
 langchain based agi
+GPU显存： 初始：2550MB 峰值：20GB
+内存： 初始：7GB 峰值：16GB
+
 
 ## RAG
 - history_chain = RunnableLambda(self._enter_history, self._aenter_history).with_config(run_name="load_history")
