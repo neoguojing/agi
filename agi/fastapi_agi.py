@@ -142,7 +142,7 @@ def handle_response_content_as_string(content: Union[str,List]) -> str:
 
 # 格式化非流式响应
 # web参数，控制返回值为string，适配openwebui
-def format_non_stream_response(resp: Dict[str, Any],web: bool = True) -> Dict[str, Any]:
+def format_non_stream_response(resp: Dict[str, Any],web: bool = False) -> Dict[str, Any]:
     """
     将内部响应格式化为 OpenAI 兼容的非流式响应。
     """
@@ -191,8 +191,8 @@ def format_non_stream_response(resp: Dict[str, Any],web: bool = True) -> Dict[st
             "total_tokens": total_tokens      # 可根据实际情况计算
         }
     }
-# web参数，控制返回值为string，适配openwebui
-async def generate_stream_response(state_data: State,web: bool= True) -> AsyncGenerator[str, None]:
+# web参数，控制返回值为string，适配openwebui 废弃
+async def generate_stream_response(state_data: State,web: bool= False) -> AsyncGenerator[str, None]:
     """
     生成 OpenAI 兼容的流式响应，使用 SSE 格式，调用 stream 方法。
     

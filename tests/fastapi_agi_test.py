@@ -121,11 +121,15 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertGreater(len(response.choices),0)
         self.assertIsNotNone(response.choices[0].message)
         self.assertIsNotNone(response.choices[0].message.content)
-        self.assertRegexpMatches(response.choices[0].message.content,r'^<img src="data:image/jpeg;base64,')
-        import re
-        # 提取img标签内的src值
-        src = re.findall(r'<img[^>]*src="([^"]*)"', response.choices[0].message.content)
-        base64_image = src[0].split(',')[1]
+        self.assertIsInstance(response.choices[0].message.content,list)
+        self.assertEqual(response.choices[0].message.content[0]["type"],"image")
+        self.assertIsInstance(response.choices[0].message.content[0]["image"],str)
+        self.assertGreater(len(response.choices[0].message.content[0]["image"]),0)
+        # self.assertRegexpMatches(response.choices[0].message.content,r'^<img src="data:image/jpeg;base64,')
+        # import re
+        # # 提取img标签内的src值
+        # src = re.findall(r'<img[^>]*src="([^"]*)"', response.choices[0].message.content)
+        base64_image = response.choices[0].message.content[0]["image"].split(',')[1]
         image_data = base64.b64decode(base64_image)
         # 保存为 JPEG 文件
         with open("output_image.jpeg", "wb") as f:
@@ -155,20 +159,22 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertGreater(len(response.choices),0)
         self.assertIsNotNone(response.choices[0].message)
         self.assertIsNotNone(response.choices[0].message.content)
-        self.assertRegexpMatches(response.choices[0].message.content,r'^<img src="data:image/jpeg;base64,')
-        # print(response)
-             # 去掉头部信息，只保留 Base64 编码的部分
-        # base64_image = response.choices[0].message.content.split(',')[1]
-        import re
-        # 提取img标签内的src值
-        src = re.findall(r'<img[^>]*src="([^"]*)"', response.choices[0].message.content)
-        base64_image = src[0].split(',')[1]
+        self.assertIsInstance(response.choices[0].message.content,list)
+        self.assertEqual(response.choices[0].message.content[0]["type"],"image")
+        self.assertIsInstance(response.choices[0].message.content[0]["image"],str)
+        self.assertGreater(len(response.choices[0].message.content[0]["image"]),0)
+        # self.assertRegexpMatches(response.choices[0].message.content,r'^<img src="data:image/jpeg;base64,')
+        # import re
+        # # 提取img标签内的src值
+        # src = re.findall(r'<img[^>]*src="([^"]*)"', response.choices[0].message.content)
+        base64_image = response.choices[0].message.content[0]["image"].split(',')[1]
         image_data = base64.b64decode(base64_image)
         # 保存为 JPEG 文件
         with open("output_image.jpeg", "wb") as f:
             f.write(image_data)
         import os
         self.assertTrue(os.path.exists("output_image.jpeg"))
+    
     def test_speech_text(self):
         response = self.client.chat.completions.create(
             model="agi-model",
@@ -179,12 +185,12 @@ class TestFastApiAgi(unittest.TestCase):
                 }
             ],
         )
-        
+        print(response)
         self.assertIsNotNone(response.choices)
         self.assertGreater(len(response.choices),0)
         self.assertIsNotNone(response.choices[0].message)
         self.assertIsNotNone(response.choices[0].message.content)
-        # print(response)
+        
         
     def test_tts(self):
         response = self.client.chat.completions.create(
@@ -202,7 +208,13 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertGreater(len(response.choices),0)
         self.assertIsNotNone(response.choices[0].message)
         self.assertIsNotNone(response.choices[0].message.content)
-        self.assertRegexpMatches(response.choices[0].message.content,r'^<audio src="data:audio/wav;base64,')
+        self.assertIsInstance(response.choices[0].message.content,list)
+        self.assertEqual(response.choices[0].message.content[0]["type"],"audio")
+        self.assertIsNotNone(response.choices[0].message.content[0]["file_path"])
+        self.assertIsNotNone(response.choices[0].message.content[0]["text"])
+        self.assertIsInstance(response.choices[0].message.content[0]["audio"],str)
+        self.assertGreater(len(response.choices[0].message.content[0]["audio"]),0)
+        # self.assertRegexpMatches(response.choices[0].message.content,r'^<audio src="data:audio/wav;base64,')
         
 
     def test_web_search(self):
