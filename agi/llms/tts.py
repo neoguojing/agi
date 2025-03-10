@@ -101,7 +101,8 @@ class TextToSpeech(CustomerLLM):
     def save_audio_to_file(self, text: str, file_path: str = "") -> str:
         """Save the generated audio to a file and return the file path."""
         if not file_path:
-            file_name = f'audio/{date.today().strftime("%Y_%m_%d")}/{int(time.time())}.wav'
+            # file_name = f'audio/{date.today().strftime("%Y_%m_%d")}/{int(time.time())}.wav'
+            file_name = f'audio/{int(time.time())}.wav'
             file_path = os.path.join(CACHE_DIR, file_name)
             Path(file_path).parent.mkdir(parents=True, exist_ok=True)
         

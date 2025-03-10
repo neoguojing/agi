@@ -100,7 +100,8 @@ class Text2Image(CustomerLLM):
 
     def _save_image(self, image: Any) -> str:
         """Save the generated image to the file system."""
-        file_name = f'image/{date.today().strftime("%Y_%m_%d")}/{int(time.time())}.png'
+        # file_name = f'image/{date.today().strftime("%Y_%m_%d")}/{int(time.time())}.png'
+        file_name = f'image/{int(time.time())}.png'
         output_file = Path(self.file_path) / file_name
         output_file.parent.mkdir(parents=True, exist_ok=True)
 

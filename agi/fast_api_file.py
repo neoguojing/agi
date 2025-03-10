@@ -2,10 +2,8 @@ import os
 import time
 import mimetypes
 import urllib.parse
-from fastapi import FastAPI, HTTPException, File, UploadFile, Response,Form
+from fastapi import FastAPI, HTTPException, File, UploadFile, Response,Form,APIRouter
 from fastapi.responses import Response
-from fastapi.middleware.cors import CORSMiddleware
-from agi.fastapi_agi import app
 from agi.config import CACHE_DIR
 from agi.tasks.task_factory import TaskFactory,TASK_DOC_DB
 import shutil
@@ -28,8 +26,9 @@ ALLOWED_MIME_TYPES = {
     "message/rfc822",  # .msg (Outlook 邮件)
 }
 
+router_file = APIRouter()
 
-@ app.get("/files")
+@router_file.get("/files")
 async def list_files():
     if not os.path.exists(CACHE_DIR):
         raise HTTPException(status_code=500, detail="Upload directory not found")
@@ -56,7 +55,7 @@ def generate_unique_filename(filename: str):
     unique_id = uuid.uuid4().hex  # 生成唯一 ID
     return f"{unique_id}{ext}"
 
-@app.post("/files")
+@router_file.post("/files")
 async def save_file(
     file: UploadFile = File(...),  # 接收上传的文件
     collection_name: str = Form(...),  # 接收 collection_name 作为表单字段
@@ -84,24 +83,39 @@ async def save_file(
     return {"original_filename": file.filename, "saved_filename": unique_filename, "file_type": file_type, "message": "文件上传成功"}
 
 
-@ app.get("/files/{file_name}")
+@router_file.get("/files/{file_name}")
 async def download_file(file_name: str):
-    file_path = os.path.join(CACHE_DIR,"upload", file_name)
-    print("*******************",file_path)
-    if not os.path.realpath(file_path).startswith(os.path.realpath(CACHE_DIR)):
-        raise HTTPException(status_code=400, detail="Invalid file path")
-    if not os.path.exists(file_path):
-        return {"error": "File not found"}
+    print("***********")
     content_type = mimetypes.guess_type(file_name)[0] or "application/octet-stream"
+    file_path = ""
     headers = {}
-    if content_type.startswith("image/") or content_type.startswith("audio/"):
+    if content_type.startswith("image/"):
+        file_path = os.path.join(CACHE_DIR,"image", file_name)
+        print("***********",content_type,file_path)
+        if not os.path.realpath(file_path).startswith(os.path.realpath(CACHE_DIR)):
+            raise HTTPException(status_code=400, detail="Invalid file path")
+        if not os.path.exists(file_path):
+            return {"error": "image not found"}
+        headers["Content-Disposition"] = f"inline; filename={urllib.parse.quote(file_name)}"
+    elif content_type.startswith("audio/"):
+        file_path = os.path.join(CACHE_DIR,"audio", file_name)
+        if not os.path.realpath(file_path).startswith(os.path.realpath(CACHE_DIR)):
+            raise HTTPException(status_code=400, detail="Invalid file path")
+        if not os.path.exists(file_path):
+            return {"error": "audio not found"}
         headers["Content-Disposition"] = f"inline; filename={urllib.parse.quote(file_name)}"
     else:
+        file_path = os.path.join(CACHE_DIR,"upload", file_name)
+        if not os.path.realpath(file_path).startswith(os.path.realpath(CACHE_DIR)):
+            raise HTTPException(status_code=400, detail="Invalid file path")
+        if not os.path.exists(file_path):
+            return {"error": "File not found"}
         headers["Content-Disposition"] = f"attachment; filename={urllib.parse.quote(file_name)}"
+        
     with open(file_path, "rb") as f:
         return Response(f.read(), media_type=content_type, headers=headers)
 
-@ app.delete("/files/{file_name}")
+@router_file.delete("/files/{file_name}")
 async def delete_file(file_name: str):
     file_path = os.path.join(CACHE_DIR,"upload", file_name)
     if not os.path.realpath(file_path).startswith(os.path.realpath(CACHE_DIR)):
@@ -114,10 +128,5 @@ async def delete_file(file_name: str):
         raise HTTPException(status_code=500, detail=f"Error deleting file: {str(e)}")
     return {"message": "File deleted successfully"}
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
 
