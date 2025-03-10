@@ -253,7 +253,6 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertGreater(len(response.choices),0)
         self.assertIsNotNone(response.choices[0].message)
         self.assertIsNotNone(response.choices[0].message.content)
-        self.assertIsNotNone(response.choices[0].message)
 
     def test_embedding(self):  
         response = self.client.embeddings.create(

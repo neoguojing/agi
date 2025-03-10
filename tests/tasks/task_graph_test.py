@@ -95,6 +95,9 @@ class TestAgent(unittest.TestCase):
         self.assertEqual(resp["feature"],"web")
         self.assertEqual(resp["input_type"],"text")
         self.assertIsInstance(resp["messages"][-1],AIMessage)
+        self.assertIsInstance(resp["messages"][-1].additional_kwargs['context'],list)
+        self.assertIsNotNone(resp["messages"][-1].content)
+        self.assertIsInstance(resp["messages"][-1].additional_kwargs['citations'],list)
 
     def test_custom_rag(self):
         import json
@@ -116,3 +119,6 @@ class TestAgent(unittest.TestCase):
         self.assertEqual(resp["feature"],"rag")
         self.assertEqual(resp["input_type"],"text")
         self.assertIsInstance(resp["messages"][-1],AIMessage)
+        self.assertIsInstance(resp["messages"][-1].additional_kwargs['context'],list)
+        self.assertIsNotNone(resp["messages"][-1].content)
+        self.assertIsInstance(resp["messages"][-1].additional_kwargs['citations'],list)
