@@ -139,7 +139,6 @@ def handle_response_content_as_string(content: Union[str,List]) -> str:
         return ret
     return ""
 
-
 # 格式化非流式响应
 # web参数，控制返回值为string，适配openwebui
 def format_non_stream_response(resp: Dict[str, Any],web: bool = False) -> Dict[str, Any]:
@@ -159,10 +158,15 @@ def format_non_stream_response(resp: Dict[str, Any],web: bool = False) -> Dict[s
         if web:
             assistant_content = handle_response_content_as_string(assistant_content)
         
+        # 处理additional_kwargs信息
+        additional_kwargs = last_message.additional_kwargs
+        if additional_kwargs is not None and additional_kwargs.get("citations"):
+            assistant_content = {"type":"text","text":assistant_content,"citations":additional_kwargs.get("citations")}
+
+        # 处理metadata信息
         response_metadata = last_message.response_metadata
         if response_metadata is not None and "finish_reason" in response_metadata:
             finish_reason = response_metadata["finish_reason"]
-        
         # 从 resp 中获取 token_usage
         token_usage = response_metadata.get("token_usage")  # 假设在顶级响应中
         if token_usage:
@@ -222,6 +226,12 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
                 
                 if web:
                     event.content = handle_response_content_as_string(event.content)
+                
+                # 处理additional_kwargs信息
+                additional_kwargs = event.additional_kwargs
+                if additional_kwargs is not None and additional_kwargs.get("citations"):
+                    event.content = {"type":"text","text":event.content,"citations":additional_kwargs.get("citations")}
+
                 chunk["choices"][0]["delta"] = {"role": role, "content": event.content}
                 finish_reason = getattr(event, "response_metadata", {}).get("finish_reason")
                 if finish_reason:
