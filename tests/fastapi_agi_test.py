@@ -204,7 +204,7 @@ class TestFastApiAgi(unittest.TestCase):
                 }
             ],
         )
-        # print(response)
+        print(response)
         self.assertIsNotNone(response.choices)
         self.assertGreater(len(response.choices),0)
         self.assertIsNotNone(response.choices[0].message)

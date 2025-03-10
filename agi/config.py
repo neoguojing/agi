@@ -8,7 +8,7 @@ load_dotenv()  # 加载 .env 文件中的环境变量
 BASE_URL = "http://localhost:8000"
 
 # 存储相关
-CACHE_DIR = os.environ.get("CACHE_DIR","./cache")
+CACHE_DIR = os.path.abspath(os.environ.get("CACHE_DIR","./cache"))
 
 os.makedirs(CACHE_DIR, exist_ok=True)
 langchain_db_path = os.path.join(CACHE_DIR,"langchain.db")

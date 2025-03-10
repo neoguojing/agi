@@ -54,7 +54,7 @@ def generate_unique_filename(filename: str):
     """生成不重复的文件名，保留原始扩展名"""
     ext = os.path.splitext(filename)[1]  # 获取文件扩展名
     unique_id = uuid.uuid4().hex  # 生成唯一 ID
-    return f"upload/{unique_id}{ext}"
+    return f"{unique_id}{ext}"
 
 @app.post("/files")
 async def save_file(
@@ -69,8 +69,9 @@ async def save_file(
 
     # 生成唯一文件名，防止重名
     unique_filename = generate_unique_filename(file.filename)
-    file_path = os.path.join(CACHE_DIR, unique_filename)
-
+    file_path = os.path.join(CACHE_DIR,"upload", unique_filename)
+    # 确保目标目录存在，如果不存在则创建
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
     # 保存文件
     with open(file_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
@@ -85,7 +86,8 @@ async def save_file(
 
 @ app.get("/files/{file_name}")
 async def download_file(file_name: str):
-    file_path = os.path.join(CACHE_DIR, file_name)
+    file_path = os.path.join(CACHE_DIR,"upload", file_name)
+    print("*******************",file_path)
     if not os.path.realpath(file_path).startswith(os.path.realpath(CACHE_DIR)):
         raise HTTPException(status_code=400, detail="Invalid file path")
     if not os.path.exists(file_path):
@@ -101,7 +103,7 @@ async def download_file(file_name: str):
 
 @ app.delete("/files/{file_name}")
 async def delete_file(file_name: str):
-    file_path = os.path.join(CACHE_DIR, file_name)
+    file_path = os.path.join(CACHE_DIR,"upload", file_name)
     if not os.path.realpath(file_path).startswith(os.path.realpath(CACHE_DIR)):
         raise HTTPException(status_code=400, detail="Invalid file path")
     if not os.path.exists(file_path):
