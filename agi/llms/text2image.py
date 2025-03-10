@@ -13,7 +13,7 @@ from langchain.callbacks.manager import (
     CallbackManagerForLLMRun
 )
 from pydantic import  Field
-from agi.llms.base import CustomerLLM,parse_input_messages
+from agi.llms.base import CustomerLLM,parse_input_messages,path_to_preview_url
 from agi.config import MODEL_PATH as model_root,CACHE_DIR
 import hashlib
 from langchain_core.runnables import RunnableConfig
@@ -26,7 +26,7 @@ class Text2Image(CustomerLLM):
     n_steps: int = 20
     high_noise_frac: float = 0.8
     file_path: str = CACHE_DIR
-    save_image: bool = False
+    save_image: bool = True
 
     def __init__(self, model_path: str=os.path.join(model_root,"sdxl-turbo"),**kwargs):
         if model_path is not None:
@@ -82,7 +82,7 @@ class Text2Image(CustomerLLM):
     def handle_output(self, image: Any,html:bool=False) -> AIMessage:
         """Handle the image output (save or return base64)."""
         image_source = self._save_or_resize_image(image)
-        
+        image_source = path_to_preview_url(image_source)
         # Format the result as HTML with embedded image and prompt
         if html:
             image_source = f'<img src="{image_source}" {style}>\n'
@@ -100,7 +100,7 @@ class Text2Image(CustomerLLM):
 
     def _save_image(self, image: Any) -> str:
         """Save the generated image to the file system."""
-        file_name = f'{date.today().strftime("%Y_%m_%d")}/{int(time.time())}.png'
+        file_name = f'image/{date.today().strftime("%Y_%m_%d")}/{int(time.time())}.png'
         output_file = Path(self.file_path) / file_name
         output_file.parent.mkdir(parents=True, exist_ok=True)
 

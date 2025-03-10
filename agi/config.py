@@ -4,16 +4,21 @@ from dotenv import load_dotenv
 
 load_dotenv()  # 加载 .env 文件中的环境变量
 
+#服务相关
+BASE_URL = "http://localhost:8000"
 
-MODEL_PATH = os.environ.get(
-    "MODEL_PATH", "/data/model"
-)
-
+# 存储相关
 CACHE_DIR = os.environ.get("CACHE_DIR","./cache")
 
 os.makedirs(CACHE_DIR, exist_ok=True)
 langchain_db_path = os.path.join(CACHE_DIR,"langchain.db")
 LANGCHAIN_DB_PATH = os.environ.get("LANGCHAIN_DB_PATH",f"sqlite:///{langchain_db_path}")
+
+# 模型相关
+MODEL_PATH = os.environ.get(
+    "MODEL_PATH", "/data/model"
+)
+
 
 OLLAMA_API_BASE_URL = os.environ.get(
     "OLLAMA_API_BASE_URL", "http://localhost:11434"

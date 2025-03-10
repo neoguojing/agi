@@ -8,7 +8,7 @@ from diffusers import AutoPipelineForImage2Image
 import torch
 from typing import Any, List, Mapping, Optional, Union
 from pydantic import Field
-from agi.llms.base import CustomerLLM,parse_input_messages
+from agi.llms.base import CustomerLLM,parse_input_messages,path_to_preview_url
 from agi.config import MODEL_PATH as model_root, CACHE_DIR
 from langchain_core.runnables import RunnableConfig
 from langchain_core.messages import AIMessage, HumanMessage
@@ -22,7 +22,7 @@ class Image2Image(CustomerLLM):
     n_steps: int = 20
     high_noise_frac: float = 0.8
     file_path: str = CACHE_DIR
-    save_image: bool = False
+    save_image: bool = True
 
     def __init__(self, model_path: str = os.path.join(model_root, "sdxl-turbo"), **kwargs):
         super().__init__(llm=AutoPipelineForImage2Image.from_pretrained(
@@ -68,12 +68,13 @@ class Image2Image(CustomerLLM):
         """
         if self.save_image:
             # Save image to the file system
-            file_name = f'{date.today().strftime("%Y_%m_%d")}/{int(time.time())}.png'
+            file_name = f'image/{date.today().strftime("%Y_%m_%d")}/{int(time.time())}.png'
             output_file = Path(self.file_path) / file_name
             output_file.parent.mkdir(parents=True, exist_ok=True)
 
             image.save(output_file)
-            image_source = f"{output_file}"
+            url = path_to_preview_url(output_file)
+            image_source = f"{url}"
         else:
             # Resize image and convert to base64
             image.thumbnail((512, 512 * image.height / image.width))

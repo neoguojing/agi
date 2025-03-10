@@ -17,6 +17,8 @@ from enum import Enum
 import os
 import re
 from scipy.io.wavfile import write
+from agi.config import BASE_URL,CACHE_DIR
+import urllib.parse
 
 
 def remove_data_uri_prefix(data_uri):
@@ -229,3 +231,29 @@ class CustomerLLM(RunnableSerializable[HumanMessage, AIMessage]):
     @property
     def model_name(self) -> str:
         return ""  # Model name placeholder (to be customized)
+
+
+def path_to_preview_url(file_path: str, base_url: str = BASE_URL) -> str:
+    """
+    将文件路径转换为图片预览 URL。
+    
+    Args:
+        file_path (str): 服务器上的文件路径，例如 "uploads/picture.jpg"
+        base_url (str): 服务器基地址，默认 "http://localhost:8000"
+    
+    Returns:
+        str: 可用于预览的 URL，例如 "http://localhost:8000/files/picture.jpg"
+    
+    Raises:
+        ValueError: 如果文件路径不在上传目录内
+    """
+    # 确保文件路径在 CACHE_DIR 内，防止目录遍历
+    if not os.path.realpath(file_path).startswith(os.path.realpath(CACHE_DIR)):
+        raise ValueError("File path is outside the upload directory")
+    
+    # 获取相对于 UPLOAD_DIR 的文件名
+    file_name = os.path.basename(file_path)
+    
+    # 构建预览 URL
+    preview_url = f"{base_url}/files/{urllib.parse.quote(file_name)}"
+    return preview_url

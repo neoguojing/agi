@@ -5,7 +5,7 @@ from pathlib import Path
 import torch
 from TTS.api import TTS
 from agi.config import MODEL_PATH as model_root, CACHE_DIR, TTS_SPEAKER_WAV
-from agi.llms.base import CustomerLLM,parse_input_messages
+from agi.llms.base import CustomerLLM,parse_input_messages,path_to_preview_url
 from langchain_core.runnables import RunnableConfig
 from typing import Any, Optional,Union
 from pydantic import BaseModel, Field
@@ -69,17 +69,22 @@ class TextToSpeech(CustomerLLM):
         # 原始音频需要编码，不方便使用
         # samples = self.generate_audio_samples(input_str)
         file_path = self.save_audio_to_file(text=input_str)
-        with open(file_path, 'rb') as audio_file:
-            audio_bytes = audio_file.read()
-        audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
-        audio_source_base64 = f"data:audio/wav;base64,{audio_base64}"
+        audio_source = path_to_preview_url(file_path)
+        
+        if kwargs.get('base64') is True:
+            with open(file_path, 'rb') as audio_file:
+                audio_bytes = audio_file.read()
+            audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+            audio_source = f"data:audio/wav;base64,{audio_base64}"
+
+        # 是否需要编码html
         if kwargs.get('html') is True:
             return AIMessage(content=[
-                {"type": "audio", "audio": f'<audio src="{audio_source_base64}" {audio_style} controls></audio>\n',"file_path":file_path,"text":input_str}
+                {"type": "audio", "audio": f'<audio src="{audio_source}" {audio_style} controls></audio>\n',"file_path":file_path,"text":input_str}
             ])
         
         return AIMessage(content=[
-            {"type": "audio", "audio": audio_source_base64,"file_path":file_path,"text":input_str}
+            {"type": "audio", "audio": audio_source,"file_path":file_path,"text":input_str}
         ])
 
     def generate_audio_samples(self, text: str) -> Any:
@@ -96,7 +101,7 @@ class TextToSpeech(CustomerLLM):
     def save_audio_to_file(self, text: str, file_path: str = "") -> str:
         """Save the generated audio to a file and return the file path."""
         if not file_path:
-            file_name = f'{date.today().strftime("%Y_%m_%d")}/{int(time.time())}.wav'
+            file_name = f'audio/{date.today().strftime("%Y_%m_%d")}/{int(time.time())}.wav'
             file_path = os.path.join(CACHE_DIR, file_name)
             Path(file_path).parent.mkdir(parents=True, exist_ok=True)
         
