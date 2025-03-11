@@ -119,6 +119,7 @@ async def chat_completions(
 
     # TODO 文章的引用信息如何处理
     if request.stream:
+        print("request:", request)
         return StreamingResponse(generate_stream_response(state_data), media_type="text/event-stream")
     else:
         resp = graph.invoke(state_data)
