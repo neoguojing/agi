@@ -19,8 +19,8 @@ from agi.tasks.task_factory import (
 from langgraph.prebuilt.chat_agent_executor import AgentState
 from typing import Dict, Any, Iterator,Union
 from langchain_core.messages import BaseMessage
-set_verbose(True)
-set_debug(True)
+# set_verbose(True)
+# set_debug(True)
 
 class State(AgentState):
     input_type: str

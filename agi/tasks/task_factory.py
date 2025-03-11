@@ -32,7 +32,7 @@ from agi.tasks.retriever import FilterType,SimAlgoType
 from langchain.globals import set_debug
 from agi.tasks.retriever import KnowledgeManager
 
-set_debug(True)
+# set_debug(True)
 
 TASK_LLM = "llm"
 TASK_LLM_WITH_HISTORY = "llm_with_history"

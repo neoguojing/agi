@@ -120,5 +120,5 @@ tools = [
     ),
     image_gen,
     # text2speech,
-    get_stock,
+    # get_stock,
 ]
