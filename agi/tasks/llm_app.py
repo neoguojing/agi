@@ -5,7 +5,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import ConfigurableFieldSpec
 from langchain_community.chat_message_histories import SQLChatMessageHistory
 from langchain.retrievers import EnsembleRetriever
-from langchain_core.messages import HumanMessage,BaseMessage,AIMessage
+from langchain_core.messages import HumanMessage,BaseMessage,AIMessage,ToolMessage
 from langchain_core.runnables.utils import AddableDict
 from langchain_core.runnables.base import Runnable
 from langchain_core.language_models import LanguageModelLike
@@ -436,6 +436,14 @@ def create_chat_with_websearch(km: KnowledgeManager,llm,debug=True,graph: bool =
     
     return web_search_chain
 
+def create_websearch_for_graph(km: KnowledgeManager):
+    def web_search(input: HumanMessage) :
+        _,_,_,raw_docs = km.web_search(input.content)
+        return {"context": raw_docs}
+    
+    chain = lambda x: x[-1] | web_search | build_citations
+    
+    return chain
  # 将输出的字典格式转换为BaseMessage 或者 graph的格式
 def dict_to_ai_message(output: dict):
     ai = AIMessage(
