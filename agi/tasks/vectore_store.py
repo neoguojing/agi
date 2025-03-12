@@ -3,12 +3,14 @@ from chromadb.config import Settings
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
 
+# TODO 多租户改造
 class CollectionManager:
     def __init__(self, data_path, embedding,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE, allow_reset=True, anonymized_telemetry=False):
         self.client = chromadb.PersistentClient(
             path=data_path,
             settings=Settings(allow_reset=allow_reset, anonymized_telemetry=anonymized_telemetry),
-            database=database
+            database=database,
+            tenant=tenant
         )
         self.embedding = embedding
 

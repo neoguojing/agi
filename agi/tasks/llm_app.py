@@ -203,6 +203,62 @@ def create_stuff_documents_chain(
         return debug_tool | chain
     return chain
 
+'''
+{
+            "source": {
+                "id": "3242bbd4-4a09-47d0-a704-dcbd5d665774",
+                "user_id": "50e5febb-e4d7-4caa-9965-751160245ab6",
+                "name": "test",
+                "description": "个人文档",
+                "meta": null,
+                "access_control": null,
+                "created_at": 1741763827,
+                "updated_at": 1741775216,
+                "user": {
+                    "id": "50e5febb-e4d7-4caa-9965-751160245ab6",
+                },
+                "files": [
+                    {
+                        "id": "eb495463-9977-45d6-abd5-50a6365cacac",
+                        "meta": {
+                            "name": "上海椒客多餐饮服务有限公司_发票金额357.00元.pdf",
+                            "content_type": "application/pdf",
+                            "size": 83703,
+                            "data": {},
+                            "collection_name": "3242bbd4-4a09-47d0-a704-dcbd5d665774"
+                        },
+                        "created_at": 1741775216,
+                        "updated_at": 1741775216
+                    }
+                ],
+                "type": "collection"
+            },
+            "document": [""            ],
+            "metadata": [
+                {
+                    "author": "China Tax",
+                    "created_by": "50e5febb-e4d7-4caa-9965-751160245ab6",
+                    "creationdate": "D:20240912212111",
+                    "creator": "Suwell",
+                    "embedding_config": "{\"engine\": \"\", \"model\": \"sentence-transformers/all-MiniLM-L6-v2\"}",
+                    "file_id": "eb495463-9977-45d6-abd5-50a6365cacac",
+                    "hash": "3e11c6cbdad114f4807614b25e6e94a83378905f091130c277c68178e0e327df",
+                    "moddate": "D:20240912212111",
+                    "name": "上海椒客多餐饮服务有限公司_发票金额357.00元.pdf",
+                    "ofd2pdflib": "ofd2pdflib/2.2.24.0111.1407",
+                    "page": 0,
+                    "page_label": "1",
+                    "producer": "Suwell OFD convertor",
+                    "source": "上海椒客多餐饮服务有限公司_发票金额357.00元.pdf",
+                    "start_index": 0,
+                    "total_pages": 1
+                }
+            ],
+            "distances": [
+                0.6697336820511759
+            ]
+        }
+'''
 def build_citations(inputs: dict):
     citations = []
     # 使用 defaultdict 来根据 source 聚合文档
@@ -210,8 +266,16 @@ def build_citations(inputs: dict):
 
     # 将文档按 source 聚合
     for doc in inputs["context"]:
+        source_type = ""
+        if doc.metadata.get('filename'):
+            source_type = "file"
+        elif doc.metadata.get('link'):
+            source_type = "web"
+        elif doc.metadata.get('source'):
+            source_type = "collection"
+
         source = doc.metadata.get('filename') or doc.metadata.get('link') or doc.metadata.get('source')
-        source_dict[source].append(doc)
+        source_dict[{"type":source_type,"id":source}].append(doc)
 
     # 对每个 source 下的文档进行排序，并整理成需要的格式
     for source, docs in source_dict.items():

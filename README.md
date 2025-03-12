@@ -11,3 +11,7 @@ GPU显存： 初始：2550MB 峰值：20GB
 - context=retrieval_docs.with_config(run_name="retrieve_documents")
 - "context": format_docs run_name="format_inputs"
 - answer =  "context" | prompt | llm | _output_parser     run_name="stuff_documents_chain"
+
+## TODO
+- 知识库支持多租户
+- 
