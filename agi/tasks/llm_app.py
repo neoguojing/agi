@@ -275,7 +275,7 @@ def build_citations(inputs: dict):
             source_type = "collection"
 
         source = doc.metadata.get('filename') or doc.metadata.get('link') or doc.metadata.get('source')
-        source_dict[{"type":source_type,"id":source}].append(doc)
+        source_dict[source].append(doc)
 
     # 对每个 source 下的文档进行排序，并整理成需要的格式
     for source, docs in source_dict.items():
@@ -292,7 +292,7 @@ def build_citations(inputs: dict):
         metadata = sorted_docs[0].metadata if sorted_docs else {}
         metadata['pages'] = pages
         citations.append({
-            "source": source,
+            "source": {"id":source},
             "document": document_contents,
             "metadata": metadata,
         })
