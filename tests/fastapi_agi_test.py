@@ -105,7 +105,7 @@ class TestFastApiAgi(unittest.TestCase):
             self.assertGreater(len(chunk.choices),0)
             self.assertIsNotNone(chunk.choices[0].delta)
             # self.assertIsNotNone(chunk.choices[0].delta.content)
-            
+    # 通过agent，支持的图片生成
     def test_text_image(self):
         response = self.client.chat.completions.create(
             model="agi-model",

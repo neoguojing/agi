@@ -299,7 +299,7 @@ async def list_models(api_key: str = Depends(verify_api_key)):
             id="agi",
             object="model",
             created=1677654321,  # 示例时间戳，可根据需要调整
-            owned_by="neo"       # 示例所有者，可根据需要调整
+            owned_by="agi"       # 示例所有者，可根据需要调整
         )
     ]
     # 返回符合 ModelListResponse 结构的响应
