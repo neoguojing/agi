@@ -282,19 +282,17 @@ def build_citations(inputs: dict):
         # 按照 start_index 排序（假设页面顺序可以通过 start_index 排序）
         sorted_docs = sorted(docs, key=lambda doc: doc.metadata.get('page', 0))
         
-        # 聚合 metadata 中的 page 字段，去重后存为列表
-        pages = list({doc.metadata.get('page') for doc in sorted_docs})  # 去重并转换成列表
-
         # 提取排序后的 document 内容
         document_contents = [doc.page_content for doc in sorted_docs]
         
-        # 提取 metadata，假设只取第一个文档的 metadata 信息
-        metadata = sorted_docs[0].metadata if sorted_docs else {}
-        metadata['pages'] = pages
+        # 提取 metadata
+        metadata = [doc.metadata for doc in sorted_docs]
+        distances = [1.0] * len(sorted_docs)
         citations.append({
-            "source": {"id":source},
+            "source": {"id":source,"name":source},
             "document": document_contents,
             "metadata": metadata,
+            "distances": distances
         })
     
     return citations
