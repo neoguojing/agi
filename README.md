@@ -16,3 +16,11 @@ GPU显存： 初始：2550MB 峰值：20GB
 - 知识库支持多租户
 - 探索graph将知识库和检索结果实时返回的场景：1.拆分流程；2.流程可以直接返回
 - 支持多模态图片作为输入的ocr解读
+
+## OPENWEBUI 修改
+- 新增: backend/open_webui/routers/agi.py
+- 修改: backend/open_webui/utils/models.py
+- 修改: backend/open_webui/utils/middleware.py
+- 修改: backend/open_webui/main.py
+- 修改: backend/open_webui/config.py
+- 修改: .env.example
