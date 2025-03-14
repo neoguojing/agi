@@ -16,6 +16,13 @@ from fastapi.middleware.cors import CORSMiddleware
 # 假设的 AgiGraph 模块（需要根据实际情况调整）
 from agi.tasks.graph import AgiGraph, State
 from agi.fast_api_file import router_file
+from agi.config import CACHE_DIR
+from pydub import AudioSegment
+import logging
+
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
+
 # 初始化 FastAPI 应用
 app = FastAPI(
     title="AGI API",
@@ -328,16 +335,59 @@ async def convert_to_base64(file: UploadFile = File(...)):
     except Exception as e:
         print(e)
         return ""
+
+MAX_FILE_SIZE_MB = 25
+MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024
+def compress_audio(file_path):
+    if os.path.getsize(file_path) > MAX_FILE_SIZE:
+        file_dir = os.path.dirname(file_path)
+        audio = AudioSegment.from_file(file_path)
+        audio = audio.set_frame_rate(16000).set_channels(1)  # Compress audio
+        compressed_path = f"{file_dir}/{id}_compressed.opus"
+        audio.export(compressed_path, format="opus", bitrate="32k")
+        log.debug(f"Compressed audio to {compressed_path}")
+
+        if (
+            os.path.getsize(compressed_path) > MAX_FILE_SIZE
+        ):  # Still larger than MAX_FILE_SIZE after compression
+            raise Exception(f"file size greater than {MAX_FILE_SIZE_MB}MB")
+        return compressed_path
+    else:
+        return file_path
     
 @app.post("/v1/audio/transcriptions", summary="语音转文本")
 async def create_transcription(file: UploadFile, api_key: str = Depends(verify_api_key)):
+    ext = file.filename.split(".")[-1]
+    id = uuid.uuid4()
+
+    filename = f"{id}.{ext}"
+    contents = file.file.read()
+
+    file_dir = f"{CACHE_DIR}/upload/audio"
+    os.makedirs(file_dir, exist_ok=True)
+    file_path = f"{file_dir}/{filename}"
+
+    with open(file_path, "wb") as f:
+        f.write(contents)
+
+    
+    try:
+        file_path = compress_audio(file_path)
+    except Exception as e:
+        log.exception(e)
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
 
     try:
         internal_messages: List[Union[HumanMessage, Dict[str, Union[str, List[Dict[str, str]]]]]] = []
         input_type = "audio"  # 默认输入类型
         content: List[Dict[str, str]] = []
-        base64_audio = await convert_to_base64(file)
-        content.append({"type": "audio", "audio": base64_audio})
+        # base64_audio = await convert_to_base64(file)
+        # content.append({"type": "audio", "audio": base64_audio})
+        content.append({"type": "audio", "audio": file_path})
         internal_messages.append(HumanMessage(content=content))
 
             
