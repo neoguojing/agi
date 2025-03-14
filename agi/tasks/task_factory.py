@@ -47,6 +47,7 @@ TASK_RETRIEVER = "rag"
 TASK_DOC_DB = "doc_db"
 TASK_CUSTOM_RAG = "custom_rag"
 TASK_WEB_SEARCH = "web_search"
+TASK_DOC_CHAT = "doc_chat"
 
 
 
@@ -58,12 +59,18 @@ def create_retriever_task(**kwargs):
     return create_retriever(TaskFactory._knowledge_manager, **kwargs)
 
 def create_custom_rag_task(**kwargs):
-    from agi.tasks.llm_app import create_chat_with_custom_rag
-    return create_chat_with_custom_rag(TaskFactory._knowledge_manager,TaskFactory._llm,debug=True,graph=kwargs.get("graph"))
+    from agi.tasks.llm_app import create_chat_with_custom_rag,create_rag_for_graph
+    # return create_chat_with_custom_rag(TaskFactory._knowledge_manager,TaskFactory._llm,debug=True,graph=kwargs.get("graph"))
+    return create_rag_for_graph(TaskFactory._knowledge_manager)
 
 def create_web_search_task(**kwargs):
-    from agi.tasks.llm_app import create_chat_with_websearch
-    return create_chat_with_websearch(TaskFactory._knowledge_manager,TaskFactory._llm, debug=True,graph=kwargs.get("graph"))
+    from agi.tasks.llm_app import create_chat_with_websearch,create_websearch_for_graph
+    # return create_chat_with_websearch(TaskFactory._knowledge_manager,TaskFactory._llm, debug=True,graph=kwargs.get("graph"))
+    return create_websearch_for_graph(TaskFactory._knowledge_manager)
+
+def create_docchain_task(**kwargs):
+    from agi.tasks.llm_app import create_docchain_for_graph
+    return create_docchain_for_graph(TaskFactory._llm)
 
 def create_llm_with_rag_task(**kwargs):
     return create_chat_with_rag(TaskFactory._knowledge_manager, TaskFactory._llm, debug=True,graph=kwargs.get("graph"))
@@ -112,7 +119,8 @@ class TaskFactory:
         TASK_DOC_DB: create_doc_db_task,
         TASK_AGENT: create_agent_task,
         TASK_CUSTOM_RAG: create_custom_rag_task,
-        TASK_WEB_SEARCH: create_web_search_task
+        TASK_WEB_SEARCH: create_web_search_task,
+        TASK_DOC_CHAT: create_docchain_task,
     }
     
     _knowledge_manager = KnowledgeManager(CACHE_DIR,_llm,_embedding)

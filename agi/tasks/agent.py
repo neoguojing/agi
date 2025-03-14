@@ -8,7 +8,7 @@ from langgraph.prebuilt.chat_agent_executor import AgentState
 
 prompt = ChatPromptTemplate.from_messages(
     [
-        ("system", "You are a helpful assistant. Respond only in {language}."),
+        ("system", "You are a helpful assistant named agi. Respond only in {language}."),
         ("placeholder", "{messages}"),
     ]
 )
@@ -23,6 +23,7 @@ def create_react_agent_task(llm):
     langgraph_agent_executor = create_react_agent(llm, 
                                                   tools,state_modifier=_modify_state_messages,
                                                   checkpointer=memory,
+                                                #   interrupt_before="tools",
                                                   store=InMemoryStore()
                                                   )
     # langgraph_agent_executor.step_timeout = 2

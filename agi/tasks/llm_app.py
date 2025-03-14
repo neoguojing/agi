@@ -67,6 +67,8 @@ def get_session_history(user_id: str, conversation_id: str):
     return SQLChatMessageHistory(f"{user_id}--{conversation_id}", LANGCHAIN_DB_PATH)
 
 # dict_input = True时，只能输入dict
+# Input: dict or List[BaseMessage]
+# Output: dict
 def create_llm_with_history(runnable,debug=False,dict_input=True):
     def debug_print(x: Any) :
         print("create_llm_with_history\n:",debug_info(x))
@@ -158,7 +160,8 @@ def create_history_aware_retriever(
     
     return retrieve_documents
 
-
+# Input：dict
+# Output: str
 def create_stuff_documents_chain(
     llm: LanguageModelLike,
     prompt: BasePromptTemplate = doc_qa_template,
@@ -434,14 +437,71 @@ def create_chat_with_websearch(km: KnowledgeManager,llm,debug=True,graph: bool =
     
     return web_search_chain
 
+# 独立的web检索chain
+# Input: AgentState
+# Output: AgentState
 def create_websearch_for_graph(km: KnowledgeManager):
-    def web_search(input: HumanMessage) :
-        _,_,_,raw_docs = km.web_search(input.content)
+    def web_search(input: dict) :
+        _,_,_,raw_docs = km.web_search(input.get("text"))
         return {"context": raw_docs}
     
-    chain = lambda x: x[-1] | web_search | build_citations
+    web_search_runable = RunnableLambda(web_search)
+    web_search_chain = (
+        message_to_dict
+        | RunnablePassthrough.assign(
+            context=web_search_runable.with_config(run_name="web_search_runable"),
+        )
+        .assign(answer="search done.",citations=build_citations)
+        | dict_to_tool_message
+        | graph_parser
+    )
     
-    return chain
+    return web_search_chain
+
+# 独立的文档检索chain
+# Input: AgentState
+# Output: AgentState
+def create_rag_for_graph(km: KnowledgeManager):
+    def query_docs(inputs: dict) :
+        print("query_docs----",inputs)
+        collection_names = inputs.get("collection_names",None)
+        if collection_names is None:
+            return []
+        
+        collections = "all"
+        if isinstance(collection_names,str):
+            collections = json.loads(collection_names)
+        retriever = create_retriever(km,collection_names=collections)
+        return retriever.invoke(inputs.get("text",""))
+    
+    retrieval_docs = RunnableLambda(query_docs)
+    rag_runable = (
+        message_to_dict
+        | RunnablePassthrough.assign(
+            context=retrieval_docs.with_config(run_name="retrieval_docs"),
+        )
+        .assign(answer="rag done.",citations=build_citations)
+        | dict_to_tool_message
+        | graph_parser
+    )
+    
+    return rag_runable
+
+# 原子化的文档聊天chain
+# Input: AgentState
+# OutPut: AgentState
+def create_docchain_for_graph(llm):
+    llm = create_llm_with_history(runnable=llm,debug=False,dict_input=False)
+    combine_docs_chain = create_stuff_documents_chain(llm, doc_qa_template,debug=False)
+
+    combine_docs_chain = (
+        message_to_dict
+        | RunnablePassthrough.assign(answer=combine_docs_chain)
+        | dict_to_ai_message
+        | graph_parser
+    )
+    return combine_docs_chain
+
  # 将输出的字典格式转换为BaseMessage 或者 graph的格式
 def dict_to_ai_message(output: dict):
     ai = AIMessage(
@@ -454,35 +514,53 @@ def dict_to_ai_message(output: dict):
 
     return ai
 
+def dict_to_tool_message(output: dict):
+    ai = ToolMessage(
+        content=output.get('text', ''),
+        additional_kwargs={
+            'context': output.get('context', ''),
+            'citations': output.get('citations', [])
+        }
+    )
+
+    return ai
+
 # 用于将各种格式的输入，转换为dict格式，供chain使用
-def message_to_dict(message: Union[list,HumanMessage,dict,AgentState]):
+# 支持将AgentState 等消息转换为dict
+def message_to_dict(message: Union[list,HumanMessage,ToolMessage,dict,AgentState]):
     # 若是graph，则从state中抽取消息
     # AgentState 是typedict ，不支持类型检查
     if "messages" in message:
         message = graph_input_format(message)
         last_message = message[-1]
-        if isinstance(last_message,HumanMessage):
+        if isinstance(last_message,HumanMessage) or isinstance(last_message,ToolMessage):
             return {
                 "text": last_message.content,
                 "language": "chinese",
                 "collection_names": last_message.additional_kwargs.get("collection_names",None),
+                "context": message.additional_kwargs.get("context",None),
+                "citations": message.additional_kwargs.get("citations",None),
             }
     elif isinstance(message,dict):
         return message
-    elif isinstance(message,HumanMessage):
+    elif isinstance(message,HumanMessage) or isinstance(message,ToolMessage):
         message.additional_kwargs.get("collection_names",None)
         return {
             "text": message.content,
             "language": "chinese",
             "collection_names": message.additional_kwargs.get("collection_names",None),
+            "context": message.additional_kwargs.get("context",None),
+            "citations": message.additional_kwargs.get("citations",None),
         }
     elif isinstance(message,list) and len(message) > 0:
         last_message = message[-1]
-        if isinstance(last_message,HumanMessage):
+        if isinstance(last_message,HumanMessage) or isinstance(message,ToolMessage):
             return {
                 "text": last_message.content,
                 "language": "chinese",
                 "collection_names": last_message.additional_kwargs.get("collection_names",None),
+                "context": message.additional_kwargs.get("context",None),
+                "citations": message.additional_kwargs.get("citations",None),
             }
             
     return {

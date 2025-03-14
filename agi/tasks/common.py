@@ -129,7 +129,9 @@ def create_image_gen_chain(llm,graph=False):
         chain = translate | branch | graph_parser
         
     return chain
-
+# graph 模式
+# Input：AgentState
+# Output：AgentState
 def create_text2speech_chain(graph=False):
     # text2speech = TextToSpeech()
     text2speech = ModelFactory.get_model("text2speech")
@@ -143,6 +145,8 @@ def create_text2speech_chain(graph=False):
         
     return chain
 
+# Input: AgentState
+# Output: AgentState
 def create_speech2text_chain(graph=False):
     # speech2text = Speech2Text()
     speech2text = ModelFactory.get_model("speech2text")

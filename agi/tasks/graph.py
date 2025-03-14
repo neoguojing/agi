@@ -3,6 +3,7 @@ from PIL import Image as PILImage
 from langgraph.graph import END, StateGraph, START
 import uuid
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.types import Command, interrupt
 from langchain_core.runnables import  RunnableConfig,Runnable,RunnablePassthrough
 from langchain.globals import set_debug
 from langchain.globals import set_verbose
@@ -15,6 +16,7 @@ from agi.tasks.task_factory import (
     TASK_TTS,
     TASK_WEB_SEARCH,
     TASK_CUSTOM_RAG,
+    TASK_DOC_CHAT,
     )
 from langgraph.prebuilt.chat_agent_executor import AgentState
 from typing import Dict, Any, Iterator,Union
@@ -28,9 +30,15 @@ class State(AgentState):
     status: str
     user_id: str
     conversation_id: str
-    feature: str  # 支持的特性，1.agent，2.web 3.rag，默认为agent
+    feature: str  # 支持的特性，1.agent，2.web 3.rag，4.tts，5.speech 默认为agent
 
-
+# TODO
+# 1. 语音：需要支持直接转换为文本和转文本之后问答 done
+# 2. tts： 需要支持将直接转文本和问答之后转文本 done
+# 3. rag 流程独立，支持输出检索结果和转向llm done
+# 4. web检索 流程独立，支持输出检索结果和转向llm done
+# 5. 加入人工check环节，返回结果，提示用户输入
+# 6.模型可以绑定工具 
     
 class AgiGraph:
     def __init__(self):
@@ -46,12 +54,20 @@ class AgiGraph:
         self.builder.add_node("image_gen", TaskFactory.create_task(TASK_IMAGE_GEN,graph=True))
         self.builder.add_node("rag", TaskFactory.create_task(TASK_CUSTOM_RAG,graph=True))
         self.builder.add_node("web", TaskFactory.create_task(TASK_WEB_SEARCH,graph=True))
+        self.builder.add_node("doc_chat", TaskFactory.create_task(TASK_DOC_CHAT,graph=True))
         self.builder.add_node("agent", TaskFactory.create_task(TASK_AGENT))
     
-        self.builder.add_conditional_edges("speech2text",self.speech_edge_control)
-        self.builder.add_conditional_edges("agent", self.llm_edge_control, {END: END, "tts": "tts"})
-        self.builder.add_conditional_edges("rag", self.llm_edge_control, {END: END, "tts": "tts"})
-        self.builder.add_conditional_edges("web", self.llm_edge_control, {END: END, "tts": "tts"})
+        self.builder.add_conditional_edges("speech2text",self.feature_control)
+        self.builder.add_conditional_edges("agent", self.tts_control)
+        self.builder.add_conditional_edges("doc_chat", self.tts_control)
+
+        # 有上下文的请求支持平行处理
+        self.builder.add_edge("rag", "doc_chat")
+        self.builder.add_edge("web", "doc_chat")
+        # 输出rag和查询的结果
+        self.builder.add_edge("rag", END)
+        self.builder.add_edge("web", END)
+
         self.builder.add_edge("image_gen", END)
         self.builder.add_edge("tts", END)
         
@@ -65,7 +81,7 @@ class AgiGraph:
     def routes(self,state: State, config: RunnableConfig):
         msg_type = state.get("input_type")
         if msg_type == "text":
-            return self.speech_edge_control(state)
+            return self.feature_control(state)
         elif msg_type == "image":
             return "image_gen"
         elif msg_type == "audio":
@@ -73,7 +89,7 @@ class AgiGraph:
 
         return END
     
-    def speech_edge_control(self,state: State):
+    def feature_control(self,state: State):
         feature = state.get("feature","agent")
         if feature == "agent":
             return "agent"
@@ -81,24 +97,38 @@ class AgiGraph:
             return "rag"
         elif feature == "web":
             return "web"
-
+        elif feature == "speech" and state.get("input_type") == "audio": #仅语音转文本
+            return END
+        elif feature == "tts" and state.get("input_type") == "text":    #仅文本转语音
+            return "tts"
         return END
     
-    def llm_edge_control(self,state: State):
+    def tts_control(self,state: State):
         if state["need_speech"]:
             return "tts"
         return END
     
     def invoke(self,input:State) -> State:
         config={"configurable": {"user_id": input.get("user_id",""), "conversation_id": input.get("conversation_id",""),
-                                 "thread_id": str(uuid.uuid4())}}
-        events = self.graph.invoke(input, config)
+                                 "thread_id": input.get("user_id",None) or str(uuid.uuid4())}}
+        snapshot = self.graph.get_state(config)
+        if snapshot:
+            events = snapshot.invoke(input, config)
+        else:
+            events = self.graph.invoke(input, config)
         return events
 
     def stream(self, input: State) -> Iterator[Union[BaseMessage, Dict[str, Any]]]:
         config={"configurable": {"user_id": input.get("user_id",""), "conversation_id": input.get("conversation_id",""),
-                                 "thread_id": str(uuid.uuid4())}}
-        events = self.graph.stream(input, config, stream_mode="values")
+                                 "thread_id": input.get("user_id",None) or str(uuid.uuid4())}}
+        
+        events = None
+        # 处于打断状态的graph实例
+        snapshot = self.graph.get_state(config)
+        if snapshot:
+            events = self.graph.stream(input, config, stream_mode="values")
+        else:
+            events = self.graph.stream(input, config, stream_mode="values")
 
         try:
             for event in events:
