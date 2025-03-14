@@ -448,14 +448,13 @@ def create_websearch_for_graph(km: KnowledgeManager):
     
     web_search_runable = RunnableLambda(web_search)
     web_search_chain = (
-        message_to_dict
+        start_runnable
         | RunnablePassthrough.assign(
             context=web_search_runable.with_config(run_name="web_search_runable"),
-        )
-        .assign(answer="search done.",citations=build_citations)
-        | dict_to_tool_message
+        ).assign(citations=build_citations)
+        | tool_output_runnable
         | graph_parser
-    )
+    ).with_config(run_name="web_search_chain")
     
     return web_search_chain
 
@@ -464,6 +463,7 @@ def create_websearch_for_graph(km: KnowledgeManager):
 # Output: AgentState
 def create_rag_for_graph(km: KnowledgeManager):
     def query_docs(inputs: dict,config: RunnableConfig) :
+    # def query_docs(inputs: dict) :
         print("query_docs----",inputs)
         collection_names = inputs.get("collection_names",None)
         if collection_names is None:
@@ -478,14 +478,13 @@ def create_rag_for_graph(km: KnowledgeManager):
     
     retrieval_docs = RunnableLambda(query_docs)
     rag_runable = (
-        message_to_dict
+        start_runnable
         | RunnablePassthrough.assign(
             context=retrieval_docs.with_config(run_name="retrieval_docs"),
-        )
-        .assign(answer="rag done.",citations=build_citations)
-        | dict_to_tool_message
+        ).assign(citations=build_citations)
+        | tool_output_runnable
         | graph_parser
-    )
+    ).with_config(run_name="rag_runable")
     
     return rag_runable
 
@@ -497,9 +496,9 @@ def create_docchain_for_graph(llm):
     combine_docs_chain = create_stuff_documents_chain(llm, doc_qa_template,debug=False)
 
     combine_docs_chain = (
-        message_to_dict
+        start_runnable
         | RunnablePassthrough.assign(answer=combine_docs_chain)
-        | dict_to_ai_message
+        | ai_output_runnable
         | graph_parser
     )
     return combine_docs_chain
@@ -515,9 +514,12 @@ def dict_to_ai_message(output: dict):
     )
 
     return ai
+# 获取合理的输出格式
+ai_output_runnable = RunnableLambda(dict_to_ai_message)
 
 def dict_to_tool_message(output: dict):
     ai = ToolMessage(
+        tool_call_id = "internal",
         content=output.get('text', ''),
         additional_kwargs={
             'context': output.get('context', ''),
@@ -526,9 +528,12 @@ def dict_to_tool_message(output: dict):
     )
 
     return ai
+# 获取合理的输出格式
+tool_output_runnable = RunnableLambda(dict_to_tool_message)
 
 # 用于将各种格式的输入，转换为dict格式，供chain使用
 # 支持将AgentState 等消息转换为dict
+
 def message_to_dict(message: Union[list,HumanMessage,ToolMessage,dict,AgentState]):
     # 若是graph，则从state中抽取消息
     # AgentState 是typedict ，不支持类型检查
@@ -570,7 +575,8 @@ def message_to_dict(message: Union[list,HumanMessage,ToolMessage,dict,AgentState
         "language": "chinese",
     } 
         
-
+# 获取正确的输入格式
+start_runnable = RunnableLambda(message_to_dict)
 
 class LangchainApp:
     

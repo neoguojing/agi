@@ -23,4 +23,5 @@ GPU显存： 初始：2550MB 峰值：20GB
 - 修改: backend/open_webui/utils/middleware.py
 - 修改: backend/open_webui/main.py
 - 修改: backend/open_webui/config.py
+- 修改: backend/open_webui/audio.py
 - 修改: .env.example

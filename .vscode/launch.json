@@ -12,6 +12,21 @@
             "env": {
                 "PYTHONPATH": "${workspaceFolder}"
             }
+        },
+        {
+            "name": "Python: FastAPI",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "agi.fastapi_agi:app",
+                "--host", "0.0.0.0",
+                "--port", "8000",
+                "--forwarded-allow-ips", "*",
+                "--reload"
+            ],
+            "cwd": "${workspaceFolder}",
+            "jinja": true
         }
     ]
 }

@@ -113,9 +113,11 @@ class AgiGraph:
                                  "thread_id": input.get("user_id",None) or str(uuid.uuid4())}}
         snapshot = self.graph.get_state(config)
         if snapshot:
-            events = snapshot.invoke(input, config)
-        else:
-            events = self.graph.invoke(input, config)
+            snapshot.next
+            existing_message = snapshot.values["messages"][-1]
+            existing_message.pretty_print()
+    
+        events = self.graph.invoke(input, config)
         return events
 
     def stream(self, input: State) -> Iterator[Union[BaseMessage, Dict[str, Any]]]:
@@ -126,9 +128,11 @@ class AgiGraph:
         # 处于打断状态的graph实例
         snapshot = self.graph.get_state(config)
         if snapshot:
-            events = self.graph.stream(input, config, stream_mode="values")
-        else:
-            events = self.graph.stream(input, config, stream_mode="values")
+            snapshot.next
+            existing_message = snapshot.values["messages"][-1]
+            existing_message.pretty_print()
+            
+        events = self.graph.stream(input, config, stream_mode="values")
 
         try:
             for event in events:

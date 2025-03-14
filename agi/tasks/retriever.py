@@ -81,7 +81,7 @@ class KnowledgeManager:
     def list_collections(self, tenant=None):
         return self.collection_manager.list_collections(tenant=tenant)
     
-    def store(self,collection_name: str,tenant=None, source: Union[str, List[str],List[dict]], source_type: SourceType=SourceType.FILE, **kwargs):
+    def store(self,collection_name: str, source: Union[str, List[str],List[dict]],tenant=None, source_type: SourceType=SourceType.FILE, **kwargs):
         """
         存储 URL 或文件，支持单个或多个 source。
         
@@ -190,6 +190,7 @@ class KnowledgeManager:
     
     def get_retriever(self,collection_names="all",tenant=None,k: int=3,bm25: bool=False,filter_type=FilterType.LLM_FILTER,
                       sim_algo:SimAlgoType = SimAlgoType.SST):
+        retriever = None
         try:
             # TODO
             if collection_names == "all":
@@ -221,6 +222,7 @@ class KnowledgeManager:
                 
             if bm25:
                 retrievers.append(self.bm25_retriever(docs,k))
+                
             retriever = EnsembleRetriever(
                 retrievers=retrievers
             )
@@ -477,9 +479,9 @@ class KnowledgeManager:
         # print("url_meta_map:",url_meta_map)
         # Relevant urls
         urls = set(urls_to_look)
-        collection_name,known_type,raw_docs = self.store(collection_name,list(urls),SourceType.WEB,tenant=tenant)
+        collection_name,known_type,raw_docs = self.store(collection_name,list(urls),source_type=SourceType.WEB,tenant=tenant)
         if len(raw_docs) == 0:
-            collection_name,known_type,raw_docs = self.store(collection_name,raw_results,SourceType.SEARCH_RESULT,tenant=tenant)
+            collection_name,known_type,raw_docs = self.store(collection_name,raw_results,source_type=SourceType.SEARCH_RESULT,tenant=tenant)
             # 使用bm25算法重排
             raw_docs = self.bm25_retriever(raw_docs,k=max_results).invoke("query")
         # docs = self.web_parser(urls,url_meta_map,collection_name)
