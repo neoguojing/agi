@@ -397,6 +397,7 @@ async def create_transcription(file: UploadFile, api_key: str = Depends(verify_a
             need_speech=False,
             user_id="transcriptions",
             conversation_id="",
+            feature="speech"
         )
 
         resp = graph.invoke(state_data)
@@ -434,6 +435,7 @@ async def generate_speech(request: SpeechRequest, api_key: str = Depends(verify_
             need_speech=True,
             user_id="speech",
             conversation_id="",
+            feature="tts"
         )
 
         resp = graph.invoke(state_data)
@@ -450,7 +452,7 @@ async def generate_speech(request: SpeechRequest, api_key: str = Depends(verify_
         return FileResponse(file_path, media_type=f"audio/{request.response_format}", filename=file_path)
     
     except Exception as e:
-        print(e)
+        log.error(e)
         raise HTTPException(status_code=500, detail=str(e))
 
 # 定义请求体模型
