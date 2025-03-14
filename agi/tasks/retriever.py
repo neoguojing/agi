@@ -38,6 +38,7 @@ from langchain_core.runnables import (
     RunnablePassthrough,
 )
 import time
+from uuid import uuid4
 from agi.config import (
     CACHE_DIR
 )
@@ -65,7 +66,7 @@ class SimAlgoType(Enum):
 
 
 class KnowledgeManager:
-    def __init__(self, data_path,llm,embedding, tenant=None, database=None):
+    def __init__(self, data_path,llm,embedding):
         self.embedding = embedding
 
         self.llm =llm
@@ -74,13 +75,13 @@ class KnowledgeManager:
 
         self.collection_manager = CollectionManager(data_path,embedding)
 
-    def list_documets(self,collection_name):
-        return self.collection_manager.get_documents(collection_name)
+    def list_documets(self,collection_name, tenant=None):
+        return self.collection_manager.get_documents(collection_name,tenant=tenant)
     
-    def list_collections(self):
-        return self.collection_manager.list_collections()
+    def list_collections(self, tenant=None):
+        return self.collection_manager.list_collections(tenant=tenant)
     
-    def store(self,collection_name: str, source: Union[str, List[str],List[dict]], source_type: SourceType=SourceType.FILE, **kwargs):
+    def store(self,collection_name: str,tenant=None, source: Union[str, List[str],List[dict]], source_type: SourceType=SourceType.FILE, **kwargs):
         """
         存储 URL 或文件，支持单个或多个 source。
         
@@ -105,8 +106,8 @@ class KnowledgeManager:
         known_type = None
         raw_docs = []
         try:
-            exist_sources = self.collection_manager.get_sources(collection_name)
-            store = self.collection_manager.get_vector_store(collection_name)
+            exist_sources = self.collection_manager.get_sources(collection_name,tenant=tenant)
+            store = self.collection_manager.get_vector_store(collection_name,tenant=tenant)
             for source in sources:
                 if source in exist_sources:
                     continue
@@ -147,7 +148,8 @@ class KnowledgeManager:
                 print("loader file count:",len(raw_docs))
                 docs = self.split_documents(raw_docs)
                 print("splited documents count:",len(docs))
-                store.add_documents(docs)
+                uuids = [str(uuid4()) for _ in range(len(docs))]
+                store.add_documents(docs,ids=uuids)
             print("add documents done------")
             return collection_name,known_type,raw_docs
         except Exception as e:
@@ -181,12 +183,17 @@ class KnowledgeManager:
 
         return compression_retriever
     
-    def get_retriever(self,collection_names="all",k: int=3,bm25: bool=False,filter_type=FilterType.LLM_FILTER,
-                      sim_algo:SimAlgoType = SimAlgoType.MMR):
+    def bm25_retriever(self,docs:List[Document],k=3):
+        bm25_retriever = BM25Retriever.from_documents(documents=docs)
+        bm25_retriever.k = k
+        return bm25_retriever
+    
+    def get_retriever(self,collection_names="all",tenant=None,k: int=3,bm25: bool=False,filter_type=FilterType.LLM_FILTER,
+                      sim_algo:SimAlgoType = SimAlgoType.SST):
         try:
             # TODO
             if collection_names == "all":
-                collections = self.collection_manager.list_collections()
+                collections = self.collection_manager.list_collections(tenant=tenant)
                 collection_names = [c.name for c in collections]
                 
             if isinstance(collection_names, str):
@@ -196,23 +203,24 @@ class KnowledgeManager:
             docs = []
             for collection_name in collection_names:
                 if sim_algo == SimAlgoType.MMR:
-                    chroma_retriever = self.collection_manager.get_vector_store(collection_name).as_retriever(
+                    chroma_retriever = self.collection_manager.get_vector_store(collection_name,tenant=tenant).as_retriever(
                         search_type="mmr",
                         search_kwargs={'k': k, 'lambda_mult': 0.5}
                     )
                 elif sim_algo == SimAlgoType.SST:
-                    chroma_retriever = self.collection_manager.get_vector_store(collection_name).as_retriever(
-                        search_type="similarity_score_threshold",
-                        search_kwargs={"score_threshold": 0.5}
+                    # chroma_retriever = self.collection_manager.get_vector_store(collection_name).as_retriever(
+                    #     search_type="similarity_score_threshold",
+                    #     search_kwargs={"score_threshold": 0.5}
+                    # )
+                    chroma_retriever = self.collection_manager.get_vector_store(collection_name,tenant=tenant).as_retriever(
+                        search_kwargs={"k": k}
                     )
                 retrievers.append(chroma_retriever)
                 if bm25:
-                    docs.extend(self.collection_manager.get_documents(collection_name))
+                    docs.extend(self.collection_manager.get_documents(collection_name,tenant=tenant))
                 
             if bm25:
-                bm25_retriever = BM25Retriever.from_documents(documents=docs)
-                bm25_retriever.k = k
-                retrievers.append(bm25_retriever)
+                retrievers.append(self.bm25_retriever(docs,k))
             retriever = EnsembleRetriever(
                 retrievers=retrievers
             )
@@ -229,6 +237,7 @@ class KnowledgeManager:
     def query_doc(self,
         collection_name: Union[str, List[str]],
         query: str,
+        tenant: str = None,
         k: int = 3,
         bm25: bool = False,
         filter_type: FilterType = FilterType.LLM_FILTER,
@@ -243,7 +252,7 @@ class KnowledgeManager:
             raise ValueError("Source must be a string or a list of strings.")
         
         try:
-            retriever = self.get_retriever(collection_names,k,bm25=bm25,filter_type=filter_type)
+            retriever = self.get_retriever(collection_names,tenant=tenant,k=k,bm25=bm25,filter_type=filter_type)
             docs = retriever.invoke(query)
             if to_dict:
                 docs = {
@@ -412,11 +421,11 @@ class KnowledgeManager:
 
         return loader, known_type
     # decrease
-    def web_parser(self,urls,metadata=None,collection_name=None):
+    def web_parser(self,urls,tenant=None,metadata=None,collection_name=None):
         bs_transformer = BeautifulSoupTransformer()
         vector_store = None
         if collection_name:
-            vector_store = self.collection_manager.get_vector_store(collection_name)
+            vector_store = self.collection_manager.get_vector_store(collection_name,tenant=tenant)
         docs = None
         if urls:
             loader = AsyncChromiumLoader(urls)
@@ -430,14 +439,15 @@ class KnowledgeManager:
             print("transform docs:",len(docs))
             docs = self.split_documents(docs)
             print("split docs:",len(docs))
+            uuids = [str(uuid4()) for _ in range(len(docs))]
             if metadata:
                 for doc in docs:
                     doc.metadata=metadata[doc.metadata['source']]
             if vector_store:
-                vector_store.add_documents(docs)
+                vector_store.add_documents(docs,ids=uuids)
         return docs
         
-    def web_search(self,query,collection_name="web",region="cn-zh",time="d",max_results=3):
+    def web_search(self,query,tenant=None,collection_name="web",region="cn-zh",time="d",max_results=3):
         # TODO 
         if query is None:
             return 
@@ -467,10 +477,11 @@ class KnowledgeManager:
         # print("url_meta_map:",url_meta_map)
         # Relevant urls
         urls = set(urls_to_look)
-        collection_name,known_type,raw_docs = self.store(collection_name,list(urls),SourceType.WEB)
+        collection_name,known_type,raw_docs = self.store(collection_name,list(urls),SourceType.WEB,tenant=tenant)
         if len(raw_docs) == 0:
-            collection_name,known_type,raw_docs = self.store(collection_name,raw_results,SourceType.SEARCH_RESULT)
-            
+            collection_name,known_type,raw_docs = self.store(collection_name,raw_results,SourceType.SEARCH_RESULT,tenant=tenant)
+            # 使用bm25算法重排
+            raw_docs = self.bm25_retriever(raw_docs,k=max_results).invoke("query")
         # docs = self.web_parser(urls,url_meta_map,collection_name)
         return collection_name,known_type,raw_results,raw_docs
          
@@ -522,7 +533,7 @@ def create_retriever(km: KnowledgeManager,**kwargs):
     top_k = kwargs.get("top_k",3)
     bm25 = kwargs.get("bm25",False)
     filter_type = kwargs.get("filter_type",None)
-    sim_algo = kwargs.get("sim_algo",SimAlgoType.MMR)
+    sim_algo = kwargs.get("sim_algo",SimAlgoType.SST)
     return km.get_retriever(collection_names,k=top_k,bm25=bm25,filter_type=filter_type,sim_algo=sim_algo)
 
 # if __name__ == '__main__':

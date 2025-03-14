@@ -7,7 +7,7 @@ from langchain_community.chat_message_histories import SQLChatMessageHistory
 from langchain.retrievers import EnsembleRetriever
 from langchain_core.messages import HumanMessage,BaseMessage,AIMessage,ToolMessage
 from langchain_core.runnables.utils import AddableDict
-from langchain_core.runnables.base import Runnable
+from langchain_core.runnables.base import Runnable,RunnableConfig
 from langchain_core.language_models import LanguageModelLike
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import BasePromptTemplate
@@ -441,8 +441,9 @@ def create_chat_with_websearch(km: KnowledgeManager,llm,debug=True,graph: bool =
 # Input: AgentState
 # Output: AgentState
 def create_websearch_for_graph(km: KnowledgeManager):
-    def web_search(input: dict) :
-        _,_,_,raw_docs = km.web_search(input.get("text"))
+    def web_search(input: dict,config: RunnableConfig) :
+        tenant = config.get("configurable", {}).get("user_id", None)
+        _,_,_,raw_docs = km.web_search(input.get("text"),tenant=tenant)
         return {"context": raw_docs}
     
     web_search_runable = RunnableLambda(web_search)
@@ -462,7 +463,7 @@ def create_websearch_for_graph(km: KnowledgeManager):
 # Input: AgentState
 # Output: AgentState
 def create_rag_for_graph(km: KnowledgeManager):
-    def query_docs(inputs: dict) :
+    def query_docs(inputs: dict,config: RunnableConfig) :
         print("query_docs----",inputs)
         collection_names = inputs.get("collection_names",None)
         if collection_names is None:
@@ -471,7 +472,8 @@ def create_rag_for_graph(km: KnowledgeManager):
         collections = "all"
         if isinstance(collection_names,str):
             collections = json.loads(collection_names)
-        retriever = create_retriever(km,collection_names=collections)
+        tenant = config.get("configurable", {}).get("user_id", None)
+        retriever = km.get_retriever(collection_names=collections,tenant=tenant)
         return retriever.invoke(inputs.get("text",""))
     
     retrieval_docs = RunnableLambda(query_docs)

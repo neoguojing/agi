@@ -119,7 +119,7 @@ The output should be a numbered list of questions and each should have a questio
 
 rag_filter_prompt = """Given the following question and context, return YES if the context is relevant to the question and NO if it isn't.
 
-> Question: {question}
+> Question: {text}
 > Context:
 >>>
 {context}
@@ -128,7 +128,7 @@ rag_filter_prompt = """Given the following question and context, return YES if t
 
 rag_filter_template = PromptTemplate(
     template=rag_filter_prompt,
-    input_variables=["question", "context"],
+    input_variables=["text", "context"],
     output_parser=BooleanOutputParser(),
 )
 

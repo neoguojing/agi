@@ -5,51 +5,59 @@ from langchain_chroma import Chroma
 
 # TODO 多租户改造
 class CollectionManager:
-    def __init__(self, data_path, embedding,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE, allow_reset=True, anonymized_telemetry=False):
-        self.client = chromadb.PersistentClient(
-            path=data_path,
-            settings=Settings(allow_reset=allow_reset, anonymized_telemetry=anonymized_telemetry),
+    def __init__(self, data_path, embedding, allow_reset=True, anonymized_telemetry=False):
+        self.data_path = data_path
+        self.embedding = embedding
+        self.allow_reset = allow_reset
+        self.anonymized_telemetry = anonymized_telemetry
+
+        self.embedding = embedding
+
+    def client(self,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE):
+        if tenant is None:
+            tenant = chromadb.DEFAULT_TENANT
+        return chromadb.PersistentClient(
+            path=self.data_path,
+            settings=Settings(allow_reset=self.allow_reset, anonymized_telemetry=self.anonymized_telemetry),
             database=database,
             tenant=tenant
         )
-        self.embedding = embedding
-
-    def get_or_create_collection(self, collection_name):
+    def get_or_create_collection(self, collection_name,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE):
         """Get or create a collection by name."""
         try:
-            return self.client.get_collection(name=collection_name)
+            return self.client(tenant,database).get_collection(name=collection_name)
         except Exception as e:
-            return self.create_collection(collection_name)
+            return self.create_collection(collection_name,tenant,database)
 
-    def delete_collection(self, collection_name):
+    def delete_collection(self, collection_name,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE):
         """Delete the collection by name."""
-        self.client.delete_collection(name=collection_name)
+        self.client(tenant,database).delete_collection(name=collection_name)
 
-    def create_collection(self, collection_name):
+    def create_collection(self, collection_name,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE):
         """Create a new collection."""
-        return self.client.create_collection(name=collection_name)
+        return self.client(tenant,database).create_collection(name=collection_name)
 
-    def list_collections(self, limit=None, offset=None):
+    def list_collections(self, limit=None, offset=None,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE):
         """List collections with optional pagination."""
-        return self.client.list_collections(limit, offset)
+        return self.client(tenant,database).list_collections(limit, offset)
     
-    def get_vector_store(self, collection_name) -> Chroma:
+    def get_vector_store(self, collection_name,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE) -> Chroma:
         """Get or create a vector store for the given collection name."""
-        return Chroma(client=self.client, 
+        return Chroma(client=self.client(tenant,database), 
                       embedding_function=self.embedding, 
                       collection_name=collection_name)
 
-    def get_documents(self, collection_name) -> list[Document]:
+    def get_documents(self, collection_name,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE) -> list[Document]:
         """Retrieve all documents and their metadata from the collection."""
-        collection = self.get_or_create_collection(collection_name)
+        collection = self.get_or_create_collection(collection_name,tenant,database)
         result = collection.get()
         
         return [Document(page_content=document, metadata=metadata) 
                 for document, metadata in zip(result['documents'], result['metadatas'])]
     
-    def get_sources(self, collection_name) -> list[str]:
+    def get_sources(self, collection_name,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE) -> list[str]:
         """Retrieve all sources from the collection."""
-        collection = self.get_or_create_collection(collection_name)
+        collection = self.get_or_create_collection(collection_name,tenant=tenant,database=database)
         result = collection.get()
         
         return [ metadata["source"]
