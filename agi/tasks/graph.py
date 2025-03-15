@@ -109,13 +109,14 @@ class AgiGraph:
         return END
     
     def invoke(self,input:State) -> State:
-        config={"configurable": {"user_id": input.get("user_id",""), "conversation_id": input.get("conversation_id",""),
+        config={"configurable": {"user_id": input.get("user_id","default_tenant"), "conversation_id": input.get("conversation_id",""),
                                  "thread_id": input.get("user_id",None) or str(uuid.uuid4())}}
         snapshot = self.graph.get_state(config)
         if snapshot:
             snapshot.next
-            existing_message = snapshot.values["messages"][-1]
-            existing_message.pretty_print()
+            if "messages" in snapshot.values:
+                existing_message = snapshot.values["messages"][-1]
+                existing_message.pretty_print()
     
         events = self.graph.invoke(input, config)
         return events

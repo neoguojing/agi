@@ -549,8 +549,8 @@ def message_to_dict(message: Union[list,HumanMessage,ToolMessage,dict,AgentState
                 "text": last_message.content,
                 "language": "chinese",
                 "collection_names": last_message.additional_kwargs.get("collection_names",None),
-                "context": message.additional_kwargs.get("context",None),
-                "citations": message.additional_kwargs.get("citations",None),
+                "context": last_message.additional_kwargs.get("context",None),
+                "citations": last_message.additional_kwargs.get("citations",None),
             }
     elif isinstance(message,dict):
         return message
