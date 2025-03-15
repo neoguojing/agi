@@ -6,7 +6,7 @@ class TestSpeech2Text(unittest.TestCase):
 
     def setUp(self):
         self.input = HumanMessage(content=[
-                {"type":"audio","audio":"tests/1730604079.wav"}
+                {"type":"audio","audio":"tests/zh-cn-sample.wav"}
             ]
         )
 

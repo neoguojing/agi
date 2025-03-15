@@ -26,8 +26,8 @@ class TestTaskMultiModalFactory(unittest.TestCase):
         self.assertEqual(resp.content[0].get("type"),"audio")
     def test_speech2text_chain(self):
         llm_task = TaskFactory.create_task(TASK_SPEECH_TEXT)
-        # resp = llm_task.invoke({"data":"tests/1730604079.wav","type":"audio"})
-        resp = llm_task.invoke({"audio":"tests/1730604079.wav","text":"","image":""})
+        # resp = llm_task.invoke({"data":"tests/zh-cn-sample.wav","type":"audio"})
+        resp = llm_task.invoke({"audio":"tests/zh-cn-sample.wav","text":"","image":""})
         self.assertIsInstance(resp,AIMessage)
         self.assertIsInstance(resp.content,str)
         self.assertIsNotNone(resp.content)

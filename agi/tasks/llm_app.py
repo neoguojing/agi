@@ -523,8 +523,8 @@ ai_output_runnable = RunnableLambda(dict_to_ai_message)
 def dict_to_tool_message(output: dict):
     print("dict_to_tool_message---",output)
     ai = ToolMessage(
-        tool_call_id = "internal",
-        content=output.get('text', ''),
+        tool_call_id = "web or rag",
+        content="working...",
         additional_kwargs={
             'context': output.get('context', ''),
             'citations': output.get('citations', [])

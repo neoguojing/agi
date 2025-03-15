@@ -25,7 +25,7 @@ class TestModelFactory(unittest.TestCase):
 
         instance = ModelFactory.get_model("speech2text")
         input = self.input = HumanMessage(content=[
-                {"type":"audio","audio":"tests/1730604079.wav"}
+                {"type":"audio","audio":"tests/zh-cn-sample.wav"}
             ]
         ) 
         resp = instance.invoke(input)

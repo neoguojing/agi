@@ -20,7 +20,7 @@ from agi.tasks.task_factory import (
     )
 from langgraph.prebuilt.chat_agent_executor import AgentState
 from typing import Dict, Any, Iterator,Union
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import BaseMessage,AIMessage
 # set_verbose(True)
 # set_debug(True)
 
@@ -56,6 +56,7 @@ class AgiGraph:
         self.builder.add_node("web", TaskFactory.create_task(TASK_WEB_SEARCH,graph=True))
         self.builder.add_node("doc_chat", TaskFactory.create_task(TASK_DOC_CHAT,graph=True))
         self.builder.add_node("agent", TaskFactory.create_task(TASK_AGENT))
+        self.builder.add_node("result_fix", self.result_fix)
     
         self.builder.add_conditional_edges("speech2text",self.feature_control)
         self.builder.add_conditional_edges("agent", self.tts_control)
@@ -64,12 +65,13 @@ class AgiGraph:
         # 有上下文的请求支持平行处理
         self.builder.add_edge("rag", "doc_chat")
         self.builder.add_edge("web", "doc_chat")
-        # 输出rag和查询的结果
-        self.builder.add_edge("rag", END)
-        self.builder.add_edge("web", END)
+        # 输出rag和查询的结果，根据测试，流式结果会输出工具的查询过程，无需并行返回
+        # self.builder.add_edge("rag", END)
+        # self.builder.add_edge("web", END)
 
         self.builder.add_edge("image_gen", END)
         self.builder.add_edge("tts", END)
+        self.builder.add_edge("result_fix", END)
         
         self.builder.add_conditional_edges(START, self.routes)
         self.graph = self.builder.compile(
@@ -88,7 +90,14 @@ class AgiGraph:
             return "speech2text"
 
         return END
-    
+    # 结果修正
+    def result_fix(self,state: State, config: RunnableConfig):
+        # 若speech直接输出，则需要将usermessage 转换为aimessage
+        user_msg = state.get("messages")[-1]
+        ai_msg = AIMessage(content=user_msg.content)
+        state.get("messages").append(ai_msg)
+        return state
+        
     def feature_control(self,state: State):
         feature = state.get("feature","agent")
         if feature == "agent":
@@ -98,7 +107,7 @@ class AgiGraph:
         elif feature == "web":
             return "web"
         elif feature == "speech" and state.get("input_type") == "audio": #仅语音转文本
-            return END
+            return "result_fix"
         elif feature == "tts" and state.get("input_type") == "text":    #仅文本转语音
             return "tts"
         return END
@@ -122,7 +131,7 @@ class AgiGraph:
         return events
 
     def stream(self, input: State) -> Iterator[Union[BaseMessage, Dict[str, Any]]]:
-        config={"configurable": {"user_id": input.get("user_id",""), "conversation_id": input.get("conversation_id",""),
+        config={"configurable": {"user_id": input.get("user_id","default_tenant"), "conversation_id": input.get("conversation_id",""),
                                  "thread_id": input.get("user_id",None) or str(uuid.uuid4())}}
         
         events = None
@@ -130,11 +139,11 @@ class AgiGraph:
         snapshot = self.graph.get_state(config)
         if snapshot:
             snapshot.next
-            existing_message = snapshot.values["messages"][-1]
-            existing_message.pretty_print()
+            if "messages" in snapshot.values:
+                existing_message = snapshot.values["messages"][-1]
+                existing_message.pretty_print()
             
         events = self.graph.stream(input, config, stream_mode="values")
-
         try:
             for event in events:
                 print(event)
