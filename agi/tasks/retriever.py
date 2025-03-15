@@ -149,7 +149,8 @@ class KnowledgeManager:
                 docs = self.split_documents(raw_docs)
                 print("splited documents count:",len(docs))
                 uuids = [str(uuid4()) for _ in range(len(docs))]
-                store.add_documents(docs,ids=uuids)
+                if len(docs) > 0:
+                    store.add_documents(docs,ids=uuids)
             print("add documents done------")
             return collection_name,known_type,raw_docs
         except Exception as e:
@@ -450,7 +451,6 @@ class KnowledgeManager:
         return docs
         
     def web_search(self,query,tenant=None,collection_name="web",region="cn-zh",time="d",max_results=3):
-        # TODO 
         if query is None:
             return 
         
@@ -463,9 +463,9 @@ class KnowledgeManager:
         url_meta_map = {}
         raw_results = []
         try:
-            for query in questions:
-                print(query)
-                search_results = search.results(query,max_results=1)
+            for q in questions:
+                print(q)
+                search_results = search.results(q,max_results=1)
                 log.info("Searching for relevant urls...")
                 log.info(f"Search results: {search_results}")
                 for res in search_results:
@@ -479,11 +479,14 @@ class KnowledgeManager:
         # print("url_meta_map:",url_meta_map)
         # Relevant urls
         urls = set(urls_to_look)
+        # 执行网页爬虫
         collection_name,known_type,raw_docs = self.store(collection_name,list(urls),source_type=SourceType.WEB,tenant=tenant)
+        # 未爬到信息，则使用检索结果拼装
         if len(raw_docs) == 0:
             collection_name,known_type,raw_docs = self.store(collection_name,raw_results,source_type=SourceType.SEARCH_RESULT,tenant=tenant)
-            # 使用bm25算法重排
-            raw_docs = self.bm25_retriever(raw_docs,k=max_results).invoke("query")
+        # 使用bm25算法重排
+        if raw_docs and len(raw_docs) > 1:
+            raw_docs= self.bm25_retriever(raw_docs,k=max_results).invoke(query)
         # docs = self.web_parser(urls,url_meta_map,collection_name)
         return collection_name,known_type,raw_results,raw_docs
          

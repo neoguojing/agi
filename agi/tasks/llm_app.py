@@ -297,7 +297,7 @@ def build_citations(inputs: dict):
             "metadata": metadata,
             "distances": distances
         })
-    
+    print("build_citations----",citations)
     return citations
 
 def create_retrieval_chain(
@@ -444,7 +444,8 @@ def create_websearch_for_graph(km: KnowledgeManager):
     def web_search(input: dict,config: RunnableConfig) :
         tenant = config.get("configurable", {}).get("user_id", None)
         _,_,_,raw_docs = km.web_search(input.get("text"),tenant=tenant)
-        return {"context": raw_docs}
+        print("web_search---",raw_docs)
+        return raw_docs
     
     web_search_runable = RunnableLambda(web_search)
     web_search_chain = (
@@ -474,7 +475,9 @@ def create_rag_for_graph(km: KnowledgeManager):
             collections = json.loads(collection_names)
         tenant = config.get("configurable", {}).get("user_id", None)
         retriever = km.get_retriever(collection_names=collections,tenant=tenant)
-        return retriever.invoke(inputs.get("text",""))
+        docs = retriever.invoke(inputs.get("text",""))
+        print("query_docs----",docs)
+        return docs
     
     retrieval_docs = RunnableLambda(query_docs)
     rag_runable = (
@@ -518,6 +521,7 @@ def dict_to_ai_message(output: dict):
 ai_output_runnable = RunnableLambda(dict_to_ai_message)
 
 def dict_to_tool_message(output: dict):
+    print("dict_to_tool_message---",output)
     ai = ToolMessage(
         tool_call_id = "internal",
         content=output.get('text', ''),
