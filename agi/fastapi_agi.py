@@ -114,7 +114,8 @@ async def chat_completions(
             internal_messages.append(HumanMessage(content=content,additional_kwargs=additional_kwargs))
         # elif msg.role == "assistant":
         #     internal_messages.append({"role": "assistant", "content": msg.content})
-        
+    if request.user is None or request.user == "":
+        request.user = "default_tenant"
     state_data = State(
         messages=internal_messages,
         input_type=input_type,
@@ -246,8 +247,10 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
                 # 处理additional_kwargs信息
                 additional_kwargs = event.additional_kwargs
                 if additional_kwargs is not None and additional_kwargs.get("citations"):
-                    event.content = {"type":"text","text":event.content,"citations":additional_kwargs.get("citations")}
-
+                    if isinstance(event.content,str):
+                        event.content = {"type":"text","text":event.content,"citations":additional_kwargs.get("citations")}
+                    else:
+                        event.content = {"type":"text","text":event.content.get("text"),"citations":additional_kwargs.get("citations")}
                 chunk["choices"][0]["delta"] = {"role": role, "content": event.content}
                 finish_reason = getattr(event, "response_metadata", {}).get("finish_reason")
                 if finish_reason:

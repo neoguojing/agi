@@ -89,6 +89,7 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertIsNotNone(response.choices[0].message.content)
         self.assertIsNotNone(response.usage)
         print(response)
+        # TODO 统一用户的请求会串：比如上面的请求会在下面返回
         stream = self.client.chat.completions.create(
             model="agi-model",
             stream=True,
@@ -99,12 +100,20 @@ class TestFastApiAgi(unittest.TestCase):
                 }
             ],
         )
+        is_stoped = False
         for chunk in stream:
-            print(chunk)
+            print("-----",chunk)
             self.assertIsNotNone(chunk.choices)
             self.assertGreater(len(chunk.choices),0)
             self.assertIsNotNone(chunk.choices[0].delta)
-            # self.assertIsNotNone(chunk.choices[0].delta.content)
+            if chunk.choices[0].finish_reason is None:
+                self.assertIsNotNone(chunk.choices[0].delta.content)
+            else:
+                # self.assertEqual(chunk.choices[0].finish_reason,"stop")
+                if chunk.choices[0].finish_reason == "stop":
+                    is_stoped = True
+        self.assertEqual(is_stoped,True)
+            
     # 通过agent，支持的图片生成
     def test_text_image(self):
         response = self.client.chat.completions.create(
@@ -125,18 +134,34 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertEqual(response.choices[0].message.content[0]["type"],"image")
         self.assertIsInstance(response.choices[0].message.content[0]["image"],str)
         self.assertGreater(len(response.choices[0].message.content[0]["image"]),0)
-        # self.assertRegexpMatches(response.choices[0].message.content,r'^<img src="data:image/jpeg;base64,')
-        # import re
-        # # 提取img标签内的src值
-        # src = re.findall(r'<img[^>]*src="([^"]*)"', response.choices[0].message.content)
-
-        # base64_image = response.choices[0].message.content[0]["image"].split(',')[1]
-        # image_data = base64.b64decode(base64_image)
-        # # 保存为 JPEG 文件
-        # with open("output_image.jpeg", "wb") as f:
-        #     f.write(image_data)
-        # import os
-        # self.assertTrue(os.path.exists("output_image.jpeg"))
+        
+        stream = self.client.chat.completions.create(
+            model="agi-model",
+            stream=True,
+            messages=[
+                {
+                    "role": "user",
+                    "content": "生成芯片架构图",
+                }
+            ],
+        )
+        is_stoped = False
+        for chunk in stream:
+            print("------",chunk)
+            # TODO 会返回一个finish_reason='tool_calls',
+            self.assertIsNotNone(chunk.choices)
+            self.assertGreater(len(chunk.choices),0)
+            if chunk.choices[0].finish_reason is None:
+                self.assertIsNotNone(chunk.choices[0])
+                self.assertIsNotNone(chunk.choices[0].delta)
+                self.assertIsNotNone(chunk.choices[0].delta.content)
+                if isinstance(chunk.choices[0].delta.content,dict):
+                    self.assertEqual(chunk.choices[0].delta.content.get("type"),"image")
+                    self.assertIsNotNone(chunk.choices[0].delta.content.get("image"))
+            else:
+                if chunk.choices[0].finish_reason == "stop":
+                    is_stoped = True
+        self.assertEqual(is_stoped,True)
         
         
     def test_image_image(self):
@@ -164,17 +189,39 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertEqual(response.choices[0].message.content[0]["type"],"image")
         self.assertIsInstance(response.choices[0].message.content[0]["image"],str)
         self.assertGreater(len(response.choices[0].message.content[0]["image"]),0)
-        # self.assertRegexpMatches(response.choices[0].message.content,r'^<img src="data:image/jpeg;base64,')
-        # import re
-        # # 提取img标签内的src值
-        # src = re.findall(r'<img[^>]*src="([^"]*)"', response.choices[0].message.content)
-        # base64_image = response.choices[0].message.content[0]["image"].split(',')[1]
-        # image_data = base64.b64decode(base64_image)
-        # # 保存为 JPEG 文件
-        # with open("output_image.jpeg", "wb") as f:
-        #     f.write(image_data)
-        # import os
-        # self.assertTrue(os.path.exists("output_image.jpeg"))
+        
+        stream = self.client.chat.completions.create(
+            model="agi-model",
+            stream=True,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "变成一条狗"},
+                        {
+                            "type": "image",
+                            "image": image_to_base64("tests/cat.jpg")
+                        }
+                    ]
+                }
+            ],
+        )
+        is_stoped = False
+        for chunk in stream:
+            print("------",chunk)
+            self.assertIsNotNone(chunk.choices)
+            self.assertGreater(len(chunk.choices),0)
+            if chunk.choices[0].finish_reason is None:
+                self.assertIsNotNone(chunk.choices[0])
+                self.assertIsNotNone(chunk.choices[0].delta)
+                self.assertIsNotNone(chunk.choices[0].delta.content)
+                if isinstance(chunk.choices[0].delta.content,dict):
+                    self.assertEqual(chunk.choices[0].delta.content.get("type"),"image")
+                    self.assertIsNotNone(chunk.choices[0].delta.content.get("image"))
+            else:
+                if chunk.choices[0].finish_reason == "stop":
+                    is_stoped = True
+        self.assertEqual(is_stoped,True)
     
     def test_speech_text(self):
         response = self.client.chat.completions.create(
@@ -191,6 +238,49 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertGreater(len(response.choices),0)
         self.assertIsNotNone(response.choices[0].message)
         self.assertIsNotNone(response.choices[0].message.content)
+        # 测试直接语音转文字
+        response = self.client.chat.completions.create(
+            model="agi-model",
+            extra_body={"need_speech": False,"feature": "speech"},
+            messages=[
+                {
+                    "role": "user",
+                    "content": [{"type": "audio", "audio": audio_to_base64("tests/zh-cn-sample.wav")}]
+                }
+            ],
+        )
+        print(response)
+        self.assertIsNotNone(response.choices)
+        self.assertGreater(len(response.choices),0)
+        self.assertIsNotNone(response.choices[0].message)
+        self.assertIsNotNone(response.choices[0].message.content)
+        self.assertEqual(response.choices[0].message.content,"当我还只有六岁的时候,看到了一幅精彩的插画。")
+        
+        stream = self.client.chat.completions.create(
+            model="agi-model",
+            stream=True,
+            # extra_body={"need_speech": False,"feature": "speech"},
+            messages=[
+                {
+                    "role": "user",
+                    "content": [{"type": "audio", "audio": audio_to_base64("tests/zh-cn-sample.wav")}]
+                }
+            ],
+        )
+        is_stoped = False
+        for chunk in stream:
+            print("------",chunk)
+            # TODO 会返回一个finish_reason='tool_calls',
+            self.assertIsNotNone(chunk.choices)
+            self.assertGreater(len(chunk.choices),0)
+            if chunk.choices[0].finish_reason is None:
+                self.assertIsNotNone(chunk.choices[0])
+                self.assertIsNotNone(chunk.choices[0].delta)
+                self.assertIsNotNone(chunk.choices[0].delta.content)
+            else:
+                if chunk.choices[0].finish_reason == "stop":
+                    is_stoped = True
+        self.assertEqual(is_stoped,True)
         
         
     def test_tts(self):
@@ -215,7 +305,37 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertIsNotNone(response.choices[0].message.content[0]["text"])
         self.assertIsInstance(response.choices[0].message.content[0]["audio"],str)
         self.assertGreater(len(response.choices[0].message.content[0]["audio"]),0)
-        # self.assertRegexpMatches(response.choices[0].message.content,r'^<audio src="data:audio/wav;base64,')
+        
+        stream = self.client.chat.completions.create(
+            model="agi-model",
+            stream=True,
+            extra_body={"need_speech": False,"feature": "tts"},
+            messages=[
+                {
+                    "role": "user",
+                    "content": "介绍下中国"
+                }
+            ],
+        )
+        is_stoped = False
+        for chunk in stream:
+            print("------",chunk)
+            self.assertIsNotNone(chunk.choices)
+            self.assertGreater(len(chunk.choices),0)
+            if chunk.choices[0].finish_reason is None:
+                self.assertIsNotNone(chunk.choices[0])
+                self.assertIsNotNone(chunk.choices[0].delta)
+                self.assertIsNotNone(chunk.choices[0].delta.content)
+                self.assertEqual(chunk.choices[0].delta.content[0]["type"],"audio")
+                self.assertIsNotNone(chunk.choices[0].delta.content[0]["file_path"])
+                self.assertIsNotNone(chunk.choices[0].delta.content[0]["text"])
+                self.assertEqual(chunk.choices[0].delta.content[0]["text"],"介绍下中国")
+                self.assertIsInstance(chunk.choices[0].delta.content[0]["audio"],str)
+                self.assertGreater(len(chunk.choices[0].delta.content[0]["audio"]),0)
+            else:
+                if chunk.choices[0].finish_reason == "stop":
+                    is_stoped = True
+        self.assertEqual(is_stoped,True)
         
 
     def test_web_search(self):
@@ -237,21 +357,53 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertIsNotNone(response.choices[0].message.content)
         self.assertIsNotNone(response.choices[0].message.content["citations"])
         self.assertIsInstance(response.choices[0].message.content["citations"],list)
+    
+        stream = self.client.chat.completions.create(
+            model="agi-model",
+            stream=True,
+            extra_body={"need_speech": False,"feature": "web"},
+            messages=[
+                {
+                    "role": "user",
+                    "content": "esp32单片机",
+                }
+            ],
+        )
+        is_stoped = False
+        for chunk in stream:
+            print("------",chunk)
+            # TODO 重复的tool消息
+            # TODO 查询结果关联性不高
+            self.assertIsNotNone(chunk.choices)
+            self.assertGreater(len(chunk.choices),0)
+            if chunk.choices[0].finish_reason is None:
+                self.assertIsNotNone(chunk.choices[0])
+                self.assertIsNotNone(chunk.choices[0].delta)
+                self.assertIsNotNone(chunk.choices[0].delta.content)
+                if isinstance(chunk.choices[0].delta.content,dict):
+                    self.assertEqual(chunk.choices[0].delta.content.get("type"),"text")
+                    self.assertIsNotNone(chunk.choices[0].delta.content.get("text"))
+                    self.assertIsNotNone(chunk.choices[0].delta.content.get("citations"))
+                    self.assertIsInstance(chunk.choices[0].delta.content.get("citations"),list)
+            else:
+                self.assertEqual(chunk.choices[0].finish_reason,"stop")
+                is_stoped = True
+        self.assertEqual(is_stoped,True)
         
 
     def test_rag(self):
         response = self.client.chat.completions.create(
             model="agi-model",
-            extra_body={"db_ids":["web"],"need_speech": False,"feature": "rag"},
+            extra_body={"db_ids":["test"],"need_speech": False,"feature": "rag"},
             messages=[
                 {
                     "role": "user",
-                    "content": "esp32单片机"
+                    "content": "NTP3000Plus"
                 }
             ],
         )
         
-        print(response)
+        print("----------------",response)
         self.assertIsNotNone(response.choices)
         self.assertGreater(len(response.choices),0)
         self.assertIsNotNone(response.choices[0].message)
@@ -259,6 +411,37 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertIsNotNone(response.choices[0].message.content["citations"])
         self.assertIsInstance(response.choices[0].message.content["citations"],list)
 
+        stream = self.client.chat.completions.create(
+            model="agi-model",
+            stream=True,
+            extra_body={"db_ids":["test"],"need_speech": False,"feature": "rag"},
+            messages=[
+                {
+                    "role": "user",
+                    "content": "NTP3000Plus",
+                }
+            ],
+        )
+        is_stoped = False
+        for chunk in stream:
+            print("------",chunk)
+            # TODO 重复的tool消息
+            self.assertIsNotNone(chunk.choices)
+            self.assertGreater(len(chunk.choices),0)
+            if chunk.choices[0].finish_reason is None:
+                self.assertIsNotNone(chunk.choices[0])
+                self.assertIsNotNone(chunk.choices[0].delta)
+                self.assertIsNotNone(chunk.choices[0].delta.content)
+                if isinstance(chunk.choices[0].delta.content,dict):
+                    self.assertEqual(chunk.choices[0].delta.content.get("type"),"text")
+                    self.assertIsNotNone(chunk.choices[0].delta.content.get("text"))
+                    self.assertIsNotNone(chunk.choices[0].delta.content.get("citations"))
+                    self.assertIsInstance(chunk.choices[0].delta.content.get("citations"),list)
+            else:
+                self.assertEqual(chunk.choices[0].finish_reason,"stop")
+                is_stoped = True
+        self.assertEqual(is_stoped,True)
+        
     def test_embedding(self):  
         response = self.client.embeddings.create(
             model='text-embedding-ada-002',
@@ -270,7 +453,7 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertGreater(len(response.data),0)
         self.assertIsNotNone(response.data[0].embedding)
     
-    # 语音转文本
+    # # 语音转文本
     def test_transcription(self):  
         with open('tests/zh-cn-sample.wav', 'rb') as audio_file:
             response = self.client.audio.transcriptions.create(
@@ -283,6 +466,7 @@ class TestFastApiAgi(unittest.TestCase):
 
             print(response)
             self.assertIsNotNone(response.text)
+            self.assertEqual(response.text,"当我还只有六岁的时候,看到了一幅精彩的插画。")
 
         
     # 文本转语音

@@ -63,6 +63,7 @@ def debug_info(x : Any):
     return f"type:{type(x)}\nmessage:{x}"
     
 # TODO 历史数据压缩 数据实体抽取
+# TODO xpected `str` but got `dict` with value `{'type': 'text', 'text': ...], 'distances': [1.0]}]}` - serialized value may not be as expected
 def get_session_history(user_id: str, conversation_id: str):
     return SQLChatMessageHistory(f"{user_id}--{conversation_id}", LANGCHAIN_DB_PATH)
 
