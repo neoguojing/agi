@@ -26,7 +26,7 @@ ALLOWED_MIME_TYPES = {
     "message/rfc822",  # .msg (Outlook 邮件)
 }
 
-router_file = APIRouter()
+router_file = APIRouter(prefix="/v1")
 
 @router_file.get("/files")
 async def list_files():
@@ -59,6 +59,7 @@ def generate_unique_filename(filename: str):
 async def save_file(
     file: UploadFile = File(...),  # 接收上传的文件
     collection_name: str = Form(...),  # 接收 collection_name 作为表单字段
+    user_id: str = Form(...),
     ):
     # 获取文件类型
     file_type = get_file_type(file)
@@ -78,7 +79,7 @@ async def save_file(
     if collection_name and not file_type.startswith("image/") and not file_type.startswith("audio/"):
         kmanager = TaskFactory.create_task(TASK_DOC_DB)
         param = {"filename" : file.filename}
-        kmanager.store(collection_name,file_path,**param)
+        kmanager.store(collection_name,file_path,tenant=user_id,**param)
         
     return {"original_filename": file.filename, "saved_filename": unique_filename, "file_type": file_type, "message": "文件上传成功"}
 

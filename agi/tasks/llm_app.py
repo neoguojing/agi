@@ -368,9 +368,7 @@ def create_chat_with_custom_rag(
     def query_docs(inputs: dict) :
         print("query_docs----",inputs)
         collection_names = inputs.get("collection_names",None)
-        if collection_names is None:
-            return []
-        
+       
         collections = "all"
         if isinstance(collection_names,str):
             collections = json.loads(collection_names)
@@ -467,10 +465,7 @@ def create_rag_for_graph(km: KnowledgeManager):
     def query_docs(inputs: dict,config: RunnableConfig) :
     # def query_docs(inputs: dict) :
         print("query_docs----",inputs)
-        collection_names = inputs.get("collection_names",None)
-        if collection_names is None:
-            return []
-        
+        collection_names = inputs.get("collection_names",None)        
         collections = "all"
         if isinstance(collection_names,str):
             collections = json.loads(collection_names)

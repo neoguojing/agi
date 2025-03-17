@@ -255,5 +255,5 @@ def path_to_preview_url(file_path: str, base_url: str = BASE_URL) -> str:
     file_name = os.path.basename(file_path)
     
     # 构建预览 URL
-    preview_url = f"{base_url}/files/{urllib.parse.quote(file_name)}"
+    preview_url = f"{base_url}/v1/files/{urllib.parse.quote(file_name)}"
     return preview_url

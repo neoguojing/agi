@@ -193,7 +193,7 @@ class KnowledgeManager:
                       sim_algo:SimAlgoType = SimAlgoType.SST):
         retriever = None
         try:
-            # TODO
+            # all的情况下，获取用户自己的collection_names
             if collection_names == "all":
                 collections = self.collection_manager.list_collections(tenant=tenant)
                 collection_names = [c.name for c in collections]
