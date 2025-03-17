@@ -12,30 +12,41 @@ class CollectionManager:
         self.anonymized_telemetry = anonymized_telemetry
 
         self.embedding = embedding
+        # db_path = f"{self.data_path}/{tenant}/{database}"
+        self.adminClient = chromadb.AdminClient(Settings(
+            chroma_api_impl="chromadb.api.segment.SegmentAPI",
+            is_persistent=True,
+            persist_directory=f"{self.data_path}/admin",
+        ))
+        
+    def get_or_create_tenant_for_user(self,tenant, database=chromadb.DEFAULT_DATABASE):
+        try:
+            self.adminClient.get_tenant(tenant)
+        except Exception as e:
+            self.adminClient.create_tenant(tenant)
+            self.adminClient.create_database(database, tenant)
+        return tenant, database
 
     def client(self,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE):
         if tenant is None:
             tenant = chromadb.DEFAULT_TENANT
+        else:
+            _,database = self.get_or_create_tenant_for_user(tenant)
+        db_path = f"{self.data_path}/{tenant}/{database}"
         return chromadb.PersistentClient(
-            path=self.data_path,
-            settings=Settings(allow_reset=self.allow_reset, anonymized_telemetry=self.anonymized_telemetry),
+            path=db_path,
+            # settings=Settings(allow_reset=self.allow_reset, anonymized_telemetry=self.anonymized_telemetry),
             database=database,
             tenant=tenant
         )
     def get_or_create_collection(self, collection_name,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE):
         """Get or create a collection by name."""
-        try:
-            return self.client(tenant,database).get_collection(name=collection_name)
-        except Exception as e:
-            return self.create_collection(collection_name,tenant,database)
+        return self.client(tenant,database).get_or_create_collection(name=collection_name)
+      
 
     def delete_collection(self, collection_name,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE):
         """Delete the collection by name."""
         self.client(tenant,database).delete_collection(name=collection_name)
-
-    def create_collection(self, collection_name,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE):
-        """Create a new collection."""
-        return self.client(tenant,database).create_collection(name=collection_name)
 
     def list_collections(self, limit=None, offset=None,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE):
         """List collections with optional pagination."""
