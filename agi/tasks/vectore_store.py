@@ -39,10 +39,16 @@ class CollectionManager:
 
     def list_collections(self, limit=None, offset=None,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE):
         """List collections with optional pagination."""
-        return self.client(tenant,database).list_collections(limit, offset)
+        collections = self.client(tenant,database).list_collections(limit, offset)
+        if collections is None or len(collections) == 0:
+            collection = self.get_or_create_collection("default",tenant,database)
+            collections = [collection]
+
+        return collections
     
     def get_vector_store(self, collection_name,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE) -> Chroma:
         """Get or create a vector store for the given collection name."""
+        self.get_or_create_collection(collection_name,tenant=tenant,database=database)
         return Chroma(client=self.client(tenant,database), 
                       embedding_function=self.embedding, 
                       collection_name=collection_name)
