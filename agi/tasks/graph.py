@@ -19,7 +19,7 @@ from agi.tasks.task_factory import (
     )
 from langgraph.prebuilt.chat_agent_executor import AgentState
 from typing import Dict, Any, Iterator,Union
-from langchain_core.messages import BaseMessage,AIMessage,HumanMessage
+from langchain_core.messages import BaseMessage,AIMessage,HumanMessage,ToolMessage
 from agi.tasks.agent import State
 # set_verbose(True)
 # set_debug(True)
@@ -89,6 +89,15 @@ class AgiGraph:
             user_msg = state.get("messages")[-1]
             ai_msg = AIMessage(content=user_msg.content)
             state.get("messages").append(ai_msg)
+        
+        # 分离think消息
+        last_message = state.get("messages")[-1]
+        think_content,other_content = self.split_think_content(last_message.content)
+        if think_content != "":
+            think_message = ToolMessage(content=think_content,tool_call_id="thinking")
+            last_message.content = other_content
+            state.get("messages")[-1] = think_message
+            state.get("messages").append(last_message)
         return state
     
     # 处理推理模型返回
