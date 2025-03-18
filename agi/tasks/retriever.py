@@ -184,8 +184,9 @@ class KnowledgeManager:
 
         return compression_retriever
     
-    def bm25_retriever(self,docs:List[Document],k=3):
-        bm25_retriever = BM25Retriever.from_documents(documents=docs)
+    def bm25_retriever(self,docs:List[Document],k=1):
+        import jieba
+        bm25_retriever = BM25Retriever.from_documents(documents=docs,preprocess_func=jieba.cut)
         bm25_retriever.k = k
         return bm25_retriever
     
@@ -486,7 +487,7 @@ class KnowledgeManager:
             collection_name,known_type,raw_docs = self.store(collection_name,raw_results,source_type=SourceType.SEARCH_RESULT,tenant=tenant)
         # 使用bm25算法重排
         if raw_docs and len(raw_docs) > 1:
-            raw_docs= self.bm25_retriever(raw_docs,k=max_results).invoke(query)
+            raw_docs= self.bm25_retriever(raw_docs,k=1).invoke(query)
         # docs = self.web_parser(urls,url_meta_map,collection_name)
         return collection_name,known_type,raw_results,raw_docs
          
