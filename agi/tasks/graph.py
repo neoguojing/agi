@@ -19,17 +19,10 @@ from agi.tasks.task_factory import (
     )
 from langgraph.prebuilt.chat_agent_executor import AgentState
 from typing import Dict, Any, Iterator,Union
-from langchain_core.messages import BaseMessage,AIMessage
+from langchain_core.messages import BaseMessage,AIMessage,HumanMessage
+from agi.tasks.agent import State
 # set_verbose(True)
 # set_debug(True)
-
-class State(AgentState):
-    input_type: str
-    need_speech: bool
-    status: str
-    user_id: str
-    conversation_id: str
-    feature: str  # 支持的特性，1.agent，2.web 3.rag，4.tts，5.speech 默认为agent
 
 # TODO
 # 1. 语音：需要支持直接转换为文本和转文本之后问答 done
@@ -68,8 +61,8 @@ class AgiGraph:
         # self.builder.add_edge("rag", END)
         # self.builder.add_edge("web", END)
 
-        self.builder.add_edge("image_gen", END)
-        self.builder.add_edge("tts", END)
+        self.builder.add_edge("image_gen", "result_fix")
+        self.builder.add_edge("tts", "result_fix")
         self.builder.add_edge("result_fix", END)
         
         self.builder.add_conditional_edges(START, self.routes)
@@ -88,15 +81,29 @@ class AgiGraph:
         elif msg_type == "audio":
             return "speech2text"
 
-        return END
-    # 结果修正
+        return "result_fix"
+    # 结果修正,作为流程返回的唯一回归点
     def result_fix(self,state: State, config: RunnableConfig):
-        # 若speech直接输出，则需要将usermessage 转换为aimessage
-        user_msg = state.get("messages")[-1]
-        ai_msg = AIMessage(content=user_msg.content)
-        state.get("messages").append(ai_msg)
+        if isinstance(state.get("messages")[-1],HumanMessage):
+            # 若speech直接输出，则需要将usermessage 转换为aimessage
+            user_msg = state.get("messages")[-1]
+            ai_msg = AIMessage(content=user_msg.content)
+            state.get("messages").append(ai_msg)
         return state
-        
+    
+    # 处理推理模型返回
+    def split_think_content(self,text):
+        import re
+        match = re.search(r"(<think>\s*.*?\s*</think>)\s*(.*)", text, re.DOTALL)
+
+        if match:
+            think_content = match.group(1).replace("\n", " ").strip()  # 保留 <think> 标签，并去掉换行
+            other_content = match.group(2).replace("\n", " ").strip()  # 去掉换行
+        else:
+            think_content = ""  # 兼容没有 <think> 标签的情况
+            other_content = text.replace("\n", " ").strip()  # 直接去掉换行
+        return think_content,other_content
+
     def feature_control(self,state: State):
         feature = state.get("feature","agent")
         if feature == "agent":
@@ -109,12 +116,12 @@ class AgiGraph:
             return "result_fix"
         elif feature == "tts" and state.get("input_type") == "text":    #仅文本转语音
             return "tts"
-        return END
+        return "result_fix"
     
     def tts_control(self,state: State):
         if state["need_speech"]:
             return "tts"
-        return END
+        return "result_fix"
     
     def invoke(self,input:State) -> State:
         config={"configurable": {"user_id": input.get("user_id","default_tenant"), "conversation_id": input.get("conversation_id",""),
