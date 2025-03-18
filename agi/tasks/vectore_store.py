@@ -1,5 +1,5 @@
 import chromadb
-from chromadb.config import Settings
+from chromadb import Settings
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
 
@@ -16,7 +16,7 @@ class CollectionManager:
         self.adminClient = chromadb.AdminClient(Settings(
             chroma_api_impl="chromadb.api.segment.SegmentAPI",
             is_persistent=True,
-            persist_directory=f"{self.data_path}/admin",
+            persist_directory=self.data_path,
         ))
         
     def get_or_create_tenant_for_user(self,tenant, database=chromadb.DEFAULT_DATABASE):
@@ -32,9 +32,9 @@ class CollectionManager:
             tenant = chromadb.DEFAULT_TENANT
         else:
             _,database = self.get_or_create_tenant_for_user(tenant)
-        db_path = f"{self.data_path}/{tenant}/{database}"
+        # db_path = f"{self.data_path}/{tenant}/{database}"
         return chromadb.PersistentClient(
-            path=db_path,
+            path=self.data_path,
             # settings=Settings(allow_reset=self.allow_reset, anonymized_telemetry=self.anonymized_telemetry),
             database=database,
             tenant=tenant
