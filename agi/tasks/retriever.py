@@ -461,33 +461,31 @@ class KnowledgeManager:
         search = DuckDuckGoSearchAPIWrapper(region=region, time=time, max_results=1,source="news")
         
         urls_to_look = []
-        url_meta_map = {}
         raw_results = []
         try:
+            log.info("Searching for relevant urls...")
             for q in questions:
-                print(q)
                 search_results = search.results(q,max_results=1)
-                log.info("Searching for relevant urls...")
-                log.info(f"Search results: {search_results}")
                 for res in search_results:
                     if res.get("link", None):
                         urls_to_look.append(res["link"])
-                        # url_meta_map[res["link"]] = res
                 raw_results.extend(search_results)
+            log.info(f"Search results: {raw_results}")
         except Exception as e:
             log.error(f"Error search: {e}")
         
-        # print("url_meta_map:",url_meta_map)
         # Relevant urls
         urls = set(urls_to_look)
         # 执行网页爬虫
         collection_name,known_type,raw_docs = self.store(collection_name,list(urls),source_type=SourceType.WEB,tenant=tenant)
+        log.info(f"scrach results: {raw_docs}")
         # 未爬到信息，则使用检索结果拼装
         if len(raw_docs) == 0:
             collection_name,known_type,raw_docs = self.store(collection_name,raw_results,source_type=SourceType.SEARCH_RESULT,tenant=tenant)
         # 使用bm25算法重排
         if raw_docs and len(raw_docs) > 1:
             raw_docs= self.bm25_retriever(raw_docs,k=1).invoke(query)
+            log.info(f"bm25 results: {raw_docs}")
         # docs = self.web_parser(urls,url_meta_map,collection_name)
         return collection_name,known_type,raw_results,raw_docs
          

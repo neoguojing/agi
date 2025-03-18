@@ -357,7 +357,7 @@ class TestFastApiAgi(unittest.TestCase):
             messages=[
                 {
                     "role": "user",
-                    "content": "esp32单片机"
+                    "content": "5090显卡"
                 }
             ],
             user="web"
@@ -378,7 +378,7 @@ class TestFastApiAgi(unittest.TestCase):
             messages=[
                 {
                     "role": "user",
-                    "content": "esp32单片机",
+                    "content": "llm agent最新消息",
                 }
             ],
             user="web1"
