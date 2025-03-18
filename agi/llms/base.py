@@ -207,10 +207,11 @@ class CustomerLLM(RunnableSerializable[HumanMessage, AIMessage]):
     model: Any = None
     tokenizer: Any = None
 
-    def __init__(self, llm, **kwargs):
+    def __init__(self, **kwargs):
         super(CustomerLLM, self).__init__(**kwargs)
         self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device('cpu')
-        self.model = llm
+        # self.model = llm
+    
 
     def destroy(self):
         if self.model is not None:

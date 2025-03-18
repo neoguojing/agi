@@ -25,13 +25,17 @@ class Image2Image(CustomerLLM):
     save_image: bool = True
 
     def __init__(self, model_path: str = os.path.join(model_root, "sdxl-turbo"), **kwargs):
-        super().__init__(llm=AutoPipelineForImage2Image.from_pretrained(
-            model_path, torch_dtype=torch.float16, variant="fp16"
-        ))
-
-        # Enable CPU offloading for the model (optimize memory usage)
-        self.model.enable_model_cpu_offload()
+        super().__init__(**kwargs)
+        
         self.model_path = model_path
+    
+    def _load_model(self):
+        if self.model is None:
+            self.model = AutoPipelineForImage2Image.from_pretrained(
+                self.model_path, torch_dtype=torch.float16, variant="fp16"
+            )
+            # Enable CPU offloading for the model (optimize memory usage)
+            self.model.enable_model_cpu_offload()
 
     @property
     def _llm_type(self) -> str:
@@ -42,6 +46,8 @@ class Image2Image(CustomerLLM):
         return "image2image"
     
     def invoke(self, input: Union[HumanMessage,list[HumanMessage]], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
+        self._load_model()
+
         output = AIMessage(content="")
 
         # Extract image and text prompt from input content

@@ -14,26 +14,33 @@ import logging
 class Speech2Text(CustomerLLM):
     whisper: Optional[Any] = Field(default=None)
     beam_size: int = Field(default=5)
-    def __init__(self,device: str = "cuda", compute_type: str = "float16"):
-        model_size = None
+    def __init__(self,device: str = "cuda", compute_type: str = "float16",**kwargs):
+        self.compute_type = compute_type
         if device == "cuda":
-            model_size = os.path.join(model_root,"wisper-v3-turbo-c2")
+            self.model_size = os.path.join(model_root,"wisper-v3-turbo-c2")
             logging.info("use wisper-v3-turbo-c2")
-            if not os.path.exists(model_size):
-                model_size = "wisper-v3-turbo-c2"
+            if not os.path.exists(self.model_size):
+                self.model_size = "large-v3"
+                self.local_files_only=False
         else:
-            model_size = "base"
+            self.model_size = "base"
             logging.info("use base")
-            compute_type = "default"
-            
-        whisper = WhisperModel(model_size, device=device, compute_type=compute_type)
-        super().__init__(llm=whisper.model)
-        self.whisper = whisper
-        
+            self.compute_type = "default"
+
+        super().__init__(**kwargs)
+    
+    def _load_model(self):
+        if self.model is None:
+            whisper = WhisperModel(self.model_size, device=self.device, compute_type=self.compute_type,local_files_only=self.local_files_only)
+            self.whisper = whisper
+            self.model = whisper.model
+
     def invoke(
         self, input: Union[HumanMessage,list[HumanMessage]], config: Optional[RunnableConfig] = None, **kwargs: Any
     ) -> AIMessage:
         """Process the input, transcribe audio, and return the output message."""
+        self._load_model()
+
         audio_input,_ = parse_input_messages(input)
         
         if audio_input is None:

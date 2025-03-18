@@ -29,20 +29,21 @@ class Text2Image(CustomerLLM):
     save_image: bool = True
 
     def __init__(self, model_path: str=os.path.join(model_root,"sdxl-turbo"),**kwargs):
-        if model_path is not None:
-            super(Text2Image, self).__init__(
-                llm=AutoPipelineForText2Image.from_pretrained(
-                    os.path.join(model_root,"sdxl-turbo"), torch_dtype=torch.float16, variant="fp16"
-            ))
-            self.model_path = model_path
-            # self.model.to(self.device)
-            # 使用cpu和to('cuda')互斥，内存减小一半
-            self.model.enable_model_cpu_offload()
-        else:
-            super(Text2Image, self).__init__(
-                llm=AutoPipelineForText2Image.from_pretrained(
+        self.model_path = model_path
+        super(Text2Image, self).__init__(**kwargs)
+           
+
+    def _load_model(self):
+        if self.model is None:
+            if self.model_path is not None:
+                self.model = AutoPipelineForText2Image.from_pretrained(
+                        os.path.join(model_root,"sdxl-turbo"), torch_dtype=torch.float16, variant="fp16"
+                )
+            else:
+                self.model = AutoPipelineForText2Image.from_pretrained(
                     "stabilityai/sdxl-turbo", torch_dtype=torch.float16, variant="fp16"
-            ))
+                )
+
             self.model.enable_model_cpu_offload()
 
     @property
@@ -56,6 +57,7 @@ class Text2Image(CustomerLLM):
     
     def invoke(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
         """Generate an image from the input text."""
+        self._load_model()
         # Check if input is empty
         input_str = ""
         # print("#########",input)

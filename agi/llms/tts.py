@@ -22,36 +22,37 @@ class TextToSpeech(CustomerLLM):
     language: str = Field(default="zh-cn")
     save_file: bool = Field(default=True)
     
-    def __init__(self,is_gpu = False, save_file: bool = False):
-        
-        tts = self.initialize_tts(is_gpu)
-        super().__init__(llm=tts.synthesizer)
-        self.tts = tts
+    def __init__(self,is_gpu = False, save_file: bool = False,**kwargs):
+        super().__init__(**kwargs)
+
         self.save_file = save_file
         self.is_gpu = is_gpu
        
-
-        
-    def initialize_tts(self,is_gpu) -> TTS:
+    def _load_model(self):
         """Initialize the TTS model based on the available hardware."""
-        if is_gpu:
-            model_path = os.path.join(model_root, "tts_models--multilingual--multi-dataset--xtts_v2")
-            config_path = os.path.join(model_path, "config.json")
-            logging.info("use ts_models--multilingual--multi-dataset--xtts_v2")
-            return TTS(model_path=model_path, config_path=config_path).to(torch.device("cuda"))
-        else:
-            logging.info("use tts_models/zh-CN/baker/tacotron2-DDC-GST")
-            return TTS(model_name="tts_models/zh-CN/baker/tacotron2-DDC-GST").to(torch.device("cpu"))
-            # model_dir = os.path.join(model_root, "tts_models--zh-CN--baker--tacotron2-DDC-GST")
-            # model_path = os.path.join(model_dir, "model_file.pth")
-            # config_path = os.path.join(model_dir, "config.json")
-            # return TTS(model_path=model_path, config_path=config_path)
+        if self.model is None:
+            if self.is_gpu:
+                model_path = os.path.join(model_root, "tts_models--multilingual--multi-dataset--xtts_v2")
+                config_path = os.path.join(model_path, "config.json")
+                logging.info("use ts_models--multilingual--multi-dataset--xtts_v2")
+                self.ttl = TTS(model_path=model_path, config_path=config_path).to(torch.device("cuda"))
+            else:
+                logging.info("use tts_models/zh-CN/baker/tacotron2-DDC-GST")
+                self.tts = TTS(model_name="tts_models/zh-CN/baker/tacotron2-DDC-GST").to(torch.device("cpu"))
+                # model_dir = os.path.join(model_root, "tts_models--zh-CN--baker--tacotron2-DDC-GST")
+                # model_path = os.path.join(model_dir, "model_file.pth")
+                # config_path = os.path.join(model_dir, "config.json")
+                # return TTS(model_path=model_path, config_path=config_path)
+            self.model = self.tts.synthesizer
+
     def list_available_models(self):
         """Return a list of available TTS models."""
         return self.tts.list_models()
     
     def invoke(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
         """Generate speech audio from input text."""
+        self._load_model()
+
         input_str = None
         if isinstance(input,str):
             input_str = input
