@@ -504,8 +504,11 @@ def create_docchain_for_graph(llm):
 
  # 将输出的字典格式转换为BaseMessage 或者 graph的格式
 def dict_to_ai_message(output: dict):
+    content = output.get('answer', '')
+    if isinstance(content,dict):
+        content = [content]
     ai = AIMessage(
-        content=output.get('answer', ''),
+        content=content,
         additional_kwargs={
             'context': output.get('context', ''),
             'citations': output.get('citations', [])

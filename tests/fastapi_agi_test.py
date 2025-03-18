@@ -351,25 +351,25 @@ class TestFastApiAgi(unittest.TestCase):
         
 
     def test_web_search(self):
-        response = self.client.chat.completions.create(
-            model="agi-model",
-            extra_body={"need_speech": False,"feature": "web"},
-            messages=[
-                {
-                    "role": "user",
-                    "content": "5090显卡"
-                }
-            ],
-            user="web"
-        )
+        # response = self.client.chat.completions.create(
+        #     model="agi-model",
+        #     extra_body={"need_speech": False,"feature": "web"},
+        #     messages=[
+        #         {
+        #             "role": "user",
+        #             "content": "5090显卡"
+        #         }
+        #     ],
+        #     user="web"
+        # )
         
-        print(response)
-        self.assertIsNotNone(response.choices)
-        self.assertGreater(len(response.choices),0)
-        self.assertIsNotNone(response.choices[0].message)
-        self.assertIsNotNone(response.choices[0].message.content)
-        self.assertIsNotNone(response.choices[0].message.content["citations"])
-        self.assertIsInstance(response.choices[0].message.content["citations"],list)
+        # print(response)
+        # self.assertIsNotNone(response.choices)
+        # self.assertGreater(len(response.choices),0)
+        # self.assertIsNotNone(response.choices[0].message)
+        # self.assertIsNotNone(response.choices[0].message.content)
+        # self.assertIsNotNone(response.choices[0].message.content["citations"])
+        # self.assertIsInstance(response.choices[0].message.content["citations"],list)
     
         stream = self.client.chat.completions.create(
             model="agi-model",

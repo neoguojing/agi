@@ -23,11 +23,13 @@ class Speech2Text(CustomerLLM):
         self.compute_type = compute_type
         if device == "cuda":
             self.model_size = os.path.join(model_root,"wisper-v3-turbo-c2")
+            self.device = "cuda"
             logging.info("use wisper-v3-turbo-c2")
             if not os.path.exists(self.model_size):
                 self.model_size = "large-v3"
                 self.local_files_only=False
         else:
+            self.device = "cpu"
             self.model_size = "base"
             logging.info("use base")
             self.compute_type = "default"

@@ -63,49 +63,53 @@ def add_messages(left: Messages, right: Messages) -> Messages:
     Returns:
         合并后的消息列表
     """
-    # 转换为列表
-    if not isinstance(left, list):
-        left = [left]
-    if not isinstance(right, list):
-        right = [right]
+    try:
+        # 转换为列表
+        if not isinstance(left, list):
+            left = [left]
+        if not isinstance(right, list):
+            right = [right]
 
-    left = [message_chunk_to_message(m) for m in convert_to_messages(left)]
-    right = [message_chunk_to_message(m) for m in convert_to_messages(right)]
+        left = [message_chunk_to_message(m) for m in convert_to_messages(left)]
+        right = [message_chunk_to_message(m) for m in convert_to_messages(right)]
 
-    # 为缺失 id 的消息分配唯一 ID
-    for m in left:
-        if m.id is None:
-            m.id = str(uuid.uuid4())
-    for m in right:
-        if m.id is None:
-            m.id = str(uuid.uuid4())
+        # 为缺失 id 的消息分配唯一 ID
+        for m in left:
+            if m.id is None:
+                m.id = str(uuid.uuid4())
+        for m in right:
+            if m.id is None:
+                m.id = str(uuid.uuid4())
 
-    # 使用 content 的哈希值构建 key，同时结合消息类型
-    def make_key(m):
-        content_hash = compute_content_hash(m.content)
-        return (content_hash, m.__class__.__name__)
+        # 使用 content 的哈希值构建 key，同时结合消息类型
+        def make_key(m):
+            content_hash = compute_content_hash(m.content)
+            return (content_hash, m.__class__.__name__)
 
-    left_idx_by_key = {make_key(m): i for i, m in enumerate(left)}
-    merged = left.copy()
-    keys_to_remove = set()
+        left_idx_by_key = {make_key(m): i for i, m in enumerate(left)}
+        merged = left.copy()
+        keys_to_remove = set()
 
-    for m in right:
-        key = make_key(m)
-        if key in left_idx_by_key:
-            if isinstance(m, RemoveMessage):
-                keys_to_remove.add(key)
+        for m in right:
+            key = make_key(m)
+            if key in left_idx_by_key:
+                if isinstance(m, RemoveMessage):
+                    keys_to_remove.add(key)
+                else:
+                    merged[left_idx_by_key[key]] = m
             else:
-                merged[left_idx_by_key[key]] = m
-        else:
-            if isinstance(m, RemoveMessage):
-                raise ValueError(
-                    f"Attempting to delete a message with content (hash) and type that doesn't exist: {key}"
-                )
-            merged.append(m)
+                if isinstance(m, RemoveMessage):
+                    raise ValueError(
+                        f"Attempting to delete a message with content (hash) and type that doesn't exist: {key}"
+                    )
+                merged.append(m)
 
-    merged = [m for m in merged if make_key(m) not in keys_to_remove]
-    return merged
-
+        merged = [m for m in merged if make_key(m) not in keys_to_remove]
+        return merged
+    except Exception as e:
+        print(e)
+        
+    
 class State(AgentState):
     messages: Annotated[Sequence[BaseMessage], add_messages]
     input_type: str

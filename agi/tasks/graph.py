@@ -101,16 +101,20 @@ class AgiGraph:
         return state
     
     # 处理推理模型返回
-    def split_think_content(self,text):
+    def split_think_content(self,content):
+        
+        if isinstance(content,list):
+            content = content[0].get("text","")
+            
         import re
-        match = re.search(r"(<think>\s*.*?\s*</think>)\s*(.*)", text, re.DOTALL)
+        match = re.search(r"(<think>\s*.*?\s*</think>)\s*(.*)", content, re.DOTALL)
 
         if match:
             think_content = match.group(1).replace("\n", " ").strip()  # 保留 <think> 标签，并去掉换行
             other_content = match.group(2).replace("\n", " ").strip()  # 去掉换行
         else:
             think_content = ""  # 兼容没有 <think> 标签的情况
-            other_content = text.replace("\n", " ").strip()  # 直接去掉换行
+            other_content = content.replace("\n", " ").strip()  # 直接去掉换行
         return think_content,other_content
 
     def feature_control(self,state: State):
