@@ -18,6 +18,8 @@ class Speech2Text(CustomerLLM):
     model_size: str = Field(default="base")
     local_files_only: bool = Field(default=True)
     def __init__(self,device: str = "cuda", compute_type: str = "float16",**kwargs):
+        super().__init__(**kwargs)
+        
         self.compute_type = compute_type
         if device == "cuda":
             self.model_size = os.path.join(model_root,"wisper-v3-turbo-c2")
@@ -30,7 +32,7 @@ class Speech2Text(CustomerLLM):
             logging.info("use base")
             self.compute_type = "default"
 
-        super().__init__(**kwargs)
+        
     
     def _load_model(self):
         if self.model is None:
