@@ -25,6 +25,8 @@ pytest
 openai
 huggingface_hub==0.25.0
 python-multipart==0.0.20
+pyhub==0.0.11
+pydub==0.25.1
 
 
 

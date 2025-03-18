@@ -19,6 +19,8 @@ class Speech2Text(CustomerLLM):
         if device == "cuda":
             model_size = os.path.join(model_root,"wisper-v3-turbo-c2")
             logging.info("use wisper-v3-turbo-c2")
+            if not os.path.exists(model_size):
+                model_size = "wisper-v3-turbo-c2"
         else:
             model_size = "base"
             logging.info("use base")
