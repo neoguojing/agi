@@ -14,6 +14,9 @@ import logging
 class Speech2Text(CustomerLLM):
     whisper: Optional[Any] = Field(default=None)
     beam_size: int = Field(default=5)
+    compute_type: str = Field(default="default")
+    model_size: str = Field(default="base")
+    local_files_only: bool = Field(default=True)
     def __init__(self,device: str = "cuda", compute_type: str = "float16",**kwargs):
         self.compute_type = compute_type
         if device == "cuda":
