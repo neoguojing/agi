@@ -29,8 +29,9 @@ class Text2Image(CustomerLLM):
     save_image: bool = True
 
     def __init__(self, model_path: str=os.path.join(model_root,"sdxl-turbo"),**kwargs):
+        super().__init__(**kwargs)
         self.model_path = model_path
-        super(Text2Image, self).__init__(**kwargs)
+        
            
 
     def _load_model(self):
