@@ -43,7 +43,7 @@ class TestImage2Image(unittest.TestCase):
             else:
                 self.fail(f"Unexpected content type: {context_type}")
 
-        log.debug(f"Test Output: {output.content}")
+        print(f"Test Output: {output.content}")
 
     def tearDown(self):
         """Clean up after tests."""

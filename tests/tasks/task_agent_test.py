@@ -16,13 +16,13 @@ class TestAgent(unittest.TestCase):
         query = "查询tesla股票价格"
         try:
             messages = self.agent.invoke({"messages": [("human", query)]},config=self.config)
-            log.debug(messages)
+            print(messages)
             messages = messages.get("messages",[])
             self.assertIsInstance(messages,list)
             self.assertIsInstance(messages[-1],AIMessage)
             self.assertIsInstance(messages[-1].content,str)
         except GraphRecursionError:
-            log.debug({"input": query, "output": "Agent stopped due to max iterations."})
+            print({"input": query, "output": "Agent stopped due to max iterations."})
             
     def test_agent_steam(self):
         query = "下周上海的天气如何?"
@@ -35,4 +35,4 @@ class TestAgent(unittest.TestCase):
                 self.assertIsInstance(chunk["messages"],list)
                 self.assertIsInstance(chunk["messages"][-1].content,str)
         except GraphRecursionError:
-            log.debug({"input": query, "output": "Agent stopped due to max iterations."})
+            print({"input": query, "output": "Agent stopped due to max iterations."})

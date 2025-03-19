@@ -32,7 +32,7 @@ class TestModelFactory(unittest.TestCase):
         ) 
         resp = instance.invoke(input)
         self.assertIsNotNone(resp.content)
-        log.debug(resp.content)
+        print(resp.content)
         self.assertEqual(len(ModelFactory._instances),2)
 
         
@@ -40,7 +40,7 @@ class TestModelFactory(unittest.TestCase):
         input = HumanMessage(content="岁的思考的加快速度为空军党委科技")
         resp = instance.invoke(input)
         self.assertIsNotNone(resp.content)
-        log.debug(resp.content)
+        print(resp.content)
         self.assertEqual(len(ModelFactory._instances),2)
         
         

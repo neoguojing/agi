@@ -17,7 +17,7 @@ class TestTaskRagFactory(unittest.TestCase):
         self.rag = TaskFactory.create_task(TASK_LLM_WITH_RAG)
         self.crag = TaskFactory.create_task(TASK_CUSTOM_RAG)
         self.web = TaskFactory.create_task(TASK_WEB_SEARCH)
-        log.debug(self.kmanager.list_collections())
+        print(self.kmanager.list_collections())
     def test_add_doc(self):
         param = {"filename" : "test.pdf"}
         collect_name,know_type,raw_docs = self.kmanager.store("test","./tests/test.pdf",**param)
@@ -70,7 +70,7 @@ class TestTaskRagFactory(unittest.TestCase):
         import json
         collecttions =  json.dumps(["test"])
         ret = self.crag.invoke({"text":"NTP3000Plus","language":"chinese","collection_names":collecttions},config=config)
-        log.debug(ret)
+        print(ret)
         self.assertIsNotNone(ret)
         self.assertIsInstance(ret["messages"],list)
         self.assertIsInstance(ret["messages"][-1].additional_kwargs['context'],list)
@@ -80,7 +80,7 @@ class TestTaskRagFactory(unittest.TestCase):
     def test_web_search_chat(self):
         config={"configurable": {"user_id": "default_tenant", "conversation_id": "3"}}
         ret = self.web.invoke({"text":"今天的科技新闻","language":"chinese"},config=config)
-        log.debug(ret)
+        print(ret)
         self.assertIsNotNone(ret)
         self.assertIsInstance(ret["messages"],list)
         self.assertIsInstance(ret["messages"][-1].additional_kwargs['context'],list)

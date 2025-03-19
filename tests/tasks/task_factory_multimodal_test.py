@@ -36,7 +36,7 @@ class TestTaskMultiModalFactory(unittest.TestCase):
     def test_text2image_chain(self):
         llm_task = TaskFactory.create_task(TASK_IMAGE_GEN)
         resp = llm_task.invoke({"text":"星辰大海","image":"","audio":""})
-        log.debug(resp)
+        print(resp)
         self.assertIsInstance(resp,AIMessage)
         self.assertIsInstance(resp.content,list)
         self.assertIsNotNone(resp.content[0].get("image"))

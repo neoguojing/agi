@@ -14,7 +14,7 @@ class TestText2Image(unittest.TestCase):
         output = self.instance.invoke(self.input)
         self.assertIsNotNone(output)
         self.assertIsNotNone(output.content)
-        log.debug(output.content)
+        print(output.content)
 
         
 if __name__ == "__main__":

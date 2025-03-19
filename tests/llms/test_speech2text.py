@@ -18,14 +18,14 @@ class TestSpeech2Text(unittest.TestCase):
         output = self.instance.invoke(self.input)
         self.assertIsNotNone(output)
         self.assertIsNotNone(output.content)
-        log.debug(f"test_speach2text:{output.content}")
+        print(f"test_speach2text:{output.content}")
     
     def test_speach2text_cpu(self):  
         self.instance = Speech2Text(device="cpu")
         output = self.instance.invoke(self.input)
         self.assertIsNotNone(output)
         self.assertIsNotNone(output.content)
-        log.debug(f"test_speach2text_cpu:{output.content}")
+        print(f"test_speach2text_cpu:{output.content}")
 
         
 if __name__ == "__main__":

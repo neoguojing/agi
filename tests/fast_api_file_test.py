@@ -69,7 +69,7 @@ def test_download_file(setup_module):
             data={"collection_name": TEST_COLLECTION_NAME}
         )
     saved_filename = response.json()["saved_filename"]
-    log.debug(response.json())
+    print(response.json())
     # 下载文件
     response = client.get(f"/v1/files/{saved_filename}")
     assert response.status_code == 200
@@ -93,7 +93,7 @@ def test_delete_file(setup_module):
             data={"collection_name": TEST_COLLECTION_NAME}
         )
     saved_filename = response.json()["saved_filename"]
-    log.debug(response.json())
+    print(response.json())
     # 删除文件
     response = client.delete(f"/v1/files/{saved_filename}")
     assert response.status_code == 200

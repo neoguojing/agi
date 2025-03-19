@@ -66,11 +66,11 @@ class TestFastApiAgi(unittest.TestCase):
                     ],
                 )
                 if response:
-                    log.debug("Server started successfully!")
+                    print("Server started successfully!")
                     return True
             except Exception as e:
                 # 如果发生连接错误，继续等待
-                log.debug("Waiting for server to start...")
+                print("Waiting for server to start...")
                 time.sleep(1)
         raise TimeoutError("Uvicorn server did not start within the timeout period.")
     
@@ -91,7 +91,7 @@ class TestFastApiAgi(unittest.TestCase):
     #     self.assertIsNotNone(response.choices[0].message)
     #     self.assertIsNotNone(response.choices[0].message.content)
     #     self.assertIsNotNone(response.usage)
-    #     log.debug(response)
+    #     print(response)
     #     # TODO 统一用户的请求会串：比如上面的请求会在下面返回
     #     stream = self.client.chat.completions.create(
     #         model="agi-model",
@@ -106,7 +106,7 @@ class TestFastApiAgi(unittest.TestCase):
     #     )
     #     is_stoped = False
     #     for chunk in stream:
-    #         log.debug("-----",chunk)
+    #         print("-----",chunk)
     #         self.assertIsNotNone(chunk.choices)
     #         self.assertGreater(len(chunk.choices),0)
     #         self.assertIsNotNone(chunk.choices[0].delta)
@@ -130,7 +130,7 @@ class TestFastApiAgi(unittest.TestCase):
     #         ],
     #         user="image"
     #     )
-    #     log.debug(response)
+    #     print(response)
     #     self.assertIsNotNone(response.choices)
     #     self.assertGreater(len(response.choices),0)
     #     self.assertIsNotNone(response.choices[0].message)
@@ -153,7 +153,7 @@ class TestFastApiAgi(unittest.TestCase):
     #     )
     #     is_stoped = False
     #     for chunk in stream:
-    #         log.debug("------",chunk)
+    #         print("------",chunk)
     #         # TODO 会返回一个finish_reason='tool_calls',
     #         self.assertIsNotNone(chunk.choices)
     #         self.assertGreater(len(chunk.choices),0)
@@ -187,7 +187,7 @@ class TestFastApiAgi(unittest.TestCase):
     #         ],
     #         user="image2"
     #     )
-    #     log.debug(response)
+    #     print(response)
     #     self.assertIsNotNone(response.choices)
     #     self.assertGreater(len(response.choices),0)
     #     self.assertIsNotNone(response.choices[0].message)
@@ -216,7 +216,7 @@ class TestFastApiAgi(unittest.TestCase):
     #     )
     #     is_stoped = False
     #     for chunk in stream:
-    #         log.debug("------",chunk)
+    #         print("------",chunk)
     #         self.assertIsNotNone(chunk.choices)
     #         self.assertGreater(len(chunk.choices),0)
     #         if chunk.choices[0].finish_reason is None:
@@ -242,7 +242,7 @@ class TestFastApiAgi(unittest.TestCase):
     #         ],
     #         user="speech"
     #     )
-    #     log.debug(response)
+    #     print(response)
     #     self.assertIsNotNone(response.choices)
     #     self.assertGreater(len(response.choices),0)
     #     self.assertIsNotNone(response.choices[0].message)
@@ -259,7 +259,7 @@ class TestFastApiAgi(unittest.TestCase):
     #         ],
     #         user="speech1"
     #     )
-    #     log.debug(response)
+    #     print(response)
     #     self.assertIsNotNone(response.choices)
     #     self.assertGreater(len(response.choices),0)
     #     self.assertIsNotNone(response.choices[0].message)
@@ -280,7 +280,7 @@ class TestFastApiAgi(unittest.TestCase):
     #     )
     #     is_stoped = False
     #     for chunk in stream:
-    #         log.debug("------",chunk)
+    #         print("------",chunk)
     #         # TODO 会返回一个finish_reason='tool_calls',
     #         self.assertIsNotNone(chunk.choices)
     #         self.assertGreater(len(chunk.choices),0)
@@ -307,7 +307,7 @@ class TestFastApiAgi(unittest.TestCase):
     #         ],
     #         user="tts1"
     #     )
-    #     log.debug(response)
+    #     print(response)
     #     self.assertIsNotNone(response.choices)
     #     self.assertGreater(len(response.choices),0)
     #     self.assertIsNotNone(response.choices[0].message)
@@ -333,7 +333,7 @@ class TestFastApiAgi(unittest.TestCase):
     #     )
     #     is_stoped = False
     #     for chunk in stream:
-    #         log.debug("------",chunk)
+    #         print("------",chunk)
     #         self.assertIsNotNone(chunk.choices)
     #         self.assertGreater(len(chunk.choices),0)
     #         if chunk.choices[0].finish_reason is None:
@@ -365,7 +365,7 @@ class TestFastApiAgi(unittest.TestCase):
         #     user="web"
         # )
         
-        # log.debug(response)
+        # print(response)
         # self.assertIsNotNone(response.choices)
         # self.assertGreater(len(response.choices),0)
         # self.assertIsNotNone(response.choices[0].message)
@@ -387,7 +387,7 @@ class TestFastApiAgi(unittest.TestCase):
         )
         is_stoped = False
         for chunk in stream:
-            log.debug("------",chunk)
+            print(f"------",chunk)
             # TODO 重复的tool消息
             # TODO 查询结果关联性不高
             self.assertIsNotNone(chunk.choices)
@@ -419,7 +419,7 @@ class TestFastApiAgi(unittest.TestCase):
     #         ],
     #     )
         
-    #     log.debug("----------------",response)
+    #     print("----------------",response)
     #     self.assertIsNotNone(response.choices)
     #     self.assertGreater(len(response.choices),0)
     #     self.assertIsNotNone(response.choices[0].message)
@@ -440,7 +440,7 @@ class TestFastApiAgi(unittest.TestCase):
     #     )
     #     is_stoped = False
     #     for chunk in stream:
-    #         log.debug("------",chunk)
+    #         print("------",chunk)
     #         # TODO 重复的tool消息
     #         self.assertIsNotNone(chunk.choices)
     #         self.assertGreater(len(chunk.choices),0)
@@ -464,7 +464,7 @@ class TestFastApiAgi(unittest.TestCase):
     #         input="我爱北京天安门"
     #     )
 
-    #     log.debug(response)
+    #     print(response)
     #     self.assertIsNotNone(response.data)
     #     self.assertGreater(len(response.data),0)
     #     self.assertIsNotNone(response.data[0].embedding)
@@ -480,7 +480,7 @@ class TestFastApiAgi(unittest.TestCase):
     #         )
  
 
-    #         log.debug(response)
+    #         print(response)
     #         self.assertIsNotNone(response.text)
     #         self.assertEqual(response.text,"当我还只有六岁的时候,看到了一幅精彩的插画。")
 

@@ -10,7 +10,7 @@ class TestTextToSpeech(unittest.TestCase):
         from agi.llms.tts import TextToSpeech
         self.instance = TextToSpeech()
         self.instance_gpu = TextToSpeech(is_gpu=True)
-        log.debug(self.instance.list_available_models())
+        print(self.instance.list_available_models())
         content = '''
         以下是每个缩写的简要解释：
 
