@@ -72,7 +72,7 @@ def get_session_history(user_id: str, conversation_id: str):
 # Output: dict
 def create_llm_with_history(runnable,debug=False,dict_input=True):
     def debug_print(x: Any) :
-        print("create_llm_with_history\n:",debug_info(x))
+        log.debug(f"create_llm_with_history\n:{debug_info(x)}")
         return x
 
     debug_tool = RunnableLambda(debug_print)
@@ -114,7 +114,7 @@ def create_llm_with_history(runnable,debug=False,dict_input=True):
 # 记录历史的聊天，单纯添加了模板
 def create_chat_with_history(llm,debug=False):
     def debug_print(x: Any) :
-        print("create_chat_with_history\n:",debug_info(x))
+        log.debug(f"create_chat_with_history\n:{debug_info(x)}")
         return x
 
     debug_tool = RunnableLambda(debug_print)
@@ -133,7 +133,7 @@ def create_history_aware_retriever(
 ) -> RetrieverOutputLike:
     # The Runnable output is a list of Documents
     def debug_print(x: Any) :
-        print("create_history_aware_retriever\n:",debug_info(x))
+        log.debug(f"create_history_aware_retriever\n:{debug_info(x)}")
         return x
 
     debug_tool = RunnableLambda(debug_print)
@@ -175,7 +175,7 @@ def create_stuff_documents_chain(
 ) -> Runnable[Dict[str, Any], Any]:
     
     def debug_print(x: Any) :
-        print("create_stuff_documents_chain\n:",debug_info(x))
+        log.debug(f"create_stuff_documents_chain\n:{debug_info(x)}")
         return x
 
     debug_tool = RunnableLambda(debug_print)
@@ -191,7 +191,7 @@ def create_stuff_documents_chain(
         )
     # 经过prompt 之后，变为了ChatPromptValue，需要转换为List[BaseMessage]
     def format_history_chain_input(x: Any):
-        print("format_history_chain_input:",x)
+        log.debug(f"format_history_chain_input:{x}")
         return x.to_messages()
     chain = (
         RunnablePassthrough.assign(**{document_variable_name: format_docs}).with_config(
@@ -298,7 +298,7 @@ def build_citations(inputs: dict):
             "metadata": metadata,
             "distances": distances
         })
-    print("build_citations----",citations)
+    log.debug(f"build_citations----{citations}")
     return citations
 
 def create_retrieval_chain(
@@ -308,7 +308,7 @@ def create_retrieval_chain(
 ) -> Runnable:
     
     def debug_print(x: Any) :
-        print("create_retrieval_chain\n:",debug_info(x))
+        log.debug(f"create_retrieval_chain\n:{debug_info(x)}")
         return x
 
     debug_tool = RunnableLambda(debug_print)
@@ -360,13 +360,13 @@ def create_chat_with_custom_rag(
     # 3.组合chain
 
     def debug_print(x: Any) :
-        print("create_chat_with_custom_rag\n:",debug_info(x))
+        log.debug(f"create_chat_with_custom_rag\n:{debug_info(x)}")
         return x
     
     debug_tool = RunnableLambda(debug_print)
     
     def query_docs(inputs: dict) :
-        print("query_docs----",inputs)
+        log.debug(f"query_docs----{inputs}")
         collection_names = inputs.get("collection_names",None)
        
         collections = "all"
@@ -407,7 +407,7 @@ def create_chat_with_custom_rag(
 def create_chat_with_websearch(km: KnowledgeManager,llm,debug=True,graph: bool = False):
     
     def web_search(inputs: dict) :
-        print("web_search----",inputs)
+        log.debug(f"web_search----{inputs}")
         _,_,_,raw_docs = km.web_search(inputs.get("text",""))
         return raw_docs
     
@@ -443,7 +443,7 @@ def create_websearch_for_graph(km: KnowledgeManager):
     def web_search(input: dict,config: RunnableConfig) :
         tenant = config.get("configurable", {}).get("user_id", None)
         _,_,_,raw_docs = km.web_search(input.get("text"),tenant=tenant)
-        print("web_search---",raw_docs)
+        log.debug(f"web_search---{raw_docs}")
         return raw_docs
     
     web_search_runable = RunnableLambda(web_search)
@@ -464,7 +464,7 @@ def create_websearch_for_graph(km: KnowledgeManager):
 def create_rag_for_graph(km: KnowledgeManager):
     def query_docs(inputs: dict,config: RunnableConfig) :
     # def query_docs(inputs: dict) :
-        print("query_docs----",inputs)
+        log.debug(f"query_docs----{inputs}")
         collection_names = inputs.get("collection_names",None)        
         collections = "all"
         if isinstance(collection_names,str):
@@ -472,7 +472,7 @@ def create_rag_for_graph(km: KnowledgeManager):
         tenant = config.get("configurable", {}).get("user_id", None)
         retriever = km.get_retriever(collection_names=collections,tenant=tenant)
         docs = retriever.invoke(inputs.get("text",""))
-        print("query_docs----",docs)
+        log.debug(f"query_docs----{docs}")
         return docs
     
     retrieval_docs = RunnableLambda(query_docs)
@@ -520,7 +520,7 @@ def dict_to_ai_message(output: dict):
 ai_output_runnable = RunnableLambda(dict_to_ai_message)
 
 def dict_to_tool_message(output: dict):
-    print("dict_to_tool_message---",output)
+    log.debug(f"dict_to_tool_message---{output}")
     ai = ToolMessage(
         tool_call_id = "web or rag",
         content="working...",
@@ -667,7 +667,7 @@ class LangchainApp:
             yield context
         if response:
             for item in response:
-                # print("_process_stream:",item)
+                # log.debug("_process_stream:",item)
                 if item is not None:
                     if isinstance(item, AddableDict):
                         content = item.get('answer')
@@ -700,7 +700,7 @@ class LangchainApp:
             input_template = {"language": language, "input": input,"context":context}
 
         response = self.with_message_history.invoke(input_template,config)
-        print("invoke:",response)
+        log.debug(f"invoke:{response}")
         if isinstance(response,dict):
             content = response['answer']
             context = response.get('context')
@@ -713,8 +713,7 @@ class LangchainApp:
         # 初始化 citations 和 citamap
         citations = {"citations": []}
         citamap = defaultdict(lambda: defaultdict(dict))  # 使用 defaultdict 来自动初始化嵌套字典
-        print("relevant_docs num:", len(relevant_docs))
-        print("context:", contexts)
+        log.debug(f"context:{contexts}")
         
         def build_citations(context,doc,filename):
             # 如果匹配，更新 citamap
@@ -749,7 +748,7 @@ class LangchainApp:
                                 if doc_filename == context_filename or doc_filename in urls:
                                     build_citations(c,doc,doc_filename)
                 except Exception as e:
-                    print(f"Error processing document {doc.metadata}: {e}")
+                    log.debug(f"Error processing document {doc.metadata}: {e}")
 
         # 构建 citations 列表
         for collection, files in citamap.items():
@@ -769,7 +768,7 @@ class LangchainApp:
         is_done = False
         finish_reason = None
         for item in response:
-            # print(item,type(item))
+            # log.debug(item,type(item))
             if isinstance(item,list):
                 if item:
                     item = self.citations(item,kwargs.get("contexts"))
@@ -807,6 +806,6 @@ class LangchainApp:
 #     stream_generator = app.ollama("hello")
 #     # 遍历生成器
 #     for response in stream_generator:
-#         print(response)
+#         log.debug(response)
 #     # ret = app.embed_query("我爱北京天安门")
-#     # print(ret)
+#     # log.debug(ret)

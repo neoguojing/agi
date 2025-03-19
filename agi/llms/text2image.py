@@ -18,6 +18,9 @@ from agi.config import MODEL_PATH as model_root,CACHE_DIR
 import hashlib
 from langchain_core.runnables import RunnableConfig
 from langchain_core.messages import AIMessage, HumanMessage
+import logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 
 style = 'style="width: 100%; max-height: 100vh;"'
 class Text2Image(CustomerLLM):
@@ -61,7 +64,7 @@ class Text2Image(CustomerLLM):
         self._load_model()
         # Check if input is empty
         input_str = ""
-        # print("#########",input)
+        # log.debug("#########",input)
         if isinstance(input,str):
             input_str = input
         else:
@@ -91,7 +94,7 @@ class Text2Image(CustomerLLM):
             image_source = f'<img src="{image_source}" {style}>\n'
             
         result = AIMessage(content=[{"type": "image", "image": image_source}])
-        # print("#########1",result)
+        # log.debug("#########1",result)
         return result
 
     def _save_or_resize_image(self, image: Any) -> str:

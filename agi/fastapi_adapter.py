@@ -43,8 +43,8 @@ DATA_DIR = os.getenv("DATA_DIR", f"{BACKEND_DIR}/data")
 CHROMA_DATA_PATH = f"{DATA_DIR}/vector_db"
 LANGCHAIN_DB_PATH = f"sqlite:///{DATA_DIR}/langchain.db"
 
-print("CHROMA_DATA_PATH:",CHROMA_DATA_PATH)
-print("LANGCHAIN_DB_PATH:",LANGCHAIN_DB_PATH)
+log.debug(f"CHROMA_DATA_PATH:{CHROMA_DATA_PATH}")
+log.debug(f"LANGCHAIN_DB_PATH:{LANGCHAIN_DB_PATH}")
 knowledgeBase = KnowledgeManager(data_path=CHROMA_DATA_PATH)
 
 async def langchain_fastapi_wrapper(
@@ -88,7 +88,7 @@ async def langchain_fastapi_wrapper(
 
     except Exception as e:
         error_detail = f"Open WebUI: Server Error:{e}"
-        print()
+        log.debug(error_detail)
         raise HTTPException(
             status_code=500,
             detail=error_detail,
@@ -158,17 +158,17 @@ def get_rag_context(
 # if __name__ == "__main__":
 #     nb = KnowledgeManager(data_path="/win/open-webui/backend/data/vector_db")
 #     collection_manager = CollectionManager("/win/open-webui/backend/data/vector_db")
-#     print(collection_manager.list_collections())
+#     log.debug(collection_manager.list_collections())
 #     # nb.store(collection_name="aaaaa",source="/home/neo/Downloads/ir2023_ashare.docx",file_name="ir2023_ashare.docx")
 #     retrievers = nb.get_retriever(collection_names="194576726c78477d37df7fcad529e548a800e0e800b44d82f18b49df593b063",k=1)
 #     # retrievers = None
 #     app = LangchainApp(retrievers=retrievers,db_path="sqlite:////win/open-webui/backend/data/langchain.db")
     
 #     # resp = app("董事长报告书讲了什么？")
-#     # print("invoke:",resp)
+#     # log.debug("invoke:",resp)
 #     stream_generator = app.ollama("董事长报告书")
 #     # 遍历生成器
 #     for response in stream_generator:
-#         print("iter:",response)
+#         log.debug("iter:",response)
 #     # docs = nb.query_doc("194576726c78477d37df7fcad529e548a800e0e800b44d82f18b49df593b063","董事长报告书")
-#     # print(docs)
+#     # log.debug(docs)

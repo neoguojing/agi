@@ -131,7 +131,7 @@ class KnowledgeManager:
                         raise ValueError("File name is required for file storage.")
                     loader,known_type = self.get_loader(file_name,source,content_type)
                 
-                print("start load file---------")
+                log.debug("start load file---------")
                 if loader:
                     raw_docs = loader.load()
 
@@ -145,19 +145,19 @@ class KnowledgeManager:
                         doc.metadata["source"] = source
                     doc.metadata = {**doc.metadata, **kwargs}
 
-                print("loader file count:",len(raw_docs))
+                log.debug(f"loader file count:{len(raw_docs)}")
                 docs = self.split_documents(raw_docs)
-                print("splited documents count:",len(docs))
+                log.debug(f"splited documents count:{len(docs)}")
                 uuids = [str(uuid4()) for _ in range(len(docs))]
                 if len(docs) > 0:
                     store.add_documents(docs,ids=uuids)
-            print("add documents done------")
+            log.debug("add documents done------")
             return collection_name,known_type,raw_docs
         except Exception as e:
             if e.__class__.__name__ == "UniqueConstraintError":
                 return True
             log.exception(e)
-            print(e)
+            log.debug(e)
             return collection_name,known_type,raw_docs
 
     def get_compress_retriever(self,retriever,filter_type:FilterType):
@@ -234,7 +234,7 @@ class KnowledgeManager:
             if filter_type is not None:
                 retriever = self.get_compress_retriever(retriever,filter_type)
         except Exception as e:
-            print(e)
+            log.debug(e)
         return retriever
     
     
@@ -435,14 +435,14 @@ class KnowledgeManager:
             loader = AsyncChromiumLoader(urls)
             log.info("Indexing new urls...")
             docs = loader.load()
-            print("load docs:",len(docs))
+            log.debug(f"load docs:{len(docs)}")
             docs_transformed = bs_transformer.transform_documents(
                 docs, tags_to_extract=["span"]
             )
             docs = list(docs_transformed)
-            print("transform docs:",len(docs))
+            log.debug(f"transform docs:{len(docs)}")
             docs = self.split_documents(docs)
-            print("split docs:",len(docs))
+            log.debug(f"split docs:{len(docs)}")
             uuids = [str(uuid4()) for _ in range(len(docs))]
             if metadata:
                 for doc in docs:
@@ -456,7 +456,7 @@ class KnowledgeManager:
             return 
         
         questions = self.search_chain.invoke({"date":datetime.now().date(),"text":query,"results_num":max_results})
-        print("questions:",questions)
+        log.debug(f"questions:{questions}")
         
         search = DuckDuckGoSearchAPIWrapper(region=region, time=time, max_results=1,source="news")
         
@@ -545,11 +545,11 @@ def create_retriever(km: KnowledgeManager,**kwargs):
 #     # knowledgeBase.store(collection_name="test",source="/home/neo/Downloads/ir2023_ashare.docx",
 #     #                     source_type=SourceType.FILE,file_name='ir2023_ashare.docx')
 #     docs = knowledgeBase.query_doc("web","中国股市",k=2,bm25=False)
-#     # print(docs)
+#     # log.debug(docs)
 #     # emb = knowledgeBase.embedding.embed_query("wsewqeqe")
-#     # print(emb)
+#     # log.debug(emb)
 #     # resp = knowledgeBase.llm.invoke("hhhhh")
-#     # print(resp)
+#     # log.debug(resp)
 #     # docs = knowledgeBase.web_search("中国的股市如何估值？")
 #     # docs = knowledgeBase.web_parser(["https://new.qq.com/rain/a/20241005A071AG00"])
-#     print(docs)
+#     log.debug(docs)

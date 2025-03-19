@@ -1,13 +1,16 @@
 import unittest
 import logging
 from langchain_core.messages import AIMessage, HumanMessage
+import logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 class TestTextToSpeech(unittest.TestCase):
 
     def setUp(self):
         from agi.llms.tts import TextToSpeech
         self.instance = TextToSpeech()
         self.instance_gpu = TextToSpeech(is_gpu=True)
-        print(self.instance.list_available_models())
+        log.debug(self.instance.list_available_models())
         content = '''
         以下是每个缩写的简要解释：
 

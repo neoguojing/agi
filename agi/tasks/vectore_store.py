@@ -2,7 +2,9 @@ import chromadb
 from chromadb import Settings
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
-
+import logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 # TODO 多租户改造
 class CollectionManager:
     def __init__(self, data_path, embedding, allow_reset=True, anonymized_telemetry=False):

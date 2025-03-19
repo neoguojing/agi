@@ -10,7 +10,8 @@ from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
 from langchain_core.messages import AIMessage, HumanMessage
 import logging
-
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 class Speech2Text(CustomerLLM):
     whisper: Optional[Any] = Field(default=None)
     beam_size: int = Field(default=5)
@@ -71,6 +72,6 @@ class Speech2Text(CustomerLLM):
         return content, info._asdict()
     
     def print(self, segments, info):
-        print("Detected language '%s' with probability %f" % (info.language, info.language_probability))
+        log.debug("Detected language '%s' with probability %f" % (info.language, info.language_probability))
         for segment in segments:
-            print("[%.2fs -> %.2fs] %s" % (segment.start, segment.end, segment.text))
+            log.debug("[%.2fs -> %.2fs] %s" % (segment.start, segment.end, segment.text))

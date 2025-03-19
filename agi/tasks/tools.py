@@ -11,7 +11,9 @@ import json
 from agi.llms.model_factory import ModelFactory
 from agi.tasks.prompt import stock_code_prompt
 from agi.tasks.common import create_text2image_chain,create_llm_task
-
+import logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 
 search = DuckDuckGoSearchRun()
 arxiv = ArxivAPIWrapper()
@@ -60,12 +62,12 @@ def get_stock(input:str,topk=5) ->str:
         'symbol': input,
         'apikey': '1JXIUYN26HYID5Y9'
     }
-    print(params)
+    log.debug(params)
     r = requests.get(url, params=params)
     try:
         data = r.json()
     except json.JSONDecodeError:
-        print("JSON data is invalid.")
+        log.debug("JSON data is invalid.")
         return "JSON data is invalid."
 
     if "Time Series (Daily)" not in data:
@@ -92,7 +94,7 @@ def get_stock_code(input:str):
         'keywords': input,
         'apikey': '1JXIUYN26HYID5Y9'
     }
-    print(params)
+    log.debug(params)
     r = requests.get(url, params=params)
 
 def parse_stock_code(input:str):

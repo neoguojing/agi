@@ -19,7 +19,9 @@ import re
 from scipy.io.wavfile import write
 from agi.config import BASE_URL,CACHE_DIR
 import urllib.parse
-
+import logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 
 def remove_data_uri_prefix(data_uri):
     """
@@ -217,7 +219,7 @@ class CustomerLLM(RunnableSerializable[HumanMessage, AIMessage]):
         if self.model is not None:
             del self.model
             torch.cuda.empty_cache()
-            print(f"Model {self.model_name} destroyed successfully")
+            log.debug(f"Model {self.model_name} destroyed successfully")
 
     def encode(self, input):
         if self.tokenizer is not None:

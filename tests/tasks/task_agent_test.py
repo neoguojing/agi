@@ -3,6 +3,9 @@ from agi.tasks.task_factory import TaskFactory,TASK_AGENT
 from langgraph.errors import GraphRecursionError
 from langchain_core.messages import AIMessage
 import uuid
+import logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 class TestAgent(unittest.TestCase):
     def setUp(self):
         self.agent = TaskFactory.create_task(TASK_AGENT)
@@ -13,13 +16,13 @@ class TestAgent(unittest.TestCase):
         query = "查询tesla股票价格"
         try:
             messages = self.agent.invoke({"messages": [("human", query)]},config=self.config)
-            print(messages)
+            log.debug(messages)
             messages = messages.get("messages",[])
             self.assertIsInstance(messages,list)
             self.assertIsInstance(messages[-1],AIMessage)
             self.assertIsInstance(messages[-1].content,str)
         except GraphRecursionError:
-            print({"input": query, "output": "Agent stopped due to max iterations."})
+            log.debug({"input": query, "output": "Agent stopped due to max iterations."})
             
     def test_agent_steam(self):
         query = "下周上海的天气如何?"
@@ -32,4 +35,4 @@ class TestAgent(unittest.TestCase):
                 self.assertIsInstance(chunk["messages"],list)
                 self.assertIsInstance(chunk["messages"][-1].content,str)
         except GraphRecursionError:
-            print({"input": query, "output": "Agent stopped due to max iterations."})
+            log.debug({"input": query, "output": "Agent stopped due to max iterations."})

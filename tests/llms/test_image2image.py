@@ -3,7 +3,9 @@ from agi.llms.base import Media
 from agi.llms.image2image import Image2Image
 from langchain_core.messages import AIMessage,HumanMessage
 from PIL import Image as PIL_Image
-
+import logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 class TestImage2Image(unittest.TestCase):
 
     def setUp(self):
@@ -41,7 +43,7 @@ class TestImage2Image(unittest.TestCase):
             else:
                 self.fail(f"Unexpected content type: {context_type}")
 
-        print(f"Test Output: {output.content}")
+        log.debug(f"Test Output: {output.content}")
 
     def tearDown(self):
         """Clean up after tests."""

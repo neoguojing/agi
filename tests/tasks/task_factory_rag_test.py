@@ -6,6 +6,9 @@ from agi.tasks.task_factory import TaskFactory, TASK_LLM_WITH_RAG,TASK_RETRIEVER
 from agi.tasks.retriever import KnowledgeManager,SourceType
 from agi.tasks.llm_app import create_history_aware_retriever,create_stuff_documents_chain,create_retrieval_chain
 from agi.config import CACHE_DIR
+import logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 class TestTaskRagFactory(unittest.TestCase):
     
     def setUp(self):
@@ -14,7 +17,7 @@ class TestTaskRagFactory(unittest.TestCase):
         self.rag = TaskFactory.create_task(TASK_LLM_WITH_RAG)
         self.crag = TaskFactory.create_task(TASK_CUSTOM_RAG)
         self.web = TaskFactory.create_task(TASK_WEB_SEARCH)
-        print(self.kmanager.list_collections())
+        log.debug(self.kmanager.list_collections())
     def test_add_doc(self):
         param = {"filename" : "test.pdf"}
         collect_name,know_type,raw_docs = self.kmanager.store("test","./tests/test.pdf",**param)
@@ -67,7 +70,7 @@ class TestTaskRagFactory(unittest.TestCase):
         import json
         collecttions =  json.dumps(["test"])
         ret = self.crag.invoke({"text":"NTP3000Plus","language":"chinese","collection_names":collecttions},config=config)
-        print(ret)
+        log.debug(ret)
         self.assertIsNotNone(ret)
         self.assertIsInstance(ret["messages"],list)
         self.assertIsInstance(ret["messages"][-1].additional_kwargs['context'],list)
@@ -77,7 +80,7 @@ class TestTaskRagFactory(unittest.TestCase):
     def test_web_search_chat(self):
         config={"configurable": {"user_id": "default_tenant", "conversation_id": "3"}}
         ret = self.web.invoke({"text":"今天的科技新闻","language":"chinese"},config=config)
-        print(ret)
+        log.debug(ret)
         self.assertIsNotNone(ret)
         self.assertIsInstance(ret["messages"],list)
         self.assertIsInstance(ret["messages"][-1].additional_kwargs['context'],list)

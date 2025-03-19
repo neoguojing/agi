@@ -20,6 +20,9 @@ from agi.config import (
 from langchain_openai import ChatOpenAI
 from langchain_ollama import OllamaEmbeddings
 from urllib.parse import urljoin
+import logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 
 def graph_input_format(state: AgentState):
     return state["messages"]
@@ -53,14 +56,14 @@ def parse_input(input: PromptValue) -> list[BaseMessage]:
     try:
         # 使用json模板输入
         if isinstance(input,StringPromptValue):
-            print(input.to_json())
+            log.debug(input.to_json())
             data = json.loads(input.to_string())
             return [build_messages(data)]
         # 使用message模板输入
         elif isinstance(input,ChatPromptValue):
             return input.to_messages()
     except json.JSONDecodeError as e:
-        print(e,input.to_string())
+        log.error(e,input.to_string())
         return {}
 
 

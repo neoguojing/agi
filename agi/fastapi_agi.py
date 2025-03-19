@@ -127,12 +127,12 @@ async def chat_completions(
 
     # TODO 文章的引用信息如何处理
     if request.stream:
-        print("request:", request)
+        log.debug(f"request: {request}")
         return StreamingResponse(generate_stream_response(state_data), media_type="text/event-stream")
     else:
         resp = graph.invoke(state_data)
-        print("request:", request)
-        print("response:", resp)
+        log.debug(f"request:{request}")
+        log.debug(f"response:{resp}")
         return format_non_stream_response(resp)
 
 image_style = 'style="width: 100%; max-height: 100vh;"'
@@ -287,7 +287,7 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
         }
         yield f"data: {json.dumps(error_chunk, ensure_ascii=False)}\n\n"
         # 记录错误日志
-        print(f"Error in generate_stream_response: {e}")
+        log.debug(f"Error in generate_stream_response: {e}")
 
 class Model(BaseModel):
     id: str                # 模型的唯一标识符，例如 "gpt-3.5-turbo"
@@ -336,7 +336,7 @@ async def convert_to_base64(file: UploadFile = File(...)):
         # 返回 Base64 编码结果
         return base64_string
     except Exception as e:
-        print(e)
+        log.debug(e)
         return ""
 
 MAX_FILE_SIZE_MB = 25

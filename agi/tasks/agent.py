@@ -34,6 +34,9 @@ from langchain_core.messages import (
     SystemMessage,
 )
 import json
+import logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 
 def compute_content_hash(content: any) -> str:
     """
@@ -107,7 +110,7 @@ def add_messages(left: Messages, right: Messages) -> Messages:
         merged = [m for m in merged if make_key(m) not in keys_to_remove]
         return merged
     except Exception as e:
-        print(e)
+        log.error(e)
         
     
 class State(AgentState):

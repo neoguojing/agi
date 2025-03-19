@@ -2,7 +2,9 @@ import unittest
 from agi.llms.model_factory import ModelFactory
 from langchain_core.messages import AIMessage, HumanMessage
 
-
+import logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 class TestModelFactory(unittest.TestCase):
 
     def test_get_model(self):
@@ -30,7 +32,7 @@ class TestModelFactory(unittest.TestCase):
         ) 
         resp = instance.invoke(input)
         self.assertIsNotNone(resp.content)
-        print(resp.content)
+        log.debug(resp.content)
         self.assertEqual(len(ModelFactory._instances),2)
 
         
@@ -38,7 +40,7 @@ class TestModelFactory(unittest.TestCase):
         input = HumanMessage(content="岁的思考的加快速度为空军党委科技")
         resp = instance.invoke(input)
         self.assertIsNotNone(resp.content)
-        print(resp.content)
+        log.debug(resp.content)
         self.assertEqual(len(ModelFactory._instances),2)
         
         

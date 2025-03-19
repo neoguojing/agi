@@ -3,6 +3,9 @@ from agi.tasks.task_factory import TaskFactory,TASK_AGENT
 from langgraph.errors import GraphRecursionError
 from langchain_core.messages import AIMessage,HumanMessage,ToolMessage
 from agi.tasks.graph import AgiGraph
+import logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 class TestAgent(unittest.TestCase):
     def setUp(self):        
         self.graph = AgiGraph()
@@ -18,7 +21,7 @@ class TestAgent(unittest.TestCase):
             "status": "in_progress",
         }
         resp = self.graph.invoke(input_example)
-        print(resp)
+        log.debug(resp)
         self.assertIsInstance(resp,dict)
         self.assertIsInstance(resp["messages"],list)
         self.assertEqual(resp["input_type"],"text")
@@ -31,7 +34,7 @@ class TestAgent(unittest.TestCase):
         events = self.graph.stream(input_example)
         # TODO AIMessage 返回了两个，ToolMessage返回一个
         for event in events:
-            print("******event******",event,type(event))
+            log.debug(f"******event******{event,type(event)}")
             if isinstance(event,HumanMessage):
                 human_message_count += 1
             elif isinstance(event,ToolMessage):
@@ -45,7 +48,7 @@ class TestAgent(unittest.TestCase):
                 self.assertIsNotNone(event.content)
 
         # TODO tool_message_count 为什么会有两个
-        print("human_message_count:",human_message_count,"tool_message_count:",tool_message_count,"ai_message_count:",ai_message_count)
+        log.debug(f"human_message_count:{human_message_count} tool_message_count:{tool_message_count} ai_message_count:{ai_message_count}")
     
         
     def test_text_image_gene(self):
@@ -61,7 +64,7 @@ class TestAgent(unittest.TestCase):
             "status": "in_progress",
         }
         resp = self.graph.invoke(input_example)
-        print(resp)
+        log.debug(resp)
         self.assertIsInstance(resp,dict)
         self.assertIsInstance(resp["messages"],list)
         self.assertEqual(resp["input_type"],"text")
@@ -77,7 +80,7 @@ class TestAgent(unittest.TestCase):
         events = self.graph.stream(input_example)
         # TODO 返回的首先是一个Aimessage ，然后返回一个Toolmessage
         for event in events:
-            print("******event******",event,type(event))
+            log.debug(f"******event******{event} {type(event)}")
             if isinstance(event,HumanMessage):
                 human_message_count += 1
             elif isinstance(event,ToolMessage):
@@ -95,7 +98,7 @@ class TestAgent(unittest.TestCase):
                 # self.assertEqual(event.content[0].get("type"),"image")
                 # self.assertIsNotNone(event.content[0].get("image"))
         # TODO tool_message_count 为什么会有两个
-        print("human_message_count:",human_message_count,"tool_message_count:",tool_message_count,"ai_message_count:",ai_message_count)
+        log.debug(f"human_message_count:{human_message_count} tool_message_count:{tool_message_count} ai_message_count:{ai_message_count}")
     
     
     def test_image_image_gene(self):
@@ -113,7 +116,7 @@ class TestAgent(unittest.TestCase):
             "status": "in_progress",
         }
         resp = self.graph.invoke(input_example)
-        print(resp)
+        log.debug(resp)
         self.assertIsInstance(resp,dict)
         self.assertIsInstance(resp["messages"],list)
         self.assertEqual(resp["input_type"],"image")
@@ -127,7 +130,7 @@ class TestAgent(unittest.TestCase):
         ai_message_count = 0
         events = self.graph.stream(input_example)
         for event in events:
-            print("******event******",event,type(event))
+            log.debug(f"******event******{event} {type(event)}")
             if isinstance(event,HumanMessage):
                 human_message_count += 1
             elif isinstance(event,ToolMessage):
@@ -141,8 +144,8 @@ class TestAgent(unittest.TestCase):
                 self.assertEqual(event.content[0].get("type"),"image")
                 self.assertIsNotNone(event.content[0].get("image"))
         # TODO tool_message_count 为什么会有两个
-        print("human_message_count:",human_message_count,"tool_message_count:",tool_message_count,"ai_message_count:",ai_message_count)
-    
+        log.debug(f"human_message_count:{human_message_count} tool_message_count:{tool_message_count} ai_message_count:{ai_message_count}")
+
     def test_audio_input(self):
         # 语音输入，语音输出
         input_example = {
@@ -158,7 +161,7 @@ class TestAgent(unittest.TestCase):
             "status": "in_progress",
         }
         resp = self.graph.invoke(input_example)
-        # print(resp)
+        # log.debug(resp)
         self.assertIsInstance(resp,dict)
         self.assertIsInstance(resp["messages"],list)
         self.assertEqual(resp["need_speech"],True)
@@ -175,7 +178,7 @@ class TestAgent(unittest.TestCase):
         ai_message_count = 0
         events = self.graph.stream(input_example)
         for event in events:
-            print("******event******",event,type(event))
+            log.debug(f"******event******{event} {type(event)}")
             if isinstance(event,HumanMessage):
                 human_message_count += 1
             elif isinstance(event,ToolMessage):
@@ -192,12 +195,12 @@ class TestAgent(unittest.TestCase):
                 else:
                     self.assertIsInstance(event.content,str)
         # TODO tool_message_count 为什么会有两个
-        print("human_message_count:",human_message_count,"tool_message_count:",tool_message_count,"ai_message_count:",ai_message_count)
-    
+        log.debug(f"human_message_count:{human_message_count} tool_message_count:{tool_message_count} ai_message_count:{ai_message_count}")
+
         
         input_example["need_speech"] = False
         resp = self.graph.invoke(input_example)
-        print(resp)
+        log.debug(resp)
         self.assertIsInstance(resp,dict)
         self.assertIsInstance(resp["messages"],list)
         self.assertEqual(resp["need_speech"],False)
@@ -211,7 +214,7 @@ class TestAgent(unittest.TestCase):
         ai_message_count = 0
         events = self.graph.stream(input_example)
         for event in events:
-            print("******event******",event,type(event))
+            log.debug(f"******event******{event} {type(event)}")
             if isinstance(event,HumanMessage):
                 human_message_count += 1
             elif isinstance(event,ToolMessage):
@@ -220,12 +223,12 @@ class TestAgent(unittest.TestCase):
                 ai_message_count += 1
                 self.assertIsInstance(event.content,str)
         # TODO tool_message_count 为什么会有两个
-        print("human_message_count:",human_message_count,"tool_message_count:",tool_message_count,"ai_message_count:",ai_message_count)
-    
+        log.debug(f"human_message_count:{human_message_count} tool_message_count:{tool_message_count} ai_message_count:{ai_message_count}")
+
         
         input_example["feature"] = "speech"
         resp = self.graph.invoke(input_example)
-        print(resp)
+        log.debug(resp)
         self.assertIsInstance(resp,dict)
         self.assertIsInstance(resp["messages"],list)
         self.assertEqual(resp["need_speech"],False)
@@ -239,7 +242,7 @@ class TestAgent(unittest.TestCase):
         ai_message_count = 0
         events = self.graph.stream(input_example)
         for event in events:
-            print("******event******",event,type(event))
+            log.debug(f"******event******{event} {type(event)}")
             if isinstance(event,HumanMessage):
                 human_message_count += 1
             elif isinstance(event,ToolMessage):
@@ -249,7 +252,7 @@ class TestAgent(unittest.TestCase):
                 self.assertIsInstance(event.content,str)
                 self.assertEqual(event.content,"当我还只有六岁的时候,看到了一幅精彩的插画。")
         # TODO tool_message_count 为什么会有两个
-        print("human_message_count:",human_message_count,"tool_message_count:",tool_message_count,"ai_message_count:",ai_message_count)
+        log.debug(f"human_message_count:{human_message_count} tool_message_count:{tool_message_count} ai_message_count:{ai_message_count}")
 
         
     def test_web(self):
@@ -264,7 +267,7 @@ class TestAgent(unittest.TestCase):
             "feature": "web",
         }
         resp = self.graph.invoke(input_example)
-        print(resp)
+        log.debug(resp)
         self.assertIsInstance(resp,dict)
         self.assertIsInstance(resp["messages"],list)
         self.assertEqual(resp["feature"],"web")
@@ -279,7 +282,7 @@ class TestAgent(unittest.TestCase):
         ai_message_count = 0
         events = self.graph.stream(input_example)
         for event in events:
-            print("******event******",event,type(event))
+            log.debug(f"******event******{event} {type(event)}")
             if isinstance(event,HumanMessage):
                 human_message_count += 1
             elif isinstance(event,ToolMessage):
@@ -294,7 +297,7 @@ class TestAgent(unittest.TestCase):
                 self.assertIsInstance(event.additional_kwargs['citations'],list)
                 self.assertIsNotNone(event.content)
         # TODO tool_message_count 为什么会有两个
-        print("human_message_count:",human_message_count,"tool_message_count:",tool_message_count,"ai_message_count:",ai_message_count)
+        log.debug(f"human_message_count:{human_message_count} tool_message_count:{tool_message_count} ai_message_count:{ai_message_count}")
 
     def test_custom_rag(self):
         import json
@@ -310,7 +313,7 @@ class TestAgent(unittest.TestCase):
             "feature": "rag",
         }
         resp = self.graph.invoke(input_example)
-        print("resp:\n",resp)
+        log.debug(resp)
         self.assertIsInstance(resp,dict)
         self.assertIsInstance(resp["messages"],list)
         self.assertEqual(resp["feature"],"rag")
@@ -325,7 +328,7 @@ class TestAgent(unittest.TestCase):
         ai_message_count = 0
         events = self.graph.stream(input_example)
         for event in events:
-            print("******event******",event,type(event))
+            log.debug(f"******event******{event} {type(event)}")
             if isinstance(event,HumanMessage):
                 human_message_count += 1
             elif isinstance(event,ToolMessage):
@@ -340,4 +343,4 @@ class TestAgent(unittest.TestCase):
                 self.assertIsInstance(event.additional_kwargs['citations'],list)
                 self.assertIsNotNone(event.content)
         # TODO tool_message_count 为什么会有两个
-        print("human_message_count:",human_message_count,"tool_message_count:",tool_message_count,"ai_message_count:",ai_message_count)
+        log.debug(f"human_message_count:{human_message_count} tool_message_count:{tool_message_count} ai_message_count:{ai_message_count}")

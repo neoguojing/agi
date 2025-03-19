@@ -5,7 +5,9 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 # Assuming we import the TaskFactory and constants like TASK_LLM, TASK_EMBEDDING, etc.
 from agi.tasks.task_factory import TaskFactory, TASK_TRANSLATE, TASK_IMAGE_GEN, TASK_TTS, TASK_SPEECH_TEXT, TASK_RETRIEVER, TASK_AGENT
-
+import logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 
 class TestTaskMultiModalFactory(unittest.TestCase):
 
@@ -34,7 +36,7 @@ class TestTaskMultiModalFactory(unittest.TestCase):
     def test_text2image_chain(self):
         llm_task = TaskFactory.create_task(TASK_IMAGE_GEN)
         resp = llm_task.invoke({"text":"星辰大海","image":"","audio":""})
-        print(resp)
+        log.debug(resp)
         self.assertIsInstance(resp,AIMessage)
         self.assertIsInstance(resp.content,list)
         self.assertIsNotNone(resp.content[0].get("image"))

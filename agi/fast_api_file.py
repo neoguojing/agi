@@ -8,7 +8,9 @@ from agi.config import CACHE_DIR
 from agi.tasks.task_factory import TaskFactory,TASK_DOC_DB
 import shutil
 import uuid
-
+import logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 # 允许的 MIME 类型
 ALLOWED_MIME_TYPES = {
     "image/jpeg", "image/png", "application/pdf", "text/plain",
@@ -86,13 +88,12 @@ async def save_file(
 
 @router_file.get("/files/{file_name}")
 async def download_file(file_name: str):
-    print("***********")
     content_type = mimetypes.guess_type(file_name)[0] or "application/octet-stream"
     file_path = ""
     headers = {}
     if content_type.startswith("image/"):
         file_path = os.path.join(CACHE_DIR,"image", file_name)
-        print("***********",content_type,file_path)
+        log.debug(f"download_file---,{content_type},{file_path}")
         if not os.path.realpath(file_path).startswith(os.path.realpath(CACHE_DIR)):
             raise HTTPException(status_code=400, detail="Invalid file path")
         if not os.path.exists(file_path):

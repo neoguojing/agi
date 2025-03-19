@@ -15,7 +15,9 @@ from agi.config import (
 )
 from collections import OrderedDict
 from langchain_core.runnables import Runnable
-
+import logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 class ModelFactory:
     _instances =  OrderedDict()
     _lock = threading.Lock()
@@ -40,7 +42,7 @@ class ModelFactory:
     @staticmethod
     def _load_model(model_type: str, model_name: str = "") -> Union[CustomerLLM,Runnable]:
         """Load the model based on the model type."""
-        print(f"Loading the model: {model_type}...")
+        log.debug(f"Loading the model: {model_type}...")
         model = None
         
         if model_type == "text2image":

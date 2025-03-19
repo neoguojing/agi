@@ -7,7 +7,9 @@ import pytest
 from agi.fastapi_agi import app
 from agi.config import CACHE_DIR
 from agi.fast_api_file import ALLOWED_MIME_TYPES 
-
+import logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 # 测试用文件和路径
 TEST_FILE_PATH = "testfile.txt"
 TEST_COLLECTION_NAME = "test_collection"
@@ -67,7 +69,7 @@ def test_download_file(setup_module):
             data={"collection_name": TEST_COLLECTION_NAME}
         )
     saved_filename = response.json()["saved_filename"]
-    print(response.json())
+    log.debug(response.json())
     # 下载文件
     response = client.get(f"/v1/files/{saved_filename}")
     assert response.status_code == 200
@@ -91,7 +93,7 @@ def test_delete_file(setup_module):
             data={"collection_name": TEST_COLLECTION_NAME}
         )
     saved_filename = response.json()["saved_filename"]
-    print(response.json())
+    log.debug(response.json())
     # 删除文件
     response = client.delete(f"/v1/files/{saved_filename}")
     assert response.status_code == 200

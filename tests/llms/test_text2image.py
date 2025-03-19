@@ -1,6 +1,8 @@
 import unittest
 from langchain_core.messages import AIMessage, HumanMessage
-
+import logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 class TestText2Image(unittest.TestCase):
 
     def setUp(self):
@@ -12,7 +14,7 @@ class TestText2Image(unittest.TestCase):
         output = self.instance.invoke(self.input)
         self.assertIsNotNone(output)
         self.assertIsNotNone(output.content)
-        print(output.content)
+        log.debug(output.content)
 
         
 if __name__ == "__main__":

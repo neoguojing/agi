@@ -21,6 +21,9 @@ from langgraph.prebuilt.chat_agent_executor import AgentState
 from typing import Dict, Any, Iterator,Union
 from langchain_core.messages import BaseMessage,AIMessage,HumanMessage,ToolMessage
 from agi.tasks.agent import State
+import logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 # set_verbose(True)
 # set_debug(True)
 
@@ -165,15 +168,15 @@ class AgiGraph:
         events = self.graph.stream(input, config, stream_mode="values")
         try:
             for event in events:
-                print(event)
+                log.debug(event)
                 if "messages" in event and event["messages"]:
                     for message in event["messages"]:
                         yield message  # 返回当前事件
                 else:
-                    print(f"Event missing messages: {event}")
+                    log.debug(f"Event missing messages: {event}")
                     yield event # 返回当前事件
         except Exception as e:
-            print(f"Error during streaming: {e}")
+            log.debug(f"Error during streaming: {e}")
             yield {"error": str(e)}  # 返回错误信息
     
     def display(self):
@@ -186,7 +189,7 @@ class AgiGraph:
 
             # Save the image to a file
             image.save("graph.png")
-            print("Image saved as output_image.png")
+            log.debug("Image saved as output_image.png")
         except Exception:
             # This requires some extra dependencies and is optional
             pass

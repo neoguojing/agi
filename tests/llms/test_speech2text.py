@@ -2,6 +2,9 @@ import unittest
 from agi.llms.speech2text import Speech2Text
 import logging
 from langchain_core.messages import AIMessage,HumanMessage
+import logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 class TestSpeech2Text(unittest.TestCase):
 
     def setUp(self):
@@ -15,14 +18,14 @@ class TestSpeech2Text(unittest.TestCase):
         output = self.instance.invoke(self.input)
         self.assertIsNotNone(output)
         self.assertIsNotNone(output.content)
-        print("test_speach2text:",output.content)
+        log.debug(f"test_speach2text:{output.content}")
     
     def test_speach2text_cpu(self):  
         self.instance = Speech2Text(device="cpu")
         output = self.instance.invoke(self.input)
         self.assertIsNotNone(output)
         self.assertIsNotNone(output.content)
-        print("test_speach2text_cpu:",output.content)
+        log.debug(f"test_speach2text_cpu:{output.content}")
 
         
 if __name__ == "__main__":
