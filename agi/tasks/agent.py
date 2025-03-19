@@ -108,6 +108,7 @@ def add_messages(left: Messages, right: Messages) -> Messages:
                 merged.append(m)
 
         merged = [m for m in merged if make_key(m) not in keys_to_remove]
+        log.debug(f"--------{merged}")
         return merged
     except Exception as e:
         log.error(e)
