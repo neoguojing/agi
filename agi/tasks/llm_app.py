@@ -192,7 +192,10 @@ def create_stuff_documents_chain(
     # 经过prompt 之后，变为了ChatPromptValue，需要转换为List[BaseMessage]
     def format_history_chain_input(x: Any):
         log.debug(f"format_history_chain_input:{x}")
-        return x.to_messages()
+        messages = x.to_messages()
+        log.debug(f"format_history_chain_input out:{messages}")
+        return messages
+    
     chain = (
         RunnablePassthrough.assign(**{document_variable_name: format_docs}).with_config(
             run_name="format_inputs"
@@ -524,7 +527,7 @@ def dict_to_tool_message(output: dict):
     log.debug(f"dict_to_tool_message---{output}")
     ai = ToolMessage(
         tool_call_id = "web or rag",
-        content="working...",
+        content=output.get('text', ''),
         additional_kwargs={
             'context': output.get('context', ''),
             'citations': output.get('citations', [])
@@ -544,6 +547,7 @@ def message_to_dict(message: Union[list,HumanMessage,ToolMessage,dict,AgentState
     if "messages" in message:
         message = graph_input_format(message)
         last_message = message[-1]
+        log.debug(f"message_to_dict-----{last_message}")
         if isinstance(last_message,HumanMessage) or isinstance(last_message,ToolMessage):
             return {
                 "text": last_message.content,
