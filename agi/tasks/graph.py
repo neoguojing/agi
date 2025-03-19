@@ -87,21 +87,24 @@ class AgiGraph:
         return "result_fix"
     # 结果修正,作为流程返回的唯一回归点
     def result_fix(self,state: State, config: RunnableConfig):
-        if isinstance(state.get("messages")[-1],HumanMessage):
-            # 若speech直接输出，则需要将usermessage 转换为aimessage
-            user_msg = state.get("messages")[-1]
-            ai_msg = AIMessage(content=user_msg.content)
-            state.get("messages").append(ai_msg)
-        log.debug(f"result_fix---{state}")
-        # 分离think消息
-        last_message = state.get("messages")[-1]
-        think_content,other_content = self.split_think_content(last_message.content)
-        if think_content != "":
-            think_message = ToolMessage(content=think_content,tool_call_id="thinking")
-            last_message.content = other_content
-            state.get("messages")[-1] = think_message
-            state.get("messages").append(last_message)
-        log.debug(f"result_fix1---{state}")
+        try:
+            if isinstance(state.get("messages")[-1],HumanMessage):
+                # 若speech直接输出，则需要将usermessage 转换为aimessage
+                user_msg = state.get("messages")[-1]
+                ai_msg = AIMessage(content=user_msg.content)
+                state.get("messages").append(ai_msg)
+            log.debug(f"result_fix---{state}")
+            # 分离think消息
+            last_message = state.get("messages")[-1]
+            think_content,other_content = self.split_think_content(last_message.content)
+            if think_content != "":
+                think_message = ToolMessage(content=think_content,tool_call_id="thinking")
+                last_message.content = other_content
+                state.get("messages")[-1] = think_message
+                state.get("messages").append(last_message)
+            log.debug(f"result_fix1---{state}")
+        except Exception as e:
+            log.error(e)
         return state
     
     # 处理推理模型返回
