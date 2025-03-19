@@ -540,7 +540,7 @@ tool_output_runnable = RunnableLambda(dict_to_tool_message)
 
 # 用于将各种格式的输入，转换为dict格式，供chain使用
 # 支持将AgentState 等消息转换为dict
-
+# TODO 为什么有的消息的content被改为了dict？
 def message_to_dict(message: Union[list,HumanMessage,ToolMessage,dict,AgentState]):
     # 若是graph，则从state中抽取消息
     # AgentState 是typedict ，不支持类型检查
