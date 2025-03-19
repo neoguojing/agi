@@ -251,6 +251,8 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
                 if additional_kwargs is not None and additional_kwargs.get("citations"):
                     if isinstance(event.content,str):
                         event.content = {"type":"text","text":event.content,"citations":additional_kwargs.get("citations")}
+                    elif isinstance(event.content,list):
+                        event.content = {"type":"text","text":event.content[0].get("text"),"citations":additional_kwargs.get("citations")}
                     else:
                         event.content = {"type":"text","text":event.content.get("text"),"citations":additional_kwargs.get("citations")}
                 chunk["choices"][0]["delta"] = {"role": role, "content": event.content}

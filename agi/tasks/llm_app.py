@@ -553,7 +553,8 @@ def message_to_dict(message: Union[list,HumanMessage,ToolMessage,dict,AgentState
         log.debug(f"message_to_dict--message---{message}")
         if "messages" in message:
             message = graph_input_format(message)
-            last_message = correct_message_content(message[-1])
+            # last_message = correct_message_content(message[-1])
+            last_message = message[-1]
             log.debug(f"message_to_dict--last_message---{last_message}")
             if isinstance(last_message,HumanMessage) or isinstance(last_message,ToolMessage):
                 return {
