@@ -544,6 +544,8 @@ tool_output_runnable = RunnableLambda(dict_to_tool_message)
 def message_to_dict(message: Union[list,HumanMessage,ToolMessage,dict,AgentState]):
     # 若是graph，则从state中抽取消息
     # AgentState 是typedict ，不支持类型检查
+    # def content_check(message):
+
     try:
         import traceback
         traceback.print_stack()
