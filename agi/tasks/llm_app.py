@@ -518,7 +518,7 @@ def dict_to_ai_message(output: dict):
             'citations': output.get('citations', [])
         }
     )
-
+    log.debug(f"dict_to_ai_message---{ai}")
     return ai
 # 获取合理的输出格式
 ai_output_runnable = RunnableLambda(dict_to_ai_message)
@@ -533,7 +533,7 @@ def dict_to_tool_message(output: dict):
             'citations': output.get('citations', [])
         }
     )
-
+    log.debug(f"dict_to_tool_message-ret--{ai}")
     return ai
 # 获取合理的输出格式
 tool_output_runnable = RunnableLambda(dict_to_tool_message)
@@ -544,41 +544,46 @@ tool_output_runnable = RunnableLambda(dict_to_tool_message)
 def message_to_dict(message: Union[list,HumanMessage,ToolMessage,dict,AgentState]):
     # 若是graph，则从state中抽取消息
     # AgentState 是typedict ，不支持类型检查
-    log.debug(f"message_to_dict--message---{message}")
-    if "messages" in message:
-        message = graph_input_format(message)
-        last_message = message[-1]
-        log.debug(f"message_to_dict--last_message---{last_message}")
-        if isinstance(last_message,HumanMessage) or isinstance(last_message,ToolMessage):
+    try:
+        import traceback
+        traceback.print_stack()
+        log.debug(f"message_to_dict--message---{message}")
+        if "messages" in message:
+            message = graph_input_format(message)
+            last_message = message[-1]
+            log.debug(f"message_to_dict--last_message---{last_message}")
+            if isinstance(last_message,HumanMessage) or isinstance(last_message,ToolMessage):
+                return {
+                    "text": last_message.content,
+                    "language": "chinese",
+                    "collection_names": last_message.additional_kwargs.get("collection_names",None),
+                    "context": last_message.additional_kwargs.get("context",None),
+                    "citations": last_message.additional_kwargs.get("citations",None),
+                }
+        elif isinstance(message,dict):
+            return message
+        elif isinstance(message,HumanMessage) or isinstance(message,ToolMessage):
+            message.additional_kwargs.get("collection_names",None)
             return {
-                "text": last_message.content,
+                "text": message.content,
                 "language": "chinese",
-                "collection_names": last_message.additional_kwargs.get("collection_names",None),
-                "context": last_message.additional_kwargs.get("context",None),
-                "citations": last_message.additional_kwargs.get("citations",None),
-            }
-    elif isinstance(message,dict):
-        return message
-    elif isinstance(message,HumanMessage) or isinstance(message,ToolMessage):
-        message.additional_kwargs.get("collection_names",None)
-        return {
-            "text": message.content,
-            "language": "chinese",
-            "collection_names": message.additional_kwargs.get("collection_names",None),
-            "context": message.additional_kwargs.get("context",None),
-            "citations": message.additional_kwargs.get("citations",None),
-        }
-    elif isinstance(message,list) and len(message) > 0:
-        last_message = message[-1]
-        if isinstance(last_message,HumanMessage) or isinstance(message,ToolMessage):
-            return {
-                "text": last_message.content,
-                "language": "chinese",
-                "collection_names": last_message.additional_kwargs.get("collection_names",None),
+                "collection_names": message.additional_kwargs.get("collection_names",None),
                 "context": message.additional_kwargs.get("context",None),
                 "citations": message.additional_kwargs.get("citations",None),
             }
-            
+        elif isinstance(message,list) and len(message) > 0:
+            last_message = message[-1]
+            if isinstance(last_message,HumanMessage) or isinstance(message,ToolMessage):
+                return {
+                    "text": last_message.content,
+                    "language": "chinese",
+                    "collection_names": last_message.additional_kwargs.get("collection_names",None),
+                    "context": message.additional_kwargs.get("context",None),
+                    "citations": message.additional_kwargs.get("citations",None),
+                }
+    except Exception as e:
+        log.error(e)
+    
     return {
         "text": "user dont say anything",
         "language": "chinese",
