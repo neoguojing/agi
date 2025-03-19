@@ -29,15 +29,16 @@ class TextToSpeech(CustomerLLM):
 
         self.save_file = save_file
         self.is_gpu = is_gpu
+        self.model = None
        
     def _load_model(self):
         """Initialize the TTS model based on the available hardware."""
-        if self.model is None:
+        if self.tts is None:
             if self.is_gpu:
                 model_path = os.path.join(model_root, "tts_models--multilingual--multi-dataset--xtts_v2")
                 config_path = os.path.join(model_path, "config.json")
                 logging.info("use ts_models--multilingual--multi-dataset--xtts_v2")
-                self.ttl = TTS(model_path=model_path, config_path=config_path).to(torch.device("cuda"))
+                self.tts = TTS(model_path=model_path, config_path=config_path).to(torch.device("cuda"))
             else:
                 logging.info("use tts_models/zh-CN/baker/tacotron2-DDC-GST")
                 self.tts = TTS(model_name="tts_models/zh-CN/baker/tacotron2-DDC-GST").to(torch.device("cpu"))

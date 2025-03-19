@@ -105,7 +105,7 @@ class AgiGraph:
                 state.get("messages").append(last_message)
             log.debug(f"result_fix1---{state}")
         except Exception as e:
-            log.error(e)
+            log.error(f"{e} {last_message}")
             print(traceback.format_exc())
 
         return state

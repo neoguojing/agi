@@ -6,7 +6,7 @@ from agi.tasks.graph import AgiGraph
 import logging
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
-class TestAgent(unittest.TestCase):
+class TestGraph(unittest.TestCase):
     def setUp(self):        
         self.graph = AgiGraph()
         self.graph.display()
@@ -289,7 +289,7 @@ class TestAgent(unittest.TestCase):
                 tool_message_count += 1
                 self.assertIsInstance(event.additional_kwargs['context'],list)
                 self.assertIsInstance(event.additional_kwargs['citations'],list)
-                self.assertEqual(event.content,"working...")
+                self.assertEqual(event.content,"今天上海天气如何？")
                 self.assertEqual(event.tool_call_id,"web or rag")
             elif isinstance(event,AIMessage):
                 ai_message_count += 1
@@ -335,7 +335,7 @@ class TestAgent(unittest.TestCase):
                 tool_message_count += 1
                 self.assertIsInstance(event.additional_kwargs['context'],list)
                 self.assertIsInstance(event.additional_kwargs['citations'],list)
-                self.assertEqual(event.content,"working...")
+                self.assertEqual(event.content,"NTP3000Plus")
                 self.assertEqual(event.tool_call_id,"web or rag")
             elif isinstance(event,AIMessage):
                 ai_message_count += 1
