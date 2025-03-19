@@ -544,10 +544,11 @@ tool_output_runnable = RunnableLambda(dict_to_tool_message)
 def message_to_dict(message: Union[list,HumanMessage,ToolMessage,dict,AgentState]):
     # 若是graph，则从state中抽取消息
     # AgentState 是typedict ，不支持类型检查
+    log.debug(f"message_to_dict--message---{message}")
     if "messages" in message:
         message = graph_input_format(message)
         last_message = message[-1]
-        log.debug(f"message_to_dict-----{last_message}")
+        log.debug(f"message_to_dict--last_message---{last_message}")
         if isinstance(last_message,HumanMessage) or isinstance(last_message,ToolMessage):
             return {
                 "text": last_message.content,
