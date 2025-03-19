@@ -34,6 +34,7 @@ from langchain_core.messages import (
     SystemMessage,
 )
 import json
+import traceback
 import logging
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
@@ -112,6 +113,7 @@ def add_messages(left: Messages, right: Messages) -> Messages:
         return merged
     except Exception as e:
         log.error(e)
+        print(traceback.format_exc())
         
     
 class State(AgentState):

@@ -18,6 +18,7 @@ from agi.tasks.graph import AgiGraph, State
 from agi.fast_api_file import router_file
 from agi.config import CACHE_DIR
 from pydub import AudioSegment
+import traceback
 import logging
 
 log = logging.getLogger(__name__)
@@ -223,9 +224,10 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
     Yields:
         str: SSE 格式的流式响应块，符合 OpenAI API 规范。
     """
-    events = graph.stream(state_data)
-    index = 0  # 初始化 index
+    
     try:
+        events = graph.stream(state_data)
+        index = 0  # 初始化 index
         for event in events:
             chunk = {
                 "id": f"chatcmpl-{uuid.uuid4()}",
@@ -288,6 +290,7 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
         yield f"data: {json.dumps(error_chunk, ensure_ascii=False)}\n\n"
         # 记录错误日志
         log.debug(f"Error in generate_stream_response: {e}")
+        print(traceback.format_exc())
 
 class Model(BaseModel):
     id: str                # 模型的唯一标识符，例如 "gpt-3.5-turbo"
