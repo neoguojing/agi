@@ -92,7 +92,7 @@ class AgiGraph:
             user_msg = state.get("messages")[-1]
             ai_msg = AIMessage(content=user_msg.content)
             state.get("messages").append(ai_msg)
-        
+        log.debug(f"result_fix---{state}")
         # 分离think消息
         last_message = state.get("messages")[-1]
         think_content,other_content = self.split_think_content(last_message.content)
@@ -101,6 +101,7 @@ class AgiGraph:
             last_message.content = other_content
             state.get("messages")[-1] = think_message
             state.get("messages").append(last_message)
+        log.debug(f"result_fix1---{state}")
         return state
     
     # 处理推理模型返回

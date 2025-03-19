@@ -507,6 +507,7 @@ def dict_to_ai_message(output: dict):
     content = output.get('answer', '')
     if isinstance(content,dict):
         content = [content]
+    log.debug(f"dict_to_ai_message---{output}")
     ai = AIMessage(
         content=content,
         additional_kwargs={
