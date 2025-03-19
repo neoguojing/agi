@@ -186,10 +186,13 @@ class KnowledgeManager:
         return compression_retriever
     
     def bm25_retriever(self,docs:List[Document],k=1):
-        import jieba
-        bm25_retriever = BM25Retriever.from_documents(documents=docs,preprocess_func=jieba.cut)
-        bm25_retriever.k = k
-        return bm25_retriever
+        try:
+            import jieba
+            bm25_retriever = BM25Retriever.from_documents(documents=docs,preprocess_func=jieba.cut)
+            bm25_retriever.k = k
+            return bm25_retriever
+        except Exception as e:
+            log.error(f"{e} {docs}")
     
     def get_retriever(self,collection_names="all",tenant=None,k: int=3,bm25: bool=False,filter_type=FilterType.LLM_FILTER,
                       sim_algo:SimAlgoType = SimAlgoType.SST):
@@ -463,6 +466,7 @@ class KnowledgeManager:
         
         urls_to_look = []
         raw_results = []
+        raw_docs = []
         try:
             log.info("Searching for relevant urls...")
             for q in questions:
@@ -475,9 +479,9 @@ class KnowledgeManager:
         
             # Relevant urls
             urls = set(urls_to_look)
-            # 执行网页爬虫
-            collection_name,known_type,raw_docs = self.store(collection_name,list(urls),source_type=SourceType.WEB,tenant=tenant)
-            log.info(f"scrach results: {raw_docs}")
+            # TODO 执行网页爬虫 效果很差
+            # collection_name,known_type,raw_docs = self.store(collection_name,list(urls),source_type=SourceType.WEB,tenant=tenant)
+            # log.info(f"scrach results: {raw_docs}")
             # 未爬到信息，则使用检索结果拼装
             if len(raw_docs) == 0:
                 collection_name,known_type,raw_docs = self.store(collection_name,raw_results,source_type=SourceType.SEARCH_RESULT,tenant=tenant)

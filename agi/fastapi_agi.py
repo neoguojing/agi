@@ -179,7 +179,7 @@ def format_non_stream_response(resp: Dict[str, Any],web: bool = False) -> Dict[s
         # 处理additional_kwargs信息
         additional_kwargs = last_message.additional_kwargs
         if additional_kwargs is not None and additional_kwargs.get("citations"):
-            assistant_content = {"type":"text","text":assistant_content,"citations":additional_kwargs.get("citations")}
+            assistant_content = [{"type":"text","text":assistant_content,"citations":additional_kwargs.get("citations")}]
 
         # 处理metadata信息
         response_metadata = last_message.response_metadata
@@ -250,11 +250,11 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
                 additional_kwargs = event.additional_kwargs
                 if additional_kwargs is not None and additional_kwargs.get("citations"):
                     if isinstance(event.content,str):
-                        event.content = {"type":"text","text":event.content,"citations":additional_kwargs.get("citations")}
+                        event.content = [{"type":"text","text":event.content,"citations":additional_kwargs.get("citations")}]
                     elif isinstance(event.content,list):
-                        event.content = {"type":"text","text":event.content[0].get("text"),"citations":additional_kwargs.get("citations")}
+                        event.content = [{"type":"text","text":event.content[0].get("text"),"citations":additional_kwargs.get("citations")}]
                     else:
-                        event.content = {"type":"text","text":event.content.get("text"),"citations":additional_kwargs.get("citations")}
+                        event.content = [{"type":"text","text":event.content.get("text"),"citations":additional_kwargs.get("citations")}]
                 chunk["choices"][0]["delta"] = {"role": role, "content": event.content}
                 finish_reason = getattr(event, "response_metadata", {}).get("finish_reason")
                 if finish_reason:
