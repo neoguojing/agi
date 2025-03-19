@@ -72,10 +72,10 @@ def add_messages(left: Messages, right: Messages) -> Messages:
             left = [left]
         if not isinstance(right, list):
             right = [right]
-
+        log.debug(f"add_messages--begin--{left} \n {right}")
         left = [message_chunk_to_message(m) for m in convert_to_messages(left)]
         right = [message_chunk_to_message(m) for m in convert_to_messages(right)]
-
+        log.debug(f"add_messages--after--{left} \n {right}")
         # 为缺失 id 的消息分配唯一 ID
         for m in left:
             if m.id is None:
@@ -114,7 +114,7 @@ def add_messages(left: Messages, right: Messages) -> Messages:
         
     
 class State(AgentState):
-    # messages: Annotated[Sequence[BaseMessage], add_messages]
+    messages: Annotated[Sequence[BaseMessage], add_messages]
     input_type: str
     need_speech: bool
     status: str
