@@ -43,6 +43,7 @@ from agi.config import (
     CACHE_DIR
 )
 from datetime import datetime
+import traceback
 import logging
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
@@ -488,6 +489,7 @@ class KnowledgeManager:
             return collection_name,known_type,raw_results,raw_docs
         except Exception as e:
             log.error(f"Error search: {e}")
+            print(traceback.format_exc())
             return "", False,raw_results,[]
          
 

@@ -52,7 +52,7 @@ from typing import (
 from langgraph.prebuilt.chat_agent_executor import AgentState
 def is_valid_url(url):
     return validators.url(url)
-
+import traceback
 import logging
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
@@ -549,8 +549,7 @@ def message_to_dict(message: Union[list,HumanMessage,ToolMessage,dict,AgentState
             message.content = [message.content]
         return message
     try:
-        import traceback
-        traceback.print_stack()
+        
         log.debug(f"message_to_dict--message---{message}")
         if "messages" in message:
             message = graph_input_format(message)
@@ -588,6 +587,7 @@ def message_to_dict(message: Union[list,HumanMessage,ToolMessage,dict,AgentState
                 }
     except Exception as e:
         log.error(e)
+        print(traceback.format_exc())
     
     return {
         "text": "user dont say anything",

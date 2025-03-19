@@ -21,6 +21,7 @@ from langgraph.prebuilt.chat_agent_executor import AgentState
 from typing import Dict, Any, Iterator,Union
 from langchain_core.messages import BaseMessage,AIMessage,HumanMessage,ToolMessage
 from agi.tasks.agent import State
+import traceback
 import logging
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
@@ -105,6 +106,8 @@ class AgiGraph:
             log.debug(f"result_fix1---{state}")
         except Exception as e:
             log.error(e)
+            print(traceback.format_exc())
+
         return state
     
     # 处理推理模型返回
