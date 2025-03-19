@@ -544,15 +544,17 @@ tool_output_runnable = RunnableLambda(dict_to_tool_message)
 def message_to_dict(message: Union[list,HumanMessage,ToolMessage,dict,AgentState]):
     # 若是graph，则从state中抽取消息
     # AgentState 是typedict ，不支持类型检查
-    # def content_check(message):
-
+    def correct_message_content(message):
+        if isinstance(message.content,dict):
+            message.content = [message.content]
+        return message
     try:
         import traceback
         traceback.print_stack()
         log.debug(f"message_to_dict--message---{message}")
         if "messages" in message:
             message = graph_input_format(message)
-            last_message = message[-1]
+            last_message = correct_message_content(message[-1])
             log.debug(f"message_to_dict--last_message---{last_message}")
             if isinstance(last_message,HumanMessage) or isinstance(last_message,ToolMessage):
                 return {
@@ -566,6 +568,7 @@ def message_to_dict(message: Union[list,HumanMessage,ToolMessage,dict,AgentState
             return message
         elif isinstance(message,HumanMessage) or isinstance(message,ToolMessage):
             message.additional_kwargs.get("collection_names",None)
+            message = correct_message_content(message)
             return {
                 "text": message.content,
                 "language": "chinese",
@@ -574,7 +577,7 @@ def message_to_dict(message: Union[list,HumanMessage,ToolMessage,dict,AgentState
                 "citations": message.additional_kwargs.get("citations",None),
             }
         elif isinstance(message,list) and len(message) > 0:
-            last_message = message[-1]
+            last_message = correct_message_content(message[-1])
             if isinstance(last_message,HumanMessage) or isinstance(message,ToolMessage):
                 return {
                     "text": last_message.content,
