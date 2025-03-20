@@ -177,8 +177,10 @@ class AgiGraph:
             for event in events:
                 log.debug(event)
                 if "messages" in event and event["messages"]:
-                    for message in event["messages"]:
-                        yield message  # 返回当前事件
+                    # for message in event["messages"]:
+                    #     yield message  # 返回当前事件
+                    # 仅返回最后一条消息
+                    yield event["messages"][-1]
                 else:
                     log.debug(f"Event missing messages: {event}")
                     yield event # 返回当前事件
