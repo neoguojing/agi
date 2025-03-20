@@ -10,7 +10,7 @@ import shutil
 import uuid
 import logging
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 # 允许的 MIME 类型
 ALLOWED_MIME_TYPES = {
     "image/jpeg", "image/png", "application/pdf", "text/plain",

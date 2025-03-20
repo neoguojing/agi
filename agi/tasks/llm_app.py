@@ -55,7 +55,7 @@ def is_valid_url(url):
 import traceback
 import logging
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 
 set_debug(False)
 
@@ -464,6 +464,7 @@ def create_websearch_for_graph(km: KnowledgeManager):
 # 独立的文档检索chain
 # Input: AgentState
 # Output: AgentState
+# TODO 在未获取到知识库，或者未检索到相关文档的情况下，直接交给大模型型回答
 def create_rag_for_graph(km: KnowledgeManager):
     def query_docs(inputs: dict,config: RunnableConfig) :
     # def query_docs(inputs: dict) :
@@ -474,9 +475,11 @@ def create_rag_for_graph(km: KnowledgeManager):
             collections = json.loads(collection_names)
         tenant = config.get("configurable", {}).get("user_id", None)
         retriever = km.get_retriever(collection_names=collections,tenant=tenant)
-        docs = retriever.invoke(inputs.get("text",""))
-        log.debug(f"query_docs----{docs}")
-        return docs
+        if retriever:
+            docs = retriever.invoke(inputs.get("text",""))
+            log.debug(f"query_docs----{docs}")
+            return docs
+        return []
     
     retrieval_docs = RunnableLambda(query_docs)
     rag_runable = (

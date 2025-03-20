@@ -22,7 +22,7 @@ import traceback
 import logging
 
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 
 # 初始化 FastAPI 应用
 app = FastAPI(
@@ -128,12 +128,12 @@ async def chat_completions(
 
     # TODO 文章的引用信息如何处理
     if request.stream:
-        log.debug(f"request: {request}")
+        log.info(f"request: {request}")
         return StreamingResponse(generate_stream_response(state_data), media_type="text/event-stream")
     else:
         resp = graph.invoke(state_data)
-        log.debug(f"request:{request}")
-        log.debug(f"response:{resp}")
+        log.info(f"request:{request}")
+        log.info(f"response:{resp}")
         return format_non_stream_response(resp)
 
 image_style = 'style="width: 100%; max-height: 100vh;"'
@@ -291,7 +291,7 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
         }
         yield f"data: {json.dumps(error_chunk, ensure_ascii=False)}\n\n"
         # 记录错误日志
-        log.debug(f"Error in generate_stream_response: {e}")
+        log.error(f"Error in generate_stream_response: {e}")
         print(traceback.format_exc())
 
 class Model(BaseModel):
@@ -341,7 +341,7 @@ async def convert_to_base64(file: UploadFile = File(...)):
         # 返回 Base64 编码结果
         return base64_string
     except Exception as e:
-        log.debug(e)
+        log.error(e)
         return ""
 
 MAX_FILE_SIZE_MB = 25

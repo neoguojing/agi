@@ -14,7 +14,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 import base64
 import logging
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 audio_style = "width: 300px; height: 50px;"  # 添加样式
 
 class TextToSpeech(CustomerLLM):

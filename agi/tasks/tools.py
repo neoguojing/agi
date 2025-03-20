@@ -13,7 +13,7 @@ from agi.tasks.prompt import stock_code_prompt
 from agi.tasks.common import create_text2image_chain,create_llm_task
 import logging
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 
 search = DuckDuckGoSearchRun()
 arxiv = ArxivAPIWrapper()
@@ -67,7 +67,7 @@ def get_stock(input:str,topk=5) ->str:
     try:
         data = r.json()
     except json.JSONDecodeError:
-        log.debug("JSON data is invalid.")
+        log.error("JSON data is invalid.")
         return "JSON data is invalid."
 
     if "Time Series (Daily)" not in data:

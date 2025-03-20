@@ -5,7 +5,7 @@ from langchain_core.messages import AIMessage,HumanMessage,ToolMessage
 from agi.tasks.graph import AgiGraph
 import logging
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 class TestGraph(unittest.TestCase):
     def setUp(self):        
         self.graph = AgiGraph()

@@ -46,7 +46,7 @@ from datetime import datetime
 import traceback
 import logging
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 
 from enum import Enum
 
@@ -132,7 +132,7 @@ class KnowledgeManager:
                         raise ValueError("File name is required for file storage.")
                     loader,known_type = self.get_loader(file_name,source,content_type)
                 
-                log.debug("start load file---------")
+                log.info("start load file---------")
                 if loader:
                     raw_docs = loader.load()
 
@@ -146,19 +146,19 @@ class KnowledgeManager:
                         doc.metadata["source"] = source
                     doc.metadata = {**doc.metadata, **kwargs}
 
-                log.debug(f"loader file count:{len(raw_docs)}")
+                log.info(f"loader file count:{len(raw_docs)}")
                 docs = self.split_documents(raw_docs)
-                log.debug(f"splited documents count:{len(docs)}")
+                log.info(f"splited documents count:{len(docs)}")
                 uuids = [str(uuid4()) for _ in range(len(docs))]
                 if len(docs) > 0:
                     store.add_documents(docs,ids=uuids)
-            log.debug("add documents done------")
+            log.info("add documents done------")
             return collection_name,known_type,raw_docs
         except Exception as e:
             if e.__class__.__name__ == "UniqueConstraintError":
                 return True
             log.exception(e)
-            log.debug(e)
+            log.error(e)
             return collection_name,known_type,raw_docs
 
     def get_compress_retriever(self,retriever,filter_type:FilterType):
@@ -188,11 +188,12 @@ class KnowledgeManager:
     def bm25_retriever(self,docs:List[Document],k=1):
         try:
             import jieba
-            bm25_retriever = BM25Retriever.from_documents(documents=docs,preprocess_func=jieba.cut)
+            bm25_retriever = BM25Retriever.from_documents(documents=docs,preprocess_func=jieba.lcut)
             bm25_retriever.k = k
             return bm25_retriever
         except Exception as e:
-            log.error(f"{e} {docs}")
+            log.error(f"{e} {type(docs)}")
+            print(traceback.format_exc())
     
     def get_retriever(self,collection_names="all",tenant=None,k: int=3,bm25: bool=False,filter_type=FilterType.LLM_FILTER,
                       sim_algo:SimAlgoType = SimAlgoType.SST):
@@ -226,7 +227,7 @@ class KnowledgeManager:
                 if bm25:
                     docs.extend(self.collection_manager.get_documents(collection_name,tenant=tenant))
                 
-            if bm25:
+            if bm25 and len(docs) > 0:
                 retrievers.append(self.bm25_retriever(docs,k))
                 
             retriever = EnsembleRetriever(
@@ -235,10 +236,10 @@ class KnowledgeManager:
             
             # retriever = RunnableParallel(input=RunnablePassthrough(), docs=retriever)
 
-            if filter_type is not None:
+            if filter_type is not None and len(docs) > 0:
                 retriever = self.get_compress_retriever(retriever,filter_type)
         except Exception as e:
-            log.debug(e)
+            log.error(e)
         return retriever
     
     
@@ -261,6 +262,8 @@ class KnowledgeManager:
         
         try:
             retriever = self.get_retriever(collection_names,tenant=tenant,k=k,bm25=bm25,filter_type=filter_type)
+            if retriever is None:
+                return None
             docs = retriever.invoke(query)
             if to_dict:
                 docs = {
@@ -439,14 +442,14 @@ class KnowledgeManager:
             loader = AsyncChromiumLoader(urls)
             log.info("Indexing new urls...")
             docs = loader.load()
-            log.debug(f"load docs:{len(docs)}")
+            log.info(f"load docs:{len(docs)}")
             docs_transformed = bs_transformer.transform_documents(
                 docs, tags_to_extract=["span"]
             )
             docs = list(docs_transformed)
-            log.debug(f"transform docs:{len(docs)}")
+            log.info(f"transform docs:{len(docs)}")
             docs = self.split_documents(docs)
-            log.debug(f"split docs:{len(docs)}")
+            log.info(f"split docs:{len(docs)}")
             uuids = [str(uuid4()) for _ in range(len(docs))]
             if metadata:
                 for doc in docs:
@@ -455,12 +458,12 @@ class KnowledgeManager:
                 vector_store.add_documents(docs,ids=uuids)
         return docs
         
-    def web_search(self,query,tenant=None,collection_name="web",region="cn-zh",time="d",max_results=3):
+    def web_search(self,query,tenant=None,collection_name="web",region="cn-zh",time="d",max_results=2):
         if query is None:
             return 
         
         questions = self.search_chain.invoke({"date":datetime.now().date(),"text":query,"results_num":max_results})
-        log.debug(f"questions:{questions}")
+        log.info(f"questions:{questions}")
         
         search = DuckDuckGoSearchAPIWrapper(region=region, time=time, max_results=1,source="news")
         

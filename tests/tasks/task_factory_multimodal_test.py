@@ -7,7 +7,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from agi.tasks.task_factory import TaskFactory, TASK_TRANSLATE, TASK_IMAGE_GEN, TASK_TTS, TASK_SPEECH_TEXT, TASK_RETRIEVER, TASK_AGENT
 import logging
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 
 class TestTaskMultiModalFactory(unittest.TestCase):
 

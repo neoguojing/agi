@@ -7,7 +7,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from agi.tasks.task_factory import TaskFactory, TASK_LLM, TASK_EMBEDDING, TASK_LLM_WITH_HISTORY
 import logging
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 class TestLLMFactory(unittest.TestCase):
 
     def test_llm(self):

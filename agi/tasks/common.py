@@ -22,7 +22,7 @@ from langchain_ollama import OllamaEmbeddings
 from urllib.parse import urljoin
 import logging
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 
 def graph_input_format(state: AgentState):
     return state["messages"]

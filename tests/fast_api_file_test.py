@@ -9,7 +9,7 @@ from agi.config import CACHE_DIR
 from agi.fast_api_file import ALLOWED_MIME_TYPES 
 import logging
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 # 测试用文件和路径
 TEST_FILE_PATH = "testfile.txt"
 TEST_COLLECTION_NAME = "test_collection"

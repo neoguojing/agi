@@ -3,7 +3,7 @@ import logging
 from langchain_core.messages import AIMessage, HumanMessage
 import logging
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 class TestTextToSpeech(unittest.TestCase):
 
     def setUp(self):

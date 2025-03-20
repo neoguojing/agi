@@ -4,7 +4,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 import logging
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 class TestModelFactory(unittest.TestCase):
 
     def test_get_model(self):

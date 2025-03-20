@@ -8,7 +8,7 @@ from agi.tasks.llm_app import create_history_aware_retriever,create_stuff_docume
 from agi.config import CACHE_DIR
 import logging
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 class TestTaskRagFactory(unittest.TestCase):
     
     def setUp(self):

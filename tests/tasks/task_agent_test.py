@@ -5,7 +5,7 @@ from langchain_core.messages import AIMessage
 import uuid
 import logging
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 class TestAgent(unittest.TestCase):
     def setUp(self):
         self.agent = TaskFactory.create_task(TASK_AGENT)

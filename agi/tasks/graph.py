@@ -24,7 +24,7 @@ from agi.tasks.agent import State
 import traceback
 import logging
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 # set_verbose(True)
 # set_debug(True)
 
@@ -65,8 +65,8 @@ class AgiGraph:
         # self.builder.add_edge("rag", END)
         # self.builder.add_edge("web", END)
 
-        self.builder.add_edge("image_gen", "result_fix")
-        self.builder.add_edge("tts", "result_fix")
+        self.builder.add_edge("image_gen", END)
+        self.builder.add_edge("tts", END)
         self.builder.add_edge("result_fix", END)
         
         self.builder.add_conditional_edges(START, self.routes)
@@ -139,12 +139,12 @@ class AgiGraph:
             return "result_fix"
         elif feature == "tts" and state.get("input_type") == "text":    #仅文本转语音
             return "tts"
-        return "result_fix"
+        return END
     
     def tts_control(self,state: State):
         if state["need_speech"]:
             return "tts"
-        return "result_fix"
+        return END
     
     def invoke(self,input:State) -> State:
         config={"configurable": {"user_id": input.get("user_id","default_tenant"), "conversation_id": input.get("conversation_id",""),
@@ -180,12 +180,13 @@ class AgiGraph:
                     # for message in event["messages"]:
                     #     yield message  # 返回当前事件
                     # 仅返回最后一条消息
+                    log.info(f"last state message:{event['messages'][-1]}")
                     yield event["messages"][-1]
                 else:
-                    log.debug(f"Event missing messages: {event}")
+                    log.error(f"Event missing messages: {event}")
                     yield event # 返回当前事件
         except Exception as e:
-            log.debug(f"Error during streaming: {e}")
+            log.error(f"Error during streaming: {e}")
             yield {"error": str(e)}  # 返回错误信息
     
     def display(self):

@@ -8,7 +8,7 @@ from agi.tasks.retriever import KnowledgeManager
 from agi.tasks.vectore_store import CollectionManager
 import logging
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 # {
 # 	"model": "qwen2.5:14b",
 # 	"created_at": "2024-10-08T13:54:01.747642283Z",
@@ -43,8 +43,8 @@ DATA_DIR = os.getenv("DATA_DIR", f"{BACKEND_DIR}/data")
 CHROMA_DATA_PATH = f"{DATA_DIR}/vector_db"
 LANGCHAIN_DB_PATH = f"sqlite:///{DATA_DIR}/langchain.db"
 
-log.debug(f"CHROMA_DATA_PATH:{CHROMA_DATA_PATH}")
-log.debug(f"LANGCHAIN_DB_PATH:{LANGCHAIN_DB_PATH}")
+log.info(f"CHROMA_DATA_PATH:{CHROMA_DATA_PATH}")
+log.info(f"LANGCHAIN_DB_PATH:{LANGCHAIN_DB_PATH}")
 knowledgeBase = KnowledgeManager(data_path=CHROMA_DATA_PATH)
 
 async def langchain_fastapi_wrapper(
@@ -88,7 +88,7 @@ async def langchain_fastapi_wrapper(
 
     except Exception as e:
         error_detail = f"Open WebUI: Server Error:{e}"
-        log.debug(error_detail)
+        log.error(error_detail)
         raise HTTPException(
             status_code=500,
             detail=error_detail,

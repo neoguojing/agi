@@ -17,7 +17,7 @@ from PIL import Image as PILImage
 STYLE = 'style="width: 100%; max-height: 100vh;"'
 import logging
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 class Image2Image(CustomerLLM):
     model_path: str = Field(default=os.path.join(model_root, "sdxl-turbo"), alias='model_path')
     refiner: Optional[Any] = None

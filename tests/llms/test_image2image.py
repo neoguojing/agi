@@ -5,7 +5,7 @@ from langchain_core.messages import AIMessage,HumanMessage
 from PIL import Image as PIL_Image
 import logging
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 class TestImage2Image(unittest.TestCase):
 
     def setUp(self):
