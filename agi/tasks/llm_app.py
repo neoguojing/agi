@@ -481,7 +481,7 @@ def create_rag_for_graph(km: KnowledgeManager):
         retriever = km.get_retriever(collection_names=collections,tenant=tenant)
         if retriever:
             docs = retriever.invoke(inputs.get("text",""))
-            log.debug(f"query_docs----{docs}")
+            log.info(f"relative docks:{docs}")
             return docs
         return []
     

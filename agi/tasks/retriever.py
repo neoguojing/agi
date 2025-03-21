@@ -216,13 +216,13 @@ class KnowledgeManager:
                         search_kwargs={'k': k, 'lambda_mult': 0.5}
                     )
                 elif sim_algo == SimAlgoType.SST:
-                    # chroma_retriever = self.collection_manager.get_vector_store(collection_name).as_retriever(
-                    #     search_type="similarity_score_threshold",
-                    #     search_kwargs={"score_threshold": 0.5}
-                    # )
                     chroma_retriever = self.collection_manager.get_vector_store(collection_name,tenant=tenant).as_retriever(
-                        search_kwargs={"k": k}
+                        search_type="similarity_score_threshold",
+                        search_kwargs={"score_threshold": 0.5}
                     )
+                    # chroma_retriever = self.collection_manager.get_vector_store(collection_name,tenant=tenant).as_retriever(
+                    #     search_kwargs={"k": k}
+                    # )
                 retrievers.append(chroma_retriever)
                 if bm25:
                     docs.extend(self.collection_manager.get_documents(collection_name,tenant=tenant))

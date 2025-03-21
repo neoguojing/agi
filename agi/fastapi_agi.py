@@ -59,15 +59,15 @@ class ChatMessage(BaseModel):
 
 # 兼容 OpenAI 的请求格式
 class ChatCompletionRequest(BaseModel):
-    model: str = Field(default="agi-model", description="模型名称")
+    model: str = Field(default="agi", description="模型名称" , optional=True)
     messages: List[ChatMessage] = Field(description="对话历史")
-    stream: bool = Field(default=False, description="是否使用流式响应")
+    stream: bool = Field(default=False, description="是否使用流式响应" , optional=True)
     max_tokens: int = Field(default=1024, ge=1, description="最大生成 token 数", optional=True)
-    user: str = Field(default="", description="用户名")
-    db_ids: List[str] = Field(default=None, description="知识库列表")
-    need_speech: bool = Field(default=False, description="是否需要语音输出")
-    feature: str = Field(default="agent", description="支持的特性：agent,web,rag")
-    conversation_id: str = Field(default="", description="会话id")
+    user: str = Field(default="", description="用户名" , optional=True)
+    db_ids: List[str] = Field(default=None, description="知识库列表", optional=True)
+    need_speech: bool = Field(default=False, description="是否需要语音输出", optional=True)
+    feature: str = Field(default="agent", description="支持的特性：agent,web,rag", optional=True)
+    conversation_id: str = Field(default="", description="会话id" , optional=True)
 
 
 @app.post("/v1/chat/completions", summary="兼容 OpenAI 的聊天完成接口")
