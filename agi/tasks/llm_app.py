@@ -469,6 +469,7 @@ def create_rag_for_graph(km: KnowledgeManager):
     def query_docs(inputs: dict,config: RunnableConfig) :
     # def query_docs(inputs: dict) :
         log.debug(f"query_docs----{inputs}")
+        # collection_names 位None，则默认使用 all进行检索
         collection_names = inputs.get("collection_names",None)        
         collections = "all"
         if isinstance(collection_names,str):

@@ -242,11 +242,12 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
                 # 跳过用户消息
                 if role == "user":
                     continue
-                
+                # 是否渲染为html消息，暂时废弃
                 if web:
                     event.content = handle_response_content_as_string(event.content)
                 
                 # 处理additional_kwargs信息
+                # 首先是引用
                 additional_kwargs = event.additional_kwargs
                 if additional_kwargs is not None and additional_kwargs.get("citations"):
                     if isinstance(event.content,str):
