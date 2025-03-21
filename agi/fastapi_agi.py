@@ -88,7 +88,7 @@ async def chat_completions(
     # 处理知识库参数
     additional_kwargs = {}
     if request.db_ids is not None:
-        additional_kwargs["collection_names"] = json.dumps(request.db_ids)
+        additional_kwargs["collection_names"] = request.db_ids
         
     # 只处理最后一条消息
     # for msg in request.messages:

@@ -206,7 +206,7 @@ class KnowledgeManager:
                 
             if isinstance(collection_names, str):
                 collection_names = [collection_names]  # 如果是字符串，转为列表
-            log.debug(f"retriever use {collection_names} for tenant {tenant}")
+            log.info(f"retriever use {collection_names} for tenant {tenant}")
             retrievers = []
             docs = []
             for collection_name in collection_names:
