@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, File, UploadFile, Response,Form,APIR
 from fastapi.responses import Response
 from agi.config import CACHE_DIR
 from agi.tasks.task_factory import TaskFactory,TASK_DOC_DB
+from typing import Optional
 import shutil
 import uuid
 import logging
@@ -60,8 +61,8 @@ def generate_unique_filename(filename: str):
 @router_file.post("/files")
 async def save_file(
     file: UploadFile = File(...),  # 接收上传的文件
-    collection_name: str = Form(...),  # 接收 collection_name 作为表单字段
     user_id: str = Form(...),
+    collection_name: Optional[str] = Form("default")
     ):
     # 获取文件类型
     file_type = get_file_type(file)
