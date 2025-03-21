@@ -474,6 +474,9 @@ def create_rag_for_graph(km: KnowledgeManager):
         collections = "all"
         if isinstance(collection_names,str):
             collections = json.loads(collection_names)
+        elif isinstance(collection_names,list):
+            collections = collection_names
+            
         tenant = config.get("configurable", {}).get("user_id", None)
         retriever = km.get_retriever(collection_names=collections,tenant=tenant)
         if retriever:
