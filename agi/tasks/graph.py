@@ -35,6 +35,7 @@ log.setLevel(logging.INFO)
 # 4. web检索 流程独立，支持输出检索结果和转向llm done
 # 5. 加入人工check环节，返回结果，提示用户输入
 # 6.模型可以绑定工具 
+# 7.rag没有检索到合适的内容，则转换到agent模式，解决图片的问题
     
 class AgiGraph:
     def __init__(self):
@@ -59,7 +60,7 @@ class AgiGraph:
         self.builder.add_conditional_edges("doc_chat", self.tts_control)
 
         # 有上下文的请求支持平行处理
-        self.builder.add_edge("rag", "doc_chat")
+        self.builder.add_conditional_edges("rag", self.rag_control)
         self.builder.add_edge("web", "doc_chat")
         # 输出rag和查询的结果，根据测试，流式结果会输出工具的查询过程，无需并行返回
         # self.builder.add_edge("rag", END)
@@ -138,6 +139,14 @@ class AgiGraph:
         if state["need_speech"]:
             return "tts"
         return END
+    
+    # 在未检索到关联文档的情况下，开启自由模式
+    def rag_control(self,state: State):
+        last_message = state.get("messages")[-1]
+        context = last_message.additional_kwargs.get("context")
+        if isinstance(last_message,ToolMessage) and context == "":
+            return "agent"
+        return "doc_chat"
     
     def invoke(self,input:State) -> State:
         config={"configurable": {"user_id": input.get("user_id","default_tenant"), "conversation_id": input.get("conversation_id",""),
