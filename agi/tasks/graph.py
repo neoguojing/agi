@@ -94,37 +94,30 @@ class AgiGraph:
                 user_msg = state.get("messages")[-1]
                 ai_msg = AIMessage(content=user_msg.content)
                 state.get("messages").append(ai_msg)
-            log.debug(f"result_fix---{state}")
-            # 分离think消息
-            last_message = state.get("messages")[-1]
-            think_content,other_content = self.split_think_content(last_message.content)
-            if think_content != "":
-                think_message = ToolMessage(content=think_content,tool_call_id="thinking")
-                last_message.content = other_content
-                state.get("messages")[-1] = think_message
-                state.get("messages").append(last_message)
-            log.debug(f"result_fix1---{state}")
         except Exception as e:
-            log.error(f"{e} {last_message}")
+            log.error(f"{e}")
             print(traceback.format_exc())
 
         return state
     
     # 处理推理模型返回
     def split_think_content(self,content):
-        
-        if isinstance(content,list):
-            content = content[0].get("text","")
-            
-        import re
-        match = re.search(r"(<think>\s*.*?\s*</think>)\s*(.*)", content, re.DOTALL)
+        think_content = ""
+        other_content = content
+        try:
+            if isinstance(content,list):
+                content = content[0].get("text","")
+                
+            import re
+            match = re.search(r"(<think>\s*.*?\s*</think>)\s*(.*)", content, re.DOTALL)
 
-        if match:
-            think_content = match.group(1).replace("\n", " ").strip()  # 保留 <think> 标签，并去掉换行
-            other_content = match.group(2).replace("\n", " ").strip()  # 去掉换行
-        else:
-            think_content = ""  # 兼容没有 <think> 标签的情况
-            other_content = content.replace("\n", " ").strip()  # 直接去掉换行
+            if match:
+                think_content = match.group(1).replace("\n", " ").strip()  # 保留 <think> 标签，并去掉换行
+                other_content = match.group(2).replace("\n", " ").strip()  # 去掉换行
+
+        except Exception as e:
+            log.error(e)
+
         return think_content,other_content
 
     def feature_control(self,state: State):
@@ -177,11 +170,20 @@ class AgiGraph:
             for event in events:
                 log.debug(event)
                 if "messages" in event and event["messages"]:
+                    # 这段代码，返回重复值给客户端
                     # for message in event["messages"]:
                     #     yield message  # 返回当前事件
                     # 仅返回最后一条消息
                     log.info(f"last state message:{event['messages'][-1]}")
-                    yield event["messages"][-1]
+                    last_message = event['messages'][-1]
+                    # 处理推理场景，目前适配qwq
+                    think_content,other_content = self.split_think_content(last_message.content)
+                    if think_content != "":
+                        think_message = ToolMessage(content=think_content,tool_call_id="thinking")
+                        yield think_message
+                        last_message.content = other_content
+                        
+                    yield last_message
                 else:
                     log.error(f"Event missing messages: {event}")
                     yield event # 返回当前事件
