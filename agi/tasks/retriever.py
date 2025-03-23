@@ -28,7 +28,7 @@ from langchain.retrievers.document_compressors import DocumentCompressorPipeline
 from langchain_community.document_transformers import EmbeddingsRedundantFilter
 from agi.tasks.vectore_store import CollectionManager
 from agi.tasks.prompt import DEFAULT_SEARCH_PROMPT,rag_filter_template
-from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
+from langchain_community.utilities import DuckDuckGoSearchAPIWrapper,SearxSearchWrapper
 from langchain_community.tools import DuckDuckGoSearchResults
 from langchain_community.document_loaders import AsyncChromiumLoader,AsyncHtmlLoader
 from langchain_community.document_transformers import BeautifulSoupTransformer
@@ -73,7 +73,12 @@ class KnowledgeManager:
         self.llm =llm
         
         self.search_chain = DEFAULT_SEARCH_PROMPT | self.llm | QuestionListOutputParser()
-
+        self.search_engines = {
+            # https://searx.space/ 公共searx_host
+            "SearxSearch": SearxSearchWrapper(searx_host="https://search.rhscz.eu/"),
+            "DuckDuckGoSearch": DuckDuckGoSearchAPIWrapper(region="wt-wt",safesearch="off", time="d", max_results=3,source="news"),
+        }
+        
         self.collection_manager = CollectionManager(data_path,embedding)
 
     def list_documets(self,collection_name, tenant=None):
@@ -458,30 +463,18 @@ class KnowledgeManager:
                 vector_store.add_documents(docs,ids=uuids)
         return docs
         
-    def web_search(self,query,tenant=None,collection_name="web",region="wt-wt",time="d",max_results=2):
+    def web_search(self,query,tenant=None,collection_name="web",max_results=3):
         if query is None:
             return 
-        
-        questions = self.search_chain.invoke({"date":datetime.now().date(),"text":query,"results_num":max_results})
-        log.info(f"questions:{questions}")
-        
-        search = DuckDuckGoSearchAPIWrapper(region=region,safesearch="off", time=time, max_results=3,source="news")
-        
-        urls_to_look = []
+    
         raw_results = []
         raw_docs = []
         try:
-            log.info("Searching for relevant urls...")
-            for q in questions:
-                search_results = search.results(q,max_results=1)
-                for res in search_results:
-                    if res.get("link", None):
-                        urls_to_look.append(res["link"])
-                raw_results.extend(search_results)
-            log.info(f"Search results: {raw_results}")
-        
+            questions = self.search_chain.invoke({"date":datetime.now().date(),"text":query,"results_num":max_results})
+            log.info(f"questions:{questions}")
             # Relevant urls
-            urls = set(urls_to_look)
+            urls,raw_results = self.do_search(questions,max_results=max_results)        
+
             # TODO 执行网页爬虫 效果很差
             # collection_name,known_type,raw_docs = self.store(collection_name,list(urls),source_type=SourceType.WEB,tenant=tenant)
             # log.info(f"scrach results: {raw_docs}")
@@ -516,7 +509,61 @@ class KnowledgeManager:
                                                 chunk_size=chunk_size, chunk_overlap=chunk_overlap,add_start_index=True)
         return text_splitter.split_documents(documents)
 
-
+    def do_search(self, questions, max_results=2, max_retries=3):
+        import random
+        urls_to_look = []
+        raw_results = []
+        
+        try:
+            log.info("Searching for relevant urls...")
+            for q in questions:
+                retries = 0
+                success = False
+                
+                # 尝试最大次数
+                while retries < max_retries and not success:
+                    try:
+                        # 随机选择一个搜索引擎
+                        random_key = random.choice(list(self.search_engines.keys()))
+                        search = self.search_engines[random_key]
+                        
+                        # 获取搜索结果
+                        search_results = []
+                        if isinstance(search,DuckDuckGoSearchAPIWrapper):
+                            search_results = search.results(q, max_results=max_results)
+                        elif isinstance(search,SearxSearchWrapper):
+                            search_results = search.results(
+                                q,
+                                num_results=max_results,
+                                categories="general"
+                            )
+                            
+                        for res in search_results:
+                            if res.get("link", None):
+                                urls_to_look.append(res["link"])
+                        
+                        raw_results.extend(search_results)
+                        
+                        log.info(f"Search results for query '{q}': {search_results}")
+                        success = True  # 如果成功，就跳出重试循环
+                    
+                    except Exception as e:
+                        retries += 1
+                        log.error(f"Error with search engine {random_key}, retrying {retries}/{max_retries}...")
+                        log.error(e)
+                        if retries >= max_retries:
+                            log.error("Max retries reached, skipping this query.")
+                        else:
+                            continue  # 如果还没有达到最大重试次数，则继续尝试其他引擎
+            
+            log.info(f"Final search results: {raw_results}")
+        
+        except Exception as e:
+            log.error(e)
+            print(traceback.format_exc())
+            
+        return set(urls_to_look),raw_results
+    
 class SafeWebBaseLoader(WebBaseLoader):
     """WebBaseLoader with enhanced error handling for URLs."""
 
