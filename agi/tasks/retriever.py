@@ -458,14 +458,14 @@ class KnowledgeManager:
                 vector_store.add_documents(docs,ids=uuids)
         return docs
         
-    def web_search(self,query,tenant=None,collection_name="web",region="cn-zh",time="d",max_results=2):
+    def web_search(self,query,tenant=None,collection_name="web",region="wt-wt",time="d",max_results=2):
         if query is None:
             return 
         
         questions = self.search_chain.invoke({"date":datetime.now().date(),"text":query,"results_num":max_results})
         log.info(f"questions:{questions}")
         
-        search = DuckDuckGoSearchAPIWrapper(region=region, time=time, max_results=1,source="news")
+        search = DuckDuckGoSearchAPIWrapper(region=region,safesearch="off", time=time, max_results=3,source="news")
         
         urls_to_look = []
         raw_results = []

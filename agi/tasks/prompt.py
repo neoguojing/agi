@@ -110,7 +110,7 @@ DEFAULT_SEARCH_PROMPT = PromptTemplate(
     input_variables=["text","date","results_num"],
     template="""You are an assistant tasked with improving Google search results.\
 The current date is {date}.\
-Generate {results_num} Google search queries that are similar to this question.\
+Generate {results_num} Google search queries that are similar to this question using English or Chinese.\
 For any time-sensitive words, calculate the corresponding actual dates based on the specific date provided, and replace them accordingly..\
 The output should be a numbered list of questions and each should have a question mark at the end:\
 {text}""",

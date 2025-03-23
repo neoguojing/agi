@@ -117,7 +117,7 @@ def add_messages(left: Messages, right: Messages) -> Messages:
         
     
 class State(AgentState):
-    messages: Annotated[Sequence[BaseMessage], add_messages]
+    # messages: Annotated[Sequence[BaseMessage], add_messages]
     input_type: str
     need_speech: bool
     status: str
@@ -127,7 +127,7 @@ class State(AgentState):
 
 prompt = ChatPromptTemplate.from_messages(
     [
-        ("system", "You are a helpful assistant named agi. Respond only in {language}."),
+        ("system", "You are a helpful assistant named agi. Respond only in {language} with Markdown format."),
         ("placeholder", "{messages}"),
     ]
 )

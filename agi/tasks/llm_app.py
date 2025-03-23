@@ -270,38 +270,42 @@ def build_citations(inputs: dict):
     citations = []
     # 使用 defaultdict 来根据 source 聚合文档
     source_dict = defaultdict(list)
+    try:
+        # 将文档按 source 聚合
+        for doc in inputs["context"]:
+            source_type = ""
+            if doc.metadata.get('filename'):
+                source_type = "file"
+            elif doc.metadata.get('link'):
+                source_type = "web"
+            elif doc.metadata.get('source'):
+                source_type = "collection"
 
-    # 将文档按 source 聚合
-    for doc in inputs["context"]:
-        source_type = ""
-        if doc.metadata.get('filename'):
-            source_type = "file"
-        elif doc.metadata.get('link'):
-            source_type = "web"
-        elif doc.metadata.get('source'):
-            source_type = "collection"
+            source = doc.metadata.get('filename') or doc.metadata.get('link') or doc.metadata.get('source')
+            source_dict[source].append(doc)
 
-        source = doc.metadata.get('filename') or doc.metadata.get('link') or doc.metadata.get('source')
-        source_dict[source].append(doc)
-
-    # 对每个 source 下的文档进行排序，并整理成需要的格式
-    for source, docs in source_dict.items():
-        # 按照 start_index 排序（假设页面顺序可以通过 start_index 排序）
-        sorted_docs = sorted(docs, key=lambda doc: doc.metadata.get('page', 0))
+        # 对每个 source 下的文档进行排序，并整理成需要的格式
+        for source, docs in source_dict.items():
+            # 按照 start_index 排序（假设页面顺序可以通过 start_index 排序）
+            sorted_docs = sorted(docs, key=lambda doc: doc.metadata.get('page', 0))
+            
+            # 提取排序后的 document 内容
+            document_contents = [doc.page_content for doc in sorted_docs]
+            
+            # 提取 metadata
+            metadata = [doc.metadata for doc in sorted_docs]
+            distances = [1.0] * len(sorted_docs)
+            citations.append({
+                "source": {"id":source,"name":source},
+                "document": document_contents,
+                "metadata": metadata,
+                "distances": distances
+            })
+        log.debug(f"build_citations----{citations}")
+    except Exception as e:
+        log.error(e)
+        print(traceback.format_exc())
         
-        # 提取排序后的 document 内容
-        document_contents = [doc.page_content for doc in sorted_docs]
-        
-        # 提取 metadata
-        metadata = [doc.metadata for doc in sorted_docs]
-        distances = [1.0] * len(sorted_docs)
-        citations.append({
-            "source": {"id":source,"name":source},
-            "document": document_contents,
-            "metadata": metadata,
-            "distances": distances
-        })
-    log.debug(f"build_citations----{citations}")
     return citations
 
 def create_retrieval_chain(
@@ -521,7 +525,7 @@ def dict_to_ai_message(output: dict):
     ai = AIMessage(
         content=content,
         additional_kwargs={
-            'context': output.get('context', ''),
+            'context': output.get('context', []),
             'citations': output.get('citations', [])
         }
     )
@@ -534,9 +538,9 @@ def dict_to_tool_message(output: dict):
     log.debug(f"dict_to_tool_message---{output}")
     ai = ToolMessage(
         tool_call_id = "web or rag",
-        content=output.get('text', ''),
+        content=f"{output.get('text', '')}\n",
         additional_kwargs={
-            'context': output.get('context', ''),
+            'context': output.get('context', []),
             'citations': output.get('citations', [])
         }
     )

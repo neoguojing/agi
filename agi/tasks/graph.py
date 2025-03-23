@@ -198,6 +198,7 @@ class AgiGraph:
                     yield event # 返回当前事件
         except Exception as e:
             log.error(f"Error during streaming: {e}")
+            print(traceback.format_exc())
             yield {"error": str(e)}  # 返回错误信息
     
     def display(self):
