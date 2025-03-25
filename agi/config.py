@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 load_dotenv()  # 加载 .env 文件中的环境变量
 
 #服务相关
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.environ.get("BASE_URL","http://localhost:8000")
 
 # 存储相关
 CACHE_DIR = os.path.abspath(os.environ.get("CACHE_DIR","./cache"))
