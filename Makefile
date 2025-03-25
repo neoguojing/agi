@@ -53,11 +53,11 @@ clean:
 .PHONY: image
 image:
 	docker build \
-	--build-arg COMMIT_HASH=$(git rev-parse HEAD) \
-	--build-arg BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD) \
-	-t guojingneo/agi-fastapi-app:$(git rev-parse --short HEAD)-$(git rev-parse --abbrev-ref HEAD) .
+	--build-arg COMMIT_HASH=$$(git rev-parse HEAD) \
+	--build-arg BRANCH_NAME=$$(git rev-parse --abbrev-ref HEAD) \
+	-t guojingneo/agi-fastapi-app:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
 
 .PHONY: runi
 runi:
-	docker run -d -p 8000:8000 guojingneo/agi-fastapi-app:$(git rev-parse --short HEAD)-$(git rev-parse --abbrev-ref HEAD)
+	docker run -d -p 8000:8000 guojingneo/agi-fastapi-app:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD)
 
