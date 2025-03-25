@@ -1,29 +1,23 @@
-# agi
-langchain based agi
-GPU显存： 初始：2550MB 峰值：20GB
-内存： 初始：7GB 峰值：16GB
+# AGI Project - README
 
-## RAG
-- history_chain = RunnableLambda(self._enter_history, self._aenter_history).with_config(run_name="load_history")
-- history_chain = RunnablePassthrough.assign(**{"chat_history": history_chain}).with_config(run_name="insert_history")
-- retrieval_docs = (lambda x: x["input"]) | retriever
-- retriever = (lambda x: x["input"]) | retriever  or  prompt | llm | StrOutputParser() | retriever, run_name="chat_retriever_chain"
-- context=retrieval_docs.with_config(run_name="retrieve_documents")
-- "context": format_docs run_name="format_inputs"
-- answer =  "context" | prompt | llm | _output_parser     run_name="stuff_documents_chain"
+## Project Overview
 
-## TODO
-- 知识库支持多租户 DONE
-- 探索graph将知识库和检索结果实时返回的场景：1.拆分流程；2.流程可以直接返回 DONE
-- 支持多模态图片作为输入的ocr解读
-- 上传文件之后，其他的问答军基于该文档问答，会导致问题 DONE
-- doc文件提取有问题
+This project aims to build a powerful AGI (Artificial General Intelligence) system with multiple capabilities, including LLM-based chatting, knowledge base retrieval, web queries, text-to-image generation, image-to-text conversion, and speech-based Q&A. The system is based on **LangChain**, supports **FastAPI**, and is compatible with **OpenWebUI**, designed to provide developers with a highly available and extensible intelligent agent framework.
 
-## OPENWEBUI 修改
-- 新增: backend/open_webui/routers/agi.py
-- 修改: backend/open_webui/utils/models.py
-- 修改: backend/open_webui/utils/middleware.py
-- 修改: backend/open_webui/main.py
-- 修改: backend/open_webui/config.py
-- 修改: backend/open_webui/audio.py
-- 修改: .env.example
+## Features
+
+- **LLM Chat**: Supports natural language conversation based on large language models (LLMs).
+- **Knowledge Base Retrieval**: Capable of retrieving information from a predefined knowledge base to provide more accurate answers.
+- **Web Query**: Integrated web query functionality that fetches real-time information from the internet based on user requests.
+- **Text to Image**: Supports generating images from textual descriptions, providing rich visual content.
+- **Image to Text**: Supports converting images into textual descriptions, capable of understanding and interpreting image content.
+- **Speech Q&A**: Integrates speech recognition and synthesis to enable voice-based question-answer interactions.
+
+## Tech Stack
+
+- **LangChain**: The core framework, supporting flexible LLM integration and pipeline management.
+- **FastAPI**: High-performance web framework for building the API service.
+- **OpenWebUI**: Compatible with OpenWebUI, allowing users to interact and manage the system through a visual interface.
+- **Additional Tools**: Integrates various third-party tools for implementing the features like text-to-image generation, speech recognition, etc.
+
+## Project Structure

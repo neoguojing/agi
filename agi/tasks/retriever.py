@@ -76,7 +76,7 @@ class KnowledgeManager:
         self.search_engines = {
             # https://searx.space/ 公共searx_host
             "SearxSearch": SearxSearchWrapper(searx_host="https://search.rhscz.eu/"),
-            "DuckDuckGoSearch": DuckDuckGoSearchAPIWrapper(region="wt-wt",safesearch="off", time="d", max_results=3,source="news"),
+            "DuckDuckGoSearch": DuckDuckGoSearchAPIWrapper(region="wt-wt",safesearch="moderate", time="d", max_results=3,source="news"),
         }
         
         self.collection_manager = CollectionManager(data_path,embedding)
