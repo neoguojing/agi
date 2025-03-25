@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 import torch
 from TTS.api import TTS
-from agi.config import MODEL_PATH as model_root, CACHE_DIR, TTS_SPEAKER_WAV
+from agi.config import TTS_MODEL_DIR as model_root, CACHE_DIR, TTS_SPEAKER_WAV,TTS_GPU_ENABLE,TTS_FILE_SAVE_PATH
 from agi.llms.base import CustomerLLM,parse_input_messages,path_to_preview_url
 from langchain_core.runnables import RunnableConfig
 from typing import Any, Optional,Union
@@ -20,7 +20,7 @@ audio_style = "width: 300px; height: 50px;"  # 添加样式
 class TextToSpeech(CustomerLLM):
     tts: Optional[Any] = Field(default=None)
     speaker_wav: str = Field(default=TTS_SPEAKER_WAV)
-    is_gpu: bool = Field(default=False)
+    is_gpu: bool = Field(default=TTS_GPU_ENABLE)
     language: str = Field(default="zh-cn")
     save_file: bool = Field(default=True)
     
@@ -35,13 +35,15 @@ class TextToSpeech(CustomerLLM):
         """Initialize the TTS model based on the available hardware."""
         if self.tts is None:
             if self.is_gpu:
-                model_path = os.path.join(model_root, "tts_models--multilingual--multi-dataset--xtts_v2")
+                # model_path = os.path.join(model_root, "tts_models--multilingual--multi-dataset--xtts_v2")
+                model_path = model_root
                 config_path = os.path.join(model_path, "config.json")
                 logging.info("use ts_models--multilingual--multi-dataset--xtts_v2")
                 self.tts = TTS(model_path=model_path, config_path=config_path).to(torch.device("cuda"))
             else:
                 logging.info("use tts_models/zh-CN/baker/tacotron2-DDC-GST")
-                self.tts = TTS(model_name="tts_models/zh-CN/baker/tacotron2-DDC-GST").to(torch.device("cpu"))
+                # self.tts = TTS(model_name="tts_models/zh-CN/baker/tacotron2-DDC-GST").to(torch.device("cpu"))
+                self.tts = TTS(model_name=model_root).to(torch.device("cpu"))
                 # model_dir = os.path.join(model_root, "tts_models--zh-CN--baker--tacotron2-DDC-GST")
                 # model_path = os.path.join(model_dir, "model_file.pth")
                 # config_path = os.path.join(model_dir, "config.json")
@@ -106,8 +108,7 @@ class TextToSpeech(CustomerLLM):
         """Save the generated audio to a file and return the file path."""
         if not file_path:
             # file_name = f'audio/{date.today().strftime("%Y_%m_%d")}/{int(time.time())}.wav'
-            file_name = f'audio/{int(time.time())}.wav'
-            file_path = os.path.join(CACHE_DIR, file_name)
+            file_path = f'{TTS_FILE_SAVE_PATH}/{int(time.time())}.wav'
             Path(file_path).parent.mkdir(parents=True, exist_ok=True)
         
         try:

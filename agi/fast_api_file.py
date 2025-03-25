@@ -4,7 +4,7 @@ import mimetypes
 import urllib.parse
 from fastapi import FastAPI, HTTPException, File, UploadFile, Response,Form,APIRouter
 from fastapi.responses import Response
-from agi.config import CACHE_DIR
+from agi.config import FILE_UPLOAD_PATH,IMAGE_FILE_SAVE_PATH,TTS_FILE_SAVE_PATH
 from agi.tasks.task_factory import TaskFactory,TASK_DOC_DB
 from typing import Optional
 import shutil
@@ -33,10 +33,10 @@ router_file = APIRouter(prefix="/v1")
 
 @router_file.get("/files")
 async def list_files():
-    if not os.path.exists(CACHE_DIR):
+    if not os.path.exists(FILE_UPLOAD_PATH):
         raise HTTPException(status_code=500, detail="Upload directory not found")
     files = []
-    with os.scandir(CACHE_DIR) as entries:
+    with os.scandir(FILE_UPLOAD_PATH) as entries:
         for entry in entries:
             if entry.is_file():
                 file_info = {
@@ -72,7 +72,7 @@ async def save_file(
 
     # 生成唯一文件名，防止重名
     unique_filename = generate_unique_filename(file.filename)
-    file_path = os.path.join(CACHE_DIR,"upload", unique_filename)
+    file_path = os.path.join(FILE_UPLOAD_PATH, unique_filename)
     # 确保目标目录存在，如果不存在则创建
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     # 保存文件
@@ -93,23 +93,23 @@ async def download_file(file_name: str):
     file_path = ""
     headers = {}
     if content_type.startswith("image/"):
-        file_path = os.path.join(CACHE_DIR,"image", file_name)
+        file_path = os.path.join(IMAGE_FILE_SAVE_PATH, file_name)
         log.debug(f"download_file---,{content_type},{file_path}")
-        if not os.path.realpath(file_path).startswith(os.path.realpath(CACHE_DIR)):
+        if not os.path.realpath(file_path).startswith(os.path.realpath(IMAGE_FILE_SAVE_PATH)):
             raise HTTPException(status_code=400, detail="Invalid file path")
         if not os.path.exists(file_path):
             return {"error": "image not found"}
         headers["Content-Disposition"] = f"inline; filename={urllib.parse.quote(file_name)}"
     elif content_type.startswith("audio/"):
-        file_path = os.path.join(CACHE_DIR,"audio", file_name)
-        if not os.path.realpath(file_path).startswith(os.path.realpath(CACHE_DIR)):
+        file_path = os.path.join(TTS_FILE_SAVE_PATH, file_name)
+        if not os.path.realpath(file_path).startswith(os.path.realpath(TTS_FILE_SAVE_PATH)):
             raise HTTPException(status_code=400, detail="Invalid file path")
         if not os.path.exists(file_path):
             return {"error": "audio not found"}
         headers["Content-Disposition"] = f"inline; filename={urllib.parse.quote(file_name)}"
     else:
-        file_path = os.path.join(CACHE_DIR,"upload", file_name)
-        if not os.path.realpath(file_path).startswith(os.path.realpath(CACHE_DIR)):
+        file_path = os.path.join(FILE_UPLOAD_PATH, file_name)
+        if not os.path.realpath(file_path).startswith(os.path.realpath(FILE_UPLOAD_PATH)):
             raise HTTPException(status_code=400, detail="Invalid file path")
         if not os.path.exists(file_path):
             return {"error": "File not found"}
@@ -120,8 +120,8 @@ async def download_file(file_name: str):
 
 @router_file.delete("/files/{file_name}")
 async def delete_file(file_name: str):
-    file_path = os.path.join(CACHE_DIR,"upload", file_name)
-    if not os.path.realpath(file_path).startswith(os.path.realpath(CACHE_DIR)):
+    file_path = os.path.join(FILE_UPLOAD_PATH, file_name)
+    if not os.path.realpath(file_path).startswith(os.path.realpath(FILE_UPLOAD_PATH)):
         raise HTTPException(status_code=400, detail="Invalid file path")
     if not os.path.exists(file_path):
         return {"error": "File not found"}

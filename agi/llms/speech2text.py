@@ -2,7 +2,7 @@ from faster_whisper import WhisperModel
 import os
 from agi.config import (
     WHISPER_MODEL_DIR as model_root,
-    WHISPER_MODEL
+    WHISPER_GPU_ENABLE
 )
 from typing import Any, List, Mapping, Optional,Union
 from agi.llms.base import CustomerLLM,parse_input_messages
@@ -22,17 +22,17 @@ class Speech2Text(CustomerLLM):
         super().__init__(**kwargs)
         
         self.compute_type = compute_type
-        if device == "cuda":
-            self.model_size = os.path.join(model_root,"wisper-v3-turbo-c2")
+        if WHISPER_GPU_ENABLE:
+            self.model_size = model_root
             self.device = "cuda"
-            logging.info("use wisper-v3-turbo-c2")
+            logging.info(model_root)
             if not os.path.exists(self.model_size):
                 self.model_size = "large-v3"
                 self.local_files_only=False
         else:
             self.device = "cpu"
-            self.model_size = "base"
-            logging.info("use base")
+            self.model_size = model_root
+            logging.info(model_root)
             self.compute_type = "default"
 
         

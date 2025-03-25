@@ -9,7 +9,7 @@ import torch
 from typing import Any, List, Mapping, Optional, Union
 from pydantic import Field
 from agi.llms.base import CustomerLLM,parse_input_messages,path_to_preview_url
-from agi.config import MODEL_PATH as model_root, CACHE_DIR
+from agi.config import IMAGE_TO_IMAGE_MODEL_PATH as model_root, CACHE_DIR,IMAGE_FILE_SAVE_PATH
 from langchain_core.runnables import RunnableConfig
 from langchain_core.messages import AIMessage, HumanMessage
 from PIL import Image as PILImage
@@ -19,14 +19,14 @@ import logging
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 class Image2Image(CustomerLLM):
-    model_path: str = Field(default=os.path.join(model_root, "sdxl-turbo"), alias='model_path')
+    model_path: str = Field(default=model_root, alias='model_path')
     refiner: Optional[Any] = None
     n_steps: int = 20
     high_noise_frac: float = 0.8
-    file_path: str = CACHE_DIR
+    file_path: str = IMAGE_FILE_SAVE_PATH
     save_image: bool = True
 
-    def __init__(self, model_path: str = os.path.join(model_root, "sdxl-turbo"), **kwargs):
+    def __init__(self, model_path: str = model_root, **kwargs):
         super().__init__(**kwargs)
         
         self.model_path = model_path
@@ -77,7 +77,7 @@ class Image2Image(CustomerLLM):
         if self.save_image:
             # Save image to the file system
             # file_name = f'image/{date.today().strftime("%Y_%m_%d")}/{int(time.time())}.png'
-            file_name = f'image/{int(time.time())}.png'
+            file_name = f'{int(time.time())}.png'
             output_file = Path(self.file_path) / file_name
             output_file.parent.mkdir(parents=True, exist_ok=True)
 

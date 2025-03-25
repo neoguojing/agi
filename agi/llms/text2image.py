@@ -14,7 +14,7 @@ from langchain.callbacks.manager import (
 )
 from pydantic import  Field
 from agi.llms.base import CustomerLLM,parse_input_messages,path_to_preview_url
-from agi.config import MODEL_PATH as model_root,CACHE_DIR
+from agi.config import TEXT_TO_IMAGE_MODEL_PATH as model_root,IMAGE_FILE_SAVE_PATH
 import hashlib
 from langchain_core.runnables import RunnableConfig
 from langchain_core.messages import AIMessage, HumanMessage
@@ -26,12 +26,12 @@ style = 'style="width: 100%; max-height: 100vh;"'
 class Text2Image(CustomerLLM):
     model_path: str = Field(None, alias='model_path')
     refiner: Any = None
-    n_steps: int = 20
+    n_steps: int = 50
     high_noise_frac: float = 0.8
-    file_path: str = CACHE_DIR
+    file_path: str = IMAGE_FILE_SAVE_PATH
     save_image: bool = True
 
-    def __init__(self, model_path: str=os.path.join(model_root,"sdxl-turbo"),**kwargs):
+    def __init__(self, model_path: str=model_root,**kwargs):
         super().__init__(**kwargs)
         self.model_path = model_path
         
@@ -41,7 +41,7 @@ class Text2Image(CustomerLLM):
         if self.model is None:
             if self.model_path is not None:
                 self.model = AutoPipelineForText2Image.from_pretrained(
-                        os.path.join(model_root,"sdxl-turbo"), torch_dtype=torch.float16, variant="fp16"
+                        model_root, torch_dtype=torch.float16, variant="fp16"
                 )
             else:
                 self.model = AutoPipelineForText2Image.from_pretrained(
@@ -107,7 +107,7 @@ class Text2Image(CustomerLLM):
     def _save_image(self, image: Any) -> str:
         """Save the generated image to the file system."""
         # file_name = f'image/{date.today().strftime("%Y_%m_%d")}/{int(time.time())}.png'
-        file_name = f'image/{int(time.time())}.png'
+        file_name = f'{int(time.time())}.png'
         output_file = Path(self.file_path) / file_name
         output_file.parent.mkdir(parents=True, exist_ok=True)
 

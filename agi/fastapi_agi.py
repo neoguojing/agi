@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # 假设的 AgiGraph 模块（需要根据实际情况调整）
 from agi.tasks.graph import AgiGraph, State
 from agi.fast_api_file import router_file
-from agi.config import CACHE_DIR
+from agi.config import FILE_UPLOAD_PATH
 from pydub import AudioSegment
 import traceback
 import logging
@@ -372,7 +372,7 @@ async def create_transcription(file: UploadFile, api_key: str = Depends(verify_a
     filename = f"{id}.{ext}"
     contents = file.file.read()
 
-    file_dir = f"{CACHE_DIR}/upload/audio"
+    file_dir = f"{FILE_UPLOAD_PATH}/audio"
     os.makedirs(file_dir, exist_ok=True)
     file_path = f"{file_dir}/{filename}"
 
