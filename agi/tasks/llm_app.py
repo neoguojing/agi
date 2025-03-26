@@ -206,9 +206,21 @@ def create_stuff_documents_chain(
         | _output_parser
     ).with_config(run_name="stuff_documents_chain")
     
+    llm_with_history = create_llm_with_history()
+    target_chain = RunnableBranch(
+        (
+            # Both empty string and empty list evaluate to False
+            lambda x: not x.get(document_variable_name, False),
+            # If no context, then we just pass input to llm
+            (lambda x: x["text"]) | llm_with_history,
+        ),
+        # If chat history, then we pass inputs to LLM chain, then to retriever
+        chain
+    ).with_config(run_name="stuff_documents_with_branch")
+
     if debug:
         return debug_tool | chain
-    return chain
+    return target_chain
 
 '''
 {
@@ -828,12 +840,3 @@ class LangchainApp:
     def __call__(self,input: str,user_id="",conversation_id=""):
         response = self.invoke(input=input,user_id=user_id,conversation_id=conversation_id)
         return response
-
-# if __name__ == "__main__":
-#     app = LangchainApp()
-#     stream_generator = app.ollama("hello")
-#     # 遍历生成器
-#     for response in stream_generator:
-#         log.debug(response)
-#     # ret = app.embed_query("我爱北京天安门")
-#     # log.debug(ret)

@@ -19,6 +19,7 @@ from langchain_core.documents import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.retrievers.multi_query import MultiQueryRetriever
 from langchain.retrievers import ContextualCompressionRetriever, EnsembleRetriever
+from langchain.retrievers.document_compressors import LLMChainExtractor
 from langchain_community.retrievers import BM25Retriever
 from langchain_openai import ChatOpenAI,OpenAIEmbeddings
 from typing import Any,List,Dict,Iterator, Optional, Sequence, Union
@@ -61,6 +62,7 @@ class FilterType(Enum):
     LLM_FILTER = "llm_chain_filter"
     LLM_RERANK = "llm_listwise_rerank"
     RELEVANT_FILTER = "embeddings_filter"
+    LLM_EXTRACT = "llm_extract"
 
 class SimAlgoType(Enum):
     MMR = "mmr"
@@ -178,6 +180,8 @@ class KnowledgeManager:
         # 相似度检查
         elif filter_type == FilterType.RELEVANT_FILTER:
             relevant_filter = EmbeddingsFilter(embeddings=self.embedding, similarity_threshold=0.76)
+        elif filter_type == FilterType.LLM_EXTRACT:
+            relevant_filter = LLMChainExtractor.from_llm(self.llm)
 
         redundant_filter = EmbeddingsRedundantFilter(embeddings=self.embedding)
         
@@ -201,7 +205,7 @@ class KnowledgeManager:
             log.error(f"{e} {type(docs)}")
             print(traceback.format_exc())
     
-    def get_retriever(self,collection_names="all",tenant=None,k: int=3,bm25: bool=False,filter_type=FilterType.LLM_FILTER,
+    def get_retriever(self,collection_names="all",tenant=None,k: int=3,bm25: bool=False,filter_type=FilterType.LLM_EXTRACT,
                       sim_algo:SimAlgoType = SimAlgoType.SST):
         retriever = None
         try:
