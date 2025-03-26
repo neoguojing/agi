@@ -113,8 +113,8 @@ class AgiGraph:
             match = re.search(r"(<think>\s*.*?\s*</think>)\s*(.*)", content, re.DOTALL)
 
             if match:
-                think_content = match.group(1).replace("\n", " ").strip()  # 保留 <think> 标签，并去掉换行
-                other_content = match.group(2).replace("\n", " ").strip()  # 去掉换行
+                think_content = match.group(1).strip()  # 保留 <think> 标签，并去掉换行
+                other_content = match.group(2).strip()  # 去掉换行
 
         except Exception as e:
             log.error(e)

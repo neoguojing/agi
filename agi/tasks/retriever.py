@@ -142,8 +142,8 @@ class KnowledgeManager:
                     raw_docs = loader.load()
 
                 for doc in raw_docs:
-                    doc.page_content = doc.page_content.replace("\n", " ")
-                    doc.page_content = doc.page_content.replace("\t", "")
+                    # doc.page_content = doc.page_content.replace("\n", " ")
+                    # doc.page_content = doc.page_content.replace("\t", "")
                     doc.metadata["collection_name"] = collection_name
                     doc.metadata["type"] = source_type.value
                     doc.metadata["timestamp"] = str(time.time())
