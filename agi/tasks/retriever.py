@@ -242,7 +242,7 @@ class KnowledgeManager:
             
             # retriever = RunnableParallel(input=RunnablePassthrough(), docs=retriever)
 
-            if filter_type is not None and len(docs) > 0:
+            if filter_type is not None:
                 retriever = self.get_compress_retriever(retriever,filter_type)
             
             # 生成3个问题，增加检索的多样性
