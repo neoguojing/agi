@@ -17,6 +17,7 @@ from langchain_community.document_loaders import (
 )
 from langchain_core.documents import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.retrievers.multi_query import MultiQueryRetriever
 from langchain.retrievers import ContextualCompressionRetriever, EnsembleRetriever
 from langchain_community.retrievers import BM25Retriever
 from langchain_openai import ChatOpenAI,OpenAIEmbeddings
@@ -71,7 +72,6 @@ class KnowledgeManager:
         self.embedding = embedding
 
         self.llm =llm
-        
         self.search_chain = DEFAULT_SEARCH_PROMPT | self.llm | QuestionListOutputParser()
         self.search_engines = {
             # https://searx.space/ 公共searx_host
@@ -168,13 +168,14 @@ class KnowledgeManager:
 
     def get_compress_retriever(self,retriever,filter_type:FilterType):
         relevant_filter = None
+        # 关联性检查
         if filter_type == FilterType.LLM_FILTER:
             
             relevant_filter = LLMChainFilter.from_llm(self.llm,prompt=rag_filter_template)
-        
+        # 结果重排
         elif filter_type == FilterType.LLM_RERANK:
             relevant_filter = LLMListwiseRerank.from_llm(self.llm, top_n=1)
-        
+        # 相似度检查
         elif filter_type == FilterType.RELEVANT_FILTER:
             relevant_filter = EmbeddingsFilter(embeddings=self.embedding, similarity_threshold=0.76)
 
@@ -243,9 +244,14 @@ class KnowledgeManager:
 
             if filter_type is not None and len(docs) > 0:
                 retriever = self.get_compress_retriever(retriever,filter_type)
+            
+            # 生成3个问题，增加检索的多样性
+            retriever_from_llm = MultiQueryRetriever.from_llm(
+                retriever=retriever, llm=self.llm
+            )
         except Exception as e:
             log.error(e)
-        return retriever
+        return retriever_from_llm
     
     
     def query_doc(self,
@@ -493,7 +499,7 @@ class KnowledgeManager:
             return "", False,raw_results,[]
          
 
-    def split_documents(self, documents,chunk_size=1500,chunk_overlap=100):
+    def split_documents(self, documents,chunk_size=1024*50,chunk_overlap=5*1024):
         text_splitter = RecursiveCharacterTextSplitter(separators=[
                                                     "\n\n",
                                                     "\n",
