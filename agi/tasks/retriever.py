@@ -499,7 +499,7 @@ class KnowledgeManager:
             return "", False,raw_results,[]
          
 
-    def split_documents(self, documents,chunk_size=1024*50,chunk_overlap=5*1024):
+    def split_documents(self, documents,chunk_size=4000,chunk_overlap=200):
         text_splitter = RecursiveCharacterTextSplitter(separators=[
                                                     "\n\n",
                                                     "\n",
