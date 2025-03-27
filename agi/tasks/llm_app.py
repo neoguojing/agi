@@ -199,31 +199,33 @@ def create_stuff_documents_chain(
         log.debug(f"format_history_chain_input out:{messages}")
         return messages
 
+    llm_with_history = create_llm_with_history(runnable=llm,debug=debug,dict_input=False)
     doc_chain = (
         RunnablePassthrough.assign(**{document_variable_name: format_docs}).with_config(
             run_name="format_inputs"
         )
         | prompt
         | format_history_chain_input
-        | create_llm_with_history(runnable=llm,debug=debug,dict_input=False)
+        | llm_with_history
         | _output_parser
     ).with_config(run_name="stuff_documents_chain")
 
     
-    llm_with_history = create_llm_with_history(runnable=llm,debug=debug,dict_input=True)
+    
     target_chain = RunnableBranch(
         (
             # Both empty string and empty list evaluate to False
             lambda x: not x.get(document_variable_name, False),
             # If no context, then we just pass input to llm
-            (lambda x: x) | llm_with_history,
+            default_template | format_history_chain_input | llm_with_history | _output_parser,
         ),
         # If context, then we pass inputs to tag chain
         doc_chain
     ).with_config(run_name="stuff_documents_with_branch")
 
     if debug:
-        return debug_tool | doc_chain
+        return debug_tool | target_chain
+    
     return target_chain
 
 '''
@@ -289,6 +291,10 @@ def build_citations(inputs: dict):
     try:
         # 将文档按 source 聚合
         for doc in inputs["context"]:
+            # 使用llm extract 提取内容时，与输入无关会返回NO_OUTPUT
+            if "NO_OUTPUT" in doc.page_content:
+                continue
+            
             source_type = ""
             if doc.metadata.get('filename'):
                 source_type = "file"
@@ -519,7 +525,7 @@ def create_rag_for_graph(km: KnowledgeManager):
 # Input: AgentState
 # OutPut: AgentState
 def create_docchain_for_graph(llm):
-    combine_docs_chain = create_stuff_documents_chain(llm, doc_qa_template,debug=False)
+    combine_docs_chain = create_stuff_documents_chain(llm, doc_qa_template,debug=True)
 
     combine_docs_chain = (
         start_runnable

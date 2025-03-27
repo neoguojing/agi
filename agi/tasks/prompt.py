@@ -33,7 +33,7 @@ default_template = ChatPromptTemplate.from_messages(
             "system",
             system_prompt
         ),
-        MessagesPlaceholder(variable_name="chat_history"),
+        MessagesPlaceholder(variable_name="chat_history",optional=True),
         ("human", "{text}")
     ]
 )
@@ -53,7 +53,7 @@ cumstom_rag_default_template = ChatPromptTemplate.from_messages(
             "system",
             custome_rag_system_prompt
         ),
-        MessagesPlaceholder(variable_name="chat_history"),
+        MessagesPlaceholder(variable_name="chat_history",optional=True),
         ("human", "{text}")
     ]
 )
@@ -73,7 +73,7 @@ contextualize_q_template = ChatPromptTemplate.from_messages(
             "system",
             contextualize_q_system_prompt
         ),
-        MessagesPlaceholder("chat_history"),
+        MessagesPlaceholder("chat_history",optional=True),
         ("human", "{text}")
     ]
 )
@@ -101,7 +101,7 @@ doc_qa_template = ChatPromptTemplate.from_messages(
             "system",
             doc_qa_prompt
         ),
-        # MessagesPlaceholder("chat_history"),
+        MessagesPlaceholder("chat_history",optional=True),
         ("human", "{text}")
     ]
 )

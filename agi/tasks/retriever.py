@@ -45,6 +45,8 @@ from agi.config import (
     CACHE_DIR
 )
 from datetime import datetime
+from exa_py import Exa
+from agi.config import EXA_API_KEY
 import traceback
 import logging
 log = logging.getLogger(__name__)
@@ -75,12 +77,15 @@ class KnowledgeManager:
 
         self.llm =llm
         self.search_chain = DEFAULT_SEARCH_PROMPT | self.llm | QuestionListOutputParser()
-        self.search_engines = {
-            # https://searx.space/ 公共searx_host
-            "SearxSearch": SearxSearchWrapper(searx_host="https://search.rhscz.eu/"),
-            "DuckDuckGoSearch": DuckDuckGoSearchAPIWrapper(region="wt-wt",safesearch="moderate", time="d", max_results=3,source="news"),
-        }
-        
+        self.search_engines = {}
+
+        # Only add Exa if EXA_API_KEY is not empty
+        if EXA_API_KEY:
+            self.search_engines["Exa"] = Exa(EXA_API_KEY)
+
+        # Always add DuckDuckGoSearch
+        self.search_engines["DuckDuckGoSearch"] = DuckDuckGoSearchAPIWrapper(region="wt-wt", safesearch="moderate", time="d", max_results=3, source="news")
+                
         self.collection_manager = CollectionManager(data_path,embedding)
 
     def list_documets(self,collection_name, tenant=None):
@@ -127,7 +132,7 @@ class KnowledgeManager:
                 elif source_type == SourceType.SEARCH_RESULT:
                     raw_docs.append(
                         Document(
-                            page_content=f"date:{source.get('date')},title:{source.get('title')},snippet:{source.get('snippet')}",
+                            page_content=f"{source.get('date')}\n{source.get('title')}\n{source.get('snippet')}",
                             metadata={"source":source.get("source"),"link":source.get("link")},
                         )
                     )
@@ -172,7 +177,6 @@ class KnowledgeManager:
         relevant_filter = None
         # 关联性检查
         if filter_type == FilterType.LLM_FILTER:
-            
             relevant_filter = LLMChainFilter.from_llm(self.llm,prompt=rag_filter_template)
         # 结果重排
         elif filter_type == FilterType.LLM_RERANK:
@@ -541,12 +545,22 @@ class KnowledgeManager:
                         search_results = []
                         if isinstance(search,DuckDuckGoSearchAPIWrapper):
                             search_results = search.results(q, max_results=max_results)
-                        elif isinstance(search,SearxSearchWrapper):
-                            search_results = search.results(
+                        elif isinstance(search,Exa):
+                            resp = search.search_and_contents(
                                 q,
+                                type="auto",
                                 num_results=max_results,
-                                categories="general"
+                                text=True,
                             )
+                            search_results = []
+                            for r in resp.results:
+                                search_results.append({
+                                    "snippet": r.text,
+                                    "title": r.title,
+                                    "link": r.url,
+                                    "date": r.published_date,
+                                    "source": r.url,
+                                })
                             
                         for res in search_results:
                             if res.get("link", None):
