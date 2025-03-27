@@ -163,6 +163,9 @@ def create_history_aware_retriever(
 
 # Input：dict
 # Output: str
+# llm转换为基于历史的对话模式
+# 若context不存在，则直接转到chat
+# context存在，则转到 doc chain
 def create_stuff_documents_chain(
     llm: LanguageModelLike,
     prompt: BasePromptTemplate = doc_qa_template,
@@ -195,31 +198,32 @@ def create_stuff_documents_chain(
         messages = x.to_messages()
         log.debug(f"format_history_chain_input out:{messages}")
         return messages
-    
-    chain = (
+
+    doc_chain = (
         RunnablePassthrough.assign(**{document_variable_name: format_docs}).with_config(
             run_name="format_inputs"
         )
         | prompt
         | format_history_chain_input
-        | llm
+        | create_llm_with_history(runnable=llm,debug=debug,dict_input=False)
         | _output_parser
     ).with_config(run_name="stuff_documents_chain")
+
     
-    llm_with_history = create_llm_with_history()
+    llm_with_history = create_llm_with_history(runnable=llm,debug=debug,dict_input=True)
     target_chain = RunnableBranch(
         (
             # Both empty string and empty list evaluate to False
             lambda x: not x.get(document_variable_name, False),
             # If no context, then we just pass input to llm
-            (lambda x: x["text"]) | llm_with_history,
+            (lambda x: x) | llm_with_history,
         ),
-        # If chat history, then we pass inputs to LLM chain, then to retriever
-        chain
+        # If context, then we pass inputs to tag chain
+        doc_chain
     ).with_config(run_name="stuff_documents_with_branch")
 
     if debug:
-        return debug_tool | chain
+        return debug_tool | doc_chain
     return target_chain
 
 '''
@@ -394,7 +398,6 @@ def create_chat_with_custom_rag(
         retriever = create_retriever(km,collection_names=collections)
         return retriever.invoke(inputs.get("text",""))
     
-    llm = create_llm_with_history(runnable=llm,debug=debug,dict_input=False)
     combine_docs_chain = create_stuff_documents_chain(llm, doc_qa_template,debug=debug)
      # 获取正确的输入格式
     begin = RunnableLambda(message_to_dict)
@@ -431,7 +434,6 @@ def create_chat_with_websearch(km: KnowledgeManager,llm,debug=True,graph: bool =
         return raw_docs
     
     # 期望combine_docs_chain 能够存储历史
-    llm = create_llm_with_history(runnable=llm,debug=debug,dict_input=False)
     combine_docs_chain = create_stuff_documents_chain(llm, doc_qa_template,debug=debug)
     # 获取正确的输入格式
     begin = RunnableLambda(message_to_dict)
@@ -517,7 +519,6 @@ def create_rag_for_graph(km: KnowledgeManager):
 # Input: AgentState
 # OutPut: AgentState
 def create_docchain_for_graph(llm):
-    llm = create_llm_with_history(runnable=llm,debug=False,dict_input=False)
     combine_docs_chain = create_stuff_documents_chain(llm, doc_qa_template,debug=False)
 
     combine_docs_chain = (
