@@ -18,7 +18,7 @@ from agi.config import (
     OLLAMA_DEFAULT_MODE,
 )
 from langchain_openai import ChatOpenAI
-from langchain_ollama import OllamaEmbeddings
+from langchain_ollama import OllamaEmbeddings,ChatOllama
 from urllib.parse import urljoin
 import logging
 log = logging.getLogger(__name__)
@@ -171,6 +171,11 @@ def create_speech2text_chain(graph=False):
 
 def create_llm_task(**kwargs):
     model_name = kwargs.get("model_name") or OLLAMA_DEFAULT_MODE
+    if kwargs.get("ollama"):
+        return ChatOllama(
+            model=model_name,
+            base_url=OLLAMA_API_BASE_URL,
+        )
     return ChatOpenAI(
         model=model_name,
         openai_api_key=OPENAI_API_KEY,
