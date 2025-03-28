@@ -62,7 +62,7 @@ decide_template = ChatPromptTemplate.from_messages(
 
 system_prompt = (
     "You are a helpful assistant. Answer all questions to the best of your ability."
-    "Please use {language} as default language."
+    "Please respond in {language}."
 )
 
 default_template = ChatPromptTemplate.from_messages(
@@ -82,7 +82,7 @@ custome_rag_system_prompt = (
     "\n\n"
     "{collection_names}"
     "\n\n"
-    "Please use {language} as default language."
+    "Please respond in {language}."
 )
 
 cumstom_rag_default_template = ChatPromptTemplate.from_messages(
@@ -102,7 +102,7 @@ contextualize_q_system_prompt = (
     "formulate a standalone question which can be understood "
     "without the chat history. Do NOT answer the question, "
     "just reformulate it if needed and otherwise return it as is."
-    "Please use {language} as default language."
+    "Please respond in {language}."
 )
 
 contextualize_q_template = ChatPromptTemplate.from_messages(
@@ -130,7 +130,7 @@ doc_qa_prompt = (
     "\n\n"
     "{context}"
     "\n\n"
-    "Please use {language} as default language."
+    "Please respond in {language}."
 )
 
 doc_qa_template = ChatPromptTemplate.from_messages(
