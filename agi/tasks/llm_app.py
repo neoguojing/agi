@@ -537,7 +537,8 @@ def create_docchain_for_graph(llm):
 
 def create_chatchain_for_graph(llm):
     chat = (
-        graph_input_format
+        start_runnable
+        | default_template 
         | llm
         # | ai_output_runnable
         | graph_parser
