@@ -21,6 +21,44 @@ agent_prompt = ChatPromptTemplate.from_messages(
             MessagesPlaceholder(variable_name="messages"),
         ]
     )
+# 用于路由决策的promt，分析用户意图，提供决策路径
+decider_prompt = (
+    "You are an AI assistant tasked with determining a single command based on the user's input type and their question. The input consists of two parts:"
+    '1. Input Type: {input_type}'
+    '2. User Question: {text}'
+
+    'Please follow these decision rules:'
+
+    '- If the input type is "image":'
+    '    - If the question requests extracting information from the image (e.g., reading text, describing image content), output: "image_parser".'
+    '    - If the question requires modifying the image, transforming its style, or generating a new image based on the input, output: "image_gen".'
+
+    '- If the input type is "text":'
+    '    - If the question indicates a request to generate or create an image (e.g., "Draw a cat", "Generate a futuristic cityscape"), output: "image_gen". '
+    '    - If the question requires current or external information (e.g., latest news, real-time data, factual verification), output: "web".'
+    '    - Otherwise, for typical text-based inquiries that do not require external data retrieval, output: "llm".'
+
+    'Your output should be a single command chosen from: "image_parser", "image_gen", "web", or "llm". Do not include any additional explanation or details.'
+
+    'Examples:'
+    '1. Input Type: "image"; Question: "Can you read the text in this photo?" '
+    '-> Output: "image_parser"'
+
+    '2. Input Type: "image"; Question: "Please convert this image into a watercolor painting." '
+    '-> Output: "image_gen"'
+
+    '3. Input Type: "text"; Question: "What is the latest update on the stock market?" '
+    '-> Output: "web"'
+
+    '4. Input Type: "text"; Question: "Tell me about the history of the Eiffel Tower." '
+    '-> Output: "llm"'
+)
+
+decide_template = ChatPromptTemplate.from_messages(
+    [
+        ("human", decider_prompt)
+    ]
+)
 
 system_prompt = (
     "You are a helpful assistant. Answer all questions to the best of your ability."

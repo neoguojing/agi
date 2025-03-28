@@ -2,6 +2,7 @@ import io
 from PIL import Image as PILImage
 from langgraph.graph import END, StateGraph, START
 import uuid
+from langchain_core.output_parsers import StrOutputParser
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.runnables import  RunnableConfig,Runnable,RunnablePassthrough
 from langchain.globals import set_debug
@@ -16,11 +17,13 @@ from agi.tasks.task_factory import (
     TASK_WEB_SEARCH,
     TASK_CUSTOM_RAG,
     TASK_DOC_CHAT,
+    TASK_LLM
     )
 from langgraph.prebuilt.chat_agent_executor import AgentState
 from typing import Dict, Any, Iterator,Union
 from langchain_core.messages import BaseMessage,AIMessage,HumanMessage,ToolMessage
-from agi.tasks.agent import State
+from agi.tasks.agent import State,Feature,InputType
+from agi.tasks.prompt import decide_template
 import traceback
 import logging
 log = logging.getLogger(__name__)
@@ -53,10 +56,15 @@ class AgiGraph:
         self.builder.add_node("web", TaskFactory.create_task(TASK_WEB_SEARCH,graph=True))
         self.builder.add_node("doc_chat", TaskFactory.create_task(TASK_DOC_CHAT,graph=True))
         self.builder.add_node("agent", TaskFactory.create_task(TASK_AGENT))
+        self.builder.add_node("image_parser", self.image2text_node)
+        # 用于处理非agent的请求:1.标题生成等用户自定义提示请求；2.图像识别等 image2text 请求；3.作为决策节点，判定用户意图
+        self.builder.add_node("llm", TaskFactory.create_task(TASK_LLM))
         self.builder.add_node("result_fix", self.result_fix)
-    
-        self.builder.add_conditional_edges("speech2text",self.feature_control)
+        
         self.builder.add_conditional_edges("agent", self.tts_control)
+        # 图片解析节点
+        self.builder.add_edge("image_parser", "llm")
+        self.builder.add_conditional_edges("llm", self.tts_control)
         self.builder.add_conditional_edges("doc_chat", self.tts_control)
 
         # 有上下文的请求支持平行处理
@@ -70,20 +78,26 @@ class AgiGraph:
         self.builder.add_edge("tts", END)
         self.builder.add_edge("result_fix", END)
         
+        self.builder.add_conditional_edges("speech2text",self.feature_control)
         self.builder.add_conditional_edges(START, self.routes)
         self.graph = self.builder.compile(
             checkpointer=checkpointer,
             # interrupt_before=["tools"],
             # interrupt_after=["tools"]
             )
+        
+        # 定义状态机chain
+        self.decider_chain = decide_template | TaskFactory.create_task(TASK_LLM) | StrOutputParser()
+        self.node_list = ["image_parser", "image_gen", "web", "llm"]
+
     # 通过用户指定input_type，来决定使用哪个分支
     def routes(self,state: State, config: RunnableConfig):
         msg_type = state.get("input_type")
-        if msg_type == "text":
+        if msg_type == InputType.TEXT:
             return self.feature_control(state)
-        elif msg_type == "image":
-            return "image_gen"
-        elif msg_type == "audio":
+        elif msg_type == InputType.IMAGE:
+            return self.feature_control(state)
+        elif msg_type == InputType.AUDIO:
             return "speech2text"
 
         return "result_fix"
@@ -95,6 +109,22 @@ class AgiGraph:
                 user_msg = state.get("messages")[-1]
                 ai_msg = AIMessage(content=user_msg.content)
                 state.get("messages").append(ai_msg)
+        except Exception as e:
+            log.error(f"{e}")
+            print(traceback.format_exc())
+
+        return state
+    
+    # 图片解析节点
+    def image2text_node(self,state: State,config: RunnableConfig):
+        try:
+            last_message = state.get("messages")[-1]
+            if isinstance(last_message,HumanMessage) and isinstance(last_message.content,list):
+                for item in last_message.content:
+                    if item.get("type") == InputType.IMAGE:
+                        item["type"] = "image_url"
+                        item["image_url"] = item["image"]
+
         except Exception as e:
             log.error(f"{e}")
             print(traceback.format_exc())
@@ -120,20 +150,50 @@ class AgiGraph:
             log.error(e)
 
         return think_content,other_content
+    
+    def auto_state_machine(self,state: State):
+        input_type = state.get("input_type")
+        last_message = state.get("messages")[-1]
+        text = ""
+        if isinstance(last_message.content,str):
+            text = last_message.content
+        elif isinstance(last_message.content,list):
+            for item in last_message.content:
+                if item["type"] == InputType.TEXT:
+                    text = item["text"]
+                    break
+        
+        next_step = self.decider_chain.invoke({"text":text,"input_type":input_type})
+        # 判断返回是否在决策列表里
+        if next_step in self.node_list:
+            return next_step
+        # 若大模型返回的值不标准，则看是否包含节点
+        match = next((option for option in self.node_list if option in next_step), None)
+        if match:
+            return match
 
+        return "llm"
+    
     def feature_control(self,state: State):
-        feature = state.get("feature","agent")
-        if feature == "agent":
+        feature = state.get("feature","")
+
+        if feature == Feature.AGENT:
             return "agent"
-        elif feature == "rag":
+        elif feature == Feature.RAG:
             return "rag"
-        elif feature == "web":
+        elif feature == Feature.WEB:
             return "web"
-        elif feature == "speech" and state.get("input_type") == "audio": #仅语音转文本
+        elif feature == Feature.SPEECH and state.get("input_type") == InputType.AUDIO: #仅语音转文本
             return "result_fix"
-        elif feature == "tts" and state.get("input_type") == "text":    #仅文本转语音
+        elif feature == Feature.TTS and state.get("input_type") == InputType.TEXT:    #仅文本转语音
             return "tts"
-        return END
+        elif feature == Feature.IMAGE2TEXT and state.get("input_type") == InputType.IMAGE:    #图片转文字
+            return "image_parser"
+        elif feature == Feature.IMAGE2IMAGE and state.get("input_type") == InputType.IMAGE:    #图片转图片
+            return "image_gen"
+        else: #通用任务处理：如标题生成、tag生成等 或者 自主决策
+            return self.auto_state_machine(state)
+        
     
     def tts_control(self,state: State):
         if state["need_speech"]:

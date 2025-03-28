@@ -115,7 +115,20 @@ def add_messages(left: Messages, right: Messages) -> Messages:
         log.error(e)
         print(traceback.format_exc())
         
-    
+class Feature:
+    AGENT = "agent"
+    RAG = "rag"
+    WEB = "web"
+    SPEECH = "speech"
+    TTS = "tts"
+    IMAGE2TEXT = "image2text"
+    IMAGE2IMAGE = "image2image"
+
+class InputType:
+    AUDIO = "audio"
+    TEXT = "text"
+    IMAGE = "image"
+
 class State(AgentState):
     # messages: Annotated[Sequence[BaseMessage], add_messages]
     input_type: str
@@ -123,7 +136,7 @@ class State(AgentState):
     status: str
     user_id: str
     conversation_id: str
-    feature: str  # 支持的特性，1.agent，2.web 3.rag，4.tts，5.speech 默认为agent
+    feature: str  # 支持的特性，1.agent，2.web 3.rag，4.tts，5.speech，6.image_recog 默认为agent
 
 prompt = ChatPromptTemplate.from_messages(
     [
