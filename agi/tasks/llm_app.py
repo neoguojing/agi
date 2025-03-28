@@ -535,6 +535,15 @@ def create_docchain_for_graph(llm):
     )
     return combine_docs_chain
 
+def create_chatchain_for_graph(llm):
+    chat = (
+        graph_input_format
+        | llm
+        # | ai_output_runnable
+        | graph_parser
+    )
+    return chat
+
  # 将输出的字典格式转换为BaseMessage 或者 graph的格式
 def dict_to_ai_message(output: dict):
     content = output.get('answer', '')

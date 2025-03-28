@@ -17,7 +17,8 @@ from langchain_openai import ChatOpenAI
 from langchain_ollama import OllamaEmbeddings
 from agi.tasks.llm_app import (
     create_chat_with_history,
-    create_chat_with_rag
+    create_chat_with_rag,
+    create_chatchain_for_graph,
 )
 from agi.tasks.common import (
     create_image_gen_chain,
@@ -35,6 +36,7 @@ from agi.tasks.retriever import KnowledgeManager
 # set_debug(True)
 
 TASK_LLM = "llm"
+TASK_LLM_CHAT = "llm_chat"
 TASK_LLM_WITH_HISTORY = "llm_with_history"
 TASK_LLM_WITH_RAG = "llm_with_rag"
 TASK_EMBEDDING = "embedding"
@@ -49,7 +51,8 @@ TASK_CUSTOM_RAG = "custom_rag"
 TASK_WEB_SEARCH = "web_search"
 TASK_DOC_CHAT = "doc_chat"
 
-
+def create_llm_chat_task(**kwargs):
+    return create_chatchain_for_graph(TaskFactory._llm)
 
 def create_llm_with_history_task(**kwargs):
     return create_chat_with_history(TaskFactory._llm)
@@ -108,6 +111,7 @@ class TaskFactory:
     
     task_creators = {
         TASK_LLM: create_llm_task,
+        TASK_LLM_CHAT: create_llm_chat_task,
         TASK_EMBEDDING: create_embedding_task,
         TASK_LLM_WITH_HISTORY: create_llm_with_history_task,
         TASK_RETRIEVER: create_retriever_task,
