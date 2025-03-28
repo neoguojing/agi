@@ -61,3 +61,13 @@ image:
 runi:
 	docker run -d -p 8000:8000 guojingneo/agi-fastapi-app:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD)
 
+.PHONY: models
+MODEL_DIR := ./modelfiles  # 指定存放 Modelfile 的目录
+models:
+	@for file in $(shell find $(MODEL_DIR) -type f); do \
+	    model_name=$$(basename $$file | sed 's/Modelfile-//'); \
+	    echo "Creating model: $$model_name from $$file"; \
+	    ollama create $$model_name -f $$file; \
+	done
+
+
