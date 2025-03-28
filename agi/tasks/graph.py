@@ -164,6 +164,7 @@ class AgiGraph:
                     break
         
         next_step = self.decider_chain.invoke({"text":text,"input_type":input_type})
+        log.info(f"auto_state_machine: {next_step}")
         # 判断返回是否在决策列表里
         if next_step in self.node_list:
             return next_step
