@@ -1,8 +1,17 @@
 # 使用官方 Python 3.11 slim 作为基础镜像
-FROM guojingneo/agi-fastapi-app:b46e693-main
+FROM python:3.11-slim
 
 # 设置工作目录
 WORKDIR /agi
+
+# 更新 apt-get 并安装必要的系统依赖（可根据需要调整）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential git \
+    && rm -rf /var/lib/apt/lists/*
+
+# 将 requirements.txt 拷贝到容器中，并安装 Python 依赖
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install -r requirements.txt
 
 # 将应用代码拷贝到容器中
 COPY . .
