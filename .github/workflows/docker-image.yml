@@ -2,6 +2,12 @@ name: Docker Image CI
 
 on:
   workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build'
+        required: true
+        default: 'main'
+        options: ['main', 'release-1.0.0', 'test'] 
 
 jobs:
 
