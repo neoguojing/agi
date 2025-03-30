@@ -5,14 +5,28 @@ on:
 
 env:
   REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/neoguojing/agi  # 镜像名称（需替换为您的仓库路径）
 
 jobs:
-
-  build:
-
+  build-and-push:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write  # 关键权限：允许推送镜像到 GHCR
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag ghcr.io/neoguojing/agi:$(git rev-parse --abbrev-ref HEAD)-$(git rev-parse --short HEAD)
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}  # 自动使用触发工作流的 GitHub 账号
+          password: ${{ secrets.GITHUB_TOKEN }}  # 使用内置令牌认证
+
+      - name: Build and Push Docker Image
+        run: |
+          TAG="$(git rev-parse --abbrev-ref HEAD)-$(git rev-parse --short HEAD)"
+          docker build -t ${{ env.IMAGE_NAME }}:$TAG .
+          docker push ${{ env.IMAGE_NAME }}:$TAG
