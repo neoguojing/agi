@@ -13,7 +13,7 @@ librosa==0.10.1
 git+https://github.com/neoguojing/TTS.git
 ctranslate2==4.4.0
 faster-whisper==1.0.3
-diffusers==0.21.2
+diffusers==0.32.2
 accelerate==1.1.1
 validators==0.34.0
 pypdf==5.1.0
