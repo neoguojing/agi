@@ -4,7 +4,9 @@ langchain_openai==0.2.5
 langgraph==0.2.44
 langchain_community==0.3.5
 langchain_ollama==0.2.0
-transformers==4.45.0
+# transformers==4.45.0
+git+https://github.com/huggingface/transformers@f742a644ca32e65758c3adb36225aef1731bd2a8
+qwen-omni-utils[decord]
 spacy[ja]==3.8.2
 torch==2.4.0
 torchaudio==2.4.0

@@ -5,7 +5,7 @@ import io
 import time
 from datetime import date
 from pathlib import Path
-from diffusers import  AutoPipelineForText2Image
+from diffusers import  AutoPipelineForText2Image,StableDiffusion3Pipeline
 import torch
 from langchain.llms.base import LLM
 from typing import Any, List, Mapping, Optional,Union
@@ -26,8 +26,9 @@ style = 'style="width: 100%; max-height: 100vh;"'
 class Text2Image(CustomerLLM):
     model_path: str = Field(None, alias='model_path')
     refiner: Any = None
-    n_steps: int = 50
+    n_steps: int = 28
     high_noise_frac: float = 0.8
+    guidance_scale: float = 3.5
     file_path: str = IMAGE_FILE_SAVE_PATH
     save_image: bool = True
 
@@ -40,9 +41,13 @@ class Text2Image(CustomerLLM):
     def _load_model(self):
         if self.model is None:
             if self.model_path is not None:
-                self.model = AutoPipelineForText2Image.from_pretrained(
-                        model_root, torch_dtype=torch.float16, variant="fp16"
-                )
+                # self.model = AutoPipelineForText2Image.from_pretrained(
+                #         model_root, torch_dtype=torch.float16, variant="fp16"
+                # )
+                # use 3.5 model
+                self.model = StableDiffusion3Pipeline.from_pretrained(model_root, torch_dtype=torch.bfloat16)
+                self.model = self.model.to("cuda")
+
             else:
                 self.model = AutoPipelineForText2Image.from_pretrained(
                     "stabilityai/sdxl-turbo", torch_dtype=torch.float16, variant="fp16"
@@ -82,7 +87,7 @@ class Text2Image(CustomerLLM):
     def _generate_image(self, prompt: str) -> Any:
         """Generate an image based on the given prompt."""
         # Adjust the number of inference steps based on desired quality
-        image = self.model(prompt=prompt, num_inference_steps=self.n_steps, guidance_scale=7.5).images[0]
+        image = self.model(prompt=prompt, num_inference_steps=self.n_steps, guidance_scale=self.guidance_scale).images[0]
         return image
 
     def handle_output(self, image: Any,html:bool=False) -> AIMessage:
