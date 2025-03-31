@@ -54,5 +54,8 @@ IMAGE_FILE_SAVE_PATH = os.getenv("IMAGE_FILE_SAVE_PATH",os.path.join(CACHE_DIR, 
 ## rag
 FILE_UPLOAD_PATH = os.getenv("FILE_UPLOAD_PATH",os.path.join(CACHE_DIR,"upload"))
 
+## multi model
+MULTI_MODEL_PATH = os.getenv("IMAGE_TO_IMAGE_MODEL_PATH",os.path.join(MODEL_PATH, "Qwen2.5-Omni-7B"))
+
 ## web
 EXA_API_KEY = os.getenv("FILE_UPLOAD_PATH","")
