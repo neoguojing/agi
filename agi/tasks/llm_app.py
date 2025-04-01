@@ -12,6 +12,7 @@ from langchain_core.language_models import LanguageModelLike
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import BasePromptTemplate
 from langchain_core.retrievers import RetrieverLike, RetrieverOutputLike
+from langgraph.prebuilt.chat_agent_executor import AgentState
 from langchain_core.runnables import (
     RunnableParallel,
     RunnablePassthrough,
@@ -29,7 +30,7 @@ from langchain.chains.combine_documents.base import (
     _validate_prompt,
 )
 from langchain_core.output_parsers import StrOutputParser,BaseOutputParser
-from agi.tasks.prompt import default_template,contextualize_q_template,doc_qa_template,cumstom_rag_default_template
+from agi.tasks.prompt import default_template,contextualize_q_template,doc_qa_template,docqa_modify_state_messages_runnable,default_modify_state_messages_runnable
 from agi.tasks.retriever import KnowledgeManager
 from agi.tasks.common import graph_parser,graph_input_format
 import json
@@ -38,7 +39,8 @@ from langchain.globals import set_debug
 from collections import defaultdict
 import validators
 from agi.config import (
-    LANGCHAIN_DB_PATH
+    LANGCHAIN_DB_PATH,
+    AGI_DEBUG,
 )
 from agi.tasks.retriever import create_retriever
 from typing import (
@@ -47,18 +49,29 @@ from typing import (
     Optional,
     Union
 )
-from langgraph.prebuilt.chat_agent_executor import AgentState
+
 def is_valid_url(url):
     return validators.url(url)
 import traceback
 import logging
+import inspect
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 
 set_debug(False)
 
 def debug_info(x : Any):
-    return f"type:{type(x)}\nmessage:{x}"
+    if AGI_DEBUG:
+        parent_name = ""
+        stack = inspect.stack()
+        if len(stack) > 2:  # stack[0] 是 get_parent_function_name，stack[1] 是调用它的函数
+            parent_name = stack[2].function  # stack[2] 是再往上的函数，即父函数
+        
+        log.info(f"type:{parent_name}\nmessage:{x}")
+
+    return x
+
+debug_tool = RunnableLambda(debug_info)
 
 # 裁剪历史消息
 trimmer = trim_messages(
@@ -90,19 +103,12 @@ def get_session_history(user_id: str, conversation_id: str):
     return SQLChatMessageHistory(f"{user_id}--{conversation_id}", LANGCHAIN_DB_PATH)
 
 # dict_input = True时，只能输入dict
-# Input: dict or List[BaseMessage]
-# Output: dict
-def create_llm_with_history(runnable,debug=False,dict_input=False):
-    def debug_print(x: Any) :
-        log.debug(f"create_llm_with_history\n:{debug_info(x)}")
-        return x
-
-    debug_tool = RunnableLambda(debug_print)
+# Input: List[BaseMessage]
+# Output: TODO
+def create_llm_with_history(runnable,dict_input=False):
     # 支持历史消息裁剪
-    runnable = trimmer | runnable
-    if debug:
-        runnable = debug_tool | runnable
-    
+    runnable = debug_tool | trimmer | runnable
+
     input_key = "text"
     history_key = "chat_history"
     if not dict_input:
@@ -134,58 +140,8 @@ def create_llm_with_history(runnable,debug=False,dict_input=False):
         ],
     )
 
-# 记录历史的聊天，单纯添加了模板
-def create_chat_with_history(llm,debug=False):
-    def debug_print(x: Any) :
-        log.debug(f"create_chat_with_history\n:{debug_info(x)}")
-        return x
-
-    debug_tool = RunnableLambda(debug_print)
-    
-    runnable = (default_template | llm )
-    if debug:
-        runnable = (default_template | debug_tool | llm )
-    
-    return create_llm_with_history(runnable=runnable)
-
-def create_history_aware_retriever(
-    llm: LanguageModelLike,
-    retriever: RetrieverLike,
-    prompt: BasePromptTemplate=contextualize_q_template,
-    debug=False
-) -> RetrieverOutputLike:
-    # The Runnable output is a list of Documents
-    def debug_print(x: Any) :
-        log.debug(f"create_history_aware_retriever\n:{debug_info(x)}")
-        return x
-
-    debug_tool = RunnableLambda(debug_print)
-    
-    if "text" not in prompt.input_variables:
-        raise ValueError(
-            "Expected `input` to be a prompt variable, "
-            f"but got {prompt.input_variables}"
-        )
-    chain = (prompt | llm | StrOutputParser() | retriever)
-    
-    if debug:
-        chain = (debug_tool | prompt | llm | StrOutputParser() | retriever)
-    
-    retrieve_documents: RetrieverOutputLike = RunnableBranch(
-        (
-            # Both empty string and empty list evaluate to False
-            lambda x: not x.get("chat_history", False),
-            # If no chat history, then we just pass input to retriever
-            (lambda x: x["text"]) | retriever,
-        ),
-        # If chat history, then we pass inputs to LLM chain, then to retriever
-        chain
-    ).with_config(run_name="chat_retriever_chain")
-    
-    return retrieve_documents
-
-# Input：dict
-# Output: str
+# Input：AgentState
+# Output: TODO
 # llm转换为基于历史的对话模式
 # 若context不存在，则直接转到chat
 # context存在，则转到 doc chain
@@ -197,14 +153,7 @@ def create_stuff_documents_chain(
     document_prompt: Optional[BasePromptTemplate] = None,
     document_separator: str = DEFAULT_DOCUMENT_SEPARATOR,
     document_variable_name: str = DOCUMENTS_KEY,
-    debug=False
 ) -> Runnable[Dict[str, Any], Any]:
-    
-    def debug_print(x: Any) :
-        log.debug(f"create_stuff_documents_chain\n:{debug_info(x)}")
-        return x
-
-    debug_tool = RunnableLambda(debug_print)
     
     _validate_prompt(prompt, document_variable_name)
     _document_prompt = document_prompt or DEFAULT_DOCUMENT_PROMPT
@@ -216,40 +165,32 @@ def create_stuff_documents_chain(
             for doc in inputs[document_variable_name]
         )
     # 经过prompt 之后，变为了ChatPromptValue，需要转换为List[BaseMessage]
-    def format_history_chain_input(x: Any):
-        log.debug(f"format_history_chain_input:{x}")
-        messages = x.to_messages()
-        log.debug(f"format_history_chain_input out:{messages}")
-        return messages
+    # def format_history_chain_input(x: Any):
+    #     log.debug(f"format_history_chain_input:{x}")
+    #     messages = x.to_messages()
+    #     log.debug(f"format_history_chain_input out:{messages}")
+    #     return messages
 
-    llm_with_history = create_llm_with_history(runnable=llm,debug=debug,dict_input=False)
+    llm_with_history = create_llm_with_history(runnable=llm,dict_input=False)
+
     doc_chain = (
-        RunnablePassthrough.assign(**{document_variable_name: format_docs}).with_config(
-            run_name="format_inputs"
-        )
-        | prompt
-        | format_history_chain_input
+        RunnablePassthrough.assign(**{document_variable_name: format_docs}).with_config(run_name="format_inputs")
+        | docqa_modify_state_messages_runnable
         | llm_with_history
-        | _output_parser
     ).with_config(run_name="stuff_documents_chain")
 
-    
-    
     target_chain = RunnableBranch(
         (
             # Both empty string and empty list evaluate to False
             lambda x: not x.get(document_variable_name, False),
             # If no context, then we just pass input to llm
-            default_template | format_history_chain_input | llm_with_history | _output_parser,
+            default_modify_state_messages_runnable | llm_with_history
         ),
         # If context, then we pass inputs to tag chain
         doc_chain
     ).with_config(run_name="stuff_documents_with_branch")
 
-    if debug:
-        return debug_tool | target_chain
-    
-    return target_chain
+    return debug_tool | target_chain
 
 '''
 {
@@ -353,146 +294,25 @@ def build_citations(inputs: dict):
         
     return citations
 
-def create_retrieval_chain(
-    retriever: Union[BaseRetriever, Runnable[dict, RetrieverOutput]],
-    combine_docs_chain: Runnable[Dict[str, Any], str],
-    debug=False
-) -> Runnable:
-    
-    def debug_print(x: Any) :
-        log.debug(f"create_retrieval_chain\n:{debug_info(x)}")
-        return x
-
-    debug_tool = RunnableLambda(debug_print)
-    
-    if not isinstance(retriever, BaseRetriever):
-        retrieval_docs: Runnable[dict, RetrieverOutput] = retriever
-    else:
-        retrieval_docs = (lambda x: x["text"]) | retriever
-
-    retrieval_chain = (
-        RunnablePassthrough.assign(
-            context=retrieval_docs.with_config(run_name="retrieve_documents"),
-            
-        ).assign(answer=combine_docs_chain,citations=build_citations)
-    ).with_config(run_name="retrieval_chain")
-
-    if debug:
-        return debug_tool | retrieval_chain
-    return retrieval_chain
-
-# chain:RunnableWithMessageHistory
-# chain:insert_history
-# chain:RunnableParallel<chat_history>
-# chain:load_history
-# chain:check_sync_or_async 
-# chain:retrieval_chain 
-# chain:RunnableAssign<answer> 
-# chain:RunnableParallel<answer>
-def create_chat_with_rag(km: KnowledgeManager,llm,debug=False,**kwargs):
-    retrievers = create_retriever(km,**kwargs)
-    
-    history_aware_retriever = create_history_aware_retriever(
-        llm, retrievers, contextualize_q_template,debug=debug
-    )
-    
-    combine_docs_chain = create_stuff_documents_chain(llm, doc_qa_template,debug=debug)
-    retrieval_chain = create_retrieval_chain(history_aware_retriever, combine_docs_chain,debug=debug)
-    return create_llm_with_history(runnable=retrieval_chain,debug=debug)
-
-# 知识库名称（列表），可以作为参数传入
-# TODO 无法和llm history 融合
-def create_chat_with_custom_rag(
-        km: KnowledgeManager,llm,
-        debug=True,
-        graph: bool = False
-):
-    # 1.引入新的prompt
-    # 2.构建创建retrever的runnable,返回docs
-    # 3.组合chain
-
-    def debug_print(x: Any) :
-        log.debug(f"create_chat_with_custom_rag\n:{debug_info(x)}")
-        return x
-    
-    debug_tool = RunnableLambda(debug_print)
-    
-    def query_docs(inputs: dict) :
-        log.debug(f"query_docs----{inputs}")
-        collection_names = inputs.get("collection_names",None)
-       
-        collections = "all"
-        if isinstance(collection_names,str):
-            collections = json.loads(collection_names)
-        retriever = create_retriever(km,collection_names=collections)
-        return retriever.invoke(inputs.get("text",""))
-    
-    combine_docs_chain = create_stuff_documents_chain(llm, doc_qa_template,debug=debug)
-     # 获取正确的输入格式
-    begin = RunnableLambda(message_to_dict)
-    # 获取合理的输出格式
-    output = RunnableLambda(dict_to_ai_message)
-    retrieval_docs = RunnableLambda(query_docs)
-    
-    retrieval_chain = (
-        begin
-        | RunnablePassthrough.assign(
-            context=retrieval_docs.with_config(run_name="retrieve_documents"),
-            
-        ).assign(answer=combine_docs_chain,citations=build_citations)
-        | output
-    ).with_config(run_name="custom_rag_chain")
-   
-    if debug:
-        retrieval_chain = debug_tool | retrieval_chain
-    
-    # 转换graph格式
-    if graph:
-        return retrieval_chain | graph_parser
-    
-    
-    return retrieval_chain
-
-# 支持网页检索的对答 chain
-# DONE 无法和llm history 融合
-def create_chat_with_websearch(km: KnowledgeManager,llm,debug=True,graph: bool = False):
-    
-    def web_search(inputs: dict) :
-        log.debug(f"web_search----{inputs}")
-        _,_,_,raw_docs = km.web_search(inputs.get("text",""))
-        return raw_docs
-    
-    # 期望combine_docs_chain 能够存储历史
-    combine_docs_chain = create_stuff_documents_chain(llm, doc_qa_template,debug=debug)
-    # 获取正确的输入格式
-    begin = RunnableLambda(message_to_dict)
-    # 获取合理的输出格式
-    output = RunnableLambda(dict_to_ai_message)
-
-    web_search_runable = RunnableLambda(web_search)
-    web_search_chain = (
-        begin
-        | RunnablePassthrough.assign(
-            context=web_search_runable.with_config(run_name="web_search_runable"),
-        )
-        .assign(answer=combine_docs_chain,citations=build_citations)
-        | output
-    ).with_config(run_name="custom_rag_chain")
-    
-
-    # 转换graph格式
-    if graph:
-        return web_search_chain | graph_parser
-    
-    return web_search_chain
+def get_last_message_text(state: AgentState):
+    last_message = state["messages"][-1]
+    if isinstance(last_message,HumanMessage):
+        if isinstance(last_message.content,str):
+            return last_message.content
+        elif isinstance(last_message.content,list):
+            for item in last_message.content:
+                if item["type"] == "text":
+                    return item["text"]
+    return ""
 
 # 独立的web检索chain
 # Input: AgentState
 # Output: AgentState
-def create_websearch_for_graph(km: KnowledgeManager):
+def create_websearch(km: KnowledgeManager):
     def web_search(input: dict,config: RunnableConfig) :
         tenant = config.get("configurable", {}).get("user_id", None)
-        _,_,_,raw_docs = km.web_search(input.get("text"),tenant=tenant)
+        text = get_last_message_text(input)
+        _,_,_,raw_docs = km.web_search(text,tenant=tenant)
         log.debug(f"web_search---{raw_docs}")
         return raw_docs
     
@@ -502,8 +322,6 @@ def create_websearch_for_graph(km: KnowledgeManager):
         | RunnablePassthrough.assign(
             context=web_search_runable.with_config(run_name="web_search_runable"),
         ).assign(citations=build_citations)
-        | tool_output_runnable
-        | graph_parser
     ).with_config(run_name="web_search_chain")
     
     return web_search_chain
@@ -512,7 +330,7 @@ def create_websearch_for_graph(km: KnowledgeManager):
 # Input: AgentState
 # Output: AgentState
 # TODO 在未获取到知识库，或者未检索到相关文档的情况下，直接交给大模型型回答
-def create_rag_for_graph(km: KnowledgeManager):
+def create_rag(km: KnowledgeManager):
     def query_docs(inputs: dict,config: RunnableConfig) :
     # def query_docs(inputs: dict) :
         log.debug(f"query_docs----{inputs}")
@@ -527,7 +345,8 @@ def create_rag_for_graph(km: KnowledgeManager):
         tenant = config.get("configurable", {}).get("user_id", None)
         retriever = km.get_retriever(collection_names=collections,tenant=tenant)
         if retriever:
-            docs = retriever.invoke(inputs.get("text",""))
+            text = get_last_message_text(input)
+            docs = retriever.invoke(text)
             log.info(f"relative docks:{docs}")
             return docs
         return []
@@ -538,8 +357,6 @@ def create_rag_for_graph(km: KnowledgeManager):
         | RunnablePassthrough.assign(
             context=retrieval_docs.with_config(run_name="retrieval_docs"),
         ).assign(citations=build_citations)
-        | tool_output_runnable
-        | graph_parser
     ).with_config(run_name="rag_runable")
     
     return rag_runable
@@ -548,7 +365,7 @@ def create_rag_for_graph(km: KnowledgeManager):
 # Input: AgentState
 # OutPut: AgentState
 def create_docchain_for_graph(llm):
-    combine_docs_chain = create_stuff_documents_chain(llm, doc_qa_template,debug=True)
+    combine_docs_chain = create_stuff_documents_chain(llm, doc_qa_template)
 
     combine_docs_chain = (
         start_runnable

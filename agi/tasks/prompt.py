@@ -1,9 +1,11 @@
 from langchain.prompts import MessagesPlaceholder,ChatPromptTemplate,PromptTemplate
-
+from langchain_core.runnables import (
+    RunnableLambda
+)
 from langchain_core.messages import HumanMessage, BaseMessage,SystemMessage,AIMessage
 from langchain.output_parsers.boolean import BooleanOutputParser
-
 from agi.tasks.agi_prompt import MultiModalChatPromptTemplate
+from langgraph.prebuilt.chat_agent_executor import AgentState
 
 english_traslate_template = ChatPromptTemplate.from_messages([
         ("human", "Translate the following into English and only return the translation result: {text}"),
@@ -71,10 +73,18 @@ default_template = ChatPromptTemplate.from_messages(
             "system",
             system_prompt
         ),
-        MessagesPlaceholder(variable_name="chat_history",optional=True),
-        ("human", "{text}")
+        ("placeholder", "{messages}")
     ]
 )
+
+# 使用默认系统模版的，消息修改器
+def default_modify_state_messages(state: AgentState):
+    # 过滤掉非法的消息类型
+    state["messages"] = list(filter(lambda x: not isinstance(x.content, dict), state["messages"]))
+    return default_template.invoke({"messages": state["messages"],"language":"chinese"}).to_messages()
+
+
+default_modify_state_messages_runnable = RunnableLambda(default_modify_state_messages)
 
 # 支持collection_names作为系统参数
 custome_rag_system_prompt = (
@@ -139,10 +149,16 @@ doc_qa_template = ChatPromptTemplate.from_messages(
             "system",
             doc_qa_prompt
         ),
-        MessagesPlaceholder("chat_history",optional=True),
-        ("human", "{text}")
+        ("placeholder", "{messages}"),
     ]
 )
+
+def docqa_modify_state_messages(state: AgentState):
+    # 过滤掉非法的消息类型
+    state["messages"] = list(filter(lambda x: not isinstance(x.content, dict), state["messages"]))
+    return doc_qa_template.invoke({"messages": state["messages"],"context":state["context"],"language":"chinese"}).to_messages()
+
+docqa_modify_state_messages_runnable = RunnableLambda(docqa_modify_state_messages)
 
 DEFAULT_SEARCH_PROMPT = PromptTemplate(
     input_variables=["text","date","results_num"],
@@ -177,12 +193,7 @@ def stock_code_prompt(input_text):
     return prompt.format(input=input_text)
 
 
-# multimodal_input_template = PromptTemplate(
-#     template='{"type":"{{type}}","data":"{{data}}","text":"{{text}}"}',
-#     partial_variables={"text":None,"type":None,"data":None},
-#     template_format="mustache"
-# )
-
+# 用于llm模块，多模态消息的渲染
 multimodal_input_template = MultiModalChatPromptTemplate(
     [
         (

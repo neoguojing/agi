@@ -5,6 +5,7 @@ from agi.llms.image2image import Image2Image
 from agi.llms.text2image import Text2Image
 from agi.llms.tts import TextToSpeech
 from agi.llms.speech2text import Speech2Text
+from agi.llms.multimodel import MultiModel
 from agi.config import MODEL_PATH as model_root
 from agi.llms.base import CustomerLLM
 from agi.config import (
@@ -56,6 +57,9 @@ class ModelFactory:
         
         elif model_type == "text2speech":
             model = TextToSpeech()
+        
+        elif model_type == "multimodel":
+            model = MultiModel()
                 
         if not model:
             raise ValueError(f"Invalid model type: {model_type}")

@@ -4,6 +4,7 @@ import sqlite3
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.prebuilt.chat_agent_executor import AgentState
+from langchain_core.documents import Document
 import uuid
 import hashlib
 
@@ -136,6 +137,11 @@ class State(AgentState):
     user_id: str
     conversation_id: str
     feature: str  # 支持的特性，1.agent，2.web 3.rag，4.tts，5.speech，6.image_recog 默认为agent
+    context: str
+    docs: list[Document]
+    citations: list[any]
+    collection_names: list[str]
+
 
 # agent 的提示词
 prompt = ChatPromptTemplate.from_messages(
@@ -147,7 +153,7 @@ prompt = ChatPromptTemplate.from_messages(
 
 def _modify_state_messages(state: State):
     # 过滤掉非法的消息类型
-    state["messages"] = list(filter(lambda x: not isinstance(x.content,list), state["messages"])) 
+    state["messages"] = list(filter(lambda x: not isinstance(x.content, dict), state["messages"]))
     return prompt.invoke({"messages": state["messages"],"language":"chinese"}).to_messages()
 
 memory = MemorySaver()

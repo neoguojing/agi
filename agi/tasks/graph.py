@@ -15,7 +15,7 @@ from agi.tasks.task_factory import (
     TASK_SPEECH_TEXT,
     TASK_TTS,
     TASK_WEB_SEARCH,
-    TASK_CUSTOM_RAG,
+    TASK_RAG,
     TASK_DOC_CHAT,
     TASK_LLM,
     TASK_LLM_CHAT
@@ -53,7 +53,7 @@ class AgiGraph:
         self.builder.add_node("speech2text", TaskFactory.create_task(TASK_SPEECH_TEXT,graph=True))
         self.builder.add_node("tts", TaskFactory.create_task(TASK_TTS,graph=True))
         self.builder.add_node("image_gen", TaskFactory.create_task(TASK_IMAGE_GEN,graph=True))
-        self.builder.add_node("rag", TaskFactory.create_task(TASK_CUSTOM_RAG,graph=True))
+        self.builder.add_node("rag", TaskFactory.create_task(TASK_RAG,graph=True))
         self.builder.add_node("web", TaskFactory.create_task(TASK_WEB_SEARCH,graph=True))
         self.builder.add_node("doc_chat", TaskFactory.create_task(TASK_DOC_CHAT,graph=True))
         self.builder.add_node("agent", TaskFactory.create_task(TASK_AGENT))

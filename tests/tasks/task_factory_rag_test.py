@@ -2,9 +2,9 @@ import unittest
 from langchain_core.messages import AIMessage, HumanMessage,ToolMessage
 
 # Assuming we import the TaskFactory and constants like TASK_LLM, TASK_EMBEDDING, etc.
-from agi.tasks.task_factory import TaskFactory, TASK_LLM_WITH_RAG,TASK_RETRIEVER,TASK_DOC_DB,TASK_CUSTOM_RAG,TASK_WEB_SEARCH
+from agi.tasks.task_factory import TaskFactory, TASK_LLM_WITH_RAG,TASK_RETRIEVER,TASK_DOC_DB,TASK_RAG,TASK_WEB_SEARCH
 from agi.tasks.retriever import KnowledgeManager,SourceType
-from agi.tasks.llm_app import create_history_aware_retriever,create_stuff_documents_chain,create_retrieval_chain
+from agi.tasks.llm_app import create_stuff_documents_chain
 from agi.config import CACHE_DIR
 import logging
 log = logging.getLogger(__name__)
@@ -15,7 +15,7 @@ class TestTaskRagFactory(unittest.TestCase):
         self.kmanager = TaskFactory.create_task(TASK_DOC_DB)
         self.retreiver = TaskFactory.create_task(TASK_RETRIEVER)
         self.rag = TaskFactory.create_task(TASK_LLM_WITH_RAG)
-        self.crag = TaskFactory.create_task(TASK_CUSTOM_RAG)
+        self.crag = TaskFactory.create_task(TASK_RAG)
         self.web = TaskFactory.create_task(TASK_WEB_SEARCH)
         print(self.kmanager.list_collections())
     def test_add_doc(self):
@@ -49,10 +49,7 @@ class TestTaskRagFactory(unittest.TestCase):
         self.assertNotEqual(len(ret),0)
     
     def test_chains(self):
-        hist_retriever = create_history_aware_retriever(TaskFactory._llm,self.retreiver,debug=True)
-        ret = hist_retriever.invoke({"text":"上海未来一周天气如何？","language":"chinese"})
-        self.assertIsInstance(ret,list)
-        doc_stuff = create_stuff_documents_chain(TaskFactory._llm,debug=True)
+        doc_stuff = create_stuff_documents_chain(TaskFactory._llm)
         ret = doc_stuff.invoke({"text":"上海未来一周天气如何？","language":"chinese","context":ret})
         self.assertIsInstance(ret,str)
         

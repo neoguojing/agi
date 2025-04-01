@@ -167,6 +167,7 @@ def create_speech2text_chain(graph=False):
         
     return chain
 
+
 def create_llm_task(**kwargs):
     model_name = kwargs.get("model_name") or OLLAMA_DEFAULT_MODE
     if kwargs.get("ollama"):
