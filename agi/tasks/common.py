@@ -136,7 +136,6 @@ def create_image_gen_chain(llm,graph=False):
 # Input：AgentState
 # Output：AgentState
 def create_text2speech_chain(graph=False):
-    # text2speech = TextToSpeech()
     text2speech = ModelFactory.get_model("text2speech")
     chain = (multimodal_input_template
         | RunnableLambda(parse_input)
@@ -151,7 +150,6 @@ def create_text2speech_chain(graph=False):
 # Input: AgentState
 # Output: AgentState
 def create_speech2text_chain(graph=False):
-    # speech2text = Speech2Text()
     speech2text = ModelFactory.get_model("speech2text")
     chain = (multimodal_input_template
         | RunnableLambda(parse_input)

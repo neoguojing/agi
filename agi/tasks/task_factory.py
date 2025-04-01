@@ -19,6 +19,7 @@ from agi.tasks.llm_app import (
     create_chat_with_history,
     create_chat_with_rag,
     create_chatchain_for_graph,
+    create_llm_with_history,
 )
 from agi.tasks.common import (
     create_image_gen_chain,
@@ -93,8 +94,10 @@ def create_speech_text_task(**kwargs):
 def create_doc_db_task(**kwargs):
     return TaskFactory._knowledge_manager
 
+# agent with history
 def create_agent_task(**kwargs):
-    return create_react_agent_task(TaskFactory._llm)
+    llm_with_history = create_llm_with_history(TaskFactory._llm)
+    return create_react_agent_task(llm_with_history)
 
 class TaskFactory:
     _instances = {"graph":{}}

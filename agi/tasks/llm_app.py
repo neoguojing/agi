@@ -5,7 +5,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import ConfigurableFieldSpec
 from langchain_community.chat_message_histories import SQLChatMessageHistory
 from langchain.retrievers import EnsembleRetriever
-from langchain_core.messages import HumanMessage,BaseMessage,AIMessage,ToolMessage
+from langchain_core.messages import HumanMessage,BaseMessage,AIMessage,ToolMessage,trim_messages
 from langchain_core.runnables.utils import AddableDict
 from langchain_core.runnables.base import Runnable,RunnableConfig
 from langchain_core.language_models import LanguageModelLike
@@ -28,8 +28,6 @@ from langchain.chains.combine_documents.base import (
     DEFAULT_DOCUMENT_PROMPT,
     _validate_prompt,
 )
-# from langchain.chains.retrieval import create_retrieval_chain
-# from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.output_parsers import StrOutputParser,BaseOutputParser
 from agi.tasks.prompt import default_template,contextualize_q_template,doc_qa_template,cumstom_rag_default_template
 from agi.tasks.retriever import KnowledgeManager
@@ -61,7 +59,31 @@ set_debug(False)
 
 def debug_info(x : Any):
     return f"type:{type(x)}\nmessage:{x}"
-    
+
+# 裁剪历史消息
+trimmer = trim_messages(
+    # Keep the last <= n_count tokens of the messages.
+    strategy="last",
+    token_counter=len,
+    # When token_counter=len, each message
+    # will be counted as a single token.
+    # Remember to adjust for your use case
+    # 保存30条
+    max_tokens=30,
+    # Most chat models expect that chat history starts with either:
+    # (1) a HumanMessage or
+    # (2) a SystemMessage followed by a HumanMessage
+    start_on="human",
+    # Most chat models expect that chat history ends with either:
+    # (1) a HumanMessage or
+    # (2) a ToolMessage
+    # end_on=("human", "tool"),
+    # Usually, we want to keep the SystemMessage
+    # if it's present in the original history.
+    # The SystemMessage has special instructions for the model.
+    include_system=True,
+)
+
 # TODO 历史数据压缩 数据实体抽取
 # TODO xpected `str` but got `dict` with value `{'type': 'text', 'text': ...], 'distances': [1.0]}]}` - serialized value may not be as expected
 def get_session_history(user_id: str, conversation_id: str):
@@ -70,13 +92,14 @@ def get_session_history(user_id: str, conversation_id: str):
 # dict_input = True时，只能输入dict
 # Input: dict or List[BaseMessage]
 # Output: dict
-def create_llm_with_history(runnable,debug=False,dict_input=True):
+def create_llm_with_history(runnable,debug=False,dict_input=False):
     def debug_print(x: Any) :
         log.debug(f"create_llm_with_history\n:{debug_info(x)}")
         return x
 
     debug_tool = RunnableLambda(debug_print)
-    
+    # 支持历史消息裁剪
+    runnable = trimmer | runnable
     if debug:
         runnable = debug_tool | runnable
     
@@ -637,223 +660,3 @@ def message_to_dict(message: Union[list,HumanMessage,ToolMessage,dict,AgentState
         
 # 获取正确的输入格式
 start_runnable = RunnableLambda(message_to_dict)
-
-class LangchainApp:
-    
-    llm: BaseChatModel
-    runnable: Runnable
-    with_message_history: RunnableWithMessageHistory
-    db_path: str
-    retrievers: EnsembleRetriever
-
-    def __init__(self,llm,db_path="sqlite:///langchain.db",retrievers=None):
-        self.db_path = db_path
-        self.llm =llm
-        
-        self.retrievers = retrievers
-        self.history_aware_retriever = None
-        
-        if retrievers is not None:
-            
-            self.history_aware_retriever = create_history_aware_retriever(
-                self.llm, self.retrievers, contextualize_q_template
-            )
-           
-            question_answer_chain = create_stuff_documents_chain(self.llm, doc_qa_template)
-
-            # self.runnable = question_answer_chain
-            self.runnable = create_retrieval_chain(self.history_aware_retriever, question_answer_chain)
-        else:
-            self.runnable = default_template | self.llm 
-
-        self.with_message_history = LangchainApp.create_llm_with_history(self.runnable)
-        
-    @staticmethod
-    def create_llm_with_history(runnable=None):
-        
-        return RunnableWithMessageHistory(
-            runnable,
-            get_session_history,
-            input_messages_key="input",
-            history_messages_key="chat_history",
-            history_factory_config=[
-                ConfigurableFieldSpec(
-                    id="user_id",
-                    annotation=str,
-                    name="User ID",
-                    description="Unique identifier for the user.",
-                    default="",
-                    is_shared=True,
-                ),
-                ConfigurableFieldSpec(
-                    id="conversation_id",
-                    annotation=str,
-                    name="Conversation ID",
-                    description="Unique identifier for the conversation.",
-                    default="",
-                    is_shared=True,
-                )
-            ],
-        )
-        
-    def get_session_history(self,user_id: str, conversation_id: str):
-        return SQLChatMessageHistory(f"{user_id}--{conversation_id}", self.db_path)
-    
-    def query_doc(self,input):
-        return self.history_aware_retriever.invoke({"input":input})
-        
-    def stream(self,input: str,language="chinese",user_id="",conversation_id=""):
-        if conversation_id == "":
-            import uuid
-            conversation_id = str(uuid.uuid4())
-            
-        input_template = {"language": language, "input": input}
-        config = {"configurable": {"user_id": user_id, "conversation_id": conversation_id}}
-        context = None
-        if self.history_aware_retriever:
-            context = self.history_aware_retriever.invoke({"input": input})
-            log.info("qury context: %s",context)
-            input_template = {"language": language, "input": input,"context":context}
-        
-        response = self.with_message_history.stream(input_template,config)
-        return self._process_stream(context,response)
-        
-    
-    def _process_stream(self, context,response):
-        if context:
-            yield context
-        if response:
-            for item in response:
-                # log.debug("_process_stream:",item)
-                if item is not None:
-                    if isinstance(item, AddableDict):
-                        content = item.get('answer')
-                                                
-                        if content is not None:
-                            processed_item = AIMessage(content=content)
-                            if content == "":
-                                processed_item.response_metadata = {'finish_reason': "stop"}
-                            yield processed_item  # Yield only if processed_item is valid
-                            
-                    elif isinstance(item, AIMessage):
-                        processed_item = item
-                        yield processed_item
-                    elif isinstance(item, str):
-                        processed_item = AIMessage(content=item)
-                        if item == "":
-                            processed_item.response_metadata = {'finish_reason': "stop"}
-                        yield processed_item  # Yield only if processed_item is valid
-                            
-                    
-    def invoke(self,input: str,language="chinese",user_id="",conversation_id=""):
-        if conversation_id == "":
-            import uuid
-            conversation_id = str(uuid.uuid4())
-
-        input_template = {"language": language, "input": input}
-        config = {"configurable": {"user_id": user_id, "conversation_id": conversation_id}}
-        if self.history_aware_retriever:
-            context = self.history_aware_retriever.invoke({"input": input})
-            input_template = {"language": language, "input": input,"context":context}
-
-        response = self.with_message_history.invoke(input_template,config)
-        log.debug(f"invoke:{response}")
-        if isinstance(response,dict):
-            content = response['answer']
-            context = response.get('context')
-            response = AIMessage(content=content)
-            response.response_metadata = {"context":context}
-        return response
-    
-
-    def citations(self, relevant_docs, contexts):
-        # 初始化 citations 和 citamap
-        citations = {"citations": []}
-        citamap = defaultdict(lambda: defaultdict(dict))  # 使用 defaultdict 来自动初始化嵌套字典
-        log.debug(f"context:{contexts}")
-        
-        def build_citations(context,doc,filename):
-            # 如果匹配，更新 citamap
-            citation = citamap[context['source'].get("collection_name")].get(filename)
-            if citation:  # 如果已经有值，则追加
-                citation["document"].append(doc.page_content)
-                citation["metadata"].append(doc.metadata)
-            else:  # 否则初始化
-                context['source']["name"] = filename
-                citamap[context.get("collection_name")][filename] = {
-                    "source": context['source'],
-                    "document": [doc.page_content],
-                    "metadata": [doc.metadata],
-                }
-        # 遍历每个文档和上下文
-        for doc in relevant_docs:
-            for c in contexts:
-                try:
-                    if doc.metadata:
-                        # 匹配文档和上下文的 collection_name 和 filename/source
-                        doc_filename = doc.metadata.get("filename") or doc.metadata.get("source")
-                        if not is_valid_url(doc_filename):
-                            uid,doc_filename = doc_filename.split('_', 1)
-                        if c['source'].get("type") == "collection":
-                            for collection_name in c['source'].get("collection_names"):
-                                if collection_name == doc.metadata.get("collection_name"):
-                                    build_citations(c,doc,doc_filename)
-                        else:
-                            if doc.metadata.get("collection_name") == c['source'].get("collection_name"):
-                                context_filename = c['source'].get("filename") 
-                                urls = c['source'].get("urls") 
-                                if doc_filename == context_filename or doc_filename in urls:
-                                    build_citations(c,doc,doc_filename)
-                except Exception as e:
-                    log.debug(f"Error processing document {doc.metadata}: {e}")
-
-        # 构建 citations 列表
-        for collection, files in citamap.items():
-            for filename, file_data in files.items():
-                citations["citations"].append(file_data)
-
-        return citations
-                
-    def wrap_citation(self,item):
-        return f"{item}\n"
-        
-    def ollama(self,input: str,user_id="",conversation_id="",**kwargs):
-        response = self.stream(input=input,user_id=user_id,conversation_id=conversation_id)
-        content = None
-        message_data = None
- 
-        is_done = False
-        finish_reason = None
-        for item in response:
-            # log.debug(item,type(item))
-            if isinstance(item,list):
-                if item:
-                    item = self.citations(item,kwargs.get("contexts"))
-                    yield self.wrap_citation(json.dumps(item))
-            
-            elif isinstance(item, AIMessage):
-            # 从每个 item 中提取 'content'
-                content = item.content
-                if item.response_metadata:
-                    is_done = True
-                    finish_reason = item.response_metadata['finish_reason']
-                
-                utc_now = datetime.now(timezone.utc)
-                utc_now_str = utc_now.isoformat() + 'Z'
-                message_data = {
-                    "model": self.model,
-                    "created_at": utc_now_str,
-                    "message": {
-                        "role": "assistant",
-                        "content": content,
-                    },
-                    "done": is_done,
-                    "done_reason": finish_reason,
-                    
-                }
-                
-                yield json.dumps(message_data) + "\n"  # 添加换行符
-    
-    def __call__(self,input: str,user_id="",conversation_id=""):
-        response = self.invoke(input=input,user_id=user_id,conversation_id=conversation_id)
-        return response

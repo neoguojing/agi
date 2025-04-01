@@ -2,7 +2,6 @@ from langgraph.prebuilt import create_react_agent
 from agi.tasks.tools import tools
 import sqlite3
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.store.memory import InMemoryStore
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.prebuilt.chat_agent_executor import AgentState
 import uuid
@@ -138,6 +137,7 @@ class State(AgentState):
     conversation_id: str
     feature: str  # 支持的特性，1.agent，2.web 3.rag，4.tts，5.speech，6.image_recog 默认为agent
 
+# agent 的提示词
 prompt = ChatPromptTemplate.from_messages(
     [
         ("system", "You are a helpful assistant named agi. Respond only in {language} with Markdown format."),
@@ -156,7 +156,6 @@ def create_react_agent_task(llm):
                                                   tools,state_modifier=_modify_state_messages,
                                                   checkpointer=memory,
                                                 #   interrupt_before="tools",
-                                                  store=InMemoryStore()
                                                   )
     # langgraph_agent_executor.step_timeout = 2
     return langgraph_agent_executor
