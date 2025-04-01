@@ -5,7 +5,7 @@ import urllib.parse
 from fastapi import FastAPI, HTTPException, File, UploadFile, Response,Form,APIRouter
 from fastapi.responses import Response
 from agi.config import FILE_UPLOAD_PATH,IMAGE_FILE_SAVE_PATH,TTS_FILE_SAVE_PATH
-from agi.tasks.task_factory import TaskFactory,TASK_DOC_DB
+from agi.tasks.task_factory import TaskFactory
 from typing import Optional
 import shutil
 import uuid

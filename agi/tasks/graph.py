@@ -11,14 +11,12 @@ from agi.tasks.task_factory import (
     TaskFactory,
     TASK_AGENT,
     TASK_IMAGE_GEN,
-    TASK_LLM_WITH_RAG,
     TASK_SPEECH_TEXT,
     TASK_TTS,
     TASK_WEB_SEARCH,
     TASK_RAG,
     TASK_DOC_CHAT,
     TASK_LLM,
-    TASK_LLM_CHAT
     )
 from langgraph.prebuilt.chat_agent_executor import AgentState
 from typing import Dict, Any, Iterator,Union
@@ -59,7 +57,7 @@ class AgiGraph:
         self.builder.add_node("agent", TaskFactory.create_task(TASK_AGENT))
         self.builder.add_node("image_parser", self.image2text_node)
         # 用于处理非agent的请求:1.标题生成等用户自定义提示请求；2.图像识别等 image2text 请求；3.作为决策节点，判定用户意图
-        self.builder.add_node("llm", TaskFactory.create_task(TASK_LLM_CHAT))
+        self.builder.add_node("llm", TaskFactory.create_task(TASK_LLM))
         self.builder.add_node("result_fix", self.result_fix)
         
         self.builder.add_conditional_edges("agent", self.tts_control)

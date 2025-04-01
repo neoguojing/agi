@@ -42,7 +42,6 @@ from agi.config import (
     LANGCHAIN_DB_PATH,
     AGI_DEBUG,
 )
-from agi.tasks.retriever import create_retriever
 from typing import (
     Any,
     Dict,
@@ -159,22 +158,16 @@ def create_stuff_documents_chain(
     _document_prompt = document_prompt or DEFAULT_DOCUMENT_PROMPT
     _output_parser = output_parser or StrOutputParser()
 
-    def format_docs(inputs: dict) -> str:
+    def format_docs(inputs: AgentState) -> str:
         return document_separator.join(
             format_document(doc, _document_prompt)
             for doc in inputs[document_variable_name]
         )
-    # 经过prompt 之后，变为了ChatPromptValue，需要转换为List[BaseMessage]
-    # def format_history_chain_input(x: Any):
-    #     log.debug(f"format_history_chain_input:{x}")
-    #     messages = x.to_messages()
-    #     log.debug(f"format_history_chain_input out:{messages}")
-    #     return messages
 
     llm_with_history = create_llm_with_history(runnable=llm,dict_input=False)
 
     doc_chain = (
-        RunnablePassthrough.assign(**{document_variable_name: format_docs}).with_config(run_name="format_inputs")
+        RunnablePassthrough.assign(context=format_docs).with_config(run_name="format_inputs")
         | docqa_modify_state_messages_runnable
         | llm_with_history
     ).with_config(run_name="stuff_documents_chain")
@@ -191,6 +184,87 @@ def create_stuff_documents_chain(
     ).with_config(run_name="stuff_documents_with_branch")
 
     return debug_tool | target_chain
+
+def get_last_message_text(state: AgentState):
+    last_message = state["messages"][-1]
+    if isinstance(last_message,HumanMessage):
+        if isinstance(last_message.content,str):
+            return last_message.content
+        elif isinstance(last_message.content,list):
+            for item in last_message.content:
+                if item["type"] == "text":
+                    return item["text"]
+    return ""
+
+# 独立的web检索chain
+# Input: AgentState
+# Output: TODO
+def create_websearch(km: KnowledgeManager):
+    def web_search(input: AgentState,config: RunnableConfig) :
+        tenant = config.get("configurable", {}).get("user_id", None)
+        text = get_last_message_text(input)
+        _,_,_,raw_docs = km.web_search(text,tenant=tenant)
+        log.debug(f"web_search---{raw_docs}")
+        return raw_docs
+    
+    web_search_runable = RunnableLambda(web_search)
+    web_search_chain = RunnablePassthrough.assign(
+            context=web_search_runable.with_config(run_name="web_search_runable"),
+    ).assign(citations=build_citations)
+    
+    return debug_tool | web_search_chain
+
+# 独立的文档检索chain
+# Input: AgentState
+# Output: TODO
+# TODO 在未获取到知识库，或者未检索到相关文档的情况下，直接交给大模型型回答
+def create_rag(km: KnowledgeManager):
+    def query_docs(inputs: AgentState,config: RunnableConfig):
+        log.debug(f"query_docs----{inputs}")
+        # collection_names 位None，则默认使用 all进行检索
+        collection_names = inputs.get("collection_names",None)        
+        collections = "all"
+        if isinstance(collection_names,str):
+            collections = json.loads(collection_names)
+        elif isinstance(collection_names,list):
+            collections = collection_names
+            
+        tenant = config.get("configurable", {}).get("user_id", None)
+        retriever = km.get_retriever(collection_names=collections,tenant=tenant)
+        if retriever:
+            text = get_last_message_text(input)
+            docs = retriever.invoke(text)
+            log.info(f"relative docks:{docs}")
+            return docs
+        return []
+    
+    retrieval_docs = RunnableLambda(query_docs)
+    rag_runable = RunnablePassthrough.assign(
+            context=retrieval_docs.with_config(run_name="retrieval_docs"),
+        ).assign(citations=build_citations)
+    
+    return debug_tool | rag_runable
+
+# Input: AgentState
+# Output: AIMessage
+# chat without history
+def create_chat(llm):
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("placeholder", "{messages}"),
+        ]
+    )
+
+    def modify_state_messages(state: AgentState):
+        # 过滤掉非法的消息类型
+        state["messages"] = list(filter(lambda x: not isinstance(x.content, dict), state["messages"]))
+        return prompt.invoke({"messages": state["messages"]}).to_messages()
+    
+    input_format = RunnableLambda(modify_state_messages)
+    
+    chat = debug_tool | input_format | llm
+
+    return chat
 
 '''
 {
@@ -293,97 +367,6 @@ def build_citations(inputs: dict):
         print(traceback.format_exc())
         
     return citations
-
-def get_last_message_text(state: AgentState):
-    last_message = state["messages"][-1]
-    if isinstance(last_message,HumanMessage):
-        if isinstance(last_message.content,str):
-            return last_message.content
-        elif isinstance(last_message.content,list):
-            for item in last_message.content:
-                if item["type"] == "text":
-                    return item["text"]
-    return ""
-
-# 独立的web检索chain
-# Input: AgentState
-# Output: AgentState
-def create_websearch(km: KnowledgeManager):
-    def web_search(input: dict,config: RunnableConfig) :
-        tenant = config.get("configurable", {}).get("user_id", None)
-        text = get_last_message_text(input)
-        _,_,_,raw_docs = km.web_search(text,tenant=tenant)
-        log.debug(f"web_search---{raw_docs}")
-        return raw_docs
-    
-    web_search_runable = RunnableLambda(web_search)
-    web_search_chain = (
-        start_runnable
-        | RunnablePassthrough.assign(
-            context=web_search_runable.with_config(run_name="web_search_runable"),
-        ).assign(citations=build_citations)
-    ).with_config(run_name="web_search_chain")
-    
-    return web_search_chain
-
-# 独立的文档检索chain
-# Input: AgentState
-# Output: AgentState
-# TODO 在未获取到知识库，或者未检索到相关文档的情况下，直接交给大模型型回答
-def create_rag(km: KnowledgeManager):
-    def query_docs(inputs: dict,config: RunnableConfig) :
-    # def query_docs(inputs: dict) :
-        log.debug(f"query_docs----{inputs}")
-        # collection_names 位None，则默认使用 all进行检索
-        collection_names = inputs.get("collection_names",None)        
-        collections = "all"
-        if isinstance(collection_names,str):
-            collections = json.loads(collection_names)
-        elif isinstance(collection_names,list):
-            collections = collection_names
-            
-        tenant = config.get("configurable", {}).get("user_id", None)
-        retriever = km.get_retriever(collection_names=collections,tenant=tenant)
-        if retriever:
-            text = get_last_message_text(input)
-            docs = retriever.invoke(text)
-            log.info(f"relative docks:{docs}")
-            return docs
-        return []
-    
-    retrieval_docs = RunnableLambda(query_docs)
-    rag_runable = (
-        start_runnable
-        | RunnablePassthrough.assign(
-            context=retrieval_docs.with_config(run_name="retrieval_docs"),
-        ).assign(citations=build_citations)
-    ).with_config(run_name="rag_runable")
-    
-    return rag_runable
-
-# 原子化的文档聊天chain
-# Input: AgentState
-# OutPut: AgentState
-def create_docchain_for_graph(llm):
-    combine_docs_chain = create_stuff_documents_chain(llm, doc_qa_template)
-
-    combine_docs_chain = (
-        start_runnable
-        | RunnablePassthrough.assign(answer=combine_docs_chain)
-        | ai_output_runnable
-        | graph_parser
-    )
-    return combine_docs_chain
-
-def create_chatchain_for_graph(llm):
-    chat = (
-        start_runnable
-        | default_template 
-        | llm
-        # | ai_output_runnable
-        | graph_parser
-    )
-    return chat
 
  # 将输出的字典格式转换为BaseMessage 或者 graph的格式
 def dict_to_ai_message(output: dict):

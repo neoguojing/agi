@@ -5,7 +5,7 @@
             "name": "Python: pytest",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/tests/fastapi_agi_test.py",  // 指定测试目录
+            "program": "${workspaceFolder}/tests/tasks/task_factory_test.py",  // 指定测试目录
             "args": ["-v"],  // 可选，显示详细的测试输出
             "console": "integratedTerminal",
             "justMyCode": false,

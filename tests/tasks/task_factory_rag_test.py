@@ -2,7 +2,7 @@ import unittest
 from langchain_core.messages import AIMessage, HumanMessage,ToolMessage
 
 # Assuming we import the TaskFactory and constants like TASK_LLM, TASK_EMBEDDING, etc.
-from agi.tasks.task_factory import TaskFactory, TASK_LLM_WITH_RAG,TASK_RETRIEVER,TASK_DOC_DB,TASK_RAG,TASK_WEB_SEARCH
+from agi.tasks.task_factory import TaskFactory,TASK_RAG,TASK_WEB_SEARCH
 from agi.tasks.retriever import KnowledgeManager,SourceType
 from agi.tasks.llm_app import create_stuff_documents_chain
 from agi.config import CACHE_DIR
@@ -12,10 +12,8 @@ log.setLevel(logging.INFO)
 class TestTaskRagFactory(unittest.TestCase):
     
     def setUp(self):
-        self.kmanager = TaskFactory.create_task(TASK_DOC_DB)
-        self.retreiver = TaskFactory.create_task(TASK_RETRIEVER)
-        self.rag = TaskFactory.create_task(TASK_LLM_WITH_RAG)
-        self.crag = TaskFactory.create_task(TASK_RAG)
+        self.kmanager = TaskFactory.get_knowledge_manager()
+        self.rag = TaskFactory.create_task(TASK_RAG)
         self.web = TaskFactory.create_task(TASK_WEB_SEARCH)
         print(self.kmanager.list_collections())
     def test_add_doc(self):
@@ -42,11 +40,6 @@ class TestTaskRagFactory(unittest.TestCase):
         self.assertEqual(docs[0].metadata["page"],0)
         self.assertEqual(docs[0].metadata["source"],"./tests/test.pdf")
         self.assertIn("平衡计算模块",docs[0].page_content)
-    # retreiver 不能指定库
-    def test_retreiver(self):
-        ret = self.retreiver.invoke("上海未来一周天气如何？")
-        self.assertIsNotNone(ret)
-        self.assertNotEqual(len(ret),0)
     
     def test_chains(self):
         doc_stuff = create_stuff_documents_chain(TaskFactory._llm)
@@ -66,7 +59,7 @@ class TestTaskRagFactory(unittest.TestCase):
         config={"configurable": {"user_id": "default_tenant", "conversation_id": "2"}}
         import json
         collecttions =  json.dumps(["test"])
-        ret = self.crag.invoke({"text":"NTP3000Plus","language":"chinese","collection_names":collecttions},config=config)
+        ret = self.rag.invoke({"text":"NTP3000Plus","language":"chinese","collection_names":collecttions},config=config)
         print(ret)
         self.assertIsNotNone(ret)
         self.assertIsInstance(ret["messages"],list)

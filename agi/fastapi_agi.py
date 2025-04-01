@@ -11,7 +11,7 @@ import json
 import time
 import os
 from langchain_core.messages import HumanMessage,BaseMessage
-from agi.tasks.task_factory import TaskFactory, TASK_EMBEDDING
+from agi.tasks.task_factory import TaskFactory
 from fastapi.middleware.cors import CORSMiddleware
 # 假设的 AgiGraph 模块（需要根据实际情况调整）
 from agi.tasks.graph import AgiGraph, State

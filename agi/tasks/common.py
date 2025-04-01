@@ -93,16 +93,13 @@ def create_translate_chain(llm,graph):
 
 def create_text2image_chain(llm,graph=False):
     translate = create_translate_chain(llm,graph)
-    # text2image = Text2Image()
     text2image = ModelFactory.get_model("text2image")
     
     return translate | text2image 
 
 def create_image_gen_chain(llm,graph=False):
     translate = create_translate_chain(llm,graph)
-    # image2image = Image2Image()
     image2image = ModelFactory.get_model("image2image")
-    # text2image = Text2Image()
     text2image = ModelFactory.get_model("text2image")
     
     def is_image2image(x: list[BaseMessage]):

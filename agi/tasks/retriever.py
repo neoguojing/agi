@@ -612,25 +612,3 @@ class SafeWebBaseLoader(WebBaseLoader):
             except Exception as e:
                 # Log the error and continue with the next URL
                 log.error(f"Error loading {path}: {e}")
-
-def create_retriever(km: KnowledgeManager,**kwargs):
-    collection_names = kwargs.get("collection_names","all")
-    top_k = kwargs.get("top_k",3)
-    bm25 = kwargs.get("bm25",False)
-    filter_type = kwargs.get("filter_type",None)
-    sim_algo = kwargs.get("sim_algo",SimAlgoType.SST)
-    return km.get_retriever(collection_names,k=top_k,bm25=bm25,filter_type=filter_type,sim_algo=sim_algo)
-
-# if __name__ == '__main__':
-#     knowledgeBase = KnowledgeManager(data_path="./test/")
-#     # knowledgeBase.store(collection_name="test",source="/home/neo/Downloads/ir2023_ashare.docx",
-#     #                     source_type=SourceType.FILE,file_name='ir2023_ashare.docx')
-#     docs = knowledgeBase.query_doc("web","中国股市",k=2,bm25=False)
-#     # log.debug(docs)
-#     # emb = knowledgeBase.embedding.embed_query("wsewqeqe")
-#     # log.debug(emb)
-#     # resp = knowledgeBase.llm.invoke("hhhhh")
-#     # log.debug(resp)
-#     # docs = knowledgeBase.web_search("中国的股市如何估值？")
-#     # docs = knowledgeBase.web_parser(["https://new.qq.com/rain/a/20241005A071AG00"])
-#     log.debug(docs)
