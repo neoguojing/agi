@@ -45,9 +45,9 @@ class AgiGraph:
         checkpointer = MemorySaver()
 
         self.builder = StateGraph(State)
-        self.builder.add_node("speech2text", TaskFactory.create_task(TASK_SPEECH_TEXT,graph=True))
-        self.builder.add_node("tts", TaskFactory.create_task(TASK_TTS,graph=True))
-        self.builder.add_node("image_gen", TaskFactory.create_task(TASK_IMAGE_GEN,graph=True))
+        self.builder.add_node("speech2text", TaskFactory.create_task(TASK_SPEECH_TEXT))
+        self.builder.add_node("tts", TaskFactory.create_task(TASK_TTS))
+        self.builder.add_node("image_gen", TaskFactory.create_task(TASK_IMAGE_GEN))
         self.builder.add_node("rag", TaskFactory.create_task(TASK_RAG))
         self.builder.add_node("web", TaskFactory.create_task(TASK_WEB_SEARCH))
         self.builder.add_node("doc_chat", TaskFactory.create_task(TASK_DOC_CHAT))
@@ -55,7 +55,6 @@ class AgiGraph:
         self.builder.add_node("image_parser", self.image2text_node)
         # 用于处理非agent的请求:1.标题生成等用户自定义提示请求；2.图像识别等 image2text 请求；3.作为决策节点，判定用户意图
         self.builder.add_node("llm", TaskFactory.create_task(TASK_LLM))
-        self.builder.add_node("result_fix", self.result_fix)
         
         self.builder.add_conditional_edges("agent", self.tts_control)
         # 图片解析节点
@@ -66,13 +65,9 @@ class AgiGraph:
         # 有上下文的请求支持平行处理
         self.builder.add_conditional_edges("rag", self.rag_control)
         self.builder.add_edge("web", "doc_chat")
-        # 输出rag和查询的结果，根据测试，流式结果会输出工具的查询过程，无需并行返回
-        # self.builder.add_edge("rag", END)
-        # self.builder.add_edge("web", END)
 
         self.builder.add_edge("image_gen", END)
         self.builder.add_edge("tts", END)
-        self.builder.add_edge("result_fix", END)
         
         self.builder.add_conditional_edges("speech2text",self.feature_control)
         self.builder.add_conditional_edges(START, self.routes)
@@ -96,20 +91,7 @@ class AgiGraph:
         elif msg_type == InputType.AUDIO:
             return "speech2text"
 
-        return "result_fix"
-    # 结果修正,作为流程返回的唯一回归点
-    def result_fix(self,state: State, config: RunnableConfig):
-        try:
-            if isinstance(state.get("messages")[-1],HumanMessage):
-                # 若speech直接输出，则需要将usermessage 转换为aimessage
-                user_msg = state.get("messages")[-1]
-                ai_msg = AIMessage(content=user_msg.content)
-                state.get("messages").append(ai_msg)
-        except Exception as e:
-            log.error(f"{e}")
-            print(traceback.format_exc())
-
-        return state
+        return END
     
     # 图片解析节点
     def image2text_node(self,state: State,config: RunnableConfig):
@@ -180,8 +162,6 @@ class AgiGraph:
             return "rag"
         elif feature == Feature.WEB:
             return "web"
-        elif feature == Feature.SPEECH and state.get("input_type") == InputType.AUDIO: #仅语音转文本
-            return "result_fix"
         elif feature == Feature.TTS and state.get("input_type") == InputType.TEXT:    #仅文本转语音
             return "tts"
         elif feature == Feature.IMAGE2TEXT and state.get("input_type") == InputType.IMAGE:    #图片转文字
