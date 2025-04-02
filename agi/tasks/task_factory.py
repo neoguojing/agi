@@ -65,7 +65,7 @@ def create_docchain_task(**kwargs):
     return create_stuff_documents_chain(TaskFactory._llm)
 
 def create_translate_task(**kwargs):
-    return create_translate_chain(TaskFactory._llm, graph=kwargs.get("graph"))
+    return create_translate_chain(TaskFactory._llm)
 
 def create_image_gen_task(**kwargs):
     return create_image_gen_chain(TaskFactory._llm, graph=kwargs.get("graph"))

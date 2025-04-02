@@ -7,9 +7,28 @@ from langchain.output_parsers.boolean import BooleanOutputParser
 from agi.tasks.agi_prompt import MultiModalChatPromptTemplate
 from langgraph.prebuilt.chat_agent_executor import AgentState
 
+def get_last_message_text(state: AgentState):
+    last_message = state["messages"][-1]
+    if isinstance(last_message,HumanMessage):
+        if isinstance(last_message.content,str):
+            return last_message.content
+        elif isinstance(last_message.content,list):
+            for item in last_message.content:
+                if item["type"] == "text":
+                    return item["text"]
+    return ""
+
 english_traslate_template = ChatPromptTemplate.from_messages([
-        ("human", "Translate the following into English and only return the translation result: {text}"),
-    ])
+    ("human", "Translate the following into English and only return the translation result: {text}"),
+])
+
+# 使用默认系统模版的，消息修改器
+def traslate_modify_state_messages(state: AgentState):
+    text = get_last_message_text(state)
+    return english_traslate_template.invoke({"text": text}).to_messages()
+
+
+traslate_modify_state_messages_runnable = RunnableLambda(traslate_modify_state_messages)
 
 agent_prompt = ChatPromptTemplate.from_messages(
         [

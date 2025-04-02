@@ -174,6 +174,7 @@ class Media(BaseModel):
         else:
             raise TypeError("Unsupported media format for saving.")
 
+# 从用户消息中抽取content的内容，转换为模型可处理的格式
 def parse_input_messages(input: Union[HumanMessage,list[HumanMessage]]):
     """
     Parse the content of the HumanMessage to extract the image and prompt.

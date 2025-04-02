@@ -1,5 +1,5 @@
 from agi.llms.model_factory import ModelFactory
-from agi.tasks.prompt import english_traslate_template,multimodal_input_template
+from agi.tasks.prompt import english_traslate_template,multimodal_input_template,traslate_modify_state_messages_runnable
 from langchain_core.output_parsers import StrOutputParser,ListOutputParser
 from agi.llms.text2image import Text2Image
 from agi.llms.image2image import Image2Image
@@ -67,32 +67,33 @@ def parse_input(input: PromptValue) -> list[BaseMessage]:
         return {}
 
 
-        
-def create_translate_chain(llm,graph):
-    chain = english_traslate_template | llm | StrOutputParser()
-    if graph:
-        def translate_node(state: AgentState):
-            messages = state["messages"]
-            if messages:
-                if isinstance(messages, list):
-                    messages = messages[-1]
-                _,text = parse_input_messages(messages)
-                result = chain.invoke({"text": text})
-                if isinstance(messages.content,str):
-                    return [HumanMessage(content=result)]
-                elif isinstance(messages.content,list):
-                    for content in messages.content:
+# Input: AgentState
+# Output: AgentState
+def create_translate_chain(llm):
+    # 输入：AgentState
+    # 输出：字符串
+    chain = traslate_modify_state_messages_runnable | llm | StrOutputParser()
+    # 修改AgentState的最后一条消息的内容为翻译后的内容
+    def translate_node(state: AgentState):
+        result = chain.invoke(state)
+        if result:
+            last_message = state["messages"][-1]
+            if last_message:
+                if isinstance(last_message.content,str):
+                    last_message.content = result
+                elif isinstance(last_message.content,list):
+                    for content in last_message.content:
                         media_type = content.get("type")
                         if media_type == "text":
                             content["text"] = result
-                            return [messages]
-        return RunnableLambda(translate_node)
-        
-    return chain
+                    
+    translate_runnable = RunnableLambda(translate_node)
+    
+    return RunnablePassthrough.assign(messages=translate_runnable).with_config(run_name="translate_chain")
 
 
 def create_text2image_chain(llm,graph=False):
-    translate = create_translate_chain(llm,graph)
+    translate = create_translate_chain(llm)
     text2image = ModelFactory.get_model("text2image")
     
     return translate | text2image 

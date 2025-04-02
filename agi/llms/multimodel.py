@@ -40,10 +40,6 @@ class MultiModel(CustomerLLM):
         if self.processor is None:
             self.model = Qwen2_5OmniModel.from_pretrained(model_root,torch_dtype=torch.float16, device_map="auto",enable_audio_output=True)
             self.processor = Qwen2_5OmniProcessor.from_pretrained(model_root)
-
-    def list_available_models(self):
-        """Return a list of available TTS models."""
-        return self.tts.list_models()
     
     def invoke(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
         """Generate speech audio from input text."""

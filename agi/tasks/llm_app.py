@@ -30,7 +30,7 @@ from langchain.chains.combine_documents.base import (
     _validate_prompt,
 )
 from langchain_core.output_parsers import StrOutputParser,BaseOutputParser
-from agi.tasks.prompt import default_template,contextualize_q_template,doc_qa_template,docqa_modify_state_messages_runnable,default_modify_state_messages_runnable
+from agi.tasks.prompt import get_last_message_text,doc_qa_template,docqa_modify_state_messages_runnable,default_modify_state_messages_runnable
 from agi.tasks.retriever import KnowledgeManager
 from agi.tasks.common import graph_parser,graph_input_format
 import json
@@ -186,16 +186,7 @@ def create_stuff_documents_chain(
 
     return debug_tool | target_chain
 
-def get_last_message_text(state: AgentState):
-    last_message = state["messages"][-1]
-    if isinstance(last_message,HumanMessage):
-        if isinstance(last_message.content,str):
-            return last_message.content
-        elif isinstance(last_message.content,list):
-            for item in last_message.content:
-                if item["type"] == "text":
-                    return item["text"]
-    return ""
+
 
 # 独立的web检索chain
 # Input: AgentState
@@ -369,95 +360,3 @@ def build_citations(inputs: dict):
         
     return citations
 
- # 将输出的字典格式转换为BaseMessage 或者 graph的格式
-def dict_to_ai_message(output: dict):
-    content = output.get('answer', '')
-    if isinstance(content,dict):
-        content = [content]
-    log.debug(f"dict_to_ai_message---{output}")
-    ai = AIMessage(
-        content=content,
-        additional_kwargs={
-            'context': output.get('context', []),
-            'citations': output.get('citations', [])
-        }
-    )
-    log.debug(f"dict_to_ai_message---{ai}")
-    return ai
-# 获取合理的输出格式
-ai_output_runnable = RunnableLambda(dict_to_ai_message)
-
-def dict_to_tool_message(output: dict):
-    log.debug(f"dict_to_tool_message---{output}")
-    ai = ToolMessage(
-        tool_call_id = "web or rag",
-        content=f"{output.get('text', '')}\n",
-        additional_kwargs={
-            'context': output.get('context', []),
-            'citations': output.get('citations', [])
-        }
-    )
-    log.debug(f"dict_to_tool_message-ret--{ai}")
-    return ai
-# 获取合理的输出格式
-tool_output_runnable = RunnableLambda(dict_to_tool_message)
-
-# 用于将各种格式的输入，转换为dict格式，供chain使用
-# 支持将AgentState 等消息转换为dict
-# TODO 为什么有的消息的content被改为了dict？
-def message_to_dict(message: Union[list,HumanMessage,ToolMessage,dict,AgentState]):
-    # 若是graph，则从state中抽取消息
-    # AgentState 是typedict ，不支持类型检查
-    def correct_message_content(message):
-        if isinstance(message.content,dict):
-            message.content = [message.content]
-        return message
-    try:
-        
-        log.debug(f"message_to_dict--message---{message}")
-        if "messages" in message:
-            message = graph_input_format(message)
-            last_message = correct_message_content(message[-1])
-            # last_message = message[-1]
-            log.debug(f"message_to_dict--last_message---{last_message}")
-            if isinstance(last_message,HumanMessage) or isinstance(last_message,ToolMessage):
-                return {
-                    "text": last_message.content,
-                    "language": "chinese",
-                    "collection_names": last_message.additional_kwargs.get("collection_names",None),
-                    "context": last_message.additional_kwargs.get("context",None),
-                    "citations": last_message.additional_kwargs.get("citations",None),
-                }
-        elif isinstance(message,dict):
-            return message
-        elif isinstance(message,HumanMessage) or isinstance(message,ToolMessage):
-            message.additional_kwargs.get("collection_names",None)
-            message = correct_message_content(message)
-            return {
-                "text": message.content,
-                "language": "chinese",
-                "collection_names": message.additional_kwargs.get("collection_names",None),
-                "context": message.additional_kwargs.get("context",None),
-                "citations": message.additional_kwargs.get("citations",None),
-            }
-        elif isinstance(message,list) and len(message) > 0:
-            last_message = correct_message_content(message[-1])
-            if isinstance(last_message,HumanMessage) or isinstance(message,ToolMessage):
-                return {
-                    "text": last_message.content,
-                    "language": "chinese",
-                    "collection_names": last_message.additional_kwargs.get("collection_names",None),
-                    "context": message.additional_kwargs.get("context",None),
-                    "citations": message.additional_kwargs.get("citations",None),
-                }
-    except Exception as e:
-        log.error(e)
-        print(traceback.format_exc())
-    
-    return {
-        "text": "user dont say anything",
-        "language": "chinese",
-    } 
-        
-# 获取正确的输入格式
-start_runnable = RunnableLambda(message_to_dict)
