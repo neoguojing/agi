@@ -19,7 +19,7 @@ from agi.tasks.llm_app import (
     create_chat,
     create_llm_with_history,
 )
-from agi.tasks.common import (
+from agi.tasks.multi_model_app import (
     create_image_gen_chain,
     create_text2image_chain,
     create_translate_chain,
