@@ -581,6 +581,15 @@ tool_output_runnable = RunnableLambda(dict_to_tool_message)
 # 用于将各种格式的输入，转换为dict格式，供chain使用
 # 支持将AgentState 等消息转换为dict
 # TODO 为什么有的消息的content被改为了dict？
+
+def get_text_content(last_message):
+    if isinstance(last_message.content,str):
+        return last_message.content
+    elif isinstance(last_message.content,list):
+        for item in last_message.content:
+            if item["type"] == "text":
+                return item["text"]
+            
 def message_to_dict(message: Union[list,HumanMessage,ToolMessage,dict,AgentState]):
     # 若是graph，则从state中抽取消息
     # AgentState 是typedict ，不支持类型检查
@@ -598,7 +607,7 @@ def message_to_dict(message: Union[list,HumanMessage,ToolMessage,dict,AgentState
             log.debug(f"message_to_dict--last_message---{last_message}")
             if isinstance(last_message,HumanMessage) or isinstance(last_message,ToolMessage):
                 return {
-                    "text": last_message.content,
+                    "text": get_text_content(last_message),
                     "language": "chinese",
                     "collection_names": last_message.additional_kwargs.get("collection_names",None),
                     "context": last_message.additional_kwargs.get("context",None),
@@ -610,7 +619,7 @@ def message_to_dict(message: Union[list,HumanMessage,ToolMessage,dict,AgentState
             message.additional_kwargs.get("collection_names",None)
             message = correct_message_content(message)
             return {
-                "text": message.content,
+                "text": get_text_content(message),
                 "language": "chinese",
                 "collection_names": message.additional_kwargs.get("collection_names",None),
                 "context": message.additional_kwargs.get("context",None),
@@ -620,7 +629,7 @@ def message_to_dict(message: Union[list,HumanMessage,ToolMessage,dict,AgentState
             last_message = correct_message_content(message[-1])
             if isinstance(last_message,HumanMessage) or isinstance(message,ToolMessage):
                 return {
-                    "text": last_message.content,
+                    "text": get_text_content(last_message),
                     "language": "chinese",
                     "collection_names": last_message.additional_kwargs.get("collection_names",None),
                     "context": message.additional_kwargs.get("context",None),
