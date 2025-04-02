@@ -68,13 +68,13 @@ def create_translate_task(**kwargs):
     return create_translate_chain(TaskFactory._llm)
 
 def create_image_gen_task(**kwargs):
-    return create_image_gen_chain(TaskFactory._llm, graph=kwargs.get("graph"))
+    return create_image_gen_chain(TaskFactory._llm)
 
 def create_tts_task(**kwargs):
-    return create_text2speech_chain(graph=kwargs.get("graph"))
+    return create_text2speech_chain()
 
 def create_speech_text_task(**kwargs):
-    return create_speech2text_chain(graph=kwargs.get("graph"))
+    return create_speech2text_chain()
 
 
 # agent with history

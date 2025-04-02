@@ -34,7 +34,7 @@ class Image2Image(CustomerLLM):
     def _load_model(self):
         if self.model is None:
             self.model = AutoPipelineForImage2Image.from_pretrained(
-                self.model_path, torch_dtype=torch.float16, variant="fp16"
+                self.model_path, torch_dtype=torch.float16
             )
             # Enable CPU offloading for the model (optimize memory usage)
             self.model.enable_model_cpu_offload()

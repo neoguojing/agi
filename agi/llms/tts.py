@@ -24,11 +24,10 @@ class TextToSpeech(CustomerLLM):
     language: str = Field(default="zh-cn")
     save_file: bool = Field(default=True)
     
-    def __init__(self,is_gpu = False, save_file: bool = False,**kwargs):
+    def __init__(self,save_file: bool = False,**kwargs):
         super().__init__(**kwargs)
 
         self.save_file = save_file
-        self.is_gpu = is_gpu
         self.model = None
        
     def _load_model(self):

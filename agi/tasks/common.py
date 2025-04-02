@@ -69,6 +69,7 @@ def parse_input(input: PromptValue) -> list[BaseMessage]:
 
 # Input: AgentState
 # Output: AgentState
+# 翻译后的内容替换最后一条消息
 def create_translate_chain(llm):
     # 输入：AgentState
     # 输出：字符串
@@ -86,20 +87,28 @@ def create_translate_chain(llm):
                         media_type = content.get("type")
                         if media_type == "text":
                             content["text"] = result
-                    
+        return state["messages"]
     translate_runnable = RunnableLambda(translate_node)
     
     return RunnablePassthrough.assign(messages=translate_runnable).with_config(run_name="translate_chain")
 
+# 仅提取消息列表,将AgentState -> List[BaseMessages]
+def multimodel_state_modifier(state: AgentState):
+    return state["messages"]
 
-def create_text2image_chain(llm,graph=False):
+multimodel_state_modifier_runnable = RunnableLambda(multimodel_state_modifier)
+# Input: AgentState
+# Output: AIMessage
+def create_text2image_chain(llm):
     translate = create_translate_chain(llm)
     text2image = ModelFactory.get_model("text2image")
     
-    return translate | text2image 
+    return translate| multimodel_state_modifier_runnable | text2image 
 
-def create_image_gen_chain(llm,graph=False):
-    translate = create_translate_chain(llm,graph)
+# Input: AgentState
+# Output: AIMessage
+def create_image_gen_chain(llm):
+    translate = create_translate_chain(llm)
     image2image = ModelFactory.get_model("image2image")
     text2image = ModelFactory.get_model("text2image")
     
@@ -120,50 +129,43 @@ def create_image_gen_chain(llm,graph=False):
     )
     
     chain = (
-        RunnablePassthrough.assign(text=translate.with_config(run_name="translate"))
-        | multimodal_input_template
-        | RunnableLambda(parse_input)
+        translate
+        | multimodel_state_modifier_runnable
         | branch
     )
-    
-    if graph:
-        chain = translate | branch | graph_parser
-        
-    return chain
-# graph 模式
-# Input：AgentState
-# Output：AgentState
-def create_text2speech_chain(graph=False):
-    text2speech = ModelFactory.get_model("text2speech")
-    chain = (multimodal_input_template
-        | RunnableLambda(parse_input)
-        | text2speech
-    )
-    
-    if graph:
-        chain = graph_input_format | text2speech | graph_parser
         
     return chain
 
-# Input: AgentState
-# Output: AgentState
-def create_speech2text_chain(graph=False):
-    speech2text = ModelFactory.get_model("speech2text")
-    chain = (multimodal_input_template
-        | RunnableLambda(parse_input)
-        | speech2text
-    )
-    
-    if graph:
-        def _convert_ai_huiman(x:AIMessage):
-            if isinstance(x,list):
-                x = x[-1]
-            if isinstance(x,AIMessage):
-                return HumanMessage(content=x.content)
-            
-        chain = graph_input_format | speech2text | _convert_ai_huiman | graph_parser
-        
+# Input：AgentState
+# Output：AgentState
+def create_text2speech_chain():
+    text2speech = ModelFactory.get_model("text2speech")
+    chain = multimodel_state_modifier_runnable | text2speech
+          
     return chain
+
+# Input: AgentState
+# Output: AIMessage or AgentState
+def create_speech2text_chain():
+    speech2text = ModelFactory.get_model("speech2text")
+    chain = multimodel_state_modifier_runnable | speech2text
+    
+    # 修改content,增加text值
+    def state_modifier(x:AgentState):
+        ai = chain.invoke(x)
+        if isinstance(x["messages"][-1].content,list):
+            x["messages"][-1].content.append({"type":"text","text":ai.content})
+        return x["messages"]
+        
+    # 仅做语音到文本转换时，返回AIMessage，否则需要修改最后一条HumanMessage，增加text值
+    branch = RunnableBranch(
+        (
+            (lambda x: x.get("feature") == "speech",chain)
+        ),
+        RunnablePassthrough.assign(messages=state_modifier).with_config(run_name="state_modifier")
+    )
+        
+    return branch
 
 
 def create_llm_task(**kwargs):
