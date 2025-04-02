@@ -43,17 +43,14 @@ class AgiGraph:
     def __init__(self):
         # TODO 
         checkpointer = MemorySaver()
-        # self.prompt = agent_prompt
-        # self.prompt = self.prompt.partial(system_message="You should provide accurate data for the chart_generator to use.")
-        # self.prompt = self.prompt.partial(tool_names=", ".join([tool.name for tool in tools]))
-        # self.agent_executor = create_react_agent(self.llm, tools, state_modifier=self.prompt,checkpointer=checkpointer)
+
         self.builder = StateGraph(State)
         self.builder.add_node("speech2text", TaskFactory.create_task(TASK_SPEECH_TEXT,graph=True))
         self.builder.add_node("tts", TaskFactory.create_task(TASK_TTS,graph=True))
         self.builder.add_node("image_gen", TaskFactory.create_task(TASK_IMAGE_GEN,graph=True))
-        self.builder.add_node("rag", TaskFactory.create_task(TASK_RAG,graph=True))
-        self.builder.add_node("web", TaskFactory.create_task(TASK_WEB_SEARCH,graph=True))
-        self.builder.add_node("doc_chat", TaskFactory.create_task(TASK_DOC_CHAT,graph=True))
+        self.builder.add_node("rag", TaskFactory.create_task(TASK_RAG))
+        self.builder.add_node("web", TaskFactory.create_task(TASK_WEB_SEARCH))
+        self.builder.add_node("doc_chat", TaskFactory.create_task(TASK_DOC_CHAT))
         self.builder.add_node("agent", TaskFactory.create_task(TASK_AGENT))
         self.builder.add_node("image_parser", self.image2text_node)
         # 用于处理非agent的请求:1.标题生成等用户自定义提示请求；2.图像识别等 image2text 请求；3.作为决策节点，判定用户意图

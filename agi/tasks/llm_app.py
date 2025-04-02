@@ -59,6 +59,7 @@ log.setLevel(logging.INFO)
 
 set_debug(False)
 
+# TODO parent_name不是实际的函数
 def debug_info(x : Any):
     if AGI_DEBUG:
         parent_name = ""
@@ -103,7 +104,7 @@ def get_session_history(user_id: str, conversation_id: str):
 
 # dict_input = True时，只能输入dict
 # Input: List[BaseMessage]
-# Output: TODO
+# Output: AIMessage
 def create_llm_with_history(runnable,dict_input=False):
     # 支持历史消息裁剪
     runnable = debug_tool | trimmer | runnable
@@ -140,7 +141,7 @@ def create_llm_with_history(runnable,dict_input=False):
     )
 
 # Input：AgentState
-# Output: TODO
+# Output: AIMessage
 # llm转换为基于历史的对话模式
 # 若context不存在，则直接转到chat
 # context存在，则转到 doc chain
@@ -198,7 +199,7 @@ def get_last_message_text(state: AgentState):
 
 # 独立的web检索chain
 # Input: AgentState
-# Output: TODO
+# Output: AgentState
 def create_websearch(km: KnowledgeManager):
     def web_search(input: AgentState,config: RunnableConfig) :
         tenant = config.get("configurable", {}).get("user_id", None)
@@ -216,13 +217,13 @@ def create_websearch(km: KnowledgeManager):
 
 # 独立的文档检索chain
 # Input: AgentState
-# Output: TODO
+# Output: AgentState
 # TODO 在未获取到知识库，或者未检索到相关文档的情况下，直接交给大模型型回答
 def create_rag(km: KnowledgeManager):
-    def query_docs(inputs: AgentState,config: RunnableConfig):
-        log.debug(f"query_docs----{inputs}")
+    def query_docs(input: AgentState,config: RunnableConfig):
+        log.debug(f"query_docs----{input}")
         # collection_names 位None，则默认使用 all进行检索
-        collection_names = inputs.get("collection_names",None)        
+        collection_names = input.get("collection_names",None)        
         collections = "all"
         if isinstance(collection_names,str):
             collections = json.loads(collection_names)
