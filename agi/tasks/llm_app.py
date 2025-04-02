@@ -32,7 +32,6 @@ from langchain.chains.combine_documents.base import (
 from langchain_core.output_parsers import StrOutputParser,BaseOutputParser
 from agi.tasks.prompt import get_last_message_text,doc_qa_template,docqa_modify_state_messages_runnable,default_modify_state_messages_runnable
 from agi.tasks.retriever import KnowledgeManager
-from agi.tasks.common import graph_parser,graph_input_format
 import json
 from datetime import datetime,timezone
 from langchain.globals import set_debug

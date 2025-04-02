@@ -24,49 +24,6 @@ import logging
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 
-def graph_input_format(state: AgentState):
-    return state["messages"]
-    
-def graph_parser(x):
-    if isinstance(x,BaseMessage):
-        return AgentState(messages=[x])
-    elif isinstance(x,list[BaseMessage]):
-        return AgentState(messages=x)
-    
-def build_messages(input :dict):
-   
-    media = None
-    type = ""
-    if input.get('type'):  # 首先获取type
-        type = input['type']
-        
-    if input.get('data'):  # 获取媒体数据
-        media =  input['data']
-    
-    if media is None:
-        return HumanMessage(content=input.get("text"))
-
-    return HumanMessage(content=[
-        {"type": "text", "text": input.get("text")},
-        {"type": type, type: media},
-    ])
-    
-
-def parse_input(input: PromptValue) -> list[BaseMessage]:
-    try:
-        # 使用json模板输入
-        if isinstance(input,StringPromptValue):
-            log.debug(input.to_json())
-            data = json.loads(input.to_string())
-            return [build_messages(data)]
-        # 使用message模板输入
-        elif isinstance(input,ChatPromptValue):
-            return input.to_messages()
-    except json.JSONDecodeError as e:
-        log.error(e,input.to_string())
-        return {}
-
-
 # Input: AgentState
 # Output: AgentState
 # 翻译后的内容替换最后一条消息
