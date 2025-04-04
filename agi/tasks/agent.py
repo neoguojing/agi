@@ -141,6 +141,7 @@ class State(AgentState):
     docs: list[Document]
     citations: list[any]
     collection_names: list[str]
+    auto_decide_reuslt: str
 
 
 # agent 的提示词

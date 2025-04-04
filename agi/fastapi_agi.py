@@ -473,7 +473,7 @@ async def get_embedding(request: EmbeddingRequest):
     if not request.input:
         raise HTTPException(status_code=400, detail="Text cannot be empty.")
     # 生成嵌入向量
-    llm_task = TaskFactory.create_task(TASK_EMBEDDING)
+    llm_task = TaskFactory.get_embedding()
     embedding = llm_task.embed_query(request.input)
     
     return {

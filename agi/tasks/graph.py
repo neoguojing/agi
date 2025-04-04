@@ -22,7 +22,7 @@ from langgraph.prebuilt.chat_agent_executor import AgentState
 from typing import Dict, Any, Iterator,Union
 from langchain_core.messages import BaseMessage,AIMessage,HumanMessage,ToolMessage
 from agi.tasks.agent import State,Feature,InputType
-from agi.tasks.prompt import decide_template
+from agi.tasks.prompt import decide_modify_state_messages_runnable
 import traceback
 import logging
 log = logging.getLogger(__name__)
@@ -78,7 +78,7 @@ class AgiGraph:
             )
         
         # 定义状态机chain
-        self.decider_chain = decide_template | TaskFactory.create_task(TASK_LLM) | StrOutputParser()
+        self.decider_chain = decide_modify_state_messages_runnable | TaskFactory.get_llm() | StrOutputParser()
         self.node_list = ["image_parser", "image_gen", "web", "llm"]
 
     # 通过用户指定input_type，来决定使用哪个分支
@@ -130,27 +130,18 @@ class AgiGraph:
         return think_content,other_content
     
     def auto_state_machine(self,state: State):
-        input_type = state.get("input_type")
-        last_message = state.get("messages")[-1]
-        text = ""
-        if isinstance(last_message.content,str):
-            text = last_message.content
-        elif isinstance(last_message.content,list):
-            for item in last_message.content:
-                if item["type"] == InputType.TEXT:
-                    text = item["text"]
-                    break
-        
-        next_step = self.decider_chain.invoke({"text":text,"input_type":input_type})
+        next_step = self.decider_chain.invoke(state)
         log.info(f"auto_state_machine: {next_step}")
         # 判断返回是否在决策列表里
         if next_step in self.node_list:
+            state["auto_decide_reuslt"] = next_step
             return next_step
         # 若大模型返回的值不标准，则看是否包含节点
         match = next((option for option in self.node_list if option in next_step), None)
         if match:
+            state["auto_decide_reuslt"] = match
             return match
-
+        state["auto_decide_reuslt"] = "llm"
         return "llm"
     
     def feature_control(self,state: State):
@@ -198,7 +189,7 @@ class AgiGraph:
         events = self.graph.invoke(input, config)
         return events
 
-    def stream(self, input: State) -> Iterator[Union[BaseMessage, Dict[str, Any]]]:
+    def stream(self, input: State,stream_mode=["messages", "custom"]) -> Iterator[Union[BaseMessage, Dict[str, Any]]]:
         config={"configurable": {"user_id": input.get("user_id","default_tenant"), "conversation_id": input.get("conversation_id",""),
                                  "thread_id": input.get("user_id",None) or str(uuid.uuid4())}}
         
@@ -211,28 +202,48 @@ class AgiGraph:
                 existing_message = snapshot.values["messages"][-1]
                 existing_message.pretty_print()
             
-        events = self.graph.stream(input, config, stream_mode="values")
+        events = self.graph.stream(input, config, stream_mode=stream_mode)
+        
         try:
             for event in events:
                 log.debug(event)
-                if "messages" in event and event["messages"]:
-                    # 这段代码，返回重复值给客户端
-                    # for message in event["messages"]:
-                    #     yield message  # 返回当前事件
-                    # 仅返回最后一条消息
-                    log.info(f"last state message:{event['messages'][-1]}")
-                    last_message = event['messages'][-1]
-                    # 处理推理场景，目前适配qwq
-                    think_content,other_content = self.split_think_content(last_message.content)
-                    if think_content != "":
-                        think_message = ToolMessage(content=think_content,tool_call_id="thinking")
-                        yield think_message
-                        last_message.content = other_content
-                        
-                    yield last_message
-                else:
-                    log.error(f"Event missing messages: {event}")
-                    yield event # 返回当前事件
+                # 返回非HumanMessage
+                if stream_mode == "values":
+                    # event是 State类型
+                    if "messages" in event and event["messages"]:
+                        log.info(f"last state message:{event['messages'][-1]}")
+                        last_message = event['messages'][-1]
+                        # 部返回最后一个
+                        if isinstance(last_message,HumanMessage):
+                            continue
+                        # 处理推理场景，目前适配qwq
+                        think_content,other_content = self.split_think_content(last_message.content)
+                        if think_content != "":
+                            think_message = ToolMessage(content=think_content,tool_call_id="thinking")
+                            yield think_message
+                            last_message.content = other_content
+                        yield last_message
+                    else:
+                        log.error(f"Event missing messages: {event}")
+                elif stream_mode == "updates":
+                    # 可以拿到每个节点的信息
+                    # event 类型： {"agent":State} {"web":State} {'doc_chat': None}
+                    pass
+                elif stream_mode == "custom":
+                    # 用户自定义消息
+                    pass
+                elif stream_mode == "messages":
+                    # turple 类型的消息 0是AIMessageChunk，2是一个字典
+                    # (AIMessageChunk,{}) (ToolMessage,{}) (HumanMessage,{})
+                    '''
+                    (
+                        AIMessageChunk(content='0', additional_kwargs={}, response_metadata={}, id='run-63b5b380-baa6-4e72-a13d-653d9148585d'),
+                        {'user_id': 'default_tenant', 'conversation_id': '', 'thread_id': 'ebbdc908-a785-4036-900a-7298aac68cb0', 'langgraph_step': 1, 'langgraph_node': 'web', 'langgraph_triggers': ['branch:__start__:routes:web'], 'langgraph_path': ('__pregel_pull', 'web'), 'langgraph_checkpoint_ns': 'web:fdb11f55-aa59-ab33-4fde-ec903ab4ef98', 'checkpoint_ns': 'web:fdb11f55-aa59-ab33-4fde-ec903ab4ef98', 'ls_provider': 'openai', 'ls_model_name': 'qwen2.5:14b', 'ls_model_type': 'chat', 'ls_temperature': 0.7}
+                    )
+                    '''
+                    yield event
+                elif stream_mode == "debug":
+                    pass
         except Exception as e:
             log.error(f"Error during streaming: {e}")
             print(traceback.format_exc())

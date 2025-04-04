@@ -32,6 +32,7 @@ from langchain.chains.combine_documents.base import (
 from langchain_core.output_parsers import StrOutputParser,BaseOutputParser
 from agi.tasks.prompt import get_last_message_text,doc_qa_template,docqa_modify_state_messages_runnable,default_modify_state_messages_runnable
 from agi.tasks.retriever import KnowledgeManager
+from agi.tasks.utils import graph_response_format_runnable
 import json
 from datetime import datetime,timezone
 from langchain.globals import set_debug
@@ -104,6 +105,7 @@ def get_session_history(user_id: str, conversation_id: str):
 # dict_input = True时，只能输入dict
 # Input: List[BaseMessage]
 # Output: AIMessage
+# 该工具不能单独使用
 def create_llm_with_history(runnable,dict_input=False):
     # 支持历史消息裁剪
     runnable = debug_tool | trimmer | runnable
@@ -140,7 +142,7 @@ def create_llm_with_history(runnable,dict_input=False):
     )
 
 # Input：AgentState
-# Output: AIMessage
+# Output: AgentState
 # llm转换为基于历史的对话模式
 # 若context不存在，则直接转到chat
 # context存在，则转到 doc chain
@@ -151,18 +153,35 @@ def create_stuff_documents_chain(
     output_parser: Optional[BaseOutputParser] = None,
     document_prompt: Optional[BasePromptTemplate] = None,
     document_separator: str = DEFAULT_DOCUMENT_SEPARATOR,
-    document_variable_name: str = DOCUMENTS_KEY,
 ) -> Runnable[Dict[str, Any], Any]:
     
-    _validate_prompt(prompt, document_variable_name)
     _document_prompt = document_prompt or DEFAULT_DOCUMENT_PROMPT
     _output_parser = output_parser or StrOutputParser()
 
     def format_docs(inputs: AgentState) -> str:
-        return document_separator.join(
-            format_document(doc, _document_prompt)
-            for doc in inputs[document_variable_name]
-        )
+        # 1. 从输入数据中获取需要处理的文档列表
+        documents = inputs["docs"]
+
+        # 2. 创建一个空列表用于存储格式化后的文档内容
+        formatted_documents = []
+
+        # 3. 遍历每个文档进行格式化处理
+        for doc in documents:
+            # 对单个文档应用格式化模板
+            formatted_doc = format_document(doc, _document_prompt)
+            # 将处理后的文档添加到列表
+            formatted_documents.append(formatted_doc)
+
+        # 4. 用指定的分隔符连接所有格式化后的文档
+        combined_documents = document_separator.join(formatted_documents)
+
+        # 最终结果保存在 combined_documents 变量中
+        return combined_documents
+    
+        # return document_separator.join(
+        #     format_document(doc, _document_prompt)
+        #     for doc in inputs[document_variable_name]
+        # )
 
     llm_with_history = create_llm_with_history(runnable=llm,dict_input=False)
 
@@ -175,7 +194,7 @@ def create_stuff_documents_chain(
     target_chain = RunnableBranch(
         (
             # Both empty string and empty list evaluate to False
-            lambda x: not x.get(document_variable_name, False),
+            lambda x: not x.get("docs", False),
             # If no context, then we just pass input to llm
             default_modify_state_messages_runnable | llm_with_history
         ),
@@ -183,7 +202,7 @@ def create_stuff_documents_chain(
         doc_chain
     ).with_config(run_name="stuff_documents_with_branch")
 
-    return debug_tool | target_chain
+    return debug_tool | target_chain | graph_response_format_runnable
 
 
 
@@ -200,7 +219,7 @@ def create_websearch(km: KnowledgeManager):
     
     web_search_runable = RunnableLambda(web_search)
     web_search_chain = RunnablePassthrough.assign(
-            context=web_search_runable.with_config(run_name="web_search_runable"),
+            docs=web_search_runable.with_config(run_name="web_search_runable"),
     ).assign(citations=build_citations)
     
     return debug_tool | web_search_chain
@@ -231,13 +250,13 @@ def create_rag(km: KnowledgeManager):
     
     retrieval_docs = RunnableLambda(query_docs)
     rag_runable = RunnablePassthrough.assign(
-            context=retrieval_docs.with_config(run_name="retrieval_docs"),
+            docs=retrieval_docs.with_config(run_name="retrieval_docs"),
         ).assign(citations=build_citations)
     
     return debug_tool | rag_runable
 
 # Input: AgentState
-# Output: AIMessage
+# Output: AgentState
 # chat without history
 def create_chat(llm):
     prompt = ChatPromptTemplate.from_messages(
@@ -253,7 +272,7 @@ def create_chat(llm):
     
     input_format = RunnableLambda(modify_state_messages)
     
-    chat = debug_tool | input_format | llm
+    chat = debug_tool | input_format | llm | graph_response_format_runnable
 
     return chat
 
@@ -319,7 +338,7 @@ def build_citations(inputs: dict):
     source_dict = defaultdict(list)
     try:
         # 将文档按 source 聚合
-        for doc in inputs["context"]:
+        for doc in inputs["docs"]:
             # 使用llm extract 提取内容时，与输入无关会返回NO_OUTPUT
             if "NO_OUTPUT" in doc.page_content:
                 continue

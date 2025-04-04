@@ -10,7 +10,7 @@ import json
 from langchain_core.messages import HumanMessage,BaseMessage,AIMessage
 from langchain_core.prompt_values import StringPromptValue,PromptValue,ChatPromptValue
 from langgraph.prebuilt.chat_agent_executor import AgentState
-from agi.llms.base import parse_input_messages
+from agi.tasks.utils import graph_response_format_runnable
 from agi.config import (
     OLLAMA_API_BASE_URL,
     OPENAI_API_KEY,
@@ -55,15 +55,15 @@ def multimodel_state_modifier(state: AgentState):
 
 multimodel_state_modifier_runnable = RunnableLambda(multimodel_state_modifier)
 # Input: AgentState
-# Output: AIMessage
+# Output: AgentState
 def create_text2image_chain(llm):
     translate = create_translate_chain(llm)
     text2image = ModelFactory.get_model("text2image")
     
-    return translate| multimodel_state_modifier_runnable | text2image 
+    return translate| multimodel_state_modifier_runnable | text2image | graph_response_format_runnable
 
 # Input: AgentState
-# Output: AIMessage
+# Output: AgentState
 def create_image_gen_chain(llm):
     translate = create_translate_chain(llm)
     image2image = ModelFactory.get_model("image2image")
@@ -91,7 +91,7 @@ def create_image_gen_chain(llm):
         | branch
     )
         
-    return chain
+    return chain | graph_response_format_runnable
 
 # Input：AgentState
 # Output：AgentState
@@ -99,13 +99,13 @@ def create_text2speech_chain():
     text2speech = ModelFactory.get_model("text2speech")
     chain = multimodel_state_modifier_runnable | text2speech
           
-    return chain
+    return chain | graph_response_format_runnable
 
 # Input: AgentState
-# Output: AIMessage or AgentState
+# Output: AgentState
 def create_speech2text_chain():
     speech2text = ModelFactory.get_model("speech2text")
-    chain = multimodel_state_modifier_runnable | speech2text
+    chain = multimodel_state_modifier_runnable | speech2text | graph_response_format_runnable
     
     # 修改content,增加text值
     def state_modifier(x:AgentState):
@@ -122,7 +122,7 @@ def create_speech2text_chain():
         RunnablePassthrough.assign(messages=state_modifier).with_config(run_name="state_modifier")
     )
         
-    return branch
+    return branch 
 
 
 def create_llm_task(**kwargs):

@@ -80,6 +80,13 @@ decide_template = ChatPromptTemplate.from_messages(
         ("human", decider_prompt)
     ]
 )
+def decide_modify_state_messages(state: AgentState):
+    # 过滤掉非法的消息类型
+    state["messages"] = list(filter(lambda x: not isinstance(x.content, dict), state["messages"]))
+    text = get_last_message_text(state)
+    return decide_template.invoke({"input_type": state["input_type"],"text":text}).to_messages()
+
+decide_modify_state_messages_runnable = RunnableLambda(decide_modify_state_messages)
 
 system_prompt = (
     "You are a helpful assistant. Answer all questions to the best of your ability."
