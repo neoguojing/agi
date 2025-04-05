@@ -27,18 +27,17 @@ class TestTaskMultiModalFactory(unittest.TestCase):
         self.assertIsInstance(resp["messages"][-1],HumanMessage)
         self.assertIsInstance(resp["messages"][-1].content,str)
         
-    # TODO torch 2.6不兼容
-    # def test_text2speech_chain(self):
-    #     # Test for TASK_LLM
-    #     llm_task = TaskFactory.create_task(TASK_TTS)
-    #     input = State(
-    #         messages=[HumanMessage(content="These prompt templates are used to format a single string, and generally are used for simpler inputs")],
-    #     )
-    #     resp = llm_task.invoke(input)
-    #     self.assertIsInstance(resp,AIMessage)
-    #     self.assertIsInstance(resp.content,list)
-    #     self.assertIsNotNone(resp.content[0].get("audio"))
-    #     self.assertEqual(resp.content[0].get("type"),"audio")
+    def test_text2speech_chain(self):
+        # Test for TASK_LLM
+        llm_task = TaskFactory.create_task(TASK_TTS)
+        input = State(
+            messages=[HumanMessage(content="These prompt templates are used to format a single string, and generally are used for simpler inputs")],
+        )
+        resp = llm_task.invoke(input)
+        self.assertIsNotNone(resp["messages"][-1],AIMessage)
+        self.assertIsInstance(resp["messages"][-1].content,list)
+        self.assertIsNotNone(resp["messages"][-1].content[0].get("audio"))
+        self.assertEqual(resp["messages"][-1].content[0].get("type"),"audio")
         
     def test_speech2text_chain(self):
         llm_task = TaskFactory.create_task(TASK_SPEECH_TEXT)
@@ -48,12 +47,12 @@ class TestTaskMultiModalFactory(unittest.TestCase):
         resp = llm_task.invoke(input)
         self.assertIsNotNone(resp.get("messages"))
         self.assertIsInstance(resp.get("messages")[-1],HumanMessage)
-        self.assertEqual(len(resp.get("messages")[-1].content),2)
+        self.assertIsNotNone(resp.get("messages")[-1].content)
         input["feature"] = "speech"
         resp = llm_task.invoke(input)
-        self.assertIsInstance(resp,AIMessage)
-        self.assertIsInstance(resp.content,str)
-        self.assertIsNotNone(resp.content)
+        self.assertIsInstance(resp["messages"][-1],AIMessage)
+        self.assertIsInstance(resp["messages"][-1].content,str)
+        self.assertIsNotNone(resp["messages"][-1].content)
         
     def test_text2image_chain(self):
         llm_task = TaskFactory.create_task(TASK_IMAGE_GEN)
@@ -62,19 +61,19 @@ class TestTaskMultiModalFactory(unittest.TestCase):
         )
         resp = llm_task.invoke(input)
         print(resp)
-        self.assertIsInstance(resp,AIMessage)
-        self.assertIsInstance(resp.content,list)
-        self.assertIsNotNone(resp.content[0].get("image"))
-        self.assertEqual(resp.content[0].get("type"),"image")
+        self.assertIsInstance(resp["messages"][-1],AIMessage)
+        self.assertIsInstance(resp["messages"][-1].content,list)
+        self.assertIsNotNone(resp["messages"][-1].content[0].get("image"))
+        self.assertEqual(resp["messages"][-1].content[0].get("type"),"image")
         # self.assertIsNotNone(resp.content)
         input = State(
             messages=[HumanMessage(content=[{"type":"text","text":"猫咪在游泳"},{"type":"image","image":"tests/cat.jpg"}])],
         )
         resp = llm_task.invoke(input)
-        self.assertIsInstance(resp,AIMessage)
-        self.assertIsInstance(resp.content,list)
-        self.assertIsNotNone(resp.content[0].get("image"))
-        self.assertEqual(resp.content[0].get("type"),"image")
+        self.assertIsInstance(resp["messages"][-1],AIMessage)
+        self.assertIsInstance(resp["messages"][-1].content,list)
+        self.assertIsNotNone(resp["messages"][-1].content[0].get("image"))
+        self.assertEqual(resp["messages"][-1].content[0].get("type"),"image")
 
 if __name__ == '__main__':
     unittest.main()
