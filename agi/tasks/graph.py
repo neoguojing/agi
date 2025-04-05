@@ -4,6 +4,7 @@ from langgraph.graph import END, StateGraph, START
 import uuid
 from langchain_core.output_parsers import StrOutputParser
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.types import StreamWriter
 from langchain_core.runnables import  RunnableConfig,Runnable,RunnablePassthrough
 from langchain.globals import set_debug
 from langchain.globals import set_verbose
@@ -20,7 +21,7 @@ from agi.tasks.task_factory import (
     )
 from langgraph.prebuilt.chat_agent_executor import AgentState
 from typing import Dict, Any, Iterator,Union
-from langchain_core.messages import BaseMessage,AIMessage,HumanMessage,ToolMessage
+from langchain_core.messages import BaseMessage,AIMessage,HumanMessage,ToolMessage,AIMessageChunk
 from agi.tasks.agent import State,Feature,InputType
 from agi.tasks.prompt import decide_modify_state_messages_runnable
 import traceback
@@ -50,7 +51,8 @@ class AgiGraph:
         self.builder.add_node("image_gen", TaskFactory.create_task(TASK_IMAGE_GEN))
         self.builder.add_node("rag", TaskFactory.create_task(TASK_RAG))
         self.builder.add_node("web", TaskFactory.create_task(TASK_WEB_SEARCH))
-        self.builder.add_node("doc_chat", TaskFactory.create_task(TASK_DOC_CHAT))
+        # self.builder.add_node("doc_chat", TaskFactory.create_task(TASK_DOC_CHAT))
+        self.builder.add_node("doc_chat", self.doc_chat_node)
         self.builder.add_node("agent", TaskFactory.create_task(TASK_AGENT))
         self.builder.add_node("image_parser", self.image2text_node)
         # 用于处理非agent的请求:1.标题生成等用户自定义提示请求；2.图像识别等 image2text 请求；3.作为决策节点，判定用户意图
@@ -93,6 +95,12 @@ class AgiGraph:
 
         return END
     
+    def doc_chat_node(self,state: State,config: RunnableConfig,writer: StreamWriter):
+        chain = TaskFactory.create_task(TASK_DOC_CHAT)
+        if state["citations"]:
+            writer({"citations":state["citations"],"docs":state["docs"]})
+        return chain.invoke(state,config=config)
+        
     # 图片解析节点
     def image2text_node(self,state: State,config: RunnableConfig):
         try:
@@ -130,7 +138,9 @@ class AgiGraph:
         return think_content,other_content
     
     def auto_state_machine(self,state: State):
-        next_step = self.decider_chain.invoke(state)
+        config={"configurable": {"user_id": "tools", "conversation_id": "",
+                                 "thread_id": "tools"}}
+        next_step = self.decider_chain.invoke(state,config=config)
         log.info(f"auto_state_machine: {next_step}")
         # 判断返回是否在决策列表里
         if next_step in self.node_list:
@@ -159,6 +169,10 @@ class AgiGraph:
             return "image_parser"
         elif feature == Feature.IMAGE2IMAGE and state.get("input_type") == InputType.IMAGE:    #图片转图片
             return "image_gen"
+        elif feature == Feature.SPEECH:
+            return END
+        elif feature == Feature.TTS:
+            return "tts"
         else: #通用任务处理：如标题生成、tag生成等 或者 自主决策
             return self.auto_state_machine(state)
         
@@ -208,7 +222,7 @@ class AgiGraph:
             for event in events:
                 log.debug(event)
                 # 返回非HumanMessage
-                if stream_mode == "values":
+                if "values" in stream_mode:
                     # event是 State类型
                     if "messages" in event and event["messages"]:
                         log.info(f"last state message:{event['messages'][-1]}")
@@ -225,23 +239,34 @@ class AgiGraph:
                         yield last_message
                     else:
                         log.error(f"Event missing messages: {event}")
-                elif stream_mode == "updates":
+                elif "updates" in stream_mode:
                     # 可以拿到每个节点的信息
                     # event 类型： {"agent":State} {"web":State} {'doc_chat': None}
-                    pass
-                elif stream_mode == "custom":
+                    yield event
+                elif "custom" in stream_mode and event[0] == "custom":
                     # 用户自定义消息
-                    pass
-                elif stream_mode == "messages":
+                    # ("custom":())
+                    yield event
+                elif "messages" in stream_mode and event[0] == "messages": 
                     # turple 类型的消息 0是AIMessageChunk，2是一个字典
                     # (AIMessageChunk,{}) (ToolMessage,{}) (HumanMessage,{})
                     '''
-                    (
+                    ("messages",(
                         AIMessageChunk(content='0', additional_kwargs={}, response_metadata={}, id='run-63b5b380-baa6-4e72-a13d-653d9148585d'),
                         {'user_id': 'default_tenant', 'conversation_id': '', 'thread_id': 'ebbdc908-a785-4036-900a-7298aac68cb0', 'langgraph_step': 1, 'langgraph_node': 'web', 'langgraph_triggers': ['branch:__start__:routes:web'], 'langgraph_path': ('__pregel_pull', 'web'), 'langgraph_checkpoint_ns': 'web:fdb11f55-aa59-ab33-4fde-ec903ab4ef98', 'checkpoint_ns': 'web:fdb11f55-aa59-ab33-4fde-ec903ab4ef98', 'ls_provider': 'openai', 'ls_model_name': 'qwen2.5:14b', 'ls_model_type': 'chat', 'ls_temperature': 0.7}
-                    )
+                    ))
                     '''
-                    yield event
+                    log.debug(event)
+                    # 仅返回AIMessageChunk以及content不能为空,过滤ToolMessage和HumaMessage
+                    # 多模态场景下,会返回AIMessage
+                    # TODO translate chain的消息会以AIMessageChunk发送出来
+                    # TODO decide chain 和 tranlate chain 以及 web search chain会输出中间结果,需要想办法处理
+                    if (isinstance(event[1][0],AIMessage)) and event[1][0].content:
+                        meta = event[1][1]
+                        if meta.get("langgraph_node") in ["web","__start__","rag"]:
+                            pass
+                        else:
+                            yield event
                 elif stream_mode == "debug":
                     pass
         except Exception as e:

@@ -13,6 +13,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import BasePromptTemplate
 from langchain_core.retrievers import RetrieverLike, RetrieverOutputLike
 from langgraph.prebuilt.chat_agent_executor import AgentState
+
 from langchain_core.runnables import (
     RunnableParallel,
     RunnablePassthrough,
@@ -178,11 +179,6 @@ def create_stuff_documents_chain(
         # 最终结果保存在 combined_documents 变量中
         return combined_documents
     
-        # return document_separator.join(
-        #     format_document(doc, _document_prompt)
-        #     for doc in inputs[document_variable_name]
-        # )
-
     llm_with_history = create_llm_with_history(runnable=llm,dict_input=False)
 
     doc_chain = (
@@ -198,7 +194,7 @@ def create_stuff_documents_chain(
             # If no context, then we just pass input to llm
             default_modify_state_messages_runnable | llm_with_history
         ),
-        # If context, then we pass inputs to tag chain
+        # If docs, then we pass inputs to tag chain
         doc_chain
     ).with_config(run_name="stuff_documents_with_branch")
 
@@ -210,7 +206,7 @@ def create_stuff_documents_chain(
 # Input: AgentState
 # Output: AgentState
 def create_websearch(km: KnowledgeManager):
-    def web_search(input: AgentState,config: RunnableConfig) :
+    def web_search(input: AgentState,config: RunnableConfig):
         tenant = config.get("configurable", {}).get("user_id", None)
         text = get_last_message_text(input)
         _,_,_,raw_docs = km.web_search(text,tenant=tenant)

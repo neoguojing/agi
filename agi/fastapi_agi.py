@@ -85,17 +85,13 @@ async def chat_completions(
 
     internal_messages: List[Union[HumanMessage, Dict[str, Union[str, List[Dict[str, str]]]]]] = []
     input_type = "text"  # 默认输入类型
-    # 处理知识库参数
-    additional_kwargs = {}
-    if request.db_ids is not None:
-        additional_kwargs["collection_names"] = request.db_ids
         
     # 只处理最后一条消息
     # for msg in request.messages:
     msg = request.messages[-1]
     if msg.role == "user":
         if isinstance(msg.content, str):
-            internal_messages.append(HumanMessage(content=msg.content,additional_kwargs=additional_kwargs))
+            internal_messages.append(HumanMessage(content=msg.content))
         else:
             content: List[Dict[str, str]] = []
             for item in msg.content:
@@ -112,9 +108,8 @@ async def chat_completions(
                 else:
                     # 处理不支持的类型
                     raise ValueError(f"不支持的多模态类型: {item['type']}")
-            internal_messages.append(HumanMessage(content=content,additional_kwargs=additional_kwargs))
-        # elif msg.role == "assistant":
-        #     internal_messages.append({"role": "assistant", "content": msg.content})
+            internal_messages.append(HumanMessage(content=content))
+
     if request.user is None or request.user == "":
         request.user = "default_tenant"
     state_data = State(
@@ -123,7 +118,8 @@ async def chat_completions(
         need_speech=request.need_speech,
         user_id=request.user,
         conversation_id=request.conversation_id,
-        feature=request.feature
+        feature=request.feature,
+        collection_names=request.db_ids
     )
 
     # TODO 文章的引用信息如何处理

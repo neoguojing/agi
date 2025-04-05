@@ -111,7 +111,7 @@ def create_speech2text_chain():
     def state_modifier(x:AgentState):
         ai = chain.invoke(x)
         if isinstance(x["messages"][-1].content,list):
-            x["messages"][-1].content.append({"type":"text","text":ai.content})
+            x["messages"][-1].content = ai["messages"][-1].content
         return x["messages"]
         
     # 仅做语音到文本转换时，返回AIMessage，否则需要修改最后一条HumanMessage，增加text值

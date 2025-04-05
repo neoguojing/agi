@@ -4,6 +4,11 @@ from datetime import date
 from pathlib import Path
 import torch
 from TTS.api import TTS
+from TTS.utils.radam import RAdam 
+from TTS.tts.configs.xtts_config import XttsConfig 
+from TTS.tts.models.xtts import XttsAudioConfig,XttsArgs
+from TTS.config.shared_configs import BaseDatasetConfig
+from collections import defaultdict
 from agi.config import TTS_MODEL_DIR as model_root, CACHE_DIR, TTS_SPEAKER_WAV,TTS_GPU_ENABLE,TTS_FILE_SAVE_PATH
 from agi.llms.base import CustomerLLM,parse_input_messages,path_to_preview_url
 from langchain_core.runnables import RunnableConfig
@@ -13,10 +18,12 @@ import logging
 from langchain_core.messages import AIMessage, HumanMessage
 import base64
 import logging
+from torch.serialization import add_safe_globals
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 audio_style = "width: 300px; height: 50px;"  # 添加样式
-
+# for torch 2.6
+add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
 class TextToSpeech(CustomerLLM):
     tts: Optional[Any] = Field(default=None)
     speaker_wav: str = Field(default=TTS_SPEAKER_WAV)
