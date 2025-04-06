@@ -173,9 +173,8 @@ def format_non_stream_response(resp: Dict[str, Any],web: bool = False) -> Dict[s
             assistant_content = handle_response_content_as_string(assistant_content)
         
         # 处理additional_kwargs信息
-        additional_kwargs = last_message.additional_kwargs
-        if additional_kwargs is not None and additional_kwargs.get("citations"):
-            assistant_content = [{"type":"text","text":assistant_content,"citations":additional_kwargs.get("citations")}]
+        if resp.get("citations"):
+            assistant_content = [{"type":"text","text":assistant_content,"citations":resp.get("citations")}]
 
         # 处理metadata信息
         response_metadata = last_message.response_metadata
@@ -232,7 +231,7 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
                 "model": "agi-model",
                 "choices": [{"index": index, "delta": {}, "finish_reason": None}] # 使用递增的index
             }
-
+            # 适用于stream_mode 是values的情况
             if isinstance(event, BaseMessage):
                 role = "user" if event.__class__.__name__ == "HumanMessage" else "assistant"
                 # 跳过用户消息
@@ -256,6 +255,13 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
                 finish_reason = getattr(event, "response_metadata", {}).get("finish_reason")
                 if finish_reason:
                     chunk["choices"][0]["finish_reason"] = finish_reason
+            elif isinstance(event, tuple):
+                if event[0] == "messages":
+                    chunk["choices"][0]["delta"] = {"role": "assistant", "content": event[1][0].content}
+                elif event[0] == "custom":
+                    citations = event[1].get("citations")
+                    if citations:
+                        chunk["choices"][0]["delta"] = {"role": "assistant", "content": [{"citations":citations}]}
             elif isinstance(event, dict):
                 if "error" in event:
                     chunk["choices"] = []

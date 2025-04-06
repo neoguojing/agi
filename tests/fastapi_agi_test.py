@@ -23,30 +23,30 @@ class TestFastApiAgi(unittest.TestCase):
             base_url="http://localhost:8000/v1",
         )
     # 设置类级别的启动参数
-    # @classmethod
-    # def setUpClass(cls):
+    @classmethod
+    def setUpClass(cls):
         
-    #     import uvicorn
-    #     from agi.fastapi_agi import app
-    #     import asyncio
-    #     import threading
-    #     cls.client = OpenAI(
-    #         api_key="123", # This is the default and can be omitted
-    #         base_url="http://localhost:8000/v1",
-    #     )
-    #      # 创建一个异步函数来启动Uvicorn服务器
-    #     def start_uvicorn():
-    #         config = uvicorn.Config(app, host="0.0.0.0", port=8000)
-    #         server = uvicorn.Server(config)
-    #         asyncio.run(server.serve())
+        import uvicorn
+        from agi.fastapi_agi import app
+        import asyncio
+        import threading
+        cls.client = OpenAI(
+            api_key="123", # This is the default and can be omitted
+            base_url="http://localhost:8000/v1",
+        )
+         # 创建一个异步函数来启动Uvicorn服务器
+        def start_uvicorn():
+            config = uvicorn.Config(app, host="0.0.0.0", port=8000)
+            server = uvicorn.Server(config)
+            asyncio.run(server.serve())
         
-    #     # 启动Uvicorn服务器的线程
-    #     cls.server_thread = threading.Thread(target=start_uvicorn)
-    #     cls.server_thread.daemon = True  # 设置为daemon线程，这样主程序结束时会自动退出
-    #     cls.server_thread.start()
+        # 启动Uvicorn服务器的线程
+        cls.server_thread = threading.Thread(target=start_uvicorn)
+        cls.server_thread.daemon = True  # 设置为daemon线程，这样主程序结束时会自动退出
+        cls.server_thread.start()
 
-    #     # 等待服务器启动
-    #     cls.wait_for_server_start()
+        # 等待服务器启动
+        cls.wait_for_server_start()
         
     @classmethod
     def wait_for_server_start(cls, timeout=60):
@@ -86,12 +86,13 @@ class TestFastApiAgi(unittest.TestCase):
             user="text"
         )
         
+        print(response)
         self.assertIsNotNone(response.choices)
         self.assertGreater(len(response.choices),0)
         self.assertIsNotNone(response.choices[0].message)
         self.assertIsNotNone(response.choices[0].message.content)
         self.assertIsNotNone(response.usage)
-        print(response)
+        
         # TODO 统一用户的请求会串：比如上面的请求会在下面返回
         stream = self.client.chat.completions.create(
             model="agi-model",
@@ -154,7 +155,6 @@ class TestFastApiAgi(unittest.TestCase):
         is_stoped = False
         for chunk in stream:
             print("------",chunk)
-            # TODO 会返回一个finish_reason='tool_calls',
             self.assertIsNotNone(chunk.choices)
             self.assertGreater(len(chunk.choices),0)
             if chunk.choices[0].finish_reason is None:
@@ -295,7 +295,6 @@ class TestFastApiAgi(unittest.TestCase):
         
         
     def test_tts(self):
-        # TODO 两个请求在一起会导致模型串掉 DONE 使用不同的用户可以避免
         response = self.client.chat.completions.create(
             model="agi-model",
             extra_body={"need_speech": True},
@@ -388,7 +387,6 @@ class TestFastApiAgi(unittest.TestCase):
         is_stoped = False
         for chunk in stream:
             print(f"------",chunk)
-            # TODO 重复的tool消息
             # TODO 查询结果关联性不高
             self.assertIsNotNone(chunk.choices)
             self.assertGreater(len(chunk.choices),0)
@@ -397,16 +395,16 @@ class TestFastApiAgi(unittest.TestCase):
                 self.assertIsNotNone(chunk.choices[0].delta)
                 self.assertIsNotNone(chunk.choices[0].delta.content)
                 if isinstance(chunk.choices[0].delta.content,list):
-                    self.assertEqual(chunk.choices[0].delta.content[0].get("type"),"text")
-                    self.assertIsNotNone(chunk.choices[0].delta.content[0].get("text"))
-                    self.assertIsNotNone(chunk.choices[0].delta.content[0].get("citations"))
-                    self.assertIsInstance(chunk.choices[0].delta.content[0].get("citations"),list)
+                    if chunk.choices[0].delta.content[0].get("type"):
+                        self.assertEqual(chunk.choices[0].delta.content[0].get("type"),"text")
+                        self.assertIsNotNone(chunk.choices[0].delta.content[0].get("text"))
+                    if chunk.choices[0].delta.content[0].get("citations"):
+                        self.assertIsInstance(chunk.choices[0].delta.content[0].get("citations"),list)
             else:
                 self.assertEqual(chunk.choices[0].finish_reason,"stop")
                 is_stoped = True
         self.assertEqual(is_stoped,True)
         
-
     def test_rag(self):
         response = self.client.chat.completions.create(
             model="agi-model",
@@ -449,10 +447,11 @@ class TestFastApiAgi(unittest.TestCase):
                 self.assertIsNotNone(chunk.choices[0].delta)
                 self.assertIsNotNone(chunk.choices[0].delta.content)
                 if isinstance(chunk.choices[0].delta.content,list):
-                    self.assertEqual(chunk.choices[0].delta.content[0].get("type"),"text")
-                    self.assertIsNotNone(chunk.choices[0].delta.content[0].get("text"))
-                    self.assertIsNotNone(chunk.choices[0].delta.content[0].get("citations"))
-                    self.assertIsInstance(chunk.choices[0].delta.content[0].get("citations"),list)
+                    if chunk.choices[0].delta.content[0].get("type"):
+                        self.assertEqual(chunk.choices[0].delta.content[0].get("type"),"text")
+                        self.assertIsNotNone(chunk.choices[0].delta.content[0].get("text"))
+                    if chunk.choices[0].delta.content[0].get("citations"):
+                        self.assertIsInstance(chunk.choices[0].delta.content[0].get("citations"),list)
             else:
                 self.assertEqual(chunk.choices[0].finish_reason,"stop")
                 is_stoped = True

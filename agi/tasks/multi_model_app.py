@@ -107,7 +107,7 @@ def create_speech2text_chain():
     speech2text = ModelFactory.get_model("speech2text")
     chain = multimodel_state_modifier_runnable | speech2text | graph_response_format_runnable
     
-    # 修改content,增加text值
+    # 修改content,将audio直接转换为输入
     def state_modifier(x:AgentState):
         ai = chain.invoke(x)
         if isinstance(x["messages"][-1].content,list):

@@ -259,7 +259,6 @@ class AgiGraph:
                     log.debug(event)
                     # 仅返回AIMessageChunk以及content不能为空,过滤ToolMessage和HumaMessage
                     # 多模态场景下,会返回AIMessage
-                    # TODO translate chain的消息会以AIMessageChunk发送出来
                     # TODO decide chain 和 tranlate chain 以及 web search chain会输出中间结果,需要想办法处理
                     if (isinstance(event[1][0],AIMessage)) and event[1][0].content:
                         meta = event[1][1]

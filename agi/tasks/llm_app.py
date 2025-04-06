@@ -191,7 +191,7 @@ def create_stuff_documents_chain(
         (
             # Both empty string and empty list evaluate to False
             lambda x: not x.get("docs", False),
-            # If no context, then we just pass input to llm
+            # If no docs, then we just pass input to llm
             default_modify_state_messages_runnable | llm_with_history
         ),
         # If docs, then we pass inputs to tag chain
