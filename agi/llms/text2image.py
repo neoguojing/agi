@@ -41,12 +41,12 @@ class Text2Image(CustomerLLM):
     def _load_model(self):
         if self.model is None:
             if self.model_path is not None:
-                self.model = AutoPipelineForText2Image.from_pretrained(
-                        model_root, torch_dtype=torch.float16
-                )
+                # self.model = AutoPipelineForText2Image.from_pretrained(
+                #         model_root, torch_dtype=torch.float16
+                # )
                 # use 3.5 model
-                # self.model = StableDiffusion3Pipeline.from_pretrained(model_root, torch_dtype=torch.bfloat16)
-                # self.model = self.model.to("cuda")
+                self.model = StableDiffusion3Pipeline.from_pretrained(model_root, torch_dtype=torch.bfloat16)
+                self.model = self.model.to("cuda")
 
             else:
                 self.model = AutoPipelineForText2Image.from_pretrained(
