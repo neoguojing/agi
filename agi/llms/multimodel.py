@@ -59,7 +59,9 @@ class MultiModel(CustomerLLM):
         """Generate speech audio from input text."""
         try:
             self._load_model()
-            return_audio = config.get("configurable",{}).get("need_speech",False)
+            return_audio = False
+            if config:
+                return_audio = config.get("configurable",{}).get("need_speech",False)
             text = self.processor.apply_chat_template(input, add_generation_prompt=True, tokenize=False)
             audios, images, videos = process_mm_info(input, use_audio_in_video=True)
             inputs = self.processor(text=text, audios=audios, images=images, videos=videos, return_tensors="pt", padding=True, use_audio_in_video=True)
