@@ -52,14 +52,13 @@ GPU显存： 初始：2550MB 峰值：20GB
 - doc文件提取有问题 test
 - 需要agent决策是否检索文档 DONE
 - agi自动测试
-- 支持使用sd 3.5作为图片生成 test
-- 支持qwen omini作为多模态基模型 test
+- 支持使用sd 3.5作为图片生成 DONE
+- 支持qwen omini作为多模态基模型 doing
 - 支持lang-graph 人工介入确认
 - 支持python代码执行器
 - 其他常用工具支持
-- 流式返回测试
+- 流式返回测试 DONE
 - graph 节点重试特性
-- 
 
 ## OPENWEBUI 修改
 - 新增: backend/open_webui/routers/agi.py

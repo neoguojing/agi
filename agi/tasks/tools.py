@@ -107,6 +107,31 @@ def parse_stock_code(input:str):
             break
     return stock_symbol.rstrip('.')
 
+def wikipedia():
+    from langchain_community.tools import WikipediaQueryRun
+    from langchain_community.utilities import WikipediaAPIWrapper
+
+    api_wrapper = WikipediaAPIWrapper(top_k_results=1, doc_content_chars_max=100)
+    tool = WikipediaQueryRun(api_wrapper=api_wrapper)
+    return tool
+
+def wikidata():
+    from langchain_community.tools.wikidata.tool import WikidataAPIWrapper, WikidataQueryRun
+
+    wikidata = WikidataQueryRun(api_wrapper=WikidataAPIWrapper())
+    return wikidata
+
+def pythonREPL():
+    from langchain_core.tools import Tool
+    from langchain_experimental.utilities import PythonREPL
+    python_repl = PythonREPL()
+    repl_tool = Tool(
+        name="python_repl",
+        description="A Python shell. Use this to execute python commands. Input should be a valid python command. If you want to see the output of a value, you should print it out with `print(...)`.",
+        func=python_repl.run,
+    )
+    return repl_tool
+
 tools = [
     Tool(
         name="Search",
@@ -121,6 +146,9 @@ tools = [
             on arxiv.org."
     ),
     image_gen,
+    wikipedia(),
+    wikidata(),
+    pythonREPL()
     # text2speech,
     # get_stock,
 ]
