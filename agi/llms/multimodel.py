@@ -63,11 +63,16 @@ class MultiModel(CustomerLLM):
             if config:
                 return_audio = config.get("configurable",{}).get("need_speech",False)
             
-            content = []
+            content = [{
+                "role": "system",
+                "content": "You are Qwen, a virtual human developed by the Qwen Team, Alibaba Group, capable of perceiving auditory and visual inputs, as well as generating text and speech.",
+            }]
+            import pdb
+            pdb.set_trace()
             if isinstance(inputs,HumanMessage):
-                content = [inputs.model_dump()]
+                content.append(inputs.model_dump())
             elif isinstance(inputs,list):
-                content = inputs.model_dump()
+                content.extend(inputs.model_dump())
             else:
                 raise TypeError(f"Invalid input type: {type(inputs)}. Expected HumanMessage or List[HumanMessage].") 
              
