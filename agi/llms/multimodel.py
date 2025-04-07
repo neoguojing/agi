@@ -85,11 +85,17 @@ class MultiModel(CustomerLLM):
             audios, images, videos = process_mm_info(content, use_audio_in_video=True)
             inputs = self.processor(text=text, audios=audios, images=images, videos=videos, return_tensors="pt", padding=True, use_audio_in_video=True)
             inputs = inputs.to(self.model.device).to(self.model.dtype)
-            
-            text_ids, audio = self.model.generate(**inputs, return_audio=return_audio,spk=self.speaker_wav)
+
+            text_ids = None
+            audio = None
+            if return_audio:
+                text_ids, audio = self.model.generate(**inputs, return_audio=return_audio,spk=self.speaker_wav)
+            else:
+                text_ids = self.model.generate(**inputs, return_audio=return_audio,spk=self.speaker_wav)
+
             text = self.processor.batch_decode(text_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
 
-            if return_audio:
+            if audio:
                 file_path = f'{TTS_FILE_SAVE_PATH}/{int(time.time())}.wav'
                 Path(file_path).parent.mkdir(parents=True, exist_ok=True)
 
