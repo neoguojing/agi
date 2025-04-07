@@ -70,9 +70,10 @@ class MultiModel(CustomerLLM):
             import pdb
             pdb.set_trace()
             if isinstance(inputs,HumanMessage):
-                content.append(inputs.model_dump())
+                content.append({"role":"user","content":inputs.content})
             elif isinstance(inputs,list):
-                content.extend(inputs.model_dump())
+                inputs = inputs[-1]
+                content.append({"role":"user","content":inputs.content})
             else:
                 raise TypeError(f"Invalid input type: {type(inputs)}. Expected HumanMessage or List[HumanMessage].") 
              
