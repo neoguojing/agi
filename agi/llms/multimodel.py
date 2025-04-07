@@ -50,7 +50,7 @@ class MultiModel(CustomerLLM):
                     torch_dtype=torch.float16,
                     device_map="auto",
                     enable_audio_output=True,
-                    # attn_implementation="flash_attention_2"
+                    attn_implementation="flash_attention_2"
                 )
                 self.processor = Qwen2_5OmniProcessor.from_pretrained(model_root)
 
@@ -67,8 +67,7 @@ class MultiModel(CustomerLLM):
                 "role": "system",
                 "content": "You are Qwen, a virtual human developed by the Qwen Team, Alibaba Group, capable of perceiving auditory and visual inputs, as well as generating text and speech.",
             }]
-            import pdb
-            pdb.set_trace()
+
             if isinstance(inputs,HumanMessage):
                 content.append({"role":"user","content":inputs.content})
             elif isinstance(inputs,list):
@@ -94,38 +93,42 @@ class MultiModel(CustomerLLM):
                 text_ids = self.model.generate(**inputs, return_audio=return_audio,spk=self.speaker_wav)
 
             text = self.processor.batch_decode(text_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+            import pdb
+            pdb.set_trace()
 
-            if audio:
-                file_path = f'{TTS_FILE_SAVE_PATH}/{int(time.time())}.wav'
-                Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+            ret = AIMessage(content=[])
+            for t in text:
+                if return_audio:
+                    file_path = f'{TTS_FILE_SAVE_PATH}/{int(time.time())}.wav'
+                    Path(file_path).parent.mkdir(parents=True, exist_ok=True)
 
-                sf.write(
-                    file_path,
-                    audio.reshape(-1).detach().cpu().numpy(),
-                    samplerate=24000,
-                )
+                    sf.write(
+                        file_path,
+                        audio.reshape(-1).detach().cpu().numpy(),
+                        samplerate=24000,
+                    )
 
-                audio_source = path_to_preview_url(file_path)
-                if kwargs.get('base64') is True:
-                    with open(file_path, 'rb') as audio_file:
-                        audio_bytes = audio_file.read()
-                    audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
-                    audio_source = f"data:audio/wav;base64,{audio_base64}"
+                    audio_source = path_to_preview_url(file_path)
+                    if kwargs.get('base64') is True:
+                        with open(file_path, 'rb') as audio_file:
+                            audio_bytes = audio_file.read()
+                        audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+                        audio_source = f"data:audio/wav;base64,{audio_base64}"
 
-                # 是否需要编码html
-                if kwargs.get('html') is True:
-                    return AIMessage(content=[
-                        {"type": "audio", "audio": f'<audio src="{audio_source}" {audio_style} controls></audio>\n',"file_path":file_path,"text":text}
-                    ])
-                
-                return AIMessage(content=[
-                    {"type": "audio", "audio": audio_source,"file_path":file_path,"text":text}
-                ])
-            else:
-                return AIMessage(content=[
-                    {"type": "text","text":text}
-                ])
-            
+                    # 是否需要编码html
+                    if kwargs.get('html') is True:
+                        return ret.content.append(
+                            {"type": "audio", "audio": f'<audio src="{audio_source}" {audio_style} controls></audio>\n',"file_path":file_path,"text":t}
+                        )
+                    
+                    ret.content.append(
+                        {"type": "audio", "audio": audio_source,"file_path":file_path,"text":t}
+                    )
+                else:
+                    ret.content.append({"type": "text","text":t})
+            pdb.set_trace()
+            return ret
+                        
         except Exception as e:
             log.error(e)
             print(traceback.format_exc())
