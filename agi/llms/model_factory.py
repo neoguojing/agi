@@ -22,7 +22,7 @@ log.setLevel(logging.INFO)
 class ModelFactory:
     _instances =  OrderedDict()
     _lock = threading.Lock()
-    max_models = 2
+    max_models = 1
     
     @staticmethod
     def get_model(model_type: str, model_name: str = "") -> CustomerLLM:
@@ -33,6 +33,7 @@ class ModelFactory:
                 if len(ModelFactory._instances) > ModelFactory.max_models:
                     # 如果超出了最大运行模型数，移除最久未使用的模型
                     removed_model = ModelFactory._instances.popitem(last=False)
+                    log.info(f"try to unload model {removed_model[0]} {removed_model[1].model}")
                     if isinstance(removed_model[1],CustomerLLM):
                         removed_model[1].destroy()
             else:

@@ -28,7 +28,7 @@ class Text2Image(CustomerLLM):
     refiner: Any = None
     n_steps: int = 28
     high_noise_frac: float = 0.8
-    guidance_scale: float = 3.5
+    guidance_scale: float = 7.0
     file_path: str = IMAGE_FILE_SAVE_PATH
     save_image: bool = True
 
@@ -40,11 +40,13 @@ class Text2Image(CustomerLLM):
 
     def _load_model(self):
         if self.model is None:
+            log.info("loading Text2Image model...")
             if self.model_path is not None:
                 # self.model = AutoPipelineForText2Image.from_pretrained(
                 #         model_root, torch_dtype=torch.float16
                 # )
                 # use 3.5 model
+                # GPU 18000MB -> 900MB(off-load)
                 self.model = StableDiffusion3Pipeline.from_pretrained(model_root, torch_dtype=torch.bfloat16)
                 self.model = self.model.to("cuda")
 

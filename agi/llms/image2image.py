@@ -18,6 +18,7 @@ STYLE = 'style="width: 100%; max-height: 100vh;"'
 import logging
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
+# GPU : 942MB
 class Image2Image(CustomerLLM):
     model_path: str = Field(default=model_root, alias='model_path')
     refiner: Optional[Any] = None
@@ -33,6 +34,7 @@ class Image2Image(CustomerLLM):
     
     def _load_model(self):
         if self.model is None:
+            log.info("loading Image2Image model...")
             self.model = AutoPipelineForImage2Image.from_pretrained(
                 self.model_path, torch_dtype=torch.float16
             )

@@ -41,13 +41,15 @@ class TextToSpeech(CustomerLLM):
         """Initialize the TTS model based on the available hardware."""
         if self.tts is None:
             if self.is_gpu:
+                # GPU：2739MB
+                log.info("loading TextToSpeech model(GPU)...")
                 # model_path = os.path.join(model_root, "tts_models--multilingual--multi-dataset--xtts_v2")
                 model_path = model_root
                 config_path = os.path.join(model_path, "config.json")
                 logging.info("use ts_models--multilingual--multi-dataset--xtts_v2")
                 self.tts = TTS(model_path=model_path, config_path=config_path).to(torch.device("cuda"))
             else:
-                logging.info("use tts_models/zh-CN/baker/tacotron2-DDC-GST")
+                log.info("loading TextToSpeech model(CPU)...")
                 # self.tts = TTS(model_name="tts_models/zh-CN/baker/tacotron2-DDC-GST").to(torch.device("cpu"))
                 self.tts = TTS(model_name=model_root).to(torch.device("cpu"))
                 # model_dir = os.path.join(model_root, "tts_models--zh-CN--baker--tacotron2-DDC-GST")

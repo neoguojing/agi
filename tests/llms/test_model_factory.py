@@ -23,7 +23,7 @@ class TestModelFactory(unittest.TestCase):
         ) 
         resp = instance.invoke(input)
         self.assertIsNotNone(resp.content)
-        self.assertEqual(len(ModelFactory._instances),2)
+        self.assertEqual(len(ModelFactory._instances),1)
 
         instance = ModelFactory.get_model("speech2text")
         input = self.input = HumanMessage(content=[
@@ -33,7 +33,7 @@ class TestModelFactory(unittest.TestCase):
         resp = instance.invoke(input)
         self.assertIsNotNone(resp.content)
         print(resp.content)
-        self.assertEqual(len(ModelFactory._instances),2)
+        self.assertEqual(len(ModelFactory._instances),1)
 
         
         instance = ModelFactory.get_model("text2speech")
@@ -41,7 +41,7 @@ class TestModelFactory(unittest.TestCase):
         resp = instance.invoke(input)
         self.assertIsNotNone(resp.content)
         print(resp.content)
-        self.assertEqual(len(ModelFactory._instances),2)
+        self.assertEqual(len(ModelFactory._instances),1)
         
         
 if __name__ == "__main__":

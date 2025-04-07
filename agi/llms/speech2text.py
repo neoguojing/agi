@@ -12,6 +12,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 import logging
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
+# GPU 2600MB
 class Speech2Text(CustomerLLM):
     whisper: Optional[Any] = Field(default=None)
     beam_size: int = Field(default=5)
@@ -39,6 +40,7 @@ class Speech2Text(CustomerLLM):
     
     def _load_model(self):
         if self.model is None:
+            log.info("loading Speech2Text model...")
             whisper = WhisperModel(self.model_size, device=self.device, compute_type=self.compute_type,local_files_only=self.local_files_only)
             self.whisper = whisper
             self.model = whisper.model

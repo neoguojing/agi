@@ -44,7 +44,7 @@ class MultiModel(CustomerLLM):
             return  # 已初始化，不需要重复加载
         with _load_lock:
             if self.model is None or self.processor is None:
-
+                log.info("loading MultiModel model...")
                 self.model = Qwen2_5OmniModel.from_pretrained(
                     model_root,
                     torch_dtype=torch.float16,
