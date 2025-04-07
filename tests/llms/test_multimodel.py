@@ -17,14 +17,14 @@ class TestMultiModel(unittest.TestCase):
         print(output.content)
 
     def test_audio_input(self):
-        input = HumanMessage(content=[{"type":"audio","audio":"../zh-cn-sample.wav"}])
+        input = HumanMessage(content=[{"type":"audio","audio":"tests/zh-cn-sample.wav"}])
         output = self.instance.invoke(input)
         self.assertIsNotNone(output)
         self.assertIsNotNone(output.content)
         print(output.content)
 
     def test_image_input(self):
-        input = HumanMessage(content=[{"type":"image","image":"../cat.jpg"}])
+        input = HumanMessage(content=[{"type":"image","image":"tests/cat.jpg"}])
         output = self.instance.invoke(input)
         self.assertIsNotNone(output)
         self.assertIsNotNone(output.content)
@@ -32,7 +32,7 @@ class TestMultiModel(unittest.TestCase):
 
     def test_audio_output(self):
         config={"configurable": {"need_speech": True}}
-        input = HumanMessage(content=[{"type":"image","image":"../cat.jpg"}])
+        input = HumanMessage(content=[{"type":"image","image":"tests/cat.jpg"}])
         output = self.instance.invoke(input,config=config)
         self.assertIsNotNone(output)
         self.assertIsNotNone(output.content)

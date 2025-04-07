@@ -76,7 +76,11 @@ class MultiModel(CustomerLLM):
                 content.append({"role":"user","content":inputs.content})
             else:
                 raise TypeError(f"Invalid input type: {type(inputs)}. Expected HumanMessage or List[HumanMessage].") 
-             
+            
+            '''
+            ['<|im_start|>system\nYou are Qwen, a virtual human developed by the Qwen Team, Alibaba Group, capable of perceiving auditory and visual inputs, as well as generating text and speech.<|im_end|>\n<|im_start|>user\n<|audio_bos|><|AUDIO|><|audio_eos|><|im_end|>\n<|im_start|>assistant\n']
+
+            '''
             text = self.processor.apply_chat_template(content, add_generation_prompt=True, tokenize=False)
             audios, images, videos = process_mm_info(content, use_audio_in_video=True)
             inputs = self.processor(text=text, audios=audios, images=images, videos=videos, return_tensors="pt", padding=True, use_audio_in_video=True)
