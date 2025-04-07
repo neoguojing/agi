@@ -16,6 +16,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 import base64
 import logging
 import traceback
+import threading
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 audio_style = "width: 300px; height: 50px;"  # 添加样式
@@ -26,6 +27,7 @@ class MultiModel(CustomerLLM):
     is_gpu: bool = Field(default=True)
     language: str = Field(default="zh-cn")
     save_file: bool = Field(default=True)
+    _load_lock = threading.Lock()
     
     def __init__(self, save_file: bool = False,**kwargs):
         super().__init__(**kwargs)
@@ -36,9 +38,21 @@ class MultiModel(CustomerLLM):
        
     def _load_model(self):
         """Initialize the TTS model based on the available hardware."""
-        if self.processor is None:
-            self.model = Qwen2_5OmniModel.from_pretrained(model_root,torch_dtype=torch.float16, device_map="auto",enable_audio_output=True,attn_implementation="flash_attention_2")
-            self.processor = Qwen2_5OmniProcessor.from_pretrained(model_root)
+        if self.model is not None and self.processor is not None:
+            return  # 已初始化，不需要重复加载
+
+        with self._load_lock:
+            if self.model is None or self.processor is None:
+
+                self.model = Qwen2_5OmniModel.from_pretrained(
+                    model_root,
+                    torch_dtype=torch.float16,
+                    device_map="auto",
+                    enable_audio_output=True,
+                    attn_implementation="flash_attention_2"
+                )
+                self.processor = Qwen2_5OmniProcessor.from_pretrained(model_root)
+
     
     def invoke(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
         """Generate speech audio from input text."""
