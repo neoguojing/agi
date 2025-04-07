@@ -93,9 +93,6 @@ class MultiModel(CustomerLLM):
                 text_ids = self.model.generate(**inputs, return_audio=return_audio,spk=self.speaker_wav)
 
             text = self.processor.batch_decode(text_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
-            
-            import pdb
-            pdb.set_trace()
 
             ret = AIMessage(content=[])
             for t in text:
@@ -128,7 +125,6 @@ class MultiModel(CustomerLLM):
                     )
                 else:
                     ret.content.append({"type": "text","text":t})
-            pdb.set_trace()
             return ret
                         
         except Exception as e:
