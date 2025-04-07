@@ -55,15 +55,24 @@ class MultiModel(CustomerLLM):
                 self.processor = Qwen2_5OmniProcessor.from_pretrained(model_root)
 
     
-    def invoke(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
+    def invoke(self, inputs: Union[list[HumanMessage],HumanMessage], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
         """Generate speech audio from input text."""
         try:
             self._load_model()
             return_audio = False
             if config:
                 return_audio = config.get("configurable",{}).get("need_speech",False)
-            text = self.processor.apply_chat_template(input, add_generation_prompt=True, tokenize=False)
-            audios, images, videos = process_mm_info(input, use_audio_in_video=True)
+            
+            content = []
+            if isinstance(inputs,HumanMessage):
+                content = [inputs.model_dump()]
+            elif isinstance(inputs,list):
+                content = inputs.model_dump()
+            else:
+                raise TypeError(f"Invalid input type: {type(inputs)}. Expected HumanMessage or List[HumanMessage].") 
+             
+            text = self.processor.apply_chat_template(content, add_generation_prompt=True, tokenize=False)
+            audios, images, videos = process_mm_info(content, use_audio_in_video=True)
             inputs = self.processor(text=text, audios=audios, images=images, videos=videos, return_tensors="pt", padding=True, use_audio_in_video=True)
             inputs = inputs.to(self.model.device).to(self.model.dtype)
             
