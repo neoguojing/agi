@@ -21,13 +21,15 @@ log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 audio_style = "width: 300px; height: 50px;"  # 添加样式
 
+_load_lock = threading.Lock()
+
 class MultiModel(CustomerLLM):
     processor: Optional[Any] = Field(default=None)
     speaker_wav: str = Field(default="Chelsie") # also Ethan
     is_gpu: bool = Field(default=True)
     language: str = Field(default="zh-cn")
     save_file: bool = Field(default=True)
-    _load_lock = threading.Lock()
+    
     
     def __init__(self, save_file: bool = False,**kwargs):
         super().__init__(**kwargs)
@@ -40,8 +42,7 @@ class MultiModel(CustomerLLM):
         """Initialize the TTS model based on the available hardware."""
         if self.model is not None and self.processor is not None:
             return  # 已初始化，不需要重复加载
-
-        with self._load_lock:
+        with _load_lock:
             if self.model is None or self.processor is None:
 
                 self.model = Qwen2_5OmniModel.from_pretrained(
