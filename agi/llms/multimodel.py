@@ -21,7 +21,7 @@ log.setLevel(logging.INFO)
 audio_style = "width: 300px; height: 50px;"  # 添加样式
 
 class MultiModel(CustomerLLM):
-    tts: Optional[Any] = Field(default=None)
+    processor: Optional[Any] = Field(default=None)
     speaker_wav: str = Field(default="Chelsie") # also Ethan
     is_gpu: bool = Field(default=True)
     language: str = Field(default="zh-cn")
@@ -45,14 +45,12 @@ class MultiModel(CustomerLLM):
         try:
             self._load_model()
             return_audio = config.configurable.get("need_speech",False)
-            # spk = [Chelsie,Ethan]
-            spk = config.configurable.get("spk","Chelsie")
             text = self.processor.apply_chat_template(input, add_generation_prompt=True, tokenize=False)
             audios, images, videos = process_mm_info(input, use_audio_in_video=True)
             inputs = self.processor(text=text, audios=audios, images=images, videos=videos, return_tensors="pt", padding=True, use_audio_in_video=True)
             inputs = inputs.to(self.model.device).to(self.model.dtype)
             
-            text_ids, audio = self.model.generate(**inputs, return_audio=return_audio,spk=spk)
+            text_ids, audio = self.model.generate(**inputs, return_audio=return_audio,spk=self.speaker_wav)
             text = self.processor.batch_decode(text_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
 
             if return_audio:
