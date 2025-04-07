@@ -50,7 +50,7 @@ class MultiModel(CustomerLLM):
                     torch_dtype=torch.float16,
                     device_map="auto",
                     enable_audio_output=True,
-                    attn_implementation="flash_attention_2"
+                    # attn_implementation="flash_attention_2"
                 )
                 self.processor = Qwen2_5OmniProcessor.from_pretrained(model_root)
 
@@ -59,7 +59,7 @@ class MultiModel(CustomerLLM):
         """Generate speech audio from input text."""
         try:
             self._load_model()
-            return_audio = config.configurable.get("need_speech",False)
+            return_audio = config.get("configurable",{}).get("need_speech",False)
             text = self.processor.apply_chat_template(input, add_generation_prompt=True, tokenize=False)
             audios, images, videos = process_mm_info(input, use_audio_in_video=True)
             inputs = self.processor(text=text, audios=audios, images=images, videos=videos, return_tensors="pt", padding=True, use_audio_in_video=True)
