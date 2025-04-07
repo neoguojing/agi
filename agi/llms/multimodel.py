@@ -93,11 +93,13 @@ class MultiModel(CustomerLLM):
                 text_ids = self.model.generate(**inputs, return_audio=return_audio,spk=self.speaker_wav)
 
             text = self.processor.batch_decode(text_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+            
             import pdb
             pdb.set_trace()
 
             ret = AIMessage(content=[])
             for t in text:
+                t = t.split("assistant\n")[-1]
                 if return_audio:
                     file_path = f'{TTS_FILE_SAVE_PATH}/{int(time.time())}.wav'
                     Path(file_path).parent.mkdir(parents=True, exist_ok=True)
