@@ -80,7 +80,7 @@ async def save_file(
         shutil.copyfileobj(file.file, f)
     
     if collection_name and not file_type.startswith("image/") and not file_type.startswith("audio/"):
-        kmanager = TaskFactory.create_task(TASK_DOC_DB)
+        kmanager = TaskFactory.get_knowledge_manager()
         param = {"filename" : file.filename}
         kmanager.store(collection_name,file_path,tenant=user_id,**param)
         
