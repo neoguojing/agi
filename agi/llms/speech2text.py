@@ -26,14 +26,14 @@ class Speech2Text(CustomerLLM):
         if WHISPER_GPU_ENABLE:
             self.model_size = model_root
             self.device = "cuda"
-            logging.info(model_root)
+            log.info(model_root)
             if not os.path.exists(self.model_size):
                 self.model_size = "large-v3"
                 self.local_files_only=False
         else:
             self.device = "cpu"
             self.model_size = model_root
-            logging.info(model_root)
+            log.info(model_root)
             self.compute_type = "default"
 
         

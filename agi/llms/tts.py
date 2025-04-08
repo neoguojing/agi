@@ -46,7 +46,7 @@ class TextToSpeech(CustomerLLM):
                 # model_path = os.path.join(model_root, "tts_models--multilingual--multi-dataset--xtts_v2")
                 model_path = model_root
                 config_path = os.path.join(model_path, "config.json")
-                logging.info("use ts_models--multilingual--multi-dataset--xtts_v2")
+                log.info("use ts_models--multilingual--multi-dataset--xtts_v2")
                 self.tts = TTS(model_path=model_path, config_path=config_path).to(torch.device("cuda"))
             else:
                 log.info("loading TextToSpeech model(CPU)...")
@@ -109,7 +109,7 @@ class TextToSpeech(CustomerLLM):
             else:
                 return self.tts.tts(text=text, speaker_wav=self.speaker_wav)
         except Exception as e:
-            logging.error(f"Error generating audio samples: {e}")
+            log.error(f"Error generating audio samples: {e}")
             raise RuntimeError("Failed to generate audio samples.")
 
     def save_audio_to_file(self, text: str, file_path: str = "") -> str:
@@ -127,7 +127,7 @@ class TextToSpeech(CustomerLLM):
                 file_path=file_path
             )
         except Exception as e:
-            logging.error(f"Error saving audio to file: {e}")
+            log.error(f"Error saving audio to file: {e}")
             raise RuntimeError("Failed to save audio to file.")
         
         return file_path
