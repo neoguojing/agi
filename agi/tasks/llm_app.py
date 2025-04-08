@@ -257,13 +257,21 @@ def create_rag(km: KnowledgeManager):
 def create_chat(llm):
     prompt = ChatPromptTemplate.from_messages(
         [
-            ("human", "{text}")
+            ("placeholder", "{messages}")
         ]
     )
-
+    # 仅取最后一条消息,忽略历史消息
     def modify_state_messages(state: AgentState):
-        text = get_last_message_text(state)
-        return prompt.invoke({"text": text}).to_messages()
+        last_message = state["messages"][-1]
+        if isinstance(last_message,HumanMessage) and isinstance(last_message.content,list):
+            # 转换为ollama的图片请求协议
+            for item in last_message.content:
+                if item.get("type") == "image":
+                    item["type"] = "image_url"
+                    item["image_url"] = item["image"]
+                    del item["image"]
+        messages = [last_message]
+        return prompt.invoke({"messages": messages}).to_messages()
     
     input_format = RunnableLambda(modify_state_messages)
     

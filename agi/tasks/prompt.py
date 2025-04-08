@@ -51,7 +51,7 @@ decider_prompt = (
     'Please follow these decision rules:'
 
     '- If the input type is "image":'
-    '    - If the question requests extracting information from the image (e.g., reading text, describing image content), output: "image_parser".'
+    '    - If the question requests extracting information from the image (e.g., reading text, describing image content), output: "llm".'
     '    - If the question requires modifying the image, transforming its style, or generating a new image based on the input, output: "image_gen".'
 
     '- If the input type is "text":'
@@ -59,11 +59,11 @@ decider_prompt = (
     '    - If the question requires current or external information (e.g., latest news, real-time data, factual verification), output: "web".'
     '    - Otherwise, for typical text-based inquiries that do not require external data retrieval, output: "llm".'
 
-    'Your output should be a single command chosen from: "image_parser", "image_gen", "web", or "llm". Do not include any additional explanation or details.'
+    'Your output should be a single command chosen from: "image_gen", "web", or "llm". Do not include any additional explanation or details.'
 
     'Examples:'
     '1. Input Type: "image"; Question: "Can you read the text in this photo?" '
-    '-> Output: "image_parser"'
+    '-> Output: "llm"'
 
     '2. Input Type: "image"; Question: "Please convert this image into a watercolor painting." '
     '-> Output: "image_gen"'

@@ -54,13 +54,10 @@ class AgiGraph:
         # self.builder.add_node("doc_chat", TaskFactory.create_task(TASK_DOC_CHAT))
         self.builder.add_node("doc_chat", self.doc_chat_node)
         self.builder.add_node("agent", TaskFactory.create_task(TASK_AGENT))
-        self.builder.add_node("image_parser", self.image2text_node)
         # 用于处理非agent的请求:1.标题生成等用户自定义提示请求；2.图像识别等 image2text 请求；3.作为决策节点，判定用户意图
         self.builder.add_node("llm", TaskFactory.create_task(TASK_LLM))
         
         self.builder.add_conditional_edges("agent", self.tts_control)
-        # 图片解析节点
-        self.builder.add_edge("image_parser", "llm")
         self.builder.add_conditional_edges("llm", self.tts_control)
         self.builder.add_conditional_edges("doc_chat", self.tts_control)
 
@@ -81,7 +78,7 @@ class AgiGraph:
         
         # 定义状态机chain
         self.decider_chain = decide_modify_state_messages_runnable | TaskFactory.get_llm() | StrOutputParser()
-        self.node_list = ["image_parser", "image_gen", "web", "llm"]
+        self.node_list = ["image_gen", "web", "llm"]
 
     # 通过用户指定input_type，来决定使用哪个分支
     def routes(self,state: State, config: RunnableConfig):
@@ -100,23 +97,6 @@ class AgiGraph:
         if state["citations"]:
             writer({"citations":state["citations"],"docs":state["docs"]})
         return chain.invoke(state,config=config)
-        
-    # 图片解析节点
-    def image2text_node(self,state: State,config: RunnableConfig):
-        try:
-            last_message = state.get("messages")[-1]
-            if isinstance(last_message,HumanMessage) and isinstance(last_message.content,list):
-                for item in last_message.content:
-                    if item.get("type") == InputType.IMAGE:
-                        item["type"] = "image_url"
-                        item["image_url"] = item["image"]
-                        del item["image"]
-
-        except Exception as e:
-            log.error(f"{e}")
-            print(traceback.format_exc())
-
-        return state
     
     # 处理推理模型返回
     def split_think_content(self,content):
@@ -167,7 +147,7 @@ class AgiGraph:
         elif feature == Feature.TTS and state.get("input_type") == InputType.TEXT:    #仅文本转语音
             return "tts"
         elif feature == Feature.IMAGE2TEXT and state.get("input_type") == InputType.IMAGE:    #图片转文字
-            return "image_parser"
+            return "llm"
         elif feature == Feature.IMAGE2IMAGE and state.get("input_type") == InputType.IMAGE:    #图片转图片
             return "image_gen"
         elif feature == Feature.SPEECH:
