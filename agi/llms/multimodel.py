@@ -11,14 +11,14 @@ from agi.llms.base import CustomerLLM,path_to_preview_url
 from langchain_core.runnables import RunnableConfig
 from typing import Any, Optional,Union
 from pydantic import BaseModel, Field
-import logging
+
 from langchain_core.messages import AIMessage, HumanMessage
 import base64
-import logging
+
 import traceback
 import threading
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+from agi.config import log
+
 audio_style = "width: 300px; height: 50px;"  # 添加样式
 
 _load_lock = threading.Lock()

@@ -4,9 +4,9 @@ import threading
 from langchain_core.messages import AIMessage, HumanMessage
 from agi.tasks.agent import State
 from agi.tasks.task_factory import TaskFactory, TASK_LLM, TASK_LLM_WITH_HISTORY
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
 class TestLLMFactory(unittest.TestCase):
 
     def test_llm(self):

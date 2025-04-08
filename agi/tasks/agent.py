@@ -35,9 +35,9 @@ from langchain_core.messages import (
 )
 import json
 import traceback
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
 
 def compute_content_hash(content: any) -> str:
     """

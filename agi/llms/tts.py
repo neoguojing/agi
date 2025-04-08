@@ -14,13 +14,13 @@ from agi.llms.base import CustomerLLM,parse_input_messages,path_to_preview_url
 from langchain_core.runnables import RunnableConfig
 from typing import Any, Optional,Union
 from pydantic import BaseModel, Field
-import logging
+
 from langchain_core.messages import AIMessage, HumanMessage
 import base64
-import logging
+
 from torch.serialization import add_safe_globals
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+from agi.config import log
+
 audio_style = "width: 300px; height: 50px;"  # 添加样式
 # for torch 2.6
 add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])

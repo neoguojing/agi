@@ -5,9 +5,9 @@ from langchain_core.messages import AIMessage, HumanMessage,ToolMessage
 from agi.tasks.task_factory import TaskFactory,TASK_RAG,TASK_WEB_SEARCH,TASK_DOC_CHAT
 from agi.tasks.agent import State
 from agi.config import CACHE_DIR
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
 class TestTaskRagFactory(unittest.TestCase):
     
     def setUp(self):

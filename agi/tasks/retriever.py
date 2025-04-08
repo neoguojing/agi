@@ -48,9 +48,9 @@ from datetime import datetime
 from exa_py import Exa
 from agi.config import EXA_API_KEY
 import traceback
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
 
 from enum import Enum
 

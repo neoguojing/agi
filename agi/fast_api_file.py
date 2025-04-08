@@ -9,9 +9,8 @@ from agi.tasks.task_factory import TaskFactory
 from typing import Optional
 import shutil
 import uuid
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+from agi.config import log
+
 # 允许的 MIME 类型
 ALLOWED_MIME_TYPES = {
     "image/jpeg", "image/png", "application/pdf", "text/plain",

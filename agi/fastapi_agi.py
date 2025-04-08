@@ -19,10 +19,9 @@ from agi.fast_api_file import router_file
 from agi.config import FILE_UPLOAD_PATH
 from pydub import AudioSegment
 import traceback
-import logging
 
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+from agi.config import log
+
 
 # 初始化 FastAPI 应用
 app = FastAPI(

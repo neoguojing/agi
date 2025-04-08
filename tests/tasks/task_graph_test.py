@@ -1,9 +1,9 @@
 import unittest
 from langchain_core.messages import AIMessage,HumanMessage,ToolMessage,AIMessageChunk
 from agi.tasks.graph import AgiGraph
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
 
 class TestGraph(unittest.TestCase):
     def setUp(self):        

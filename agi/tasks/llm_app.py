@@ -53,10 +53,10 @@ from typing import (
 def is_valid_url(url):
     return validators.url(url)
 import traceback
-import logging
+
 import inspect
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+from agi.config import log
+
 
 set_debug(False)
 

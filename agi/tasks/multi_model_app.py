@@ -20,9 +20,9 @@ from agi.config import (
 from langchain_openai import ChatOpenAI
 from langchain_ollama import OllamaEmbeddings,ChatOllama
 from urllib.parse import urljoin
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
 
 # Input: AgentState
 # Output: AgentState

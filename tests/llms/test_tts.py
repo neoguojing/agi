@@ -1,9 +1,9 @@
 import unittest
-import logging
+
 from langchain_core.messages import AIMessage, HumanMessage
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
 class TestTextToSpeech(unittest.TestCase):
 
     def setUp(self):

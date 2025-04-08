@@ -15,9 +15,9 @@ from langchain_core.messages import AIMessage, HumanMessage
 from PIL import Image as PILImage
 # HTML style for rendering image
 STYLE = 'style="width: 100%; max-height: 100vh;"'
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
 # GPU : 942MB
 class Image2Image(CustomerLLM):
     model_path: str = Field(default=model_root, alias='model_path')

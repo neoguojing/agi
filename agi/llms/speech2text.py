@@ -9,9 +9,9 @@ from agi.llms.base import CustomerLLM,parse_input_messages
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
 from langchain_core.messages import AIMessage, HumanMessage
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
 # GPU 2600MB
 class Speech2Text(CustomerLLM):
     whisper: Optional[Any] = Field(default=None)

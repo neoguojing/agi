@@ -2,6 +2,7 @@
 import os
 from dotenv import load_dotenv
 
+
 load_dotenv()  # 加载 .env 文件中的环境变量
 
 #服务相关
@@ -63,3 +64,20 @@ EXA_API_KEY = os.getenv("FILE_UPLOAD_PATH","")
 
 ## 系统参数
 AGI_DEBUG = os.getenv("AGI_DEBUG",True)
+
+
+## 日志设置
+import logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
+# 创建控制台 handler
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+
+# 设置带文件名和行号的格式
+formatter = logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
+)
+
+ch.setFormatter(formatter)
+log.addHandler(ch)

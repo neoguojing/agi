@@ -11,9 +11,9 @@ import json
 from agi.llms.model_factory import ModelFactory
 from agi.tasks.prompt import stock_code_prompt
 from agi.tasks.multi_model_app import create_text2image_chain,create_llm_task
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
 
 search = DuckDuckGoSearchRun()
 arxiv = ArxivAPIWrapper()

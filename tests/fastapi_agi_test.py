@@ -1,9 +1,9 @@
 import unittest
 from openai import OpenAI
 import base64
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
 # 图片转换为Base64
 def image_to_base64(image_path):
     with open(image_path, "rb") as image_file:

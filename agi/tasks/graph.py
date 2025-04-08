@@ -25,9 +25,9 @@ from langchain_core.messages import BaseMessage,AIMessage,HumanMessage,ToolMessa
 from agi.tasks.agent import State,Feature,InputType
 from agi.tasks.prompt import decide_modify_state_messages_runnable
 import traceback
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
 # set_verbose(True)
 # set_debug(True)
 

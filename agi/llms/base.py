@@ -19,9 +19,9 @@ import re
 from scipy.io.wavfile import write
 from agi.config import BASE_URL,CACHE_DIR
 import urllib.parse
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
 
 def remove_data_uri_prefix(data_uri):
     """

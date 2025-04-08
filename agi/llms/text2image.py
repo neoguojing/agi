@@ -18,9 +18,9 @@ from agi.config import TEXT_TO_IMAGE_MODEL_PATH as model_root,IMAGE_FILE_SAVE_PA
 import hashlib
 from langchain_core.runnables import RunnableConfig
 from langchain_core.messages import AIMessage, HumanMessage
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
 
 style = 'style="width: 100%; max-height: 100vh;"'
 class Text2Image(CustomerLLM):

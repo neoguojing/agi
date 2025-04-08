@@ -16,9 +16,9 @@ from agi.config import (
 )
 from collections import OrderedDict
 from langchain_core.runnables import Runnable
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
 class ModelFactory:
     _instances =  OrderedDict()
     _lock = threading.Lock()
