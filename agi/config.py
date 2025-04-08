@@ -64,8 +64,6 @@ EXA_API_KEY = os.getenv("FILE_UPLOAD_PATH","")
 
 ## 系统参数
 AGI_DEBUG = os.getenv("AGI_DEBUG",True)
-
-
 ## 日志设置
 import logging
 log = logging.getLogger(__name__)

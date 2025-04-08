@@ -39,5 +39,6 @@ pydub==0.25.1
 docx2txt==0.8
 uvicorn[standard]==0.30.6
 exa-py==1.9.1 
+optree==0.15.0
 
 
