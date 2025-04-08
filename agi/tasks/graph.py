@@ -110,6 +110,7 @@ class AgiGraph:
                     if item.get("type") == InputType.IMAGE:
                         item["type"] = "image_url"
                         item["image_url"] = item["image"]
+                        del item["image"]
 
         except Exception as e:
             log.error(f"{e}")

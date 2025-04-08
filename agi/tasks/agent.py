@@ -133,7 +133,6 @@ class State(AgentState):
     # messages: Annotated[Sequence[BaseMessage], add_messages]
     input_type: str
     need_speech: bool
-    status: str
     user_id: str
     conversation_id: str
     feature: str  # 支持的特性，1.agent，2.web 3.rag，4.tts，5.speech，6.image_recog 默认为agent
@@ -141,7 +140,10 @@ class State(AgentState):
     docs: list[Document]
     citations: list[any]
     collection_names: list[str]
+
     auto_decide_reuslt: str
+    status: str
+    step: list[str]
 
 
 # agent 的提示词
