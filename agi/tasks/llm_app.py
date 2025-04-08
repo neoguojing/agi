@@ -257,14 +257,13 @@ def create_rag(km: KnowledgeManager):
 def create_chat(llm):
     prompt = ChatPromptTemplate.from_messages(
         [
-            ("placeholder", "{messages}"),
+            ("human", "{text}")
         ]
     )
 
     def modify_state_messages(state: AgentState):
-        # 过滤掉非法的消息类型
-        state["messages"] = list(filter(lambda x: not isinstance(x.content, dict), state["messages"]))
-        return prompt.invoke({"messages": state["messages"]}).to_messages()
+        text = get_last_message_text(state)
+        return prompt.invoke({"text": text}).to_messages()
     
     input_format = RunnableLambda(modify_state_messages)
     
