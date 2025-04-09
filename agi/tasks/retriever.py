@@ -284,6 +284,7 @@ class KnowledgeManager:
             if retriever is None:
                 return None
             docs = retriever.invoke(query)
+            docs = [d for d in docs if d.page_content and d.page_content.strip() != "NO_OUTPUT"]
             if to_dict:
                 docs = {
                     "distances": [[d.metadata.get("score") for d in docs]],
@@ -488,7 +489,7 @@ class KnowledgeManager:
             log.info(f"questions:{questions}")
             # Relevant urls
             urls,raw_results = self.do_search(questions,max_results=max_results)        
-
+            known_type = None
             # TODO 执行网页爬虫 效果很差
             # collection_name,known_type,raw_docs = self.store(collection_name,list(urls),source_type=SourceType.WEB,tenant=tenant)
             # log.info(f"scrach results: {raw_docs}")
