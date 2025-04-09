@@ -3,7 +3,11 @@ from datetime import datetime, timedelta
 import requests
 from typing import Any, Dict, Optional
 import json
+import os
 import difflib
+from agi.config import CACHE_DIR
+import jieba.posseg as pseg
+from langchain.tools import tool
 
 class WeatherAPIError(Exception):
     """自定义异常：天气接口调用或解析失败"""
@@ -35,15 +39,17 @@ def get_city_list(province_code):
 
 # 构建搜索列表，包含省份和城市信息
 def build_search_list():
-    with open('./search_list.json', 'r', encoding='utf-8') as f:
-        search_list = json.load(f)
-        ts = search_list["time"]
-        ts_time = datetime.fromtimestamp(ts / 1000)
-        now = datetime.now()
-        # 比较是否早于当前时间 10 天
-        ten_days_ago = now - timedelta(days=10)
-        if ts_time > ten_days_ago:
-            return search_list
+    file_path = f'{CACHE_DIR}/search_list.json'
+    if os.path.exists(file_path):
+        with open(file_path, 'r', encoding='utf-8') as f:
+            search_list = json.load(f)
+            ts = search_list["time"]
+            ts_time = datetime.fromtimestamp(ts / 1000)
+            now = datetime.now()
+            # 比较是否早于当前时间 10 天
+            ten_days_ago = now - timedelta(days=10)
+            if ts_time > ten_days_ago:
+                return search_list
     
     provinces = get_province_list()
     search_list = {}
@@ -71,22 +77,32 @@ def build_search_list():
                 'url': city_url,
                 'type': 'city'
             }
-    
-    return search_list
+    search_list["time"] = int(time.time() * 1000)
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(search_list, f, indent=4, ensure_ascii=False)
+        return search_list
 
 # 构建搜索列表（建议在程序启动时构建一次并缓存）
 search_list = build_search_list()
 
 # 模糊匹配城市名称，返回最佳匹配的代码和 URL
 def find_best_match(input_name):
+    
+    words = pseg.cut(input_name)
+    locations = []
+    for word, flag in words:
+        if flag == 'ns':  # 'ns'表示地名
+            locations.append(word)
+    if locations:
+        input_name = locations[0]
     names = search_list.keys()
     # 使用 difflib 进行模糊匹配，cutoff=0.6 表示至少 60% 相似度
     best_matches = difflib.get_close_matches(input_name, names, n=1, cutoff=0.6)
     if best_matches:
         match_name = best_matches[0]
         item = search_list.get(match_name,None)
-        return item['code'], item['url']
-    return None, None
+        return match_name,item['code'], item['url']
+    return None,None, None
 
 def get_nmc_weather(station_id: str, timeout: float = 5.0) -> Dict[str, Any]:
     """
@@ -143,24 +159,16 @@ def get_nmc_weather(station_id: str, timeout: float = 5.0) -> Dict[str, Any]:
     result["forecast"] = predict.get("detail", [])
 
     # 空气质量
-    result["aqi"] = air.get("aqi")
-    result["air_quality"] = air.get("text")
+    if isinstance(air,dict):
+        result["aqi"] = air.get("aqi")
+        result["air_quality"] = air.get("text")
 
     return result
 
 # 主函数：根据城市名获取代码和天气预报 URL
+@tool("Weather", return_direct=False)
 def get_weather_info(city_name):
-    # 查找最佳匹配
-    city_code, _ = find_best_match(city_name)
+    """Utility to fetch real-time weather conditions for specified locations."""
+    _,city_code, _ = find_best_match(city_name)
     return get_nmc_weather(city_code)
     
-
-# 示例使用
-if __name__ == "__main__":
-    # 测试用例
-    test_cities = ["上海", "徐家汇", "徐家", "北京", "上"]
-    print(search_list)
-    for city in test_cities:
-        print("\n测试输入:", city)
-        ret = get_weather_info(city)
-        print(ret)
