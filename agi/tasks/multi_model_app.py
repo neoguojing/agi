@@ -145,3 +145,9 @@ def create_embedding_task(**kwargs):
         model=model_name,
         base_url=OLLAMA_API_BASE_URL,
     )
+
+def create_multimodel_chain():
+    multimodel = ModelFactory.get_model("multimodel")
+    chain = multimodel_state_modifier_runnable | multimodel | graph_response_format_runnable
+    
+    return chain 

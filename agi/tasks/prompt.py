@@ -227,8 +227,9 @@ multimodal_input_template = MultiModalChatPromptTemplate(
                 {"type": "text", "text": "{text}"},
                 {"type": "image", "image": "{image}"},
                 {"type": "audio", "audio": "{audio}"},
+                {"type": "video", "video": "{video}"},
             ]
         )
     ],
-    optional_variables=["text","image","audio"]
+    optional_variables=["text","image","audio","video"]
 )

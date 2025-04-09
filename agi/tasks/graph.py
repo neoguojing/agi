@@ -18,6 +18,7 @@ from agi.tasks.task_factory import (
     TASK_RAG,
     TASK_DOC_CHAT,
     TASK_LLM,
+    TASK_MULTI_MODEL
     )
 from langgraph.prebuilt.chat_agent_executor import AgentState
 from typing import Dict, Any, Iterator,Union
@@ -54,21 +55,23 @@ class AgiGraph:
         # self.builder.add_node("doc_chat", TaskFactory.create_task(TASK_DOC_CHAT))
         self.builder.add_node("doc_chat", self.doc_chat_node)
         self.builder.add_node("agent", TaskFactory.create_task(TASK_AGENT))
+        self.builder.add_node("multi_modal", TaskFactory.create_task(TASK_MULTI_MODEL))
         # 用于处理非agent的请求:1.标题生成等用户自定义提示请求；2.图像识别等 image2text 请求；3.作为决策节点，判定用户意图
         self.builder.add_node("llm", TaskFactory.create_task(TASK_LLM))
         
-        self.builder.add_conditional_edges("agent", self.tts_control)
-        self.builder.add_conditional_edges("llm", self.tts_control)
-        self.builder.add_conditional_edges("doc_chat", self.tts_control)
+        self.builder.add_conditional_edges("agent", self.output_control)
+        self.builder.add_conditional_edges("llm", self.output_control)
+        self.builder.add_conditional_edges("doc_chat", self.output_control)
 
         # 有上下文的请求支持平行处理
-        self.builder.add_conditional_edges("rag", self.rag_control)
-        self.builder.add_edge("web", "doc_chat")
+        self.builder.add_conditional_edges("rag", self.context_control)
+        self.builder.add_edge("web", self.context_control)
 
+        self.builder.add_edge("multi_modal", END)
         self.builder.add_edge("image_gen", END)
         self.builder.add_edge("tts", END)
         
-        self.builder.add_conditional_edges("speech2text",self.feature_control)
+        self.builder.add_conditional_edges("speech2text",self.text_feature_control)
         self.builder.add_conditional_edges(START, self.routes)
         self.graph = self.builder.compile(
             checkpointer=checkpointer,
@@ -84,11 +87,13 @@ class AgiGraph:
     def routes(self,state: State, config: RunnableConfig):
         msg_type = state.get("input_type")
         if msg_type == InputType.TEXT:
-            return self.feature_control(state)
+            return self.text_feature_control(state)
         elif msg_type == InputType.IMAGE:
-            return self.feature_control(state)
+            return self.image_feature_control(state)
         elif msg_type == InputType.AUDIO:
-            return "speech2text"
+            return self.audio_feature_control(state)
+        elif msg_type == InputType.VIDEO:
+            return self.video_feature_control(state)
 
         return END
     
@@ -135,41 +140,61 @@ class AgiGraph:
         state["auto_decide_reuslt"] = "llm"
         return "llm"
     
-    def feature_control(self,state: State):
+    # 控制图像输入决策
+    def image_feature_control(self,state: State):
         feature = state.get("feature","")
+        if feature == Feature.IMAGE2TEXT:    #图片转文字
+            return "llm"
+        elif feature == Feature.IMAGE2IMAGE:    #图片转图片
+            return "image_gen"
+        else:
+            return self.auto_state_machine(state)
+    
+    # 语音输出决策
+    def audio_feature_control(self,state: State):
+        feature = state.get("feature","")
+        if feature == Feature.VOICECHAT:  #语音对话
+            return "multi_modal"
+        return "speech2text"
+    
+    # 视频输入决策
+    def video_feature_control(self,state: State):
+        feature = state.get("feature","")
+        if feature == Feature.VIDEOPARSE:  #视频内容解析
+            return "multi_modal"
+        return "multi_modal"
 
+    # 文本输入决策
+    def text_feature_control(self,state: State):
+        feature = state.get("feature","")
         if feature == Feature.AGENT:
             return "agent"
         elif feature == Feature.RAG:
             return "rag"
         elif feature == Feature.WEB:
             return "web"
-        elif feature == Feature.TTS and state.get("input_type") == InputType.TEXT:    #仅文本转语音
+        elif feature == Feature.TTS:   #文字转语音
             return "tts"
-        elif feature == Feature.IMAGE2TEXT and state.get("input_type") == InputType.IMAGE:    #图片转文字
-            return "llm"
-        elif feature == Feature.IMAGE2IMAGE and state.get("input_type") == InputType.IMAGE:    #图片转图片
-            return "image_gen"
-        elif feature == Feature.SPEECH:
+        elif feature == Feature.SPEECH:  #语音转文字，直接输出
             return END
-        elif feature == Feature.TTS:
-            return "tts"
         else: #通用任务处理：如标题生成、tag生成等 或者 自主决策
             return self.auto_state_machine(state)
         
     
-    def tts_control(self,state: State):
+    def output_control(self,state: State):
         if state["need_speech"]:
             return "tts"
         return END
     
-    # 在未检索到关联文档的情况下，开启自由模式
-    def rag_control(self,state: State):
-        last_message = state.get("messages")[-1]
-        context = last_message.additional_kwargs.get("context")
-        if isinstance(last_message,ToolMessage) and context == "":
-            return "agent"
-        return "doc_chat"
+    # 适用于web 和 rag的情况，当无法获取有效的上下文信息时，
+    # 1.重置feature特性
+    # 2.交给agent处理
+    def context_control(self,state: State):
+        docs = state.get("docs")
+        if docs:
+            return "doc_chat"
+        return "agent"
+        
     
     def invoke(self,input:State) -> State:
         config={"configurable": {"user_id": input.get("user_id","default_tenant"), "conversation_id": input.get("conversation_id",""),

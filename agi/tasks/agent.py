@@ -119,15 +119,30 @@ class Feature:
     AGENT = "agent"
     RAG = "rag"
     WEB = "web"
-    SPEECH = "speech"
+    
     TTS = "tts"
+
+    SPEECH = "speech"
+    VOICECHAT = "voice_chat"
+
     IMAGE2TEXT = "image2text"
     IMAGE2IMAGE = "image2image"
+
+    VIDEOPARSE = "videoparse"
+
+    # cv模型，适用于图片和视频
+    DETECT = "detect"
+    FEATUREEXTRACT = "feature"
+    CLASS = "class"
+    SEGMENT = ""
+
+
 
 class InputType:
     AUDIO = "audio"
     TEXT = "text"
     IMAGE = "image"
+    VIDEO = "video"
 
 class State(AgentState):
     # messages: Annotated[Sequence[BaseMessage], add_messages]

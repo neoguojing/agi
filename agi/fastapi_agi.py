@@ -102,6 +102,10 @@ async def chat_completions(
                     # 假设 item["audio"] 是音频数据的某种表示
                     content.append({"type": "audio", "audio": item["audio"]})
                     input_type = "audio"
+                elif item["type"] == "video":
+                    # 假设 item["audio"] 是音频数据的某种表示
+                    content.append({"type": "video", "video": item["video"]})
+                    input_type = "video"
                 elif item["type"] == "text": 
                     content.append({"type":"text","text":item["text"]})
                 else:

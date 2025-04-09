@@ -27,6 +27,7 @@ from agi.tasks.multi_model_app import (
     create_speech2text_chain,
     create_embedding_task,
     create_llm_task,
+    create_multimodel_chain
 )
 from agi.tasks.retriever import FilterType,SimAlgoType
 from langchain.globals import set_debug
@@ -45,6 +46,7 @@ TASK_RETRIEVER = "rag"
 TASK_RAG = "custom_rag"
 TASK_WEB_SEARCH = "web_search"
 TASK_DOC_CHAT = "doc_chat"
+TASK_MULTI_MODEL = "multimodel"
 
 def create_llm_chat_task(**kwargs):
     return create_chat(TaskFactory._llm)
@@ -76,6 +78,8 @@ def create_tts_task(**kwargs):
 def create_speech_text_task(**kwargs):
     return create_speech2text_chain()
 
+def create_multimodel_task(**kwargs):
+    return create_multimodel_chain()
 
 # agent with history
 # TODO agent support history
@@ -110,6 +114,8 @@ class TaskFactory:
         TASK_IMAGE_GEN: create_image_gen_task,
         TASK_TTS: create_tts_task,
         TASK_SPEECH_TEXT: create_speech_text_task,
+
+        TASK_MULTI_MODEL: create_multimodel_task
         
     }
     
