@@ -284,7 +284,7 @@ class KnowledgeManager:
             if retriever is None:
                 return None
             docs = retriever.invoke(query)
-            docs = [d for d in docs if d.page_content and d.page_content.strip() not in ["NO_OUTPUT","NO_ OUTPUT","NO_RESPONSE"]]
+            docs = [d for d in docs if d.page_content and not d.page_content.strip().startswith("NO_")]
             if to_dict:
                 docs = {
                     "distances": [[d.metadata.get("score") for d in docs]],
