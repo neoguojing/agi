@@ -250,7 +250,7 @@ def create_rag(km: KnowledgeManager):
             if docs:
                 docs = [d for d in docs if d.page_content and not d.page_content.strip().startswith("NO_")]
 
-            log.info(f"relative docks:{docs}")
+            log.info(f"relative docs:{docs}")
             return docs
         return []
     
