@@ -247,7 +247,8 @@ def create_rag(km: KnowledgeManager):
         if retriever:
             text = get_last_message_text(input)
             docs = retriever.invoke(text)
-            docs = [d for d in docs if d.page_content and d.page_content.strip() != "NO_OUTPUT"]
+            if docs:
+                docs = [d for d in docs if d.page_content and d.page_content.strip() != "NO_OUTPUT"]
             log.info(f"relative docks:{docs}")
             return docs
         return []
