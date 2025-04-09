@@ -86,6 +86,11 @@ class AgiGraph:
     # 通过用户指定input_type，来决定使用哪个分支
     def routes(self,state: State, config: RunnableConfig):
         msg_type = state.get("input_type")
+        # 状态初始化
+        state["context"] = None
+        state["docs"] = None
+        state["citations"] = None
+
         if msg_type == InputType.TEXT:
             return self.text_feature_control(state)
         elif msg_type == InputType.IMAGE:
@@ -97,6 +102,7 @@ class AgiGraph:
 
         return END
     
+    # 文档对话
     def doc_chat_node(self,state: State,config: RunnableConfig,writer: StreamWriter):
         chain = TaskFactory.create_task(TASK_DOC_CHAT)
         if state["citations"]:

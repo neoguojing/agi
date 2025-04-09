@@ -151,6 +151,7 @@ class State(AgentState):
     user_id: str
     conversation_id: str
     feature: str  # 支持的特性，1.agent，2.web 3.rag，4.tts，5.speech，6.image_recog 默认为agent
+    
     context: str
     docs: list[Document]
     citations: list[any]

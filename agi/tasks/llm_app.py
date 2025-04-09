@@ -175,7 +175,8 @@ def create_stuff_documents_chain(
 
         # 4. 用指定的分隔符连接所有格式化后的文档
         combined_documents = document_separator.join(formatted_documents)
-
+        # 状态初始化
+        inputs["context"] = None
         # 最终结果保存在 combined_documents 变量中
         return combined_documents
     
@@ -207,6 +208,9 @@ def create_stuff_documents_chain(
 # Output: AgentState
 def create_websearch(km: KnowledgeManager):
     def web_search(input: AgentState,config: RunnableConfig):
+        input["docs"] = None
+        input["citations"] = None
+
         tenant = config.get("configurable", {}).get("user_id", None)
         text = get_last_message_text(input)
         _,_,_,raw_docs = km.web_search(text,tenant=tenant)
@@ -226,7 +230,10 @@ def create_websearch(km: KnowledgeManager):
 # TODO 在未获取到知识库，或者未检索到相关文档的情况下，直接交给大模型型回答
 def create_rag(km: KnowledgeManager):
     def query_docs(input: AgentState,config: RunnableConfig):
+        input["docs"] = None
+        input["citations"] = None
         log.debug(f"query_docs----{input}")
+        
         # collection_names 位None，则默认使用 all进行检索
         collection_names = input.get("collection_names",None)        
         collections = "all"
