@@ -65,7 +65,7 @@ class AgiGraph:
 
         # 有上下文的请求支持平行处理
         self.builder.add_conditional_edges("rag", self.context_control)
-        self.builder.add_edge("web", self.context_control)
+        self.builder.add_conditional_edges("web", self.context_control)
 
         self.builder.add_edge("multi_modal", END)
         self.builder.add_edge("image_gen", END)
