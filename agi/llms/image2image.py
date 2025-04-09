@@ -22,8 +22,9 @@ from agi.config import log
 class Image2Image(CustomerLLM):
     model_path: str = Field(default=model_root, alias='model_path')
     refiner: Optional[Any] = None
-    n_steps: int = 20
+    n_steps: int = 2
     high_noise_frac: float = 0.8
+    guidance_scale: float = 0.0
     file_path: str = IMAGE_FILE_SAVE_PATH
     save_image: bool = True
 
@@ -64,7 +65,7 @@ class Image2Image(CustomerLLM):
         input_image = input_image.data.resize((512, 512))
         
         # Generate the image using the model
-        generated_image = self.model(prompt, image=input_image, num_inference_steps=2, strength=0.5, guidance_scale=0.0).images[0]
+        generated_image = self.model(prompt, image=input_image, num_inference_steps=self.n_steps, strength=0.5, guidance_scale=self.guidance_scale).images[0]
         
         if generated_image is not None:
             output = self.handle_output(generated_image, prompt)

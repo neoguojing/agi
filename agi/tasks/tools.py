@@ -11,7 +11,7 @@ import json
 from agi.llms.model_factory import ModelFactory
 from agi.tasks.prompt import stock_code_prompt
 from agi.tasks.multi_model_app import create_text2image_chain,create_llm_task
-
+from agi.utils.weather import get_weather_info
 from agi.config import log
 
 
@@ -148,7 +148,8 @@ tools = [
     image_gen,
     wikipedia(),
     wikidata(),
-    pythonREPL()
+    pythonREPL(),
+    get_weather_info
     # text2speech,
     # get_stock,
 ]
