@@ -137,12 +137,8 @@ def create_llm_task(**kwargs):
             openai_api_key=OPENAI_API_KEY,
             base_url=urljoin(OLLAMA_API_BASE_URL, "/v1/")
         )
-    # 输出去除think标签
-    def refine_output(ai: Union[AIMessage,ToolMessage,list[BaseMessage]]):
-        refine_last_message_text(ai)
-        return ai
-    refine_output_runnable = RunnableLambda(refine_output)
-    return llm | refine_output_runnable
+        
+    return llm
     
 # Helper functions for each task type creation
 def create_embedding_task(**kwargs):

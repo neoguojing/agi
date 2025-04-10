@@ -114,6 +114,7 @@ class AgiGraph:
         config={"configurable": {"user_id": "tools", "conversation_id": "",
                                  "thread_id": "tools"}}
         next_step = self.decider_chain.invoke(state,config=config)
+        # 去除think标签
         _,next_step = split_think_content(next_step)
         log.info(f"auto_state_machine: {next_step}")
         # 判断返回是否在决策列表里
