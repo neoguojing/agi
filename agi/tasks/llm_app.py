@@ -31,17 +31,16 @@ from langchain.chains.combine_documents.base import (
     _validate_prompt,
 )
 from langchain_core.output_parsers import StrOutputParser,BaseOutputParser
-from agi.tasks.prompt import get_last_message_text,doc_qa_template,docqa_modify_state_messages_runnable,default_modify_state_messages_runnable
+from agi.tasks.prompt import doc_qa_template,docqa_modify_state_messages_runnable,default_modify_state_messages_runnable
 from agi.tasks.retriever import KnowledgeManager
-from agi.tasks.utils import graph_response_format_runnable
+from agi.tasks.utils import graph_response_format_runnable,get_last_message_text
 import json
 from datetime import datetime,timezone
 from langchain.globals import set_debug
 from collections import defaultdict
 import validators
 from agi.config import (
-    LANGCHAIN_DB_PATH,
-    AGI_DEBUG,
+    LANGCHAIN_DB_PATH
 )
 from typing import (
     Any,
@@ -54,25 +53,12 @@ def is_valid_url(url):
     return validators.url(url)
 import traceback
 
-import inspect
 from agi.config import log
+from agi.tasks.utils import debug_tool
 
 
 set_debug(False)
 
-# TODO parent_name不是实际的函数
-def debug_info(x : Any):
-    if AGI_DEBUG:
-        parent_name = ""
-        stack = inspect.stack()
-        if len(stack) > 2:  # stack[0] 是 get_parent_function_name，stack[1] 是调用它的函数
-            parent_name = stack[2].function  # stack[2] 是再往上的函数，即父函数
-        
-        log.info(f"type:{parent_name}\nmessage:{x}")
-
-    return x
-
-debug_tool = RunnableLambda(debug_info)
 
 # 裁剪历史消息
 trimmer = trim_messages(

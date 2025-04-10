@@ -6,17 +6,7 @@ from langchain_core.messages import HumanMessage, BaseMessage,SystemMessage,AIMe
 from langchain.output_parsers.boolean import BooleanOutputParser
 from agi.tasks.agi_prompt import MultiModalChatPromptTemplate
 from langgraph.prebuilt.chat_agent_executor import AgentState
-
-def get_last_message_text(state: AgentState):
-    last_message = state["messages"][-1]
-    if isinstance(last_message,HumanMessage):
-        if isinstance(last_message.content,str):
-            return last_message.content
-        elif isinstance(last_message.content,list):
-            for item in last_message.content:
-                if item["type"] == "text":
-                    return item["text"]
-    return ""
+from agi.tasks.utils import get_last_message_text
 
 english_traslate_template = ChatPromptTemplate.from_messages([
     ("human", "Translate the following into English and only return the translation result: {text}"),
@@ -59,7 +49,7 @@ decider_prompt = (
     '    - If the question requires current or external information (e.g., latest news, real-time data, factual verification), output: "agent".'
     '    - Otherwise, for typical text-based inquiries that do not require external data retrieval, output: "llm".'
 
-    'Your output should be a single command chosen from: "image_gen", "web", or "llm". Do not include any additional explanation or details.'
+    'Your output should be a single command chosen from: "image_gen", "agent", or "llm". Do not include any additional explanation or details.'
 
     'Examples:'
     '1. Input Type: "image"; Question: "Can you read the text in this photo?" '

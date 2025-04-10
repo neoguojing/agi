@@ -25,6 +25,7 @@ from typing import Dict, Any, Iterator,Union
 from langchain_core.messages import BaseMessage,AIMessage,HumanMessage,ToolMessage,AIMessageChunk
 from agi.tasks.agent import State,Feature,InputType
 from agi.tasks.prompt import decide_modify_state_messages_runnable
+from agi.tasks.utils import split_think_content
 import traceback
 
 from agi.config import log
@@ -243,7 +244,7 @@ class AgiGraph:
                         if isinstance(last_message,HumanMessage):
                             continue
                         # 处理推理场景，目前适配qwq
-                        think_content,other_content = self.split_think_content(last_message.content)
+                        think_content,other_content = split_think_content(last_message.content)
                         if think_content != "":
                             think_message = ToolMessage(content=think_content,tool_call_id="thinking")
                             yield think_message

@@ -20,7 +20,7 @@ from agi.config import (
 from langchain_openai import ChatOpenAI
 from langchain_ollama import OllamaEmbeddings,ChatOllama
 from urllib.parse import urljoin
-
+from agi.tasks.utils import split_think_content
 from agi.config import log
 
 
@@ -34,6 +34,8 @@ def create_translate_chain(llm):
     # 修改AgentState的最后一条消息的内容为翻译后的内容
     def translate_node(state: AgentState):
         result = chain.invoke(state)
+        # think 标签过滤
+        _, result = split_think_content(result)
         if result:
             last_message = state["messages"][-1]
             if last_message:

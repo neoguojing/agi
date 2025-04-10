@@ -3,7 +3,57 @@ from typing import Any, List, Mapping, Optional, Union
 from langchain_core.runnables import (
     RunnableLambda
 )
+from langgraph.prebuilt.chat_agent_executor import AgentState
+from agi.config import log,AGI_DEBUG
+import inspect
+
+# 处理推理模型返回
+def split_think_content(content):
+    think_content = ""
+    other_content = content
+    try:
+        if isinstance(content,list):
+            content = content[0].get("text","")
+            
+        import re
+        match = re.search(r"(<think>\s*.*?\s*</think>)\s*(.*)", content, re.DOTALL)
+
+        if match:
+            think_content = match.group(1).strip()  # 保留 <think> 标签，并去掉换行
+            other_content = match.group(2).strip()  # 去掉换行
+
+    except Exception as e:
+        log.error(e)
+
+    return think_content,other_content
+
+def get_last_message_text(state: AgentState):
+    last_message = state["messages"][-1]
+    if isinstance(last_message,HumanMessage):
+        if isinstance(last_message.content,str):
+            return last_message.content
+        elif isinstance(last_message.content,list):
+            for item in last_message.content:
+                if item["type"] == "text":
+                    return item["text"]
+    return ""
+
+# 修复最后一条AI消息的text内容,去除特定标签内容
+def refine_last_message_text(message :Union[AIMessage,ToolMessage,list[BaseMessage]]):
+    if isinstance(message,list):
+        message = message[-1]
+
+    if not isinstance(message,HumanMessage):
+        if isinstance(message.content,str):
+            _,message.content = split_think_content(message.content)
+        elif isinstance(message.content,list):
+            for item in message.content:
+                if item["type"] == "text":
+                    _,item["text"] = split_think_content(item["text"])
+
 def graph_response_format(message :Union[AIMessage,ToolMessage,list[BaseMessage]]):
+    
+    refine_last_message_text(message)
     if isinstance(message,list):
         return {"messages": message}
     
@@ -11,55 +61,16 @@ def graph_response_format(message :Union[AIMessage,ToolMessage,list[BaseMessage]
 
 graph_response_format_runnable = RunnableLambda(graph_response_format)
 
-
-
-import random
-from collections import defaultdict
-
-class SearchEngineSelector:
-    def __init__(self, search_engines):
-        self.search_engines = search_engines
-        self.success_stats = defaultdict(lambda: {'success': 0, 'total': 0})
-        self.default_engines = list(search_engines.keys())
+# TODO parent_name不是实际的函数
+def debug_info(x : Any):
+    if AGI_DEBUG:
+        parent_name = ""
+        stack = inspect.stack()
+        if len(stack) > 2:  # stack[0] 是 get_parent_function_name，stack[1] 是调用它的函数
+            parent_name = stack[2].function  # stack[2] 是再往上的函数，即父函数
         
-    def record_result(self, engine_name, success):
-        """记录搜索引擎的使用结果"""
-        self.success_stats[engine_name]['total'] += 1
-        if success:
-            self.success_stats[engine_name]['success'] += 1
-    
-    def get_success_rate(self, engine_name):
-        """获取搜索引擎的成功率"""
-        stats = self.success_stats[engine_name]
-        if stats['total'] == 0:
-            return 0.5  # 默认成功率
-        return stats['success'] / stats['total']
-    
-    def select_engine(self):
-        """根据成功率选择搜索引擎"""
-        # 计算每个引擎的权重（成功率 + 小随机值避免完全排除低成功率引擎）
-        weights = {
-            name: self.get_success_rate(name) + random.uniform(0, 0.1)
-            for name in self.default_engines
-        }
-        
-        # 归一化权重
-        total_weight = sum(weights.values())
-        if total_weight == 0:
-            return random.choice(self.default_engines)
-            
-        normalized_weights = {
-            name: weight / total_weight
-            for name, weight in weights.items()
-        }
-        
-        # 根据权重随机选择
-        return random.choices(
-            list(normalized_weights.keys()),
-            weights=list(normalized_weights.values()),
-            k=1
-        )
-    
-    def get_engine(self, name):
-        """获取指定名称的搜索引擎实例"""
-        return self.search_engines.get(name)
+        log.info(f"type:{parent_name}\nmessage:{x}")
+
+    return x
+
+debug_tool = RunnableLambda(debug_info)

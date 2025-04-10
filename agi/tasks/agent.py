@@ -37,6 +37,7 @@ import json
 import traceback
 
 from agi.config import log
+from agi.tasks.utils import refine_last_message_text
 
 
 def compute_content_hash(content: any) -> str:
@@ -173,6 +174,7 @@ prompt = ChatPromptTemplate.from_messages(
 def modify_state_messages(state: State):
     # 过滤掉非法的消息类型
     state["messages"] = list(filter(lambda x: not isinstance(x.content, dict), state["messages"]))
+    refine_last_message_text(state["messages"])
     return prompt.invoke({"messages": state["messages"],"language":"chinese"}).to_messages()
 
 memory = MemorySaver()
