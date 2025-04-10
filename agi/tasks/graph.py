@@ -110,30 +110,11 @@ class AgiGraph:
             writer({"citations":state["citations"],"docs":state["docs"]})
         return chain.invoke(state,config=config)
     
-    # 处理推理模型返回
-    def split_think_content(self,content):
-        think_content = ""
-        other_content = content
-        try:
-            if isinstance(content,list):
-                content = content[0].get("text","")
-                
-            import re
-            match = re.search(r"(<think>\s*.*?\s*</think>)\s*(.*)", content, re.DOTALL)
-
-            if match:
-                think_content = match.group(1).strip()  # 保留 <think> 标签，并去掉换行
-                other_content = match.group(2).strip()  # 去掉换行
-
-        except Exception as e:
-            log.error(e)
-
-        return think_content,other_content
-    
     def auto_state_machine(self,state: State):
         config={"configurable": {"user_id": "tools", "conversation_id": "",
                                  "thread_id": "tools"}}
         next_step = self.decider_chain.invoke(state,config=config)
+        _,next_step = split_think_content(next_step)
         log.info(f"auto_state_machine: {next_step}")
         # 判断返回是否在决策列表里
         if next_step in self.node_list:
