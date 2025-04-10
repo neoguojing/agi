@@ -90,11 +90,7 @@ def create_agent_task(**kwargs):
 class TaskFactory:
     _instances = {}
     _lock = threading.Lock()  # 异步锁
-    _llm = ChatOpenAI(
-            model=OLLAMA_DEFAULT_MODE,
-            openai_api_key=OPENAI_API_KEY,
-            base_url=urljoin(OLLAMA_API_BASE_URL, "/v1/")
-        )
+    _llm = create_llm_task()
     _embedding = OllamaEmbeddings(
             model=RAG_EMBEDDING_MODEL,
             base_url=OLLAMA_API_BASE_URL,

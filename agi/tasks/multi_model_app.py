@@ -1,16 +1,12 @@
 from agi.llms.model_factory import ModelFactory
 from agi.tasks.prompt import english_traslate_template,multimodal_input_template,traslate_modify_state_messages_runnable
 from langchain_core.output_parsers import StrOutputParser,ListOutputParser
-from agi.llms.text2image import Text2Image
-from agi.llms.image2image import Image2Image
-from agi.llms.tts import TextToSpeech
-from agi.llms.speech2text import Speech2Text
 from langchain_core.runnables import RunnablePassthrough,RunnableLambda,RunnableBranch
-import json
-from langchain_core.messages import HumanMessage,BaseMessage,AIMessage
+from typing import Union
+from langchain_core.messages import HumanMessage,BaseMessage,AIMessage,ToolMessage
 from langchain_core.prompt_values import StringPromptValue,PromptValue,ChatPromptValue
 from langgraph.prebuilt.chat_agent_executor import AgentState
-from agi.tasks.utils import graph_response_format_runnable
+from agi.tasks.utils import graph_response_format_runnable,refine_last_message_text
 from agi.config import (
     OLLAMA_API_BASE_URL,
     OPENAI_API_KEY,
@@ -128,17 +124,25 @@ def create_speech2text_chain():
 
 
 def create_llm_task(**kwargs):
+    llm = None
     model_name = kwargs.get("model_name") or OLLAMA_DEFAULT_MODE
     if kwargs.get("ollama"):
-        return ChatOllama(
+        llm = ChatOllama(
             model=model_name,
             base_url=OLLAMA_API_BASE_URL,
         )
-    return ChatOpenAI(
-        model=model_name,
-        openai_api_key=OPENAI_API_KEY,
-        base_url=urljoin(OLLAMA_API_BASE_URL, "/v1/")
-    )
+    else:
+        llm = ChatOpenAI(
+            model=model_name,
+            openai_api_key=OPENAI_API_KEY,
+            base_url=urljoin(OLLAMA_API_BASE_URL, "/v1/")
+        )
+    # 输出去除think标签
+    def refine_output(ai: Union[AIMessage,ToolMessage,list[BaseMessage]]):
+        refine_last_message_text(ai)
+        return ai
+    refine_output_runnable = RunnableLambda(refine_output)
+    return llm | refine_output_runnable
     
 # Helper functions for each task type creation
 def create_embedding_task(**kwargs):
