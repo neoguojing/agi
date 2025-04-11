@@ -38,8 +38,8 @@ import traceback
 
 from agi.config import log
 from agi.tasks.utils import refine_last_message_text
-
-
+from langchain.globals import set_debug
+set_debug(True)
 def compute_content_hash(content: any) -> str:
     """
     计算 content 的哈希值。
