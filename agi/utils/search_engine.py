@@ -27,9 +27,9 @@ class SearchEngineSelector(BaseTool):
     max_results: int = 3
     max_retries: int = 3
 
-    __search_engines: dict = PrivateAttr(default_factory=dict)
-    __default_engines: list = PrivateAttr(default_factory=list)
-    __success_stats: DefaultDict[str, dict] = PrivateAttr(default_factory=lambda: defaultdict(lambda: {'success': 0, 'total': 0}))
+    _search_engines: dict = PrivateAttr(default_factory=dict)
+    _default_engines: list = PrivateAttr(default_factory=list)
+    _success_stats: DefaultDict[str, dict] = PrivateAttr(default_factory=lambda: defaultdict(lambda: {'success': 0, 'total': 0}))
 
     def __init__(self,**kwargs):
         super().__init__(**kwargs)
@@ -37,10 +37,10 @@ class SearchEngineSelector(BaseTool):
         self._search_engines["DuckDuckGoSearch"] = DuckDuckGoSearchAPIWrapper(region="wt-wt", safesearch="moderate", time="y", max_results=3, source="text")
 
         if EXA_API_KEY:
-            self.__search_engines["Exa"] = Exa(EXA_API_KEY)
+            self._search_engines["Exa"] = Exa(EXA_API_KEY)
 
         self._default_engines = list(self._search_engines.keys())
-        
+
     def record_result(self, engine_name, success):
         """记录搜索引擎的使用结果"""
         self._success_stats[engine_name]['total'] += 1
