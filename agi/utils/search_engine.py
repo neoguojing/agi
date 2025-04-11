@@ -95,8 +95,8 @@ class SearchEngineSelector(BaseTool):
         success = False
         while retries < self.max_retries and not success:
             try:
-                random_key = self.select_engine()
-                search = self._search_engines[random_key[0]]
+                random_key = self.select_engine()[0]
+                search = self._search_engines[random_key]
 
                 search_results = []
                 if isinstance(search,DuckDuckGoSearchAPIWrapper):
@@ -118,7 +118,7 @@ class SearchEngineSelector(BaseTool):
                             "source": r.url,
                         })
                 
-                log.info(f"Search results for query '{q}': {search_results}")
+                log.info(f"Search results for query '{query}': {search_results}")
                 success = True  # 如果成功，就跳出重试循环
                 # 汇报结果
                 self.record_result(random_key,success)
