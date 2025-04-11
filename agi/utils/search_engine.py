@@ -15,6 +15,9 @@ class SGInput(BaseModel):
 
     query: str = Field(description="search query to look up")
 
+def default_success_stats() -> DefaultDict[str, dict]:
+    return defaultdict(lambda: {'success': 0, 'total': 0})
+
 class SearchEngineSelector(BaseTool):
     name: str = "search engine"
     description: str = (
@@ -30,7 +33,7 @@ class SearchEngineSelector(BaseTool):
     default_engines: list = []
     success_stats: Annotated[
         DefaultDict[str, dict],
-        Field(default_factory=lambda: defaultdict(lambda: {'success': 0, 'total': 0}))
+        Field(default_factory=default_success_stats)
     ]
 
     def __init__(self):
