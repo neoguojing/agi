@@ -6,8 +6,9 @@ from typing import Any, Optional, Type
 from agi.config import EXA_API_KEY,log
 
 from langchain_core.callbacks import CallbackManagerForToolRun
-from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_core.tools import BaseTool
+from typing import DefaultDict, Annotated
+from pydantic import Field,BaseModel
 
 class SGInput(BaseModel):
     """Input for the search engine tool."""
@@ -27,7 +28,9 @@ class SearchEngineSelector(BaseTool):
     max_retries: int = 3
     search_engines: dict = {}
     default_engines: list = []
-    success_stats: defaultdict = defaultdict(lambda: {'success': 0, 'total': 0})
+    success_stats: Annotated[
+        DefaultDict[str, dict],Field(default_factory=lambda: defaultdict(lambda: {'success': 0, 'total': 0}))
+    ]
 
     def __init__(self):
         
