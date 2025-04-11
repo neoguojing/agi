@@ -1,6 +1,7 @@
 import random
 from collections import defaultdict
 from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
+from langchain_community.tools import DuckDuckGoSearchResults
 from exa_py import Exa
 from typing import Any, Optional, Type
 from agi.config import EXA_API_KEY,log
@@ -9,7 +10,7 @@ from langchain_core.callbacks import CallbackManagerForToolRun
 from langchain_core.tools import BaseTool
 from typing import DefaultDict,Annotated
 from pydantic import Field,BaseModel,PrivateAttr
-
+import traceback
 class SGInput(BaseModel):
     """Input for the search engine tool."""
 
@@ -34,7 +35,8 @@ class SearchEngineSelector(BaseTool):
     def __init__(self,**kwargs):
         super().__init__(**kwargs)
         # Always add DuckDuckGoSearch
-        self._search_engines["DuckDuckGoSearch"] = DuckDuckGoSearchAPIWrapper(region="wt-wt", safesearch="moderate", time="y", max_results=3, source="text")
+        duckwrapper = DuckDuckGoSearchAPIWrapper(region="wt-wt", safesearch="moderate", time="y", max_results=3, source="text")
+        self._search_engines["DuckDuckGoSearch"] = DuckDuckGoSearchResults(api_wrapper=duckwrapper, output_format="list")
 
         if EXA_API_KEY:
             self._search_engines["Exa"] = Exa(EXA_API_KEY)
@@ -126,6 +128,7 @@ class SearchEngineSelector(BaseTool):
                 retries += 1
                 log.error(f"Error with search engine {random_key}, retrying {retries}/{self.max_retries}...")
                 log.error(e)
+                print(traceback.format_exc())
                 # 汇报结果
                 self.record_result(random_key,success)
                 if retries >= self.max_retries:
