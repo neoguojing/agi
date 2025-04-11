@@ -46,7 +46,7 @@ decider_prompt = (
 
     '- If the input type is "text":'
     '    - If the question indicates a request to generate or create an image (e.g., "Draw a cat", "Generate a futuristic cityscape"), output: "image_gen". '
-    '    - If the question requires current or external information (e.g., latest news, real-time data, factual verification), output: "agent".'
+    '    - If the question requires current or external information (e.g., latest news, real-time data, factual verification, Wikipedia, Wikidata, Python code execution, arXiv papers, weather, or stock market data), output: "agent".'
     '    - Otherwise, for typical text-based inquiries that do not require external data retrieval, output: "llm".'
 
     'Your output should be a single command chosen from: "image_gen", "agent", or "llm". Do not include any additional explanation or details.'
