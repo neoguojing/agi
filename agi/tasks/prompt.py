@@ -203,12 +203,6 @@ rag_filter_template = PromptTemplate(
 )
 
 
-def stock_code_prompt(input_text):
-    template = """Stock Symbol or Ticker Symbol of {text}"""
-    prompt = PromptTemplate.from_template(template)
-    return prompt.format(input=input_text)
-
-
 # 用于llm模块，多模态消息的渲染
 multimodal_input_template = MultiModalChatPromptTemplate(
     [

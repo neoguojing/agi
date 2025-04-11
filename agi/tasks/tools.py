@@ -2,16 +2,12 @@ import os
 from langchain.tools import tool
 from langchain_community.utilities import ArxivAPIWrapper
 from langchain.agents import Tool
-from langchain_core.messages import AIMessage
-from agi.llms.model_factory import ModelFactory
-from agi.tasks.multi_model_app import create_text2image_chain,create_llm_task
 from agi.utils.weather import get_weather_info
 from agi.utils.search_engine import SearchEngineSelector
+from agi.utils.stock_market import get_stock
 from agi.config import log
 
-
 arxiv = ArxivAPIWrapper()
-
 
 def wikipedia():
     from langchain_community.tools import WikipediaQueryRun
@@ -50,5 +46,6 @@ tools = [
     wikipedia(),
     wikidata(),
     pythonREPL(),
-    get_weather_info
+    get_weather_info,
+    get_stock
 ]
