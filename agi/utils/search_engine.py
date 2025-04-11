@@ -19,7 +19,7 @@ class SGInput(BaseModel):
 class SearchEngineSelector(BaseTool):
     name: str = "search engine"
     description: str = (
-        "Useful for when you need to answer questions about current events. "
+        "Useful for when you need to answer questions about current events. Not for weather."
         "Input should be a search query."
     )
 

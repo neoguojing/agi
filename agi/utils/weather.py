@@ -168,7 +168,8 @@ def get_nmc_weather(station_id: str, timeout: float = 5.0) -> Dict[str, Any]:
 # 主函数：根据城市名获取代码和天气预报 URL
 @tool("Weather", return_direct=False)
 def get_weather_info(city_name):
-    """Utility to fetch real-time weather conditions for specified locations."""
+    """Utility to fetch real-time weather conditions for specified locations.
+    Input should be a city name."""
     _,city_code, _ = find_best_match(city_name)
     return get_nmc_weather(city_code)
     
