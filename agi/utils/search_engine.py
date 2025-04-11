@@ -15,9 +15,6 @@ class SGInput(BaseModel):
 
     query: str = Field(description="search query to look up")
 
-def default_success_stats() -> DefaultDict[str, dict]:
-    return defaultdict(lambda: {'success': 0, 'total': 0})
-
 class SearchEngineSelector(BaseTool):
     name: str = "search engine"
     description: str = (
@@ -31,10 +28,7 @@ class SearchEngineSelector(BaseTool):
     max_retries: int = 3
     search_engines: dict = {}
     default_engines: list = []
-    success_stats: Annotated[
-        DefaultDict[str, dict],
-        Field(default_factory=default_success_stats)
-    ]
+    success_stats: dict = {}
 
     def __init__(self):
         
@@ -45,7 +39,7 @@ class SearchEngineSelector(BaseTool):
             self.search_engines["Exa"] = Exa(EXA_API_KEY)
 
         self.default_engines = list(self.search_engines.keys())
-        
+        self.success_stats = defaultdict(lambda: {'success': 0, 'total': 0})
     def record_result(self, engine_name, success):
         """记录搜索引擎的使用结果"""
         self.success_stats[engine_name]['total'] += 1
