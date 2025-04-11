@@ -8,7 +8,7 @@ from agi.config import EXA_API_KEY,log
 from langchain_core.callbacks import CallbackManagerForToolRun
 from langchain_core.tools import BaseTool
 from typing import DefaultDict,Annotated
-from pydantic import Field,BaseModel
+from pydantic import Field,BaseModel,PrivateAttr
 
 class SGInput(BaseModel):
     """Input for the search engine tool."""
@@ -26,29 +26,30 @@ class SearchEngineSelector(BaseTool):
 
     max_results: int = 3
     max_retries: int = 3
-    search_engines: dict = {}
-    default_engines: list = []
-    success_stats: dict = {}
 
-    def __init__(self):
-        
+    __search_engines: dict = PrivateAttr(default_factory=dict)
+    __default_engines: list = PrivateAttr(default_factory=list)
+    __success_stats: DefaultDict[str, dict] = PrivateAttr(default_factory=lambda: defaultdict(lambda: {'success': 0, 'total': 0}))
+
+    def __init__(self,**kwargs):
+        super().__init__(**kwargs)
         # Always add DuckDuckGoSearch
-        self.search_engines["DuckDuckGoSearch"] = DuckDuckGoSearchAPIWrapper(region="wt-wt", safesearch="moderate", time="y", max_results=3, source="text")
+        self._search_engines["DuckDuckGoSearch"] = DuckDuckGoSearchAPIWrapper(region="wt-wt", safesearch="moderate", time="y", max_results=3, source="text")
 
         if EXA_API_KEY:
-            self.search_engines["Exa"] = Exa(EXA_API_KEY)
+            self.__search_engines["Exa"] = Exa(EXA_API_KEY)
 
-        self.default_engines = list(self.search_engines.keys())
-        self.success_stats = defaultdict(lambda: {'success': 0, 'total': 0})
+        self._default_engines = list(self._search_engines.keys())
+        
     def record_result(self, engine_name, success):
         """记录搜索引擎的使用结果"""
-        self.success_stats[engine_name]['total'] += 1
+        self._success_stats[engine_name]['total'] += 1
         if success:
-            self.success_stats[engine_name]['success'] += 1
+            self._success_stats[engine_name]['success'] += 1
     
     def get_success_rate(self, engine_name):
         """获取搜索引擎的成功率"""
-        stats = self.success_stats[engine_name]
+        stats = self._success_stats[engine_name]
         if stats['total'] == 0:
             return 0.5  # 默认成功率
         return stats['success'] / stats['total']
@@ -58,13 +59,13 @@ class SearchEngineSelector(BaseTool):
         # 计算每个引擎的权重（成功率 + 小随机值避免完全排除低成功率引擎）
         weights = {
             name: self.get_success_rate(name) + random.uniform(0, 0.1)
-            for name in self.default_engines
+            for name in self._default_engines
         }
         
         # 归一化权重
         total_weight = sum(weights.values())
         if total_weight == 0:
-            return random.choice(self.default_engines)
+            return random.choice(self._default_engines)
             
         normalized_weights = {
             name: weight / total_weight
@@ -80,7 +81,7 @@ class SearchEngineSelector(BaseTool):
     
     def get_engine(self, name):
         """获取指定名称的搜索引擎实例"""
-        return self.search_engines.get(name)
+        return self._search_engines.get(name)
 
     def _run(
         self,
@@ -93,7 +94,7 @@ class SearchEngineSelector(BaseTool):
         while retries < self.max_retries and not success:
             try:
                 random_key = self.select_engine()
-                search = self.search_engines[random_key]
+                search = self._search_engines[random_key]
 
                 search_results = []
                 if isinstance(search,DuckDuckGoSearchAPIWrapper):
