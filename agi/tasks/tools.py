@@ -2,7 +2,6 @@ import os
 from langchain.tools import tool
 from langchain_community.utilities import ArxivAPIWrapper
 from langchain.agents import Tool
-from langchain_community.tools import DuckDuckGoSearchRun
 from langchain.tools import tool
 from langchain_core.messages import AIMessage
 from dataclasses import dataclass,asdict
@@ -12,10 +11,10 @@ from agi.llms.model_factory import ModelFactory
 from agi.tasks.prompt import stock_code_prompt
 from agi.tasks.multi_model_app import create_text2image_chain,create_llm_task
 from agi.utils.weather import get_weather_info
+from agi.utils.search_engine import SearchEngineSelector
 from agi.config import log
 
 
-search = DuckDuckGoSearchRun()
 arxiv = ArxivAPIWrapper()
 
 @tool("image generate", return_direct=True)
@@ -134,17 +133,13 @@ def pythonREPL():
 
 tools = [
     Tool(
-        name="Search",
-        func=search.run,
-        description="Useful for when you need to answer questions about current events"
-    ),
-    Tool(
         name="arxiv",
         func=arxiv.run,
         description="A wrapper around Arxiv.org Useful for when you need to answer questions about Physics, Mathematics, Computer Science, \
             Quantitative Biology, Quantitative Finance, Statistics, Electrical Engineering, and Economics from scientific articles \
             on arxiv.org."
     ),
+    SearchEngineSelector(),
     image_gen,
     wikipedia(),
     wikidata(),

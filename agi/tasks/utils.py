@@ -40,16 +40,21 @@ def get_last_message_text(state: AgentState):
 
 # 修复最后一条AI消息的text内容,去除特定标签内容
 def refine_last_message_text(message :Union[AIMessage,ToolMessage,list[BaseMessage]]):
+    last_message = message
     if isinstance(message,list):
-        message = message[-1]
+        last_message = message[-1]
 
-    if not isinstance(message,HumanMessage):
-        if isinstance(message.content,str):
-            _,message.content = split_think_content(message.content)
-        elif isinstance(message.content,list):
-            for item in message.content:
+    if not isinstance(last_message,HumanMessage):
+        if isinstance(last_message.content,str):
+            _,last_message.content = split_think_content(last_message.content)
+        elif isinstance(last_message.content,list):
+            for item in last_message.content:
                 if item["type"] == "text":
                     _,item["text"] = split_think_content(item["text"])
+    return last_message
+
+
+refine_last_message_runnable = RunnableLambda(refine_last_message_text)
 
 def graph_response_format(message :Union[AIMessage,ToolMessage,list[BaseMessage]]):
     

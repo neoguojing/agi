@@ -1,11 +1,41 @@
 import random
 from collections import defaultdict
+from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
+from exa_py import Exa
+from typing import Any, Optional, Type
+from agi.config import EXA_API_KEY,log
 
-class SearchEngineSelector:
-    def __init__(self, search_engines):
-        self.search_engines = search_engines
+from langchain_core.callbacks import CallbackManagerForToolRun
+from langchain_core.pydantic_v1 import BaseModel, Field
+from langchain_core.tools import BaseTool
+
+class SGInput(BaseModel):
+    """Input for the search engine tool."""
+
+    query: str = Field(description="search query to look up")
+
+class SearchEngineSelector(BaseTool):
+    name: str = "search engine"
+    description: str = (
+        "Useful for when you need to answer questions about current events. "
+        "Input should be a search query."
+    )
+
+    args_schema: Type[BaseModel] = SGInput
+
+    max_results: int = 3
+    max_retries: int = 3
+    def __init__(self):
+        self.search_engines = {}
+        # Always add DuckDuckGoSearch
+        self.search_engines["DuckDuckGoSearch"] = DuckDuckGoSearchAPIWrapper(region="wt-wt", safesearch="moderate", time="y", max_results=3, source="text")
+
+        if EXA_API_KEY:
+            self.search_engines["Exa"] = Exa(EXA_API_KEY)
+
+        
         self.success_stats = defaultdict(lambda: {'success': 0, 'total': 0})
-        self.default_engines = list(search_engines.keys())
+        self.default_engines = list(self.search_engines.keys())
         
     def record_result(self, engine_name, success):
         """记录搜索引擎的使用结果"""
@@ -48,3 +78,53 @@ class SearchEngineSelector:
     def get_engine(self, name):
         """获取指定名称的搜索引擎实例"""
         return self.search_engines.get(name)
+
+    def _run(
+        self,
+        query: str,
+        run_manager: Optional[CallbackManagerForToolRun] = None,
+    ) -> any:
+        """Use the tool."""
+        retries = 0
+        success = False
+        while retries < self.max_retries and not success:
+            try:
+                random_key = self.select_engine()
+                search = self.search_engines[random_key]
+
+                search_results = []
+                if isinstance(search,DuckDuckGoSearchAPIWrapper):
+                    search_results = search.results(query, max_results=self.max_results)
+                elif isinstance(search,Exa):
+                    resp = search.search_and_contents(
+                        query,
+                        type="auto",
+                        num_results=self.max_results,
+                        text=True,
+                    )
+                    search_results = []
+                    for r in resp.results:
+                        search_results.append({
+                            "snippet": r.text,
+                            "title": r.title,
+                            "link": r.url,
+                            "date": r.published_date,
+                            "source": r.url,
+                        })
+                
+                log.info(f"Search results for query '{q}': {search_results}")
+                success = True  # 如果成功，就跳出重试循环
+                # 汇报结果
+                self.record_result(random_key,success)
+                return search_results
+            
+            except Exception as e:
+                retries += 1
+                log.error(f"Error with search engine {random_key}, retrying {retries}/{self.max_retries}...")
+                log.error(e)
+                # 汇报结果
+                self.record_result(random_key,success)
+                if retries >= self.max_retries:
+                    log.error("Max retries reached, skipping this query.")
+                else:
+                    continue  # 如果还没有达到最大重试次数，则继续尝试其他引擎    

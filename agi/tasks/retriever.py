@@ -39,6 +39,7 @@ from langchain_core.runnables import (
     RunnableParallel,
     RunnablePassthrough,
 )
+from agi.tasks.utils import refine_last_message_runnable
 import time
 from uuid import uuid4
 from agi.config import (
@@ -47,6 +48,7 @@ from agi.config import (
 from datetime import datetime
 from exa_py import Exa
 from agi.config import EXA_API_KEY
+from agi.utils.search_engine import SearchEngineSelector
 import traceback
 
 from agi.config import log
@@ -76,16 +78,8 @@ class KnowledgeManager:
         self.embedding = embedding
 
         self.llm =llm
-        self.search_chain = DEFAULT_SEARCH_PROMPT | self.llm | QuestionListOutputParser()
-        self.search_engines = {}
-
-        # Only add Exa if EXA_API_KEY is not empty
-        if EXA_API_KEY:
-            self.search_engines["Exa"] = Exa(EXA_API_KEY)
-
-        # Always add DuckDuckGoSearch
-        self.search_engines["DuckDuckGoSearch"] = DuckDuckGoSearchAPIWrapper(region="wt-wt", safesearch="moderate", time="d", max_results=3, source="news")
-                
+        self.search_chain = DEFAULT_SEARCH_PROMPT | self.llm | refine_last_message_runnable | QuestionListOutputParser()
+        self.search_engines = SearchEngineSelector()
         self.collection_manager = CollectionManager(data_path,embedding)
 
     def list_documets(self,collection_name, tenant=None):
@@ -524,65 +518,21 @@ class KnowledgeManager:
                                                 chunk_size=chunk_size, chunk_overlap=chunk_overlap,add_start_index=True)
         return text_splitter.split_documents(documents)
 
-    def do_search(self, questions, max_results=2, max_retries=3):
-        import random
+    def do_search(self, questions):
         urls_to_look = []
         raw_results = []
         
         try:
             log.info("Searching for relevant urls...")
             for q in questions:
-                retries = 0
-                success = False
+                search_results = self.search_engines.invoke(q)
+                for res in search_results:
+                    if res.get("link", None):
+                        urls_to_look.append(res["link"])
                 
-                # 尝试最大次数
-                while retries < max_retries and not success:
-                    try:
-                        # 随机选择一个搜索引擎
-                        random_key = random.choice(list(self.search_engines.keys()))
-                        search = self.search_engines[random_key]
-                        
-                        # 获取搜索结果
-                        search_results = []
-                        if isinstance(search,DuckDuckGoSearchAPIWrapper):
-                            search_results = search.results(q, max_results=max_results)
-                        elif isinstance(search,Exa):
-                            resp = search.search_and_contents(
-                                q,
-                                type="auto",
-                                num_results=max_results,
-                                text=True,
-                            )
-                            search_results = []
-                            for r in resp.results:
-                                search_results.append({
-                                    "snippet": r.text,
-                                    "title": r.title,
-                                    "link": r.url,
-                                    "date": r.published_date,
-                                    "source": r.url,
-                                })
-                            
-                        for res in search_results:
-                            if res.get("link", None):
-                                urls_to_look.append(res["link"])
-                        
-                        raw_results.extend(search_results)
-                        
-                        log.info(f"Search results for query '{q}': {search_results}")
-                        success = True  # 如果成功，就跳出重试循环
+                raw_results.extend(search_results)
                     
-                    except Exception as e:
-                        retries += 1
-                        log.error(f"Error with search engine {random_key}, retrying {retries}/{max_retries}...")
-                        log.error(e)
-                        if retries >= max_retries:
-                            log.error("Max retries reached, skipping this query.")
-                        else:
-                            continue  # 如果还没有达到最大重试次数，则继续尝试其他引擎
-            
             log.info(f"Final search results: {raw_results}")
-        
         except Exception as e:
             log.error(e)
             print(traceback.format_exc())
