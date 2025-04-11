@@ -25,16 +25,18 @@ class SearchEngineSelector(BaseTool):
 
     max_results: int = 3
     max_retries: int = 3
+    search_engines: dict = {}
+    default_engines: list = []
+    success_stats: defaultdict = defaultdict(lambda: {'success': 0, 'total': 0})
+
     def __init__(self):
-        self.search_engines = {}
+        
         # Always add DuckDuckGoSearch
         self.search_engines["DuckDuckGoSearch"] = DuckDuckGoSearchAPIWrapper(region="wt-wt", safesearch="moderate", time="y", max_results=3, source="text")
 
         if EXA_API_KEY:
             self.search_engines["Exa"] = Exa(EXA_API_KEY)
 
-        
-        self.success_stats = defaultdict(lambda: {'success': 0, 'total': 0})
         self.default_engines = list(self.search_engines.keys())
         
     def record_result(self, engine_name, success):
