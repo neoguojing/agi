@@ -38,10 +38,6 @@ import traceback
 
 from agi.config import log
 from agi.tasks.utils import refine_last_message_text
-from langchain.globals import set_debug
-from langchain.globals import set_verbose
-set_debug(True)
-set_verbose(True)
 def compute_content_hash(content: any) -> str:
     """
     计算 content 的哈希值。
@@ -168,7 +164,7 @@ class State(AgentState):
 # agent 的提示词
 prompt = ChatPromptTemplate.from_messages(
     [
-        ("system", "You are a helpful assistant named agi. Respond only in {language} with Markdown format."),
+        ("system", "You are a helpful assistant named agi. Respond only in {language}."),
         ("placeholder", "{messages}"),
     ]
 )
@@ -184,9 +180,11 @@ def create_react_agent_task(llm):
     langgraph_agent_executor = create_react_agent(llm, 
                                                   tools,state_modifier=modify_state_messages,
                                                   checkpointer=memory,
+                                                  debug=True,
                                                 #   interrupt_before="tools",
+                                                    
                                                   )
-    # langgraph_agent_executor.step_timeout = 2
+    langgraph_agent_executor.step_timeout = 10
     return langgraph_agent_executor
 
 
