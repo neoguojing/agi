@@ -149,7 +149,7 @@ class KnowledgeManager:
                     doc.metadata["type"] = source_type.value
                     doc.metadata["timestamp"] = str(time.time())
                     if doc.metadata.get("source") is None:
-                        doc.metadata["source"] = source
+                        doc.metadata["source"] = source.get("source","")
                     doc.metadata = {**doc.metadata, **kwargs}
 
                 log.info(f"loader file count:{len(raw_docs)}")
@@ -526,11 +526,12 @@ class KnowledgeManager:
             log.info("Searching for relevant urls...")
             for q in questions:
                 search_results = self.search_engines.invoke(q)
-                for res in search_results:
-                    if res.get("link", None):
-                        urls_to_look.append(res["link"])
-                
-                raw_results.extend(search_results)
+                if search_results:
+                    for res in search_results:
+                        if res.get("link", None):
+                            urls_to_look.append(res["link"])
+                    
+                    raw_results.extend(search_results)
                     
             log.info(f"Final search results: {raw_results}")
         except Exception as e:

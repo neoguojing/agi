@@ -25,7 +25,7 @@ class SearchEngineSelector(BaseTool):
 
     args_schema: Type[BaseModel] = SGInput
 
-    max_results: int = 3
+    max_results: int = 1
     max_retries: int = 3
 
     _search_engines: dict = PrivateAttr(default_factory=dict)
@@ -35,7 +35,7 @@ class SearchEngineSelector(BaseTool):
     def __init__(self,**kwargs):
         super().__init__(**kwargs)
         # Always add DuckDuckGoSearch
-        duckwrapper = DuckDuckGoSearchAPIWrapper(region="wt-wt", safesearch="moderate", time="y", max_results=3, source="text")
+        duckwrapper = DuckDuckGoSearchAPIWrapper(region="wt-wt", safesearch="moderate", time="y", max_results=self.max_results, source="text")
         self._search_engines["DuckDuckGoSearch"] = DuckDuckGoSearchResults(api_wrapper=duckwrapper, output_format="list")
 
         if EXA_API_KEY:
@@ -120,7 +120,7 @@ class SearchEngineSelector(BaseTool):
                             "source": r.url,
                         })
                 
-                log.info(f"Search results for query '{query}': {search_results}")
+                log.info(f"Search results using {random_key} for query '{query}': {search_results}")
                 success = True  # 如果成功，就跳出重试循环
                 # 汇报结果
                 self.record_result(random_key,success)
