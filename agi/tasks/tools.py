@@ -44,7 +44,7 @@ tools = [
     ),
     SearchEngineSelector(),
     wikipedia(),
-    wikidata(),
+    # wikidata(),
     pythonREPL(),
     get_weather_info,
     get_stock

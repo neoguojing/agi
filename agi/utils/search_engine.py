@@ -96,11 +96,13 @@ class SearchEngineSelector(BaseTool):
         while retries < self.max_retries and not success:
             try:
                 random_key = self.select_engine()[0]
+                log.debug(f"choose engine{random_key}")
+                
                 search = self._search_engines[random_key]
 
                 search_results = []
-                if isinstance(search,DuckDuckGoSearchAPIWrapper):
-                    search_results = search.results(query, max_results=self.max_results)
+                if isinstance(search,DuckDuckGoSearchResults):
+                    search_results = search.invoke(query, max_results=self.max_results)
                 elif isinstance(search,Exa):
                     resp = search.search_and_contents(
                         query,

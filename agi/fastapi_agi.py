@@ -125,7 +125,6 @@ async def chat_completions(
         collection_names=request.db_ids
     )
 
-    # TODO 文章的引用信息如何处理
     if request.stream:
         log.info(f"request: {request}")
         return StreamingResponse(generate_stream_response(state_data), media_type="text/event-stream")

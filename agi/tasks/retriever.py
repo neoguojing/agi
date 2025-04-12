@@ -482,7 +482,7 @@ class KnowledgeManager:
             questions = self.search_chain.invoke({"date":datetime.now().date(),"text":query,"results_num":max_results})
             log.info(f"questions:{questions}")
             # Relevant urls
-            urls,raw_results = self.do_search(questions,max_results=max_results)        
+            urls,raw_results = self.do_search(questions)        
             known_type = None
             # TODO 执行网页爬虫 效果很差
             # collection_name,known_type,raw_docs = self.store(collection_name,list(urls),source_type=SourceType.WEB,tenant=tenant)

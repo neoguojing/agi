@@ -1,6 +1,5 @@
 from langgraph.prebuilt import create_react_agent
 from agi.tasks.tools import tools
-import sqlite3
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.prebuilt.chat_agent_executor import AgentState
@@ -9,30 +8,12 @@ import uuid
 import hashlib
 
 from langchain_core.messages import (
-    AnyMessage,
-    MessageLikeRepresentation,
     RemoveMessage,
     convert_to_messages,
     message_chunk_to_message,
 )
 
 from langgraph.graph.message import Messages
-from typing import (
-    Annotated,
-    Callable,
-    Optional,
-    Sequence,
-    Type,
-    TypedDict,
-    TypeVar,
-    Union,
-)
-
-from langchain_core.messages import (
-    AIMessage,
-    BaseMessage,
-    SystemMessage,
-)
 import json
 import traceback
 
@@ -180,7 +161,7 @@ def create_react_agent_task(llm):
     langgraph_agent_executor = create_react_agent(llm, 
                                                   tools,state_modifier=modify_state_messages,
                                                   checkpointer=memory,
-                                                  debug=True,
+                                                #   debug=True,
                                                 #   interrupt_before="tools",
                                                     
                                                   )
