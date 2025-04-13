@@ -1,5 +1,5 @@
 from langchain.tools import tool
-from agi.config import log
+from agi.config import log,ALPHAVANTAGE_API_KEY
 import requests
 import json
 from dataclasses import dataclass,asdict
@@ -23,7 +23,7 @@ def get_stock(input:str,topk=5) ->str:
     params = {
         'function': 'TIME_SERIES_DAILY',
         'symbol': input,
-        'apikey': '1JXIUYN26HYID5Y9'
+        'apikey': ALPHAVANTAGE_API_KEY
     }
     log.debug(params)
     r = requests.get(url, params=params)

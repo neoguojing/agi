@@ -14,6 +14,7 @@ from langchain_core.messages import (
 )
 
 from langgraph.graph.message import Messages
+from langchain_core.messages import BaseMessage,AIMessage,HumanMessage,ToolMessage,AIMessageChunk
 import json
 import traceback
 
@@ -99,6 +100,7 @@ class Feature:
     AGENT = "agent"
     RAG = "rag"
     WEB = "web"
+    LLM = "llm"
     
     TTS = "tts"
 

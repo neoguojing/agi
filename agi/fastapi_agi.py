@@ -130,8 +130,9 @@ async def chat_completions(
         return StreamingResponse(generate_stream_response(state_data), media_type="text/event-stream")
     else:
         resp = graph.invoke(state_data)
-        log.info(f"request:{request}")
-        log.info(f"response:{resp}")
+        if request.feature != "llm":
+            log.info(f"request:{request}")
+            log.info(f"response:{resp}")
         return format_non_stream_response(resp)
 
 image_style = 'style="width: 100%; max-height: 100vh;"'

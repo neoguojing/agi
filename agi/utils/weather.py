@@ -59,11 +59,11 @@ def build_search_list():
         province_code = province['code']
         province_url = province['url']
         # 添加省份信息
-        search_list[province_name] = {
-            'code': province_code,
-            'url': province_url,
-            'type': 'province'
-        }
+        # search_list[province_name] = {
+        #     'code': province_code,
+        #     'url': province_url,
+        #     'type': 'province'
+        # }
         
         # 获取该省份下的城市列表
         cities = get_city_list(province_code)
@@ -94,7 +94,7 @@ def find_best_match(input_name):
         if flag == 'ns':  # 'ns'表示地名
             locations.append(word)
     if locations:
-        input_name = locations[0]
+        input_name = locations[-1]
     names = search_list.keys()
     # 使用 difflib 进行模糊匹配，cutoff=0.6 表示至少 60% 相似度
     best_matches = difflib.get_close_matches(input_name, names, n=1, cutoff=0.6)

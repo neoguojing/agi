@@ -166,6 +166,8 @@ class AgiGraph:
             return "tts"
         elif feature == Feature.SPEECH:  #语音转文字，直接输出
             return END
+        elif feature == Feature.LLM:  #处理任务类相关请求，如自动标题、tag、提示完成等
+            return "llm"
         else: #通用任务处理：如标题生成、tag生成等 或者 自主决策
             return self.auto_state_machine(state)
         
@@ -173,6 +175,11 @@ class AgiGraph:
     def output_control(self,state: State):
         if state["need_speech"]:
             return "tts"
+        # 处理agent返回冗余信息的问题，从倒数第一个humanmessage开始输出
+        # for i in range(len(state["messages"])-1, -1, -1):
+        #     if isinstance(state["messages"][i],HumanMessage):
+        #         state["messages"] = state["messages"][i:]
+        #         break
         return END
     
     # 适用于web 和 rag的情况，当无法获取有效的上下文信息时，
@@ -204,16 +211,15 @@ class AgiGraph:
         
         events = None
         # 处于打断状态的graph实例
-        snapshot = self.graph.get_state(config)
-        if snapshot:
-            snapshot.next
-            if "messages" in snapshot.values:
-                existing_message = snapshot.values["messages"][-1]
-                existing_message.pretty_print()
+        # snapshot = self.graph.get_state(config)
+        # if snapshot:
+        #     snapshot.next
+        #     if "messages" in snapshot.values:
+        #         existing_message = snapshot.values["messages"][-1]
+        #         existing_message.pretty_print()
             
-        events = self.graph.stream(input, config, stream_mode=stream_mode)
-        
         try:
+            events = self.graph.stream(input, config=config, stream_mode=stream_mode)
             for event in events:
                 log.debug(event)
                 # 返回非HumanMessage
@@ -251,7 +257,7 @@ class AgiGraph:
                         {'user_id': 'default_tenant', 'conversation_id': '', 'thread_id': 'ebbdc908-a785-4036-900a-7298aac68cb0', 'langgraph_step': 1, 'langgraph_node': 'web', 'langgraph_triggers': ['branch:__start__:routes:web'], 'langgraph_path': ('__pregel_pull', 'web'), 'langgraph_checkpoint_ns': 'web:fdb11f55-aa59-ab33-4fde-ec903ab4ef98', 'checkpoint_ns': 'web:fdb11f55-aa59-ab33-4fde-ec903ab4ef98', 'ls_provider': 'openai', 'ls_model_name': 'qwen2.5:14b', 'ls_model_type': 'chat', 'ls_temperature': 0.7}
                     ))
                     '''
-                    log.debug(event)
+                    log.info(event)
                     # 仅返回AIMessageChunk以及content不能为空,过滤ToolMessage和HumaMessage
                     # 多模态场景下,会返回AIMessage
                     # TODO decide chain 和 tranlate chain 以及 web search chain会输出中间结果,需要想办法处理

@@ -60,7 +60,8 @@ MULTI_MODEL_PATH = os.getenv("MULTI_MODEL_PATH",os.path.join(MODEL_PATH, "Qwen2.
 
 ## web
 EXA_API_KEY = os.getenv("EXA_API_KEY","")
-
+## stock
+ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY","")
 
 ## 系统参数
 AGI_DEBUG = os.getenv("AGI_DEBUG",True)
