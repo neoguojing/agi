@@ -257,7 +257,6 @@ class AgiGraph:
                         {'user_id': 'default_tenant', 'conversation_id': '', 'thread_id': 'ebbdc908-a785-4036-900a-7298aac68cb0', 'langgraph_step': 1, 'langgraph_node': 'web', 'langgraph_triggers': ['branch:__start__:routes:web'], 'langgraph_path': ('__pregel_pull', 'web'), 'langgraph_checkpoint_ns': 'web:fdb11f55-aa59-ab33-4fde-ec903ab4ef98', 'checkpoint_ns': 'web:fdb11f55-aa59-ab33-4fde-ec903ab4ef98', 'ls_provider': 'openai', 'ls_model_name': 'qwen2.5:14b', 'ls_model_type': 'chat', 'ls_temperature': 0.7}
                     ))
                     '''
-                    log.info(event)
                     # 仅返回AIMessageChunk以及content不能为空,过滤ToolMessage和HumaMessage
                     # 多模态场景下,会返回AIMessage
                     # TODO decide chain 和 tranlate chain 以及 web search chain会输出中间结果,需要想办法处理

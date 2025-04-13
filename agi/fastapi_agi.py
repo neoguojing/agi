@@ -226,6 +226,8 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
     try:
         events = graph.stream(state_data)
         index = 0  # 初始化 index
+        # 使用finish_reason，控制重复内容的输出
+        finish_reason = None
         for event in events:
             chunk = {
                 "id": f"chatcmpl-{uuid.uuid4()}",
@@ -260,7 +262,12 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
                     chunk["choices"][0]["finish_reason"] = finish_reason
             elif isinstance(event, tuple):
                 if event[0] == "messages":
-                    chunk["choices"][0]["delta"] = {"role": "assistant", "content": event[1][0].content}
+                    # TODO 若消息未结束，则发送消息，解决agent重复消息发送的问题
+                    if finish_reason is None:
+                        chunk["choices"][0]["delta"] = {"role": "assistant", "content": event[1][0].content}
+                        finish_reason = getattr(event[1][0], "response_metadata", {}).get("finish_reason")
+                        if finish_reason:
+                            chunk["choices"][0]["finish_reason"] = finish_reason
                 elif event[0] == "custom":
                     citations = event[1].get("citations")
                     if citations:
@@ -275,15 +282,16 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
 
             yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
             index += 1 #index递增
-
-        final_chunk = {
-            "id": f"chatcmpl-{uuid.uuid4()}",
-            "object": "chat.completion.chunk",
-            "created": int(time.time()),
-            "model": "agi-model",
-            "choices": [{"index": index, "delta": {}, "finish_reason": "stop"}]
-        }
-        yield f"data: {json.dumps(final_chunk, ensure_ascii=False)}\n\n"
+        # finish_reason 未填，则发送一个空消息
+        if finish_reason is None:
+            final_chunk = {
+                "id": f"chatcmpl-{uuid.uuid4()}",
+                "object": "chat.completion.chunk",
+                "created": int(time.time()),
+                "model": "agi-model",
+                "choices": [{"index": index, "delta": {}, "finish_reason": "stop"}]
+            }
+            yield f"data: {json.dumps(final_chunk, ensure_ascii=False)}\n\n"
         yield "data: [DONE]\n\n"
 
     except Exception as e:

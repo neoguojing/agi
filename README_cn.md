@@ -59,9 +59,10 @@ GPU显存： 初始：2550MB 峰值：20GB
 - 其他常用工具支持 test
 - 流式返回测试 DONE
 - graph 节点重试特性
-- rag 影响图片生成流程
-- 图片生成决策错误
-- agent返回会有重复
+- rag 影响图片生成流程 DONE
+- 图片生成决策错误 DONE
+- agent返回会有重复 DONE
+- web检索不理想 
 
 ## OPENWEBUI 修改
 - 新增: backend/open_webui/routers/agi.py

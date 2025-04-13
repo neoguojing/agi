@@ -491,9 +491,9 @@ class KnowledgeManager:
             if len(raw_docs) == 0:
                 collection_name,known_type,raw_docs = self.store(collection_name,raw_results,source_type=SourceType.SEARCH_RESULT,tenant=tenant)
             # 使用bm25算法重排
-            if raw_docs and len(raw_docs) > 1:
-                raw_docs= self.bm25_retriever(raw_docs,k=1).invoke(query)
-                log.info(f"bm25 results: {raw_docs}")
+            # if raw_docs and len(raw_docs) > 1:
+            #     raw_docs= self.bm25_retriever(raw_docs,k=1).invoke(query)
+            #     log.info(f"bm25 results: {raw_docs}")
             # docs = self.web_parser(urls,url_meta_map,collection_name)
             return collection_name,known_type,raw_results,raw_docs
         except Exception as e:
