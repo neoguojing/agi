@@ -60,6 +60,7 @@ def create_text2image_chain(llm):
     
     return translate| multimodel_state_modifier_runnable | text2image | graph_response_format_runnable
 
+# 或者基于agent执行图像生成？
 def user_understand(llm):
     schema = [
         {
