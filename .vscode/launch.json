@@ -26,7 +26,8 @@
                 "--reload"
             ],
             "cwd": "${workspaceFolder}",
-            "jinja": true
+            "jinja": true,
+            "justMyCode": false,
         }
     ]
 }

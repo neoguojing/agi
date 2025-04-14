@@ -163,7 +163,7 @@ def create_react_agent_task(llm):
     langgraph_agent_executor = create_react_agent(llm, 
                                                   tools,state_modifier=modify_state_messages,
                                                   checkpointer=memory,
-                                                #   debug=True,
+                                                  debug=True,
                                                 #   interrupt_before="tools",
                                                     
                                                   )

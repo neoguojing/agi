@@ -81,7 +81,7 @@ trimmer = trim_messages(
     # Usually, we want to keep the SystemMessage
     # if it's present in the original history.
     # The SystemMessage has special instructions for the model.
-    include_system=True,
+    include_system=False,
 )
 
 # TODO 历史数据压缩 数据实体抽取

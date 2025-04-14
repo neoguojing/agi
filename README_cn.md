@@ -63,6 +63,7 @@ GPU显存： 初始：2550MB 峰值：20GB
 - 图片生成决策错误 DONE
 - agent返回会有重复 DONE
 - web检索不理想 
+- web检索缓慢，考虑存文档使用异步
 
 ## OPENWEBUI 修改
 - 新增: backend/open_webui/routers/agi.py

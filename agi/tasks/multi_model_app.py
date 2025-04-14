@@ -62,18 +62,19 @@ def create_text2image_chain(llm):
 
 # Input: AgentState
 # Output: AgentState
+# TODO 依据历史消息，分析用户的意图
 def create_image_gen_chain(llm):
     translate = create_translate_chain(llm)
     image2image = ModelFactory.get_model("image2image")
     text2image = ModelFactory.get_model("text2image")
     
     def is_image2image(x: list[BaseMessage]):
-        for message in x:
-            if isinstance(message.content,list):
-                for content in message.content:
-                    image = content.get("image")
-                    if image is not None and image != "":
-                        return True
+        message = x[-1]
+        if isinstance(message,HumanMessage) and isinstance(message.content,list):
+            for content in message.content:
+                image = content.get("image")
+                if image is not None and image != "":
+                    return True
         return False
     
     branch = RunnableBranch(

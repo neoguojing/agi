@@ -7,6 +7,7 @@ from langchain.output_parsers.boolean import BooleanOutputParser
 from agi.tasks.agi_prompt import MultiModalChatPromptTemplate
 from langgraph.prebuilt.chat_agent_executor import AgentState
 from agi.tasks.utils import get_last_message_text
+import json
 
 english_traslate_template = ChatPromptTemplate.from_messages([
     ("human", "Translate the following into English and only return the translation result: {text}"),
@@ -34,9 +35,10 @@ agent_prompt = ChatPromptTemplate.from_messages(
     )
 # 用于路由决策的promt，分析用户意图，提供决策路径
 decider_prompt = (
-    "You are an AI assistant tasked with determining a single command based on the user's input type and their question. The input consists of two parts:"
+    "You are an AI assistant tasked with determining a single command based on the user's input type,dialogue context, and their question. The input consists of two parts:"
     '1. Input Type: {input_type}'
-    '2. User Question: {text}'
+    '2. Dialogue Context: {context}'
+    '3. User Question: {text}'
 
     'Please follow these decision rules:'
 
@@ -74,7 +76,11 @@ def decide_modify_state_messages(state: AgentState):
     # 过滤掉非法的消息类型
     state["messages"] = list(filter(lambda x: not isinstance(x.content, dict), state["messages"]))
     text = get_last_message_text(state)
-    return decide_template.invoke({"input_type": state["input_type"],"text":text}).to_messages()
+    context = context = state["messages"][:-1]
+    if len(state["messages"]) >= 5:
+        context = state["messages"][-5:-1]
+
+    return decide_template.invoke({"input_type": state["input_type"],"context":context,"text":text}).to_messages()
 
 decide_modify_state_messages_runnable = RunnableLambda(decide_modify_state_messages)
 
@@ -83,6 +89,7 @@ system_prompt = (
     "Please respond in {language}."
 )
 
+# 给有历史的llm使用的提示
 default_template = ChatPromptTemplate.from_messages(
     [
         (
@@ -97,7 +104,17 @@ default_template = ChatPromptTemplate.from_messages(
 def default_modify_state_messages(state: AgentState):
     # 过滤掉非法的消息类型
     state["messages"] = list(filter(lambda x: not isinstance(x.content, dict), state["messages"]))
-    return default_template.invoke({"messages": state["messages"],"language":"chinese"}).to_messages()
+    # 可能会存在重复的系统消息需要去掉
+    # 
+    filter_messages = []
+    for message in state["messages"]:
+        if isinstance(message,SystemMessage):
+            continue
+        # 修正请求的类型，否则openapi会报错
+        if not isinstance(message.content,str):
+             message.content = json.dumps(message.content)
+        filter_messages.append(message)
+    return default_template.invoke({"messages": filter_messages,"language":"chinese"}).to_messages()
 
 
 default_modify_state_messages_runnable = RunnableLambda(default_modify_state_messages)

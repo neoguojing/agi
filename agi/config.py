@@ -48,7 +48,8 @@ TTS_FILE_SAVE_PATH = os.getenv("TTS_FILE_SAVE_PATH",os.path.join(CACHE_DIR, "aud
 
 ## image 
 IMAGE_TO_IMAGE_MODEL_PATH = os.getenv("IMAGE_TO_IMAGE_MODEL_PATH",os.path.join(MODEL_PATH, "sdxl-turbo"))
-TEXT_TO_IMAGE_MODEL_PATH = os.getenv("TEXT_TO_IMAGE_MODEL_PATH",os.path.join(MODEL_PATH, "stable-diffusion-3.5-medium"))
+# TEXT_TO_IMAGE_MODEL_PATH = os.getenv("TEXT_TO_IMAGE_MODEL_PATH",os.path.join(MODEL_PATH, "stable-diffusion-3.5-medium"))
+TEXT_TO_IMAGE_MODEL_PATH = os.getenv("TEXT_TO_IMAGE_MODEL_PATH",os.path.join(MODEL_PATH, "sdxl-turbo"))
 IMAGE_FILE_SAVE_PATH = os.getenv("IMAGE_FILE_SAVE_PATH",os.path.join(CACHE_DIR, "image"))
 
 
@@ -64,7 +65,7 @@ EXA_API_KEY = os.getenv("EXA_API_KEY","")
 ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY","")
 
 ## 系统参数
-AGI_DEBUG = os.getenv("AGI_DEBUG",True)
+AGI_DEBUG = os.getenv("AGI_DEBUG",False)
 ## 日志设置
 import logging
 log = logging.getLogger(__name__)
