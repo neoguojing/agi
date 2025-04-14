@@ -275,6 +275,15 @@ def create_chat(llm):
 
     return chat
 
+# Input: AgentState
+# Output: AgentState
+# chat with history
+def create_chat_with_history(llm):
+    llm_with_history = create_llm_with_history(runnable=llm,dict_input=False)
+    chat = debug_tool | default_modify_state_messages_runnable | llm_with_history | graph_response_format_runnable
+    return chat
+
+
 '''
 {
             "source": {

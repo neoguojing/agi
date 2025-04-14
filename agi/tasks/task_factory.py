@@ -17,7 +17,7 @@ from langchain_openai import ChatOpenAI
 from langchain_ollama import OllamaEmbeddings
 from agi.tasks.llm_app import (
     create_chat,
-    create_llm_with_history,
+    create_chat_with_history,
 )
 from agi.tasks.multi_model_app import (
     create_image_gen_chain,
@@ -27,7 +27,7 @@ from agi.tasks.multi_model_app import (
     create_speech2text_chain,
     create_embedding_task,
     create_llm_task,
-    create_multimodel_chain
+    create_multimodel_chain,
 )
 from agi.tasks.retriever import FilterType,SimAlgoType
 from langchain.globals import set_debug
@@ -52,7 +52,7 @@ def create_llm_chat_task(**kwargs):
     return create_chat(TaskFactory._llm)
 
 def create_llm_with_history_task(**kwargs):
-    return create_llm_with_history(TaskFactory._llm)
+    return create_chat_with_history(TaskFactory._llm)
 
 def create_rag_task(**kwargs):
     from agi.tasks.llm_app import create_rag

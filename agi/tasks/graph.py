@@ -18,7 +18,8 @@ from agi.tasks.task_factory import (
     TASK_RAG,
     TASK_DOC_CHAT,
     TASK_LLM,
-    TASK_MULTI_MODEL
+    TASK_MULTI_MODEL,
+    TASK_LLM_WITH_HISTORY
     )
 from langgraph.prebuilt.chat_agent_executor import AgentState
 from typing import Dict, Any, Iterator,Union
@@ -57,11 +58,14 @@ class AgiGraph:
         self.builder.add_node("doc_chat", self.doc_chat_node)
         self.builder.add_node("agent", TaskFactory.create_task(TASK_AGENT))
         self.builder.add_node("multi_modal", TaskFactory.create_task(TASK_MULTI_MODEL))
-        # 用于处理非agent的请求:1.标题生成等用户自定义提示请求；2.图像识别等 image2text 请求；3.作为决策节点，判定用户意图
+        # 用于处理非agent的请求:1.标题生成等用户自定义提示请求；2.作为决策节点，判定用户意图
         self.builder.add_node("llm", TaskFactory.create_task(TASK_LLM))
+        #1.图像识别等 image2text 请求；2.正常的用户对话等
+        self.builder.add_node("llm_with_history", TaskFactory.create_task(TASK_LLM_WITH_HISTORY))
         
         self.builder.add_conditional_edges("agent", self.output_control)
         self.builder.add_conditional_edges("llm", self.output_control)
+        self.builder.add_conditional_edges("llm_with_history", self.output_control)
         self.builder.add_conditional_edges("doc_chat", self.output_control)
 
         # 有上下文的请求支持平行处理
@@ -82,7 +86,7 @@ class AgiGraph:
         
         # 定义状态机chain
         self.decider_chain = decide_modify_state_messages_runnable | TaskFactory.get_llm() | StrOutputParser()
-        self.node_list = ["image_gen","llm","agent"]
+        self.node_list = ["image_gen","llm_with_history","agent"]
 
     # 通过用户指定input_type，来决定使用哪个分支
     def routes(self,state: State, config: RunnableConfig):
@@ -126,14 +130,14 @@ class AgiGraph:
         if match:
             state["auto_decide_reuslt"] = match
             return match
-        state["auto_decide_reuslt"] = "llm"
-        return "llm"
+        state["auto_decide_reuslt"] = "llm_with_history"
+        return "llm_with_history"
     
     # 控制图像输入决策
     def image_feature_control(self,state: State):
         feature = state.get("feature","")
         if feature == Feature.IMAGE2TEXT:    #图片转文字
-            return "llm"
+            return "llm_with_history"
         elif feature == Feature.IMAGE2IMAGE:    #图片转图片
             return "image_gen"
         else:
