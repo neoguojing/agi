@@ -1,11 +1,11 @@
 import unittest
 from langchain_core.messages import AIMessage, HumanMessage,ToolMessage
-
+import 
 # Assuming we import the TaskFactory and constants like TASK_LLM, TASK_EMBEDDING, etc.
 from agi.tasks.task_factory import TaskFactory,TASK_RAG,TASK_WEB_SEARCH,TASK_DOC_CHAT
 from agi.tasks.agent import State
 from agi.config import CACHE_DIR
-
+import asyncio
 from agi.config import log
 
 class TestTaskRagFactory(unittest.TestCase):
@@ -18,7 +18,7 @@ class TestTaskRagFactory(unittest.TestCase):
         print(self.kmanager.list_collections())
     def test_add_doc(self):
         param = {"filename" : "test.pdf"}
-        collect_name,know_type,raw_docs = self.kmanager.store("test","./tests/test.pdf",**param)
+        collect_name,know_type,raw_docs = asyncio.run(self.kmanager.store("test","./tests/test.pdf",**param))
         self.assertEqual(collect_name,"test")
         docs = self.kmanager.list_documets("test")
         self.assertEqual(len(docs),2)

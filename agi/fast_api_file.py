@@ -81,7 +81,7 @@ async def save_file(
     if collection_name and not file_type.startswith("image/") and not file_type.startswith("audio/"):
         kmanager = TaskFactory.get_knowledge_manager()
         param = {"filename" : file.filename}
-        kmanager.store(collection_name,file_path,tenant=user_id,**param)
+        await kmanager.store(collection_name,file_path,tenant=user_id,**param)
         
     return {"original_filename": file.filename, "saved_filename": unique_filename, "file_type": file_type, "message": "文件上传成功"}
 
