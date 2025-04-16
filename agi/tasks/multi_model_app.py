@@ -2,7 +2,7 @@ from agi.llms.model_factory import ModelFactory
 from agi.tasks.prompt import default_modify_state_messages_runnable,multimodal_input_template,traslate_modify_state_messages_runnable
 from langchain_core.output_parsers import StrOutputParser,ListOutputParser
 from langchain_core.runnables import RunnablePassthrough,RunnableLambda,RunnableBranch
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field,RootModel
 from typing import Literal, Union,List
 from langchain_core.messages import HumanMessage,BaseMessage,AIMessage,ToolMessage
 from langchain_core.prompt_values import StringPromptValue,PromptValue,ChatPromptValue
@@ -80,9 +80,8 @@ def user_understand(llm):
                         "retrieve the most relevant image from the user's history. Include the image only if it "
                         "directly relates to the current request for modification or customization."
         )
-    class Schema(BaseModel):
-        """A list of schema items, each of which can be either a text or image type."""
-        __root__: List[Union[TextItem, ImageItem]]
+    class Schema(RootModel[List[Union[TextItem, ImageItem]]]):
+        """A root model containing a list of schema items."""
 
     model_with_structure = llm.with_structured_output(Schema)
     chain = default_modify_state_messages_runnable | model_with_structure | graph_response_format_runnable
