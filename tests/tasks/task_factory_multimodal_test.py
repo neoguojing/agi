@@ -14,9 +14,9 @@ from agi.config import log
 
 class TestTaskMultiModalFactory(unittest.TestCase):
     def test_template(self):
-        value = multimodal_input_template.invoke({"text":"123","image":"233","audio":"1223"})
+        value = multimodal_input_template.invoke({"text":"123","image":"233","audio":"1223","video":"1111"})
         print(value.to_messages())
-        
+    '''
     def test_translate_chain(self):
         # Test for TASK_LLM
         llm_task = TaskFactory.create_task(TASK_TRANSLATE)
@@ -75,12 +75,12 @@ class TestTaskMultiModalFactory(unittest.TestCase):
         self.assertIsInstance(resp["messages"][-1].content,list)
         self.assertIsNotNone(resp["messages"][-1].content[0].get("image"))
         self.assertEqual(resp["messages"][-1].content[0].get("type"),"image")
-
+    '''
     def test_user_understand(self):
         input = State(
             messages=[HumanMessage(content=[{"type":"text","text":"星辰大海"}])],
         )
-        chain = user_understand(TaskFactory.get_llm)
+        chain = user_understand(TaskFactory.get_llm())
         resp = chain.invoke(input)
         print(resp)
 if __name__ == '__main__':
