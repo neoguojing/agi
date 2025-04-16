@@ -84,7 +84,7 @@ def user_understand(llm):
         """A root model containing a list of schema items."""
 
     model_with_structure = llm.with_structured_output(Schema)
-    chain = default_modify_state_messages_runnable | model_with_structure | graph_response_format_runnable
+    chain = default_modify_state_messages_runnable | model_with_structure
     return chain
 
 # Input: AgentState
