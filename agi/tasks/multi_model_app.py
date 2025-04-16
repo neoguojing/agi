@@ -2,7 +2,8 @@ from agi.llms.model_factory import ModelFactory
 from agi.tasks.prompt import default_modify_state_messages_runnable,multimodal_input_template,traslate_modify_state_messages_runnable
 from langchain_core.output_parsers import StrOutputParser,ListOutputParser
 from langchain_core.runnables import RunnablePassthrough,RunnableLambda,RunnableBranch
-from typing import Union
+from pydantic import BaseModel, Field
+from typing import Literal, Union,List
 from langchain_core.messages import HumanMessage,BaseMessage,AIMessage,ToolMessage
 from langchain_core.prompt_values import StringPromptValue,PromptValue,ChatPromptValue
 from langgraph.prebuilt.chat_agent_executor import AgentState
@@ -62,17 +63,28 @@ def create_text2image_chain(llm):
 
 # 或者基于agent执行图像生成？
 def user_understand(llm):
-    schema = [
-        {
-            "type": "text",
-            "text": "In English.Based on the user's conversation history and current question, generate a new user request that logically follows from the dialogue. The request should reflect the user's needs, preferences, and intent, while keeping the flow of the conversation natural and coherent."
-        },
-        {
-            "type": "image",
-            "image": "If the user has previously provided an image and wants to modify or interact with it, retrieve the most relevant image from the user's history. Include the image only if it directly relates to the current request for modification or customization."
-        }
-    ]
-    model_with_structure = llm.with_structured_output(schema)
+    class TextItem(BaseModel):
+        type: Literal["text"] = Field(description="The type of the item, must be 'text'")
+        text: str = Field(
+            description="In English. Based on the user's conversation history and current question, "
+                        "generate a new user request that logically follows from the dialogue. "
+                        "The request should reflect the user's needs, preferences, and intent, "
+                        "while keeping the flow of the conversation natural and coherent."
+        )
+
+
+    class ImageItem(BaseModel):
+        type: Literal["image"] = Field(description="The type of the item, must be 'image'")
+        image: str = Field(
+            description="If the user has previously provided an image and wants to modify or interact with it, "
+                        "retrieve the most relevant image from the user's history. Include the image only if it "
+                        "directly relates to the current request for modification or customization."
+        )
+    class Schema(BaseModel):
+        """A list of schema items, each of which can be either a text or image type."""
+        __root__: List[Union[TextItem, ImageItem]]
+
+    model_with_structure = llm.with_structured_output(Schema)
     chain = default_modify_state_messages_runnable | model_with_structure | graph_response_format_runnable
     return chain
 
