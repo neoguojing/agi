@@ -7,6 +7,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from agi.tasks.task_factory import TaskFactory, TASK_TRANSLATE, TASK_IMAGE_GEN, TASK_TTS, TASK_SPEECH_TEXT
 from agi.tasks.prompt import multimodal_input_template
 from agi.tasks.agent import State
+from agi.tasks.multi_model_app import user_understand
 
 from agi.config import log
 
@@ -75,5 +76,12 @@ class TestTaskMultiModalFactory(unittest.TestCase):
         self.assertIsNotNone(resp["messages"][-1].content[0].get("image"))
         self.assertEqual(resp["messages"][-1].content[0].get("type"),"image")
 
+    def test_user_understand(self):
+        input = State(
+            messages=[HumanMessage(content=[{"type":"text","text":"星辰大海"}])],
+        )
+        chain = user_understand(TaskFactory.get_llm)
+        resp = chain.invoke(input)
+        print(resp)
 if __name__ == '__main__':
     unittest.main()
