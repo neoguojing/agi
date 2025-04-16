@@ -83,7 +83,7 @@ def user_understand(llm):
     class Schema(RootModel[List[Union[TextItem, ImageItem]]]):
         """A root model containing a list of schema items."""
 
-    model_with_structure = llm.with_structured_output(Schema)
+    model_with_structure = llm.with_structured_output(TextItem)
     chain = default_modify_state_messages_runnable | model_with_structure
     return chain
 
