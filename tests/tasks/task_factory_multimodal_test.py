@@ -4,7 +4,7 @@ import threading
 from langchain_core.messages import AIMessage, HumanMessage
 
 # Assuming we import the TaskFactory and constants like TASK_LLM, TASK_EMBEDDING, etc.
-from agi.tasks.task_factory import TaskFactory, TASK_TRANSLATE, TASK_IMAGE_GEN, TASK_TTS, TASK_SPEECH_TEXT
+from agi.tasks.task_factory import TaskFactory, TASK_TRANSLATE, TASK_IMAGE_GEN, TASK_TTS, TASK_SPEECH_TEXT,TASK_LLM_WITH_HISTORY
 from agi.tasks.prompt import multimodal_input_template
 from agi.tasks.agent import State
 from agi.tasks.multi_model_app import user_understand
@@ -16,7 +16,7 @@ class TestTaskMultiModalFactory(unittest.TestCase):
     def test_template(self):
         value = multimodal_input_template.invoke({"text":"123","image":"233","audio":"1223","video":"1111"})
         print(value.to_messages())
-    '''
+        
     def test_translate_chain(self):
         # Test for TASK_LLM
         llm_task = TaskFactory.create_task(TASK_TRANSLATE)
@@ -75,13 +75,42 @@ class TestTaskMultiModalFactory(unittest.TestCase):
         self.assertIsInstance(resp["messages"][-1].content,list)
         self.assertIsNotNone(resp["messages"][-1].content[0].get("image"))
         self.assertEqual(resp["messages"][-1].content[0].get("type"),"image")
-    '''
+        
     def test_user_understand(self):
+        config={"configurable": {"user_id": "test", "conversation_id": "6"}}
         input = State(
-            messages=[HumanMessage(content=[{"type":"text","text":"星辰大海"}])],
+            messages=[HumanMessage(content=[{"type":"text","text":"画一幅水墨画"}])],
         )
         chain = user_understand(TaskFactory.get_llm())
-        resp = chain.invoke(input)
+        resp = chain.invoke(input,config=config)
         print(resp)
+        self.assertIsInstance(resp["messages"][-1],HumanMessage)
+        self.assertIsNotNone(resp["messages"][-1].content[0].get("text"))
+        
+        input = State(
+            messages=[
+                HumanMessage(content=[{"type":"text","text":"画一幅水墨画"}]),
+                AIMessage(content=[{"type": "image", "image": "http://example.com/aaaa.jpg"}]),
+                HumanMessage(content=[{"type": "text", "text": "画的难看死了，重新画"}]),
+                ],
+        )
+        resp = chain.invoke(input,config=config)
+        print(resp)
+        self.assertIsInstance(resp["messages"][-1],HumanMessage)
+        self.assertIsNotNone(resp["messages"][-1].content[0].get("text"))
+        
+        input = State(
+            messages=[
+                HumanMessage(content=[{"type":"text","text":"画一幅水墨画"}]),
+                AIMessage(content=[{"type": "image", "image": "http://example.com/aaaa.jpg"}]),
+                HumanMessage(content=[{"type": "text", "text": "修改以上的画为油画风格"}]),
+                ],
+        )
+        resp = chain.invoke(input,config=config)
+        print(resp)
+        self.assertIsInstance(resp["messages"][-1],HumanMessage)
+        self.assertIsNotNone(resp["messages"][-1].content[0].get("text"))
+        self.assertIsNotNone(resp["messages"][-1].content[1].get("text"))
+        
 if __name__ == '__main__':
     unittest.main()

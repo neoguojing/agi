@@ -1,5 +1,8 @@
 from agi.llms.model_factory import ModelFactory
-from agi.tasks.prompt import default_modify_state_messages_runnable,multimodal_input_template,traslate_modify_state_messages_runnable
+from agi.tasks.prompt import (
+    user_understand__modify_state_messages_runnable,
+    traslate_modify_state_messages_runnable
+)
 from langchain_core.output_parsers import StrOutputParser,ListOutputParser
 from langchain_core.runnables import RunnablePassthrough,RunnableLambda,RunnableBranch
 from pydantic import BaseModel, Field,RootModel
@@ -19,7 +22,9 @@ from langchain_ollama import OllamaEmbeddings,ChatOllama
 from urllib.parse import urljoin
 from agi.tasks.utils import split_think_content
 from agi.config import log
-
+from agi.tasks.llm_app import create_llm_with_history
+import json
+import traceback
 
 # Input: AgentState
 # Output: AgentState
@@ -61,37 +66,39 @@ def create_text2image_chain(llm):
     
     return translate| multimodel_state_modifier_runnable | text2image | graph_response_format_runnable
 
-# 或者基于agent执行图像生成？
+# 用户意图理解和问题完善
+# Input: AgentState
+# Output: AgentState
 def user_understand(llm):
-    class TextItem(BaseModel):
-        type: Literal["text"] = Field(description="The type of the item, must be 'text'")
-        text: str = Field(
-            description="In English. Based on the user's conversation history and current question, "
-                        "generate a new user request that logically follows from the dialogue. "
-                        "The request should reflect the user's needs, preferences, and intent, "
-                        "while keeping the flow of the conversation natural and coherent."
-        )
-
-
-    class ImageItem(BaseModel):
-        type: Literal["image"] = Field(description="The type of the item, must be 'image'")
-        image: str = Field(
-            description="If the user has previously provided an image and wants to modify or interact with it, "
-                        "retrieve the most relevant image from the user's history. Include the image only if it "
-                        "directly relates to the current request for modification or customization."
-        )
-    class Schema(RootModel[List[Union[TextItem, ImageItem]]]):
-        """A root model containing a list of schema items."""
-
-    model_with_structure = llm.with_structured_output(TextItem)
-    chain = default_modify_state_messages_runnable | model_with_structure
-    return chain
+    chain = user_understand__modify_state_messages_runnable | llm 
+    def user_understand_node(state: AgentState):
+        try:
+            ai = chain.invoke(state)
+            # think 标签过滤
+            _, result = split_think_content(ai.content)
+            log.debug(result)
+            obj = json.loads(result)
+            text = obj.get("text")
+            image = obj.get("image")
+            last_message = state["messages"][-1]
+            if text and last_message:
+                last_message.content = [{"type":"text","text":text}]
+                if image:
+                    last_message.content.append({"type":"image","text":image})     
+            return state["messages"]
+        except Exception as e:
+            log.error(f"Error during user_understand output_parser: {e}")
+            print(traceback.format_exc())
+            return state["messages"]
+    user_understand_runnable = RunnableLambda(user_understand_node)
+    return RunnablePassthrough.assign(messages=user_understand_runnable).with_config(run_name="user_understand_chain")
 
 # Input: AgentState
 # Output: AgentState
 # TODO 依据历史消息，分析用户的意图
 def create_image_gen_chain(llm):
-    translate = create_translate_chain(llm)
+    # translate = create_translate_chain(llm)
+    translate = user_understand(llm)
     image2image = ModelFactory.get_model("image2image")
     text2image = ModelFactory.get_model("text2image")
     
@@ -100,7 +107,7 @@ def create_image_gen_chain(llm):
         if isinstance(message,HumanMessage) and isinstance(message.content,list):
             for content in message.content:
                 image = content.get("image")
-                if image is not None and image != "":
+                if image:
                     return True
         return False
     

@@ -234,3 +234,72 @@ multimodal_input_template = MultiModalChatPromptTemplate(
     ],
     optional_variables=["text","image","audio","video"]
 )
+
+
+user_understand_prompt = '''
+    You are tasked with understanding and refining the user's inquiry. Your goal is to rephrase their question to make it clearer and more precise. If the user refers to past content (such as previous messages or images), identify and reference that historical content.
+
+    Rules:
+
+    1.  If the user mentions or asks for something related to a previous interaction (such as a previously generated image, text, etc.), identify and reference that historical content. For image references, prepare to include the actual image URL or data in the output if it was the subject of the user's request and you have access to it.
+    2.  Reconstruct their question for clarity and precision. The rephrased question must align with their original intent. If the user asks for a redraw or modification of a previous item (especially an image), explicitly state that they want a redraw/modification of that item. Try to infer the nature of the desired change if possible from the context (e.g., redraw in a different style, modify specific elements) and incorporate it into the rephrased question, without adding unfounded assumptions like the user having viewing trouble. If the desired change is unclear, the rephrased question should reflect that the user wants a redraw but needs to specify the details.
+    3.  Make sure the response is in English.
+    4.  Provide your final response in JSON format, with two fields:
+        * `text`: The rephrased question or request.
+        * `image`: If the original query refers to a specific previous image that is the subject of the request and you have access to its URL or data, include it here. Otherwise, set this field to an empty string.
+
+    Example 1:
+
+    User: "I want to change the last picture you made for me." (Assume the last picture was an oil painting of a cat, URL: `http://example.com/cat_oil_painting.jpg`)
+
+    Response:
+    {{
+        "text": "Modify the last generated image (an oil painting of a cat).",
+        "image": "http://example.com/cat_oil_painting.jpg"
+    }}
+    
+    Example 2:
+
+    User: "Can you tell me more about the last project?" (Assume the last project was "Project Chimera - a research initiative on AI ethics.")
+
+    Response:
+    {{
+        "text": "More details about the last project, 'Project Chimera - a research initiative on AI ethics.'",
+        "image": ""
+    }}
+    
+    Example 3 (addressing the redraw scenario):
+
+    User: "The previously generated image is blurry and difficult to see, please redraw it." (Assume the previous request was for an oil painting of a landscape)
+
+    Response:
+    {{
+        "text": "Redraw an oil painting of a landscape).",
+        "image": ""
+    }}
+'''
+
+user_understand_template = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            user_understand_prompt
+        ),
+        ("placeholder", "{messages}")
+    ]
+)
+
+def user_understand_modify_state_messages(state: AgentState):
+    # 可能会存在重复的系统消息需要去掉
+    filter_messages = []
+    for message in state["messages"]:
+        if isinstance(message,SystemMessage):
+            continue
+        # 修正请求的类型，否则openapi会报错
+        if not isinstance(message.content,str):
+             message.content = json.dumps(message.content)
+        filter_messages.append(message)
+    return user_understand_template.invoke({"messages": filter_messages}).to_messages()
+
+
+user_understand__modify_state_messages_runnable = RunnableLambda(user_understand_modify_state_messages)
