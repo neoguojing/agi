@@ -2,6 +2,7 @@ import io
 from PIL import Image as PILImage
 from langgraph.graph import END, StateGraph, START
 import uuid
+from langgraph.types import Command, interrupt
 from langchain_core.output_parsers import StrOutputParser
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import StreamWriter
@@ -28,7 +29,7 @@ from agi.tasks.agent import State,Feature,InputType
 from agi.tasks.prompt import decide_modify_state_messages_runnable
 from agi.tasks.utils import split_think_content
 import traceback
-
+import threading
 from agi.config import log
 
 # set_verbose(True)
@@ -45,6 +46,8 @@ from agi.config import log
     
 class AgiGraph:
     def __init__(self):
+        self._lock = threading.Lock()
+        self._threads_interupt = {}
         # TODO 
         checkpointer = MemorySaver()
 
@@ -62,6 +65,8 @@ class AgiGraph:
         self.builder.add_node("llm", TaskFactory.create_task(TASK_LLM))
         #1.图像识别等 image2text 请求；2.正常的用户对话等
         self.builder.add_node("llm_with_history", TaskFactory.create_task(TASK_LLM_WITH_HISTORY))
+        
+        self.builder.add_node("human_feedback", self.human_feedback)
         
         self.builder.add_conditional_edges("agent", self.output_control)
         self.builder.add_conditional_edges("llm", self.output_control)
@@ -194,36 +199,46 @@ class AgiGraph:
         if docs:
             return "doc_chat"
         return "agent"
-        
     
+    def human_feedback(self,state: State):
+        log.debug("---human_feedback---")
+        feedback = interrupt("Please provide feedback:")
+        return {"user_feedback": feedback}
+        
     def invoke(self,input:State) -> State:
         config={"configurable": {"user_id": input.get("user_id","default_tenant"), "conversation_id": input.get("conversation_id",""),
                                  "thread_id": input.get("user_id",None) or str(uuid.uuid4())}}
-        snapshot = self.graph.get_state(config)
-        if snapshot:
-            snapshot.next
-            if "messages" in snapshot.values:
-                existing_message = snapshot.values["messages"][-1]
-                existing_message.pretty_print()
-    
-        events = self.graph.invoke(input, config)
+
+        state = self.graph.get_state(config)
+        # Print the state values
+        print(state.values)
+        # Print the pending tasks
+        print(state.tasks)
+        if state.tasks:
+            # self.graph.invoke(Command(resume={"age": "25"}), config):
+            pass
+        else:
+            events = self.graph.invoke(input, config)
         return events
 
     def stream(self, input: State,stream_mode=["messages", "custom"]) -> Iterator[Union[BaseMessage, Dict[str, Any]]]:
+        thread_id =  input.get("user_id",None) or str(uuid.uuid4())
         config={"configurable": {"user_id": input.get("user_id","default_tenant"), "conversation_id": input.get("conversation_id",""),
-                                 "thread_id": input.get("user_id",None) or str(uuid.uuid4())}}
+                                 "thread_id":thread_id}}
         
-        events = None
-        # 处于打断状态的graph实例
-        # snapshot = self.graph.get_state(config)
-        # if snapshot:
-        #     snapshot.next
-        #     if "messages" in snapshot.values:
-        #         existing_message = snapshot.values["messages"][-1]
-        #         existing_message.pretty_print()
-            
+        events = None        
         try:
-            events = self.graph.stream(input, config=config, stream_mode=stream_mode)
+            # TODO 需设置线程打断标志
+            is_interupt = False
+            with self._lock:
+                is_interupt = self._threads_interupt.get(thread_id,False)
+            # 引入打断恢复机制,用于人工干预
+            if is_interupt:
+                events = self.graph.stream(
+                    Command(resume=input), config=config, stream_mode=stream_mode
+                )
+            else:
+                events = self.graph.stream(input, config=config, stream_mode=stream_mode)
             for event in events:
                 log.debug(event)
                 # 返回非HumanMessage

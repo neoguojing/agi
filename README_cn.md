@@ -65,7 +65,7 @@ GPU显存： 初始：2550MB 峰值：20GB
 - web检索不理想 
 - web检索缓慢，考虑存文档使用异步 test
 - rag缓慢，考虑使用异步
-
+- 用户意图理解和不全chain test
 ## OPENWEBUI 修改
 - 新增: backend/open_webui/routers/agi.py
 - 修改: backend/open_webui/utils/models.py
