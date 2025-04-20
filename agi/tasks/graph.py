@@ -31,7 +31,7 @@ from agi.tasks.utils import split_think_content
 import traceback
 import threading
 from agi.config import log
-
+from agi.tasks.tools import AskHuman
 # set_verbose(True)
 # set_debug(True)
 
@@ -46,9 +46,6 @@ from agi.config import log
     
 class AgiGraph:
     def __init__(self):
-        self._lock = threading.Lock()
-        self._threads_interupt = {}
-        # TODO 
         checkpointer = MemorySaver()
 
         self.builder = StateGraph(State)
@@ -68,7 +65,8 @@ class AgiGraph:
         
         self.builder.add_node("human_feedback", self.human_feedback)
         
-        self.builder.add_conditional_edges("agent", self.output_control)
+        self.builder.add_edge("human_feedback", self.human_feedback_control)
+        self.builder.add_conditional_edges("agent", self.agent_control)
         self.builder.add_conditional_edges("llm", self.output_control)
         self.builder.add_conditional_edges("llm_with_history", self.output_control)
         self.builder.add_conditional_edges("doc_chat", self.output_control)
@@ -76,10 +74,14 @@ class AgiGraph:
         # 有上下文的请求支持平行处理
         self.builder.add_conditional_edges("rag", self.context_control)
         self.builder.add_conditional_edges("web", self.context_control)
+   
+        
 
         self.builder.add_edge("multi_modal", END)
         self.builder.add_edge("image_gen", END)
         self.builder.add_edge("tts", END)
+        
+        
         
         self.builder.add_conditional_edges("speech2text",self.text_feature_control)
         self.builder.add_conditional_edges(START, self.routes)
@@ -177,9 +179,32 @@ class AgiGraph:
             return END
         elif feature == Feature.LLM:  #处理任务类相关请求，如自动标题、tag、提示完成等
             return "llm"
+        elif feature == Feature.HUMAN: #人工介入，用于测试
+            return "human_feedback"
         else: #通用任务处理：如标题生成、tag生成等 或者 自主决策
             return self.auto_state_machine(state)
+    
+    def agent_control(self,state: State):
+        messages = state["messages"]
+        last_message = messages[-1]
+        # If there is no function call, then we finish
+        if not last_message.tool_calls:
+            return self.output_control(state=state)
+        # If tool call is asking Human, we return that node
+        # You could also add logic here to let some system know that there's something that requires Human input
+        # For example, send a slack message, etc
+        elif last_message.tool_calls[0]["name"] == "AskHuman":
+            state["step"].append("agent")
+            return "human_feedback"
+        # Otherwise if there is, we continue
+        # else:
+        #     return "action"
+    
+    def human_feedback_control(self,state: State):
+        if state["step"]:
+            return state["step"][-1]
         
+        return END
     
     def output_control(self,state: State):
         if state["need_speech"]:
@@ -201,45 +226,47 @@ class AgiGraph:
         return "agent"
     
     def human_feedback(self,state: State):
-        log.debug("---human_feedback---")
-        feedback = interrupt("Please provide feedback:")
-        return {"user_feedback": feedback}
+        messages = []
+        # agent的场景,需要使用到AskHuman
+        if isinstance(state["messages"][-1],ToolMessage):
+            ask = AskHuman.model_validate(state["messages"][-1].tool_calls[0]["args"])
+            feedback = interrupt(ask.question)
+            messages = [AIMessage(content=feedback)]
+        return {"messages": messages}
         
     def invoke(self,input:State) -> State:
         config={"configurable": {"user_id": input.get("user_id","default_tenant"), "conversation_id": input.get("conversation_id",""),
                                  "thread_id": input.get("user_id",None) or str(uuid.uuid4())}}
-
         state = self.graph.get_state(config)
-        # Print the state values
-        print(state.values)
         # Print the pending tasks
-        print(state.tasks)
+        log.debug(state.tasks)
+        events = None
+        # TODO tasks只有在非空情况下一定是打断吗
         if state.tasks:
-            # self.graph.invoke(Command(resume={"age": "25"}), config):
-            pass
+            events = self.graph.invoke(Command(resume=input), config)
         else:
+            input["step"] = []
             events = self.graph.invoke(input, config)
         return events
 
-    def stream(self, input: State,stream_mode=["messages", "custom"]) -> Iterator[Union[BaseMessage, Dict[str, Any]]]:
+    def stream(self, input: State,stream_mode=["messages","updates", "custom"]) -> Iterator[Union[BaseMessage, Dict[str, Any]]]:
         thread_id =  input.get("user_id",None) or str(uuid.uuid4())
         config={"configurable": {"user_id": input.get("user_id","default_tenant"), "conversation_id": input.get("conversation_id",""),
                                  "thread_id":thread_id}}
         
         events = None        
         try:
-            # TODO 需设置线程打断标志
-            is_interupt = False
-            with self._lock:
-                is_interupt = self._threads_interupt.get(thread_id,False)
-            # 引入打断恢复机制,用于人工干预
-            if is_interupt:
-                events = self.graph.stream(
-                    Command(resume=input), config=config, stream_mode=stream_mode
-                )
+            state = self.graph.get_state(config)
+            log.debug(state)
+            if state.tasks:
+                events = self.graph.invoke(Command(resume=input), config)
             else:
+                input["step"] = []
                 events = self.graph.stream(input, config=config, stream_mode=stream_mode)
+
             for event in events:
+                import pdb
+                pdb.set_trace()
                 log.debug(event)
                 # 返回非HumanMessage
                 if "values" in stream_mode:
@@ -259,10 +286,13 @@ class AgiGraph:
                         yield last_message
                     else:
                         log.error(f"Event missing messages: {event}")
-                elif "updates" in stream_mode:
+                elif "updates" in stream_mode and event[0] == "updates":
                     # 可以拿到每个节点的信息
                     # event 类型： {"agent":State} {"web":State} {'doc_chat': None}
-                    yield event
+                    # ('updates', {'__interrupt__': (Interrupt(value='Please provide feedback:', resumable=True, ns=['human_feedback:0a8efb87-cce4-22f2-f8e6-23744b8946b7'], when='during'),)})
+                    # 仅返回__interrupt__消息
+                    if event[1].get("__interrupt__"):
+                        yield event
                 elif "custom" in stream_mode and event[0] == "custom":
                     # 用户自定义消息
                     # ("custom":())

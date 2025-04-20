@@ -101,7 +101,7 @@ class Feature:
     RAG = "rag"
     WEB = "web"
     LLM = "llm"
-    
+    HUMAN = "human"
     TTS = "tts"
 
     SPEECH = "speech"
@@ -141,7 +141,9 @@ class State(AgentState):
 
     auto_decide_reuslt: str
     status: str
-    step: list[str]
+    step: list[str] #用于保存执行的步骤,按顺序排列
+    
+    user_feedback: str
 
 
 # agent 的提示词

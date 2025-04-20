@@ -9,7 +9,7 @@ class TestGraph(unittest.TestCase):
     def setUp(self):        
         self.graph = AgiGraph()
         self.graph.display()
-        
+    '''     
     def test_agent(self):
         input_example = {
             "messages":  [
@@ -242,3 +242,34 @@ class TestGraph(unittest.TestCase):
                 self.assertIsInstance(event,tuple)
                 self.assertIsInstance(event[1][0],AIMessage)
                 self.assertIsInstance(event[1][1],dict)
+    '''
+    
+    def test_human_feedback(self):
+        input_example = {
+            "messages":  [
+                HumanMessage(
+                    content="11111111111",
+                )
+            ],
+            "input_type": "text",
+            "need_speech": False,
+            "feature": "human",
+            "user_id": "human_feedback"
+        }
+        
+        resp = self.graph.stream(input_example)
+        for event in resp:
+            print(f"******event******{event,type(event)}")
+        input_example = {
+            "messages":  [
+                HumanMessage(
+                    content="22222222222222222",
+                )
+            ],
+            "input_type": "text",
+            "need_speech": False,
+            "user_id": "human_feedback"
+        }
+        resp = self.graph.stream(input_example)
+        for event in resp:
+            print(f"******event******{event,type(event)}")

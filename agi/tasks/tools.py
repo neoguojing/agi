@@ -6,6 +6,7 @@ from agi.utils.weather import get_weather_info
 from agi.utils.search_engine import SearchEngineSelector
 from agi.utils.stock_market import get_stock
 from agi.config import log
+from pydantic import BaseModel
 
 arxiv = ArxivAPIWrapper()
 
@@ -34,7 +35,15 @@ def pythonREPL():
     )
     return repl_tool
 
+# 一个tool的定义,和模型绑定,让模型决定是否调用该工具
+# 不会实际实现该函数
+class AskHuman(BaseModel):
+    """Ask the human a question"""
+
+    question: str
+
 tools = [
+    AskHuman,
     Tool(
         name="arxiv",
         func=arxiv.run,
