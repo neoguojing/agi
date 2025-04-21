@@ -259,7 +259,9 @@ class TestGraph(unittest.TestCase):
         
         resp = self.graph.stream(input_example)
         for event in resp:
-            print(f"******event******{event,type(event)}")
+            self.assertEqual(event[0],"updates")
+            self.assertIsNotNone(event[1].get("__interrupt__"))
+            self.assertEqual(event[1].get("__interrupt__")[0].value,"breaked")
         input_example = {
             "messages":  [
                 HumanMessage(

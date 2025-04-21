@@ -235,7 +235,7 @@ class AgiGraph:
             return feedback
         elif isinstance(state["messages"][-1],HumanMessage): #用于测试
             feedback = interrupt("breaked")
-            messages = [AIMessage(content=state["messages"][-1].content)]
+            messages = [AIMessage(content=feedback["messages"][-1].content)]
             return {"messages": messages}
         
         return state
