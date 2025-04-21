@@ -285,11 +285,12 @@ class TestGraph(unittest.TestCase):
             "input_type": "text",
             "need_speech": False,
             "feature": "human",
-            "user_id": "human_feedback"
+            "user_id": "human_feedback1"
         }
         
         resp = self.graph.invoke(input_example)
-        print(resp)
+        self.assertIsInstance(resp["messages"][-1],HumanMessage)
+        self.assertEqual(resp["messages"][-1].content,"3333333333333333333333")        
         input_example = {
             "messages":  [
                 HumanMessage(
@@ -298,7 +299,8 @@ class TestGraph(unittest.TestCase):
             ],
             "input_type": "text",
             "need_speech": False,
-            "user_id": "human_feedback"
+            "user_id": "human_feedback1"
         }
         resp = self.graph.invoke(input_example)
-        print(resp)
+        self.assertIsInstance(resp["messages"][-1],AIMessage)
+        self.assertEqual(resp["messages"][-1].content,"444444444444444444")
