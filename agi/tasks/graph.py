@@ -232,6 +232,10 @@ class AgiGraph:
             ask = AskHuman.model_validate(state["messages"][-1].tool_calls[0]["args"])
             feedback = interrupt(ask.question)
             messages = [AIMessage(content=feedback)]
+        elif isinstance(state["messages"][-1],HumanMessage): #用于测试
+            feedback = interrupt("breaked")
+            messages = [AIMessage(content=feedback)]
+
         return {"messages": messages}
         
     def invoke(self,input:State) -> State:

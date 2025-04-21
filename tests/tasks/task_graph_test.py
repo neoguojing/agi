@@ -273,3 +273,30 @@ class TestGraph(unittest.TestCase):
         resp = self.graph.stream(input_example)
         for event in resp:
             print(f"******event******{event,type(event)}")
+
+        input_example = {
+            "messages":  [
+                HumanMessage(
+                    content="3333333333333333333333",
+                )
+            ],
+            "input_type": "text",
+            "need_speech": False,
+            "feature": "human",
+            "user_id": "human_feedback"
+        }
+        
+        resp = self.graph.invoke(input_example)
+        print(resp)
+        input_example = {
+            "messages":  [
+                HumanMessage(
+                    content="444444444444444444",
+                )
+            ],
+            "input_type": "text",
+            "need_speech": False,
+            "user_id": "human_feedback"
+        }
+        resp = self.graph.invoke(input_example)
+        print(resp)
