@@ -231,12 +231,11 @@ class AgiGraph:
         if isinstance(state["messages"][-1],ToolMessage):
             ask = AskHuman.model_validate(state["messages"][-1].tool_calls[0]["args"])
             feedback = interrupt(ask.question)
-            messages = [AIMessage(content=feedback)]
+            return feedback
         elif isinstance(state["messages"][-1],HumanMessage): #用于测试
             feedback = interrupt("breaked")
-            messages = [AIMessage(content=feedback)]
-
-        return {"messages": messages}
+            messages = [AIMessage(content=state["messages"][-1].content)]
+            return {"messages": messages}
         
     def invoke(self,input:State) -> State:
         config={"configurable": {"user_id": input.get("user_id","default_tenant"), "conversation_id": input.get("conversation_id",""),
