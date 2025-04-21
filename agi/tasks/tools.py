@@ -6,7 +6,7 @@ from agi.utils.weather import get_weather_info
 from agi.utils.search_engine import SearchEngineSelector
 from agi.utils.stock_market import get_stock
 from agi.config import log
-from pydantic import BaseModel
+from pydantic import BaseModel,Field
 
 arxiv = ArxivAPIWrapper()
 
@@ -38,9 +38,21 @@ def pythonREPL():
 # 一个tool的定义,和模型绑定,让模型决定是否调用该工具
 # 不会实际实现该函数
 class AskHuman(BaseModel):
-    """Ask the human a question"""
+    """
+    This model is used when an automated system or agent determines that 
+    human intervention is required. It represents a question that the agent 
+    wants to ask the human to proceed with a task, resolve ambiguity, or 
+    make a decision that requires human judgment.
 
-    question: str
+    Typical use cases include:
+    - Uncertain model predictions or low-confidence outcomes
+    - Missing information that requires user input
+    - Safety-critical or policy-sensitive decisions
+    """
+
+    question: str = Field(
+        description="A question the system wants to ask the human for clarification, confirmation, or additional input"
+    )
 
 tools = [
     AskHuman,
