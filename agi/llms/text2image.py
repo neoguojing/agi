@@ -26,9 +26,11 @@ style = 'style="width: 100%; max-height: 100vh;"'
 class Text2Image(CustomerLLM):
     model_path: str = Field(None, alias='model_path')
     refiner: Any = None
-    n_steps: int = 28
+    # n_steps: int = 28
+    n_steps: int = 1
     high_noise_frac: float = 0.8
-    guidance_scale: float = 7.0
+    # guidance_scale: float = 7.0
+    guidance_scale: float = 0.0
     file_path: str = IMAGE_FILE_SAVE_PATH
     save_image: bool = True
 

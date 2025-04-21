@@ -242,20 +242,21 @@ user_understand_prompt = '''
     Rules:
 
     1.  If the user mentions or asks for something related to a previous interaction (such as a previously generated image, text, etc.), identify and reference that historical content. For image references, prepare to include the actual image URL or data in the output if it was the subject of the user's request and you have access to it.
-    2.  Reconstruct their question for clarity and precision. The rephrased question must align with their original intent. If the user asks for a redraw or modification of a previous item (especially an image), explicitly state that they want a redraw/modification of that item. Try to infer the nature of the desired change if possible from the context (e.g., redraw in a different style, modify specific elements) and incorporate it into the rephrased question, without adding unfounded assumptions like the user having viewing trouble. If the desired change is unclear, the rephrased question should reflect that the user wants a redraw but needs to specify the details.
+    2.  Reconstruct their question for clarity and precision. The rephrased question must align with their original intent. 
     3.  Make sure the response is in English.
-    4.  Provide your final response in JSON format, with two fields:
+    4.  If the request is to modify a previously generated image, obtain the URL of the previous image and include it in the `image` field.
+    5.  Provide your final response in JSON format, with two fields:
         * `text`: The rephrased question or request.
-        * `image`: If the original query refers to a specific previous image that is the subject of the request and you have access to its URL or data, include it here. Otherwise, set this field to an empty string.
+        * `image`: If the original query refers to a specific previous image and you have access to its URL or data, include it here. Otherwise, set this field to an empty string.
 
     Example 1:
 
-    User: "I want to change the last picture you made for me." (Assume the last picture was an oil painting of a cat, URL: `http://example.com/cat_oil_painting.jpg`)
+    User: "I want to change the last picture you made for me." (Assume the last picture was an oil painting of a cat, URL: `http://localhost:8000/v1/files/1745247442.png`)
 
     Response:
     {{
         "text": "Modify the last generated image (an oil painting of a cat).",
-        "image": "http://example.com/cat_oil_painting.jpg"
+        "image": "http://localhost:8000/v1/files/1745247442.png"
     }}
     
     Example 2:

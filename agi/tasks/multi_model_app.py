@@ -16,6 +16,8 @@ from agi.config import (
     OPENAI_API_KEY,
     RAG_EMBEDDING_MODEL,
     OLLAMA_DEFAULT_MODE,
+    BASE_URL,
+    IMAGE_FILE_SAVE_PATH
 )
 from langchain_openai import ChatOpenAI
 from langchain_ollama import OllamaEmbeddings,ChatOllama
@@ -24,6 +26,7 @@ from agi.tasks.utils import split_think_content
 from agi.config import log
 from agi.tasks.llm_app import create_llm_with_history
 import json
+import os
 import traceback
 
 # Input: AgentState
@@ -74,6 +77,7 @@ def user_understand(llm):
     def user_understand_node(state: AgentState):
         try:
             ai = chain.invoke(state)
+            log.info(f"user_understand:{ai}\n{state}")
             # think 标签过滤
             _, result = split_think_content(ai.content)
             log.debug(result)
@@ -84,7 +88,10 @@ def user_understand(llm):
             if text and last_message:
                 last_message.content = [{"type":"text","text":text}]
                 if image:
-                    last_message.content.append({"type":"image","text":image})     
+                    if image.startswith(BASE_URL):
+                        image = os.path.join(IMAGE_FILE_SAVE_PATH,os.path.basename(image))
+                    last_message.content.append({"type":"image","image":image})     
+            log.info(f"user_understand end:{state}")
             return state["messages"]
         except Exception as e:
             log.error(f"Error during user_understand output_parser: {e}")
