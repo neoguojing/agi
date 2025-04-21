@@ -259,9 +259,11 @@ class TestGraph(unittest.TestCase):
         
         resp = self.graph.stream(input_example)
         for event in resp:
+            print(event)
             self.assertEqual(event[0],"updates")
             self.assertIsNotNone(event[1].get("__interrupt__"))
             self.assertEqual(event[1].get("__interrupt__")[0].value,"breaked")
+
         input_example = {
             "messages":  [
                 HumanMessage(
@@ -289,6 +291,7 @@ class TestGraph(unittest.TestCase):
         }
         
         resp = self.graph.invoke(input_example)
+        print(resp)
         self.assertIsInstance(resp["messages"][-1],HumanMessage)
         self.assertEqual(resp["messages"][-1].content,"3333333333333333333333")        
         input_example = {
@@ -302,5 +305,6 @@ class TestGraph(unittest.TestCase):
             "user_id": "human_feedback1"
         }
         resp = self.graph.invoke(input_example)
+        print(resp)
         self.assertIsInstance(resp["messages"][-1],AIMessage)
         self.assertEqual(resp["messages"][-1].content,"444444444444444444")
