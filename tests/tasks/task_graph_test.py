@@ -35,7 +35,6 @@ class TestGraph(unittest.TestCase):
             self.assertIsInstance(event[1][0],AIMessageChunk)
             self.assertIsInstance(event[1][1],dict)
 
-    '''
     def test_text_image_gene(self):
         # 使用agent，由agent决策是否调用图片生成工具
         input_example = {
@@ -172,7 +171,7 @@ class TestGraph(unittest.TestCase):
             self.assertIsInstance(event,tuple)
             self.assertIsInstance(event[1][0],AIMessage)
             self.assertIsInstance(event[1][1],dict)
-    '''
+    
     def test_web(self):
         # TODO 引用无法返回给用户
         input_example = {
@@ -207,7 +206,7 @@ class TestGraph(unittest.TestCase):
                 self.assertIsInstance(event,tuple)
                 self.assertIsInstance(event[1][0],AIMessage)
                 self.assertIsInstance(event[1][1],dict)
-    '''            
+               
     def test_custom_rag(self):
         import json
         input_example = {
@@ -274,6 +273,7 @@ class TestGraph(unittest.TestCase):
             "user_id": "human_feedback"
         }
         resp = self.graph.stream(input_example)
+        # TODO 此处没有返回
         for event in resp:
             print(f"******event******{event,type(event)}")
 
@@ -307,4 +307,4 @@ class TestGraph(unittest.TestCase):
         print(resp)
         self.assertIsInstance(resp["messages"][-1],AIMessage)
         self.assertEqual(resp["messages"][-1].content,"444444444444444444")
-        '''
+        

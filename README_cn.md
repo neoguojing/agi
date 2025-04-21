@@ -54,7 +54,7 @@ GPU显存： 初始：2550MB 峰值：20GB
 - agi自动测试
 - 支持使用sd 3.5作为图片生成 DONE
 - 支持qwen omini作为多模态基模型 Done
-- 支持lang-graph 人工介入确认
+- 支持lang-graph 人工介入确认 test
 - 支持python代码执行器 test
 - 其他常用工具支持 test
 - 流式返回测试 DONE
@@ -62,8 +62,8 @@ GPU显存： 初始：2550MB 峰值：20GB
 - rag 影响图片生成流程 DONE
 - 图片生成决策错误 DONE
 - agent返回会有重复 DONE
-- web检索不理想 
-- web检索缓慢，考虑存文档使用异步 test
+- web检索不理想 test
+- web检索缓慢，考虑存文档使用异步 DONE
 - rag缓慢，考虑使用异步
 - 用户意图理解和不全chain test
 ## OPENWEBUI 修改

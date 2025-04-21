@@ -35,6 +35,7 @@ from agi.tasks.prompt import doc_qa_template,docqa_modify_state_messages_runnabl
 from agi.tasks.retriever import KnowledgeManager
 from agi.tasks.utils import graph_response_format_runnable,get_last_message_text
 import json
+import asyncio
 from datetime import datetime,timezone
 from langchain.globals import set_debug
 from collections import defaultdict
@@ -232,7 +233,7 @@ def create_rag(km: KnowledgeManager):
         retriever = km.get_retriever(collection_names=collections,tenant=tenant)
         if retriever:
             text = get_last_message_text(input)
-            docs = retriever.invoke(text)
+            docs = asyncio.run(retriever.ainvoke(text))
             if docs:
                 docs = [d for d in docs if d.page_content and not d.page_content.strip().startswith("NO_")]
 

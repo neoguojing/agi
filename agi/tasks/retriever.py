@@ -162,7 +162,7 @@ class KnowledgeManager:
                         split_docs = self.split_documents(docs)
                         uuids = [str(uuid4()) for _ in range(len(split_docs))]
                         if len(split_docs) > 0:
-                            await store.add_documents(split_docs, ids=uuids)  # Assuming this can be async
+                            store.add_documents(split_docs, ids=uuids)  # Assuming this can be async
 
                 # Add each source processing task to the list
                 tasks.append(process_source(source))
@@ -290,7 +290,7 @@ class KnowledgeManager:
             retriever = self.get_retriever(collection_names,tenant=tenant,k=k,bm25=bm25,filter_type=filter_type)
             if retriever is None:
                 return None
-            docs = retriever.invoke(query)
+            docs = asyncio.run(retriever.ainvoke(query))
             docs = [d for d in docs if d.page_content and not d.page_content.strip().startswith("NO_")]
             if to_dict:
                 docs = {
@@ -489,31 +489,37 @@ class KnowledgeManager:
         if query is None:
             return 
     
-        raw_results = []
-        raw_docs = []
         try:
             questions = self.search_chain.invoke({"date":datetime.now().date(),"text":query,"results_num":max_results})
             log.info(f"questions:{questions}")
             # Relevant urls
-            # urls,raw_results = self.do_search(questions)        
-            urls,raw_results = asyncio.run(self.do_asearch(questions))
-            known_type = None
-            # TODO 执行网页爬虫 效果很差
-            # collection_name,known_type,raw_docs = self.store(collection_name,list(urls),source_type=SourceType.WEB,tenant=tenant)
-            # log.info(f"scrach results: {raw_docs}")
-            # 未爬到信息，则使用检索结果拼装
-            if len(raw_docs) == 0:
-                collection_name,known_type,raw_docs = asyncio.run(self.store(collection_name,
-                                                                        raw_results,
-                                                                        source_type=SourceType.SEARCH_RESULT,
-                                                                        tenant=tenant))
-                
-            # 使用bm25算法重排
-            # if raw_docs and len(raw_docs) > 1:
-            #     raw_docs= self.bm25_retriever(raw_docs,k=1).invoke(query)
-            #     log.info(f"bm25 results: {raw_docs}")
-            # docs = self.web_parser(urls,url_meta_map,collection_name)
-            return collection_name,known_type,raw_results,raw_docs
+            # urls,raw_results = self.do_search(questions)   
+            async def do(questions, collection_name, tenant):
+                raw_results = []
+                raw_docs = []
+                urls,raw_results = await self.do_asearch(questions)
+                known_type = None
+                # TODO 执行网页爬虫 效果很差
+                # collection_name,known_type,raw_docs = await self.store(collection_name,list(urls),source_type=SourceType.WEB,tenant=tenant)
+                # log.info(f"scrach results: {raw_docs}")
+                # 未爬到信息，则使用检索结果拼装
+                if len(raw_docs) == 0:
+                    collection_name,known_type,raw_docs = await self.store(collection_name,
+                                                                            raw_results,
+                                                                            source_type=SourceType.SEARCH_RESULT,
+                                                                            tenant=tenant)
+                    
+                # 使用bm25算法重排
+                # if raw_docs and len(raw_docs) > 1:
+                #     raw_docs= self.bm25_retriever(raw_docs,k=1).invoke(query)
+                #     log.info(f"bm25 results: {raw_docs}")
+                # docs = self.web_parser(urls,url_meta_map,collection_name)
+                return known_type,raw_results,raw_docs
+            
+            known_type,raw_results,raw_docs = asyncio.run(
+                do(questions, collection_name, tenant)
+            )
+            return collection_name, known_type,raw_results,raw_docs
         except Exception as e:
             log.error(f"Error search: {e}")
             print(traceback.format_exc())
