@@ -230,12 +230,15 @@ class AgiGraph:
         # agent的场景,需要使用到AskHuman
         if isinstance(state["messages"][-1],ToolMessage):
             ask = AskHuman.model_validate(state["messages"][-1].tool_calls[0]["args"])
+            # feedback的类型是State
             feedback = interrupt(ask.question)
             return feedback
         elif isinstance(state["messages"][-1],HumanMessage): #用于测试
             feedback = interrupt("breaked")
             messages = [AIMessage(content=state["messages"][-1].content)]
             return {"messages": messages}
+        
+        return state
         
     def invoke(self,input:State) -> State:
         config={"configurable": {"user_id": input.get("user_id","default_tenant"), "conversation_id": input.get("conversation_id",""),
