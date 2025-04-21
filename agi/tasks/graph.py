@@ -265,8 +265,6 @@ class AgiGraph:
                 events = self.graph.stream(input, config=config, stream_mode=stream_mode)
 
             for event in events:
-                import pdb
-                pdb.set_trace()
                 log.debug(event)
                 # 返回非HumanMessage
                 if "values" in stream_mode:
