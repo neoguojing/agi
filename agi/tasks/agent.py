@@ -14,7 +14,7 @@ from langchain_core.messages import (
 )
 
 from langgraph.graph.message import Messages
-from langchain_core.messages import BaseMessage,AIMessage,HumanMessage,ToolMessage,AIMessageChunk
+from langchain_core.messages import trim_messages
 import json
 import traceback
 
@@ -160,12 +160,26 @@ def modify_state_messages(state: State):
     refine_last_message_text(state["messages"])
     return prompt.invoke({"messages": state["messages"],"language":"chinese"}).to_messages()
 
+def pre_model_hook(state):
+    trimmed_messages = trim_messages(
+        state["messages"],
+        strategy="last",
+        token_counter=len,
+        max_tokens=30,
+        start_on="human",
+        end_on=("human", "tool"),
+    )
+    # You can return updated messages either under `llm_input_messages` or 
+    # `messages` key (see the note below)
+    return {"messages": trimmed_messages}
+
 memory = MemorySaver()
 def create_react_agent_task(llm):
     langgraph_agent_executor = create_react_agent(llm, 
                                                   tools,state_modifier=modify_state_messages,
                                                   checkpointer=memory,
                                                   debug=True,
+                                                  pre_model_hook=pre_model_hook,
                                                 #   interrupt_before="tools",
                                                     
                                                   )
