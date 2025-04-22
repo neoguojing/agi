@@ -121,7 +121,9 @@ class KnowledgeManager:
             store = self.collection_manager.get_vector_store(collection_name, tenant=tenant)
             
             for source in sources:
-                if source.get("source") in exist_sources:
+                if isinstance(source, dict) and source.get("source", "") in exist_sources:
+                    continue
+                elif source in exist_sources:
                     continue
 
                 # Create asynchronous task for each source processing
@@ -155,8 +157,7 @@ class KnowledgeManager:
                             doc.metadata["type"] = source_type.value
                             doc.metadata["timestamp"] = str(time.time())
                             if doc.metadata.get("source") is None:
-                                doc.metadata["source"] = source.get("source", "")
-                            doc.metadata = {**doc.metadata, **kwargs}
+                                doc.metadata["source"] = source if isinstance(source, str) else (source.get("source", "") if isinstance(source, dict) else "")                            doc.metadata = {**doc.metadata, **kwargs}
 
                         # After documents are loaded, split them asynchronously as well
                         split_docs = self.split_documents(docs)
