@@ -22,10 +22,10 @@ from agi.tasks.task_factory import (
     TASK_MULTI_MODEL,
     TASK_LLM_WITH_HISTORY
     )
-from langgraph.prebuilt.chat_agent_executor import AgentState
+from agi.tasks.define import AgentState
 from typing import Dict, Any, Iterator,Union
 from langchain_core.messages import BaseMessage,AIMessage,HumanMessage,ToolMessage,AIMessageChunk
-from agi.tasks.agent import State,Feature,InputType
+from agi.tasks.define import State,Feature,InputType
 from agi.tasks.prompt import decide_modify_state_messages_runnable
 from agi.tasks.utils import split_think_content
 import traceback

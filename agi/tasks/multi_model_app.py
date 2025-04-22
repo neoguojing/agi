@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field,RootModel
 from typing import Literal, Union,List
 from langchain_core.messages import HumanMessage,BaseMessage,AIMessage,ToolMessage
 from langchain_core.prompt_values import StringPromptValue,PromptValue,ChatPromptValue
-from langgraph.prebuilt.chat_agent_executor import AgentState
+from agi.tasks.define import AgentState
 from agi.tasks.utils import graph_response_format_runnable,refine_last_message_text
 from agi.config import (
     OLLAMA_API_BASE_URL,
@@ -105,7 +105,7 @@ def user_understand(llm):
 # TODO 依据历史消息，分析用户的意图
 def create_image_gen_chain(llm):
     # translate = create_translate_chain(llm)
-    translate = user_understand(llm)
+    # translate = user_understand(llm)
     image2image = ModelFactory.get_model("image2image")
     text2image = ModelFactory.get_model("text2image")
     
@@ -126,8 +126,7 @@ def create_image_gen_chain(llm):
     )
     
     chain = (
-        translate
-        | multimodel_state_modifier_runnable
+        multimodel_state_modifier_runnable
         | branch
     )
         

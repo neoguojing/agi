@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 import threading
 from langchain_core.messages import AIMessage, HumanMessage
-from agi.tasks.agent import State
+from agi.tasks.define import State
 from agi.tasks.task_factory import TaskFactory, TASK_LLM, TASK_LLM_WITH_HISTORY
 
 from agi.config import log

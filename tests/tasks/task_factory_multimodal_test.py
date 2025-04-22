@@ -6,7 +6,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 # Assuming we import the TaskFactory and constants like TASK_LLM, TASK_EMBEDDING, etc.
 from agi.tasks.task_factory import TaskFactory, TASK_TRANSLATE, TASK_IMAGE_GEN, TASK_TTS, TASK_SPEECH_TEXT,TASK_LLM_WITH_HISTORY
 from agi.tasks.prompt import multimodal_input_template
-from agi.tasks.agent import State
+from agi.tasks.define import State
 from agi.tasks.multi_model_app import user_understand
 
 from agi.config import log

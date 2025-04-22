@@ -5,7 +5,7 @@ from langchain_core.runnables import (
 from langchain_core.messages import HumanMessage, BaseMessage,SystemMessage,AIMessage
 from langchain.output_parsers.boolean import BooleanOutputParser
 from agi.tasks.agi_prompt import MultiModalChatPromptTemplate
-from langgraph.prebuilt.chat_agent_executor import AgentState
+from agi.tasks.define import AgentState
 from agi.tasks.utils import get_last_message_text
 import json
 

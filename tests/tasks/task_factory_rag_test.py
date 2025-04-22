@@ -3,7 +3,7 @@ from langchain_core.messages import AIMessage, HumanMessage,ToolMessage
 import 
 # Assuming we import the TaskFactory and constants like TASK_LLM, TASK_EMBEDDING, etc.
 from agi.tasks.task_factory import TaskFactory,TASK_RAG,TASK_WEB_SEARCH,TASK_DOC_CHAT
-from agi.tasks.agent import State
+from agi.tasks.define import State
 from agi.config import CACHE_DIR
 import asyncio
 from agi.config import log

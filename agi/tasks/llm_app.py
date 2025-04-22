@@ -12,7 +12,7 @@ from langchain_core.language_models import LanguageModelLike
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import BasePromptTemplate
 from langchain_core.retrievers import RetrieverLike, RetrieverOutputLike
-from langgraph.prebuilt.chat_agent_executor import AgentState
+from agi.tasks.define import AgentState
 
 from langchain_core.runnables import (
     RunnableParallel,
