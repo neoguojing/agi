@@ -21,8 +21,8 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, StateGraph
 from langgraph.graph.graph import CompiledGraph
 
-from langgraph.prebuilt.tool_executor import ToolExecutor
-from langgraph.prebuilt.tool_node import ToolNode
+from langgraph-prebuilt.tool_executor import ToolExecutor
+from langgraph-prebuilt.tool_node import ToolNode
 
 from agi.tasks.tools import tools
 from langgraph.checkpoint.memory import MemorySaver
