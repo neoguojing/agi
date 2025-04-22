@@ -378,7 +378,7 @@ def build_citations(inputs: dict):
             
             # 提取 metadata
             metadata = [doc.metadata for doc in sorted_docs]
-            distances = [1.0] * len(sorted_docs)
+            distances = [doc.metadata.get("score",1.0) for doc in sorted_docs]
             citations.append({
                 "source": {"id":source,"name":source},
                 "document": document_contents,
