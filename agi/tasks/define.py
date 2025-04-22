@@ -15,7 +15,7 @@ from langchain_core.messages import (
     SystemMessage,
 )
 from langgraph.graph.message import add_messages
-from langgraph.managed import IsLastStep
+from langgraph.managed import IsLastStep, RemainingSteps
 
 class Feature:
     AGENT = "agent"
@@ -53,6 +53,8 @@ class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
 
     is_last_step: IsLastStep
+
+    remaining_steps: RemainingSteps
 
 class State(AgentState):
     # messages: Annotated[Sequence[BaseMessage], add_messages]
