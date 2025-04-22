@@ -1,4 +1,6 @@
 import io
+import json
+import os
 from PIL import Image as PILImage
 from langgraph.graph import END, StateGraph, START
 import uuid
@@ -6,7 +8,7 @@ from langgraph.types import Command, interrupt
 from langchain_core.output_parsers import StrOutputParser
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import StreamWriter
-from langchain_core.runnables import  RunnableConfig,Runnable,RunnablePassthrough
+from langchain_core.runnables import  RunnableConfig
 from langchain.globals import set_debug
 from langchain.globals import set_verbose
 from agi.tasks.task_factory import (
@@ -26,11 +28,18 @@ from agi.tasks.define import AgentState
 from typing import Dict, Any, Iterator,Union
 from langchain_core.messages import BaseMessage,AIMessage,HumanMessage,ToolMessage,AIMessageChunk
 from agi.tasks.define import State,Feature,InputType
-from agi.tasks.prompt import decide_modify_state_messages_runnable
+from agi.tasks.prompt import (
+    decide_modify_state_messages_runnable,
+    user_understand__modify_state_messages_runnable
+)
 from agi.tasks.utils import split_think_content
 import traceback
 import threading
-from agi.config import log
+from agi.config import (
+    log,
+    BASE_URL,
+    IMAGE_FILE_SAVE_PATH
+)
 from agi.tasks.tools import AskHuman
 # set_verbose(True)
 # set_debug(True)
@@ -64,7 +73,9 @@ class AgiGraph:
         self.builder.add_node("llm_with_history", TaskFactory.create_task(TASK_LLM_WITH_HISTORY))
         
         self.builder.add_node("human_feedback", self.human_feedback)
-        
+        self.builder.add_node("user_understand", self.user_understand_node)
+
+        self.builder.add_edge("user_understand", "image_gen")
         self.builder.add_conditional_edges("human_feedback", self.human_feedback_control)
         self.builder.add_conditional_edges("agent", self.agent_control)
         self.builder.add_conditional_edges("llm", self.output_control)
@@ -120,7 +131,32 @@ class AgiGraph:
         if state["citations"]:
             writer({"citations":state["citations"],"docs":state["docs"]})
         return chain.invoke(state,config=config)
-    
+    # 理解用户意图，并生成结构化的输入
+    def user_understand_node(self,state: AgentState,config: RunnableConfig):
+        try:
+            chain = user_understand__modify_state_messages_runnable | TaskFactory.get_llm() 
+            ai = chain.invoke(state)
+            log.info(f"user_understand:{ai}\n{state}")
+            # think 标签过滤
+            _, result = split_think_content(ai.content)
+            log.debug(result)
+            obj = json.loads(result)
+            text = obj.get("text")
+            image = obj.get("image")
+            last_message = state["messages"][-1]
+            if text and last_message:
+                last_message.content = [{"type":"text","text":text}]
+                if image:
+                    if image.startswith(BASE_URL):
+                        image = os.path.join(IMAGE_FILE_SAVE_PATH,os.path.basename(image))
+                    last_message.content.append({"type":"image","image":image})     
+            log.info(f"user_understand end:{state}")
+            return state["messages"]
+        except Exception as e:
+            log.error(f"Error during user_understand output_parser: {e}")
+            print(traceback.format_exc())
+            return state["messages"]
+        
     def auto_state_machine(self,state: State):
         config={"configurable": {"user_id": "tools", "conversation_id": "",
                                  "thread_id": "tools"}}
@@ -128,17 +164,20 @@ class AgiGraph:
         # 去除think标签
         _,next_step = split_think_content(next_step)
         log.info(f"auto_state_machine: {next_step}")
+        
+        result = "llm_with_history"
         # 判断返回是否在决策列表里
         if next_step in self.node_list:
-            state["auto_decide_reuslt"] = next_step
-            return next_step
-        # 若大模型返回的值不标准，则看是否包含节点
-        match = next((option for option in self.node_list if option in next_step), None)
-        if match:
-            state["auto_decide_reuslt"] = match
-            return match
-        state["auto_decide_reuslt"] = "llm_with_history"
-        return "llm_with_history"
+            result = next_step
+        else: # 若大模型返回的值不标准，则看是否包含节点
+            match = next((option for option in self.node_list if option in next_step), None)
+            if match:
+                result = match
+        state["auto_decide_result"] = result
+        # 特殊情况，在没有明确是图生图还是文生图的情况下(即单纯输入text的情况下，也可能是需要对上一次的图片做修改)，需要理解用户意图做出决策
+        if result == "image_gen" and state["input_type"] == InputType.TEXT:
+            result = "user_understand"
+        return result
     
     # 控制图像输入决策
     def image_feature_control(self,state: State):

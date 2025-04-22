@@ -8,6 +8,7 @@ from typing import (
     Optional,
     TypedDict
 )
+
 from langchain.prompts.chat import (
     MessageLikeRepresentation,
     BaseMessagePromptTemplate,

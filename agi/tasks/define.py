@@ -69,7 +69,7 @@ class State(AgentState):
     citations: list[any]
     collection_names: list[str]
 
-    auto_decide_reuslt: str
+    auto_decide_result: str
     status: str
     step: list[str] #用于保存执行的步骤,按顺序排列
     
