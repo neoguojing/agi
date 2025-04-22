@@ -35,13 +35,16 @@ from agi.tasks.prompt import doc_qa_template,docqa_modify_state_messages_runnabl
 from agi.tasks.retriever import KnowledgeManager
 from agi.tasks.utils import graph_response_format_runnable,get_last_message_text
 import json
+import os
 import asyncio
 from datetime import datetime,timezone
 from langchain.globals import set_debug
 from collections import defaultdict
 import validators
 from agi.config import (
-    LANGCHAIN_DB_PATH
+    LANGCHAIN_DB_PATH,
+    CACHE_DIR,
+    BASE_URL
 )
 from typing import (
     Any,
@@ -361,6 +364,8 @@ def build_citations(inputs: dict):
                 source_type = "collection"
 
             source = doc.metadata.get('filename') or doc.metadata.get('link') or doc.metadata.get('source')
+            if source.startswith(CACHE_DIR):
+                source = os.path.join(BASE_URL, "v1/files", os.path.basename(source))
             source_dict[source].append(doc)
 
         # 对每个 source 下的文档进行排序，并整理成需要的格式
