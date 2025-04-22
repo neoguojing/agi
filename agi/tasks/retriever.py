@@ -240,7 +240,7 @@ class KnowledgeManager:
                 elif sim_algo == SimAlgoType.SST:
                     chroma_retriever = self.collection_manager.get_vector_store(collection_name,tenant=tenant).as_retriever(
                         search_type="similarity_score_threshold",
-                        search_kwargs={"score_threshold": 0.3}
+                        search_kwargs={"score_threshold": 0.1}
                     )
                     # chroma_retriever = self.collection_manager.get_vector_store(collection_name,tenant=tenant).as_retriever(
                     #     search_kwargs={"k": k}
