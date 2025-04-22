@@ -72,7 +72,7 @@ class AgiGraph:
         #1.图像识别等 image2text 请求；2.正常的用户对话等
         self.builder.add_node("llm_with_history", TaskFactory.create_task(TASK_LLM_WITH_HISTORY))
         
-        self.builder.add_node("human_feedback", self.human_feedback)
+        self.builder.add_node("human_feedback", self.human_feedback_node)
         self.builder.add_node("user_understand", self.user_understand_node)
 
         self.builder.add_edge("user_understand", "image_gen")
@@ -104,6 +104,7 @@ class AgiGraph:
         
         # 定义状态机chain
         self.decider_chain = decide_modify_state_messages_runnable | TaskFactory.get_llm() | StrOutputParser()
+        self.intend_understand = user_understand__modify_state_messages_runnable | TaskFactory.get_llm() 
         self.node_list = ["image_gen","llm_with_history","agent"]
 
     # 通过用户指定input_type，来决定使用哪个分支
@@ -134,8 +135,7 @@ class AgiGraph:
     # 理解用户意图，并生成结构化的输入
     def user_understand_node(self,state: AgentState,config: RunnableConfig):
         try:
-            chain = user_understand__modify_state_messages_runnable | TaskFactory.get_llm() 
-            ai = chain.invoke(state)
+            ai = self.intend_understand.invoke(state)
             log.info(f"user_understand:{ai}\n{state}")
             # think 标签过滤
             _, result = split_think_content(ai.content)
@@ -151,11 +151,11 @@ class AgiGraph:
                         image = os.path.join(IMAGE_FILE_SAVE_PATH,os.path.basename(image))
                     last_message.content.append({"type":"image","image":image})     
             log.info(f"user_understand end:{state}")
-            return state["messages"]
+            return state
         except Exception as e:
             log.error(f"Error during user_understand output_parser: {e}")
             print(traceback.format_exc())
-            return state["messages"]
+            return state
         
     def auto_state_machine(self,state: State):
         config={"configurable": {"user_id": "tools", "conversation_id": "",
@@ -243,7 +243,7 @@ class AgiGraph:
         if state["step"]:
             return state["step"][-1]
         
-        return END
+        return self.output_control(state)
     
     def output_control(self,state: State):
         if state["need_speech"]:
@@ -264,7 +264,7 @@ class AgiGraph:
             return "doc_chat"
         return "agent"
     
-    def human_feedback(self,state: State):
+    def human_feedback_node(self,state: State):
         messages = []
         # agent的场景,需要使用到AskHuman
         if isinstance(state["messages"][-1],ToolMessage):
@@ -276,8 +276,7 @@ class AgiGraph:
             feedback = interrupt("breaked")
             # TODO 此处并没有返回
             messages = [AIMessage(content=feedback["messages"][-1].content)]
-            state["messages"] = messages
-            return state
+            return {"messages": messages} 
         
         return state
         
@@ -313,6 +312,8 @@ class AgiGraph:
 
             for event in events:
                 log.debug(event)
+                import pdb
+                pdb.set_trace()
                 # 返回非HumanMessage
                 if "values" in stream_mode:
                     # event是 State类型
@@ -356,7 +357,7 @@ class AgiGraph:
                     # TODO decide chain 和 tranlate chain 以及 web search chain会输出中间结果,需要想办法处理
                     if (isinstance(event[1][0],AIMessage)) and event[1][0].content:
                         meta = event[1][1]
-                        if meta.get("langgraph_node") in ["web","__start__","rag"]:
+                        if meta.get("langgraph_node") in ["web","__start__","rag",'user_understand']:
                             pass
                         else:
                             yield event

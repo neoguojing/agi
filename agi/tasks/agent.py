@@ -4,7 +4,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from agi.tasks.define import AgentState
 from langchain_core.messages import trim_messages
 from agi.config import log
-from agi.tasks.utils import refine_last_message_text
+from agi.tasks.utils import refine_last_message_text,format_state_message_to_str
 from agi.tasks.define import State
 
 import functools
@@ -599,6 +599,7 @@ def modify_state_messages(state: State):
     return prompt.invoke({"messages": state["messages"],"language":"chinese"}).to_messages()
 
 def pre_model_hook(state):
+    refine_last_message_text(state["messages"])
     trimmed_messages = trim_messages(
         state["messages"],
         strategy="last",
@@ -609,6 +610,7 @@ def pre_model_hook(state):
     )
     # You can return updated messages either under `llm_input_messages` or 
     # `messages` key (see the note below)
+    trimmed_messages = format_state_message_to_str(trimmed_messages)
     return {"messages": trimmed_messages}
 
 memory = MemorySaver()

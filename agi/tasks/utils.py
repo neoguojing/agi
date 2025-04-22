@@ -1,4 +1,4 @@
-from langchain_core.messages import AIMessage, HumanMessage,BaseMessage,ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage,BaseMessage,ToolMessage,SystemMessage
 from typing import Any, List, Mapping, Optional, Union
 from langchain_core.runnables import (
     RunnableLambda
@@ -75,6 +75,17 @@ def graph_response_format(message :Union[AIMessage,ToolMessage,list[BaseMessage]
     return {"messages": [message]} 
 
 graph_response_format_runnable = RunnableLambda(graph_response_format)
+
+def format_state_message_to_str(messages):
+    filter_messages = []
+    for message in messages:
+        if isinstance(message,SystemMessage):
+            continue
+        # 修正请求的类型，否则openapi会报错
+        if not isinstance(message.content,str):
+             message.content = json.dumps(message.content)
+        filter_messages.append(message)
+    return filter_messages
 
 # TODO parent_name不是实际的函数
 def debug_info(x : Any):
