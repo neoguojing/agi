@@ -67,7 +67,7 @@ tools = [
     ),
     SearchEngineSelector(),
     YahooFinanceNewsTool(),
-    YouTubeSearchTool()
+    YouTubeSearchTool(),
     wikipedia(),
     # wikidata(),
     pythonREPL(),
