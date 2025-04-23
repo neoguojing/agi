@@ -62,7 +62,6 @@ class SourceType(Enum):
     YOUTUBE = "youtube"
     WEB = "web"
     FILE = "file"
-    SEARCH_RESULT = "search_result"
 
 class FilterType(Enum):
     LLM_FILTER = "llm_chain_filter"
@@ -121,9 +120,7 @@ class KnowledgeManager:
             store = self.collection_manager.get_vector_store(collection_name, tenant=tenant)
             
             for source in sources:
-                if isinstance(source, dict) and source.get("source", "") in exist_sources:
-                    continue
-                elif source in exist_sources:
+                if source in exist_sources:
                     continue
 
                 # Create asynchronous task for each source processing
@@ -134,13 +131,6 @@ class KnowledgeManager:
                         loader = self.get_youtube_loader(source)
                     elif source_type == SourceType.WEB:
                         loader = self.get_web_loader(source)
-                    elif source_type == SourceType.SEARCH_RESULT:
-                        raw_docs.append(
-                            Document(
-                                page_content=f"{source.get('date')}\n{source.get('title')}\n{source.get('snippet')}",
-                                metadata={"source": source.get("source"), "link": source.get("link")},
-                            )
-                        )
                     else:
                         file_name = kwargs.get('filename')
                         content_type = kwargs.get('content_type')
@@ -157,7 +147,7 @@ class KnowledgeManager:
                             doc.metadata["type"] = source_type.value
                             doc.metadata["timestamp"] = str(time.time())
                             if doc.metadata.get("source") is None:
-                                doc.metadata["source"] = source if isinstance(source, str) else ""
+                                doc.metadata["source"] = source
 
                         # After documents are loaded, split them asynchronously as well
                         split_docs = self.split_documents(docs)
@@ -256,8 +246,6 @@ class KnowledgeManager:
                 retrievers=retrievers
             )
             
-            # retriever = RunnableParallel(input=RunnablePassthrough(), docs=retriever)
-
             if filter_type is not None:
                 retriever = self.get_compress_retriever(retriever,filter_type)
             
@@ -486,7 +474,7 @@ class KnowledgeManager:
                 vector_store.add_documents(docs,ids=uuids)
         return docs
         
-    def web_search(self,query,tenant=None,collection_name="web",max_results=3):
+    def web_search(self,query,tenant=None,collection_name="web",max_results=3,bm25=False):
         if query is None:
             return 
     
@@ -504,17 +492,19 @@ class KnowledgeManager:
                 # collection_name,known_type,raw_docs = await self.store(collection_name,list(urls),source_type=SourceType.WEB,tenant=tenant)
                 # log.info(f"scrach results: {raw_docs}")
                 # 未爬到信息，则使用检索结果拼装
-                if len(raw_docs) == 0:
-                    collection_name,known_type,raw_docs = await self.store(collection_name,
-                                                                            raw_results,
-                                                                            source_type=SourceType.SEARCH_RESULT,
-                                                                            tenant=tenant)
+                for source in raw_results:
+                    raw_docs.append(
+                        Document(
+                            page_content=f"{source.get('date',"")}\n{source.get('title',"")}\n{source.get('snippet')}",
+                            metadata={"source": source.get("source"), "link": source.get("link")},
+                        )
+                    )
                     
                 # 使用bm25算法重排
-                # if raw_docs and len(raw_docs) > 1:
-                #     raw_docs= self.bm25_retriever(raw_docs,k=1).invoke(query)
-                #     log.info(f"bm25 results: {raw_docs}")
-                # docs = self.web_parser(urls,url_meta_map,collection_name)
+                if raw_docs and bm25:
+                    raw_docs= self.bm25_retriever(raw_docs,k=1).invoke(query)
+                    log.info(f"bm25 results: {raw_docs}")
+
                 return known_type,raw_results,raw_docs
             
             known_type,raw_results,raw_docs = asyncio.run(
