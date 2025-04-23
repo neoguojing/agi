@@ -312,8 +312,6 @@ class AgiGraph:
 
             for event in events:
                 log.debug(event)
-                import pdb
-                pdb.set_trace()
                 # 返回非HumanMessage
                 if "values" in stream_mode:
                     # event是 State类型
