@@ -20,6 +20,7 @@ def wikipedia():
     runner = WikipediaQueryRun(api_wrapper=api_wrapper)
     return runner
 
+# TEST FAIED
 def wikidata():
     from langchain_community.tools.wikidata.tool import WikidataAPIWrapper, WikidataQueryRun
 
@@ -66,7 +67,8 @@ tools = [
             on arxiv.org."
     ),
     SearchEngineSelector(),
-    YahooFinanceNewsTool(),
+    # TEST FAIED
+    # YahooFinanceNewsTool(),
     YouTubeSearchTool(),
     wikipedia(),
     # wikidata(),
