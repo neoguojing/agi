@@ -21,7 +21,6 @@ from langchain.retrievers.multi_query import MultiQueryRetriever
 from langchain.retrievers import ContextualCompressionRetriever, EnsembleRetriever
 from langchain.retrievers.document_compressors import LLMChainExtractor
 from langchain_community.retrievers import BM25Retriever
-from langchain_openai import ChatOpenAI,OpenAIEmbeddings
 from typing import Any,List,Dict,Iterator, Optional, Sequence, Union, Tuple, Set
 import validators
 import socket
@@ -30,8 +29,6 @@ from langchain.retrievers.document_compressors import DocumentCompressorPipeline
 from langchain_community.document_transformers import EmbeddingsRedundantFilter
 from agi.tasks.vectore_store import CollectionManager
 from agi.tasks.prompt import DEFAULT_SEARCH_PROMPT,rag_filter_template
-from langchain_community.utilities import DuckDuckGoSearchAPIWrapper,SearxSearchWrapper
-from langchain_community.tools import DuckDuckGoSearchResults
 from langchain_community.document_loaders import AsyncChromiumLoader,AsyncHtmlLoader
 from langchain_community.document_transformers import BeautifulSoupTransformer
 from langchain_community.retrievers.web_research import QuestionListOutputParser
@@ -185,6 +182,7 @@ class KnowledgeManager:
         elif filter_type == FilterType.LLM_EXTRACT:
             relevant_filter = LLMChainExtractor.from_llm(self.llm)
 
+        # 通过embding，去除相似内容
         redundant_filter = EmbeddingsRedundantFilter(embeddings=self.embedding)
         
         pipeline_compressor = DocumentCompressorPipeline(

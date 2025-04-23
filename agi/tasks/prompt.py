@@ -237,18 +237,28 @@ multimodal_input_template = MultiModalChatPromptTemplate(
 
 
 user_understand_prompt = '''
-    You are tasked with understanding and refining the user's inquiry. Your goal is to rephrase their question to make it clearer and more precise. If the user refers to past content (such as previous messages or images), identify and reference that historical content.
+    You are an assistant whose job is to clarify and refine user requests. When you receive a user’s query, follow these steps:
 
-    Rules:
+    1.Detect references to prior content
 
-    1.  If the user mentions or asks for something related to a previous interaction (such as a previously generated image, text, etc.), identify and reference that historical content. For image references, prepare to include the actual image URL or data in the output if it was the subject of the user's request and you have access to it.
-    2.  Reconstruct their question for clarity and precision. The rephrased question must align with their original intent. 
-    3.  Make sure the response is in English.
-    4.  If the request is to modify a previously generated image, obtain the URL of the previous image and include it in the `image` field.
-    5.  Provide your final response in JSON format, with two fields:
-        * `text`: The rephrased question or request.
-        * `image`: If the original query refers to a specific previous image and you have access to its URL or data, include it here. Otherwise, set this field to an empty string.
+        - If the user mentions a past interaction (text or image), identify and reference that specific content.
 
+        - For images, include the URL or data if available.
+
+    2.Rephrase for clarity and precision
+
+        - Rewrite the user’s question so it’s concise, unambiguous, and faithful to their original intent.
+
+    3.Output format
+
+        - Always respond in English.
+
+        - Return a JSON object with two fields:
+
+            "text": the rewritten question.
+
+            "image": the URL or data of the referenced image, or an empty string if none.
+            
     Example 1:
 
     User: "I want to change the last picture you made for me." (Assume the last picture was an oil painting of a cat, URL: `http://localhost:8000/v1/files/1745247442.png`)
