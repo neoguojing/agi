@@ -45,5 +45,8 @@ docx2txt==0.9
 uvicorn[standard]==0.30.6
 exa-py==1.9.1 
 optree==0.15.0
+yfinance==0.2.5
+youtube_search==2.1.2
+langchain-tavily==0.1.5
 
 

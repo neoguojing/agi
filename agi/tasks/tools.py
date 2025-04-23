@@ -7,6 +7,8 @@ from agi.utils.search_engine import SearchEngineSelector
 from agi.utils.stock_market import get_stock
 from agi.config import log
 from pydantic import BaseModel,Field
+from langchain_community.tools.yahoo_finance_news import YahooFinanceNewsTool
+from langchain_community.tools import YouTubeSearchTool
 
 arxiv = ArxivAPIWrapper()
 
@@ -64,6 +66,8 @@ tools = [
             on arxiv.org."
     ),
     SearchEngineSelector(),
+    YahooFinanceNewsTool(),
+    YouTubeSearchTool()
     wikipedia(),
     # wikidata(),
     pythonREPL(),

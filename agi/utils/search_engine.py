@@ -2,9 +2,10 @@ import random
 from collections import defaultdict
 from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 from langchain_community.tools import DuckDuckGoSearchResults
+from langchain_tavily import TavilySearch
 from exa_py import Exa
 from typing import Any, Optional, Type
-from agi.config import EXA_API_KEY,log
+from agi.config import EXA_API_KEY,log,TAVILY_API_KEY
 
 from langchain_core.callbacks import CallbackManagerForToolRun
 from langchain_core.tools import BaseTool
@@ -40,6 +41,8 @@ class SearchEngineSelector(BaseTool):
 
         if EXA_API_KEY:
             self._search_engines["Exa"] = Exa(EXA_API_KEY)
+        if TAVILY_API_KEY:
+            self._search_engines["Tavily"] = TavilySearch(max_results=self.max_results,topic="general")
 
         self._default_engines = list(self._search_engines.keys())
 
@@ -110,7 +113,6 @@ class SearchEngineSelector(BaseTool):
                         num_results=self.max_results,
                         text=True,
                     )
-                    search_results = []
                     for r in resp.results:
                         search_results.append({
                             "snippet": r.text,
@@ -119,7 +121,31 @@ class SearchEngineSelector(BaseTool):
                             "date": r.published_date,
                             "source": r.url,
                         })
-                
+                elif isinstance(search,TavilySearch):
+                    # {
+                    #     'query': 'What happened at the last wimbledon',
+                    #     'follow_up_questions': None,
+                    #     'answer': None,
+                    #     'images': [],
+                    #     'results': [{'content': "Andy Murray pulls out of the men's singles draw at his last Wimbledon",
+                    #                 'url': 'https://www.nbcnews.com/news/sports/andy-murray-wimbledon-tennis-singles-draw-rcna159912',
+                    #                 'content': "NBC News Now LONDON — Andy Murray, one of the last decade's most successful ..."
+                    #                 'score': 0.6755297,
+                    #                 'raw_content': None
+                    #                 }],
+                    #     'response_time': 1.31
+                    # }
+                    resp = search.invoke({"query": query})
+                    for r in resp.get("results",[]):
+                        search_results.append({
+                            "snippet": r.get("content",""),
+                            "title": r.get("content",""),
+                            "link": r.get("url",""),
+                            "date": "",
+                            "source": r.get("url",""),
+                            "score": r.get("score",0.0)
+                        })
+
                 log.info(f"Search results using {random_key} for query '{query}': {search_results}")
                 success = True  # 如果成功，就跳出重试循环
                 # 汇报结果

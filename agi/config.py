@@ -61,6 +61,7 @@ MULTI_MODEL_PATH = os.getenv("MULTI_MODEL_PATH",os.path.join(MODEL_PATH, "Qwen2.
 
 ## web
 EXA_API_KEY = os.getenv("EXA_API_KEY","")
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY","")
 ## stock
 ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY","")
 
