@@ -12,7 +12,7 @@ class TestTools(unittest.TestCase):
         from langchain_community.tools.yahoo_finance_news import YahooFinanceNewsTool
 
         tool = YahooFinanceNewsTool()
-        resp = tool.invoke("综合财经新闻")
+        resp = tool.invoke("NVDA")
         print(resp)
 
 
@@ -32,7 +32,7 @@ class TestTools(unittest.TestCase):
     def test_wikipedia(self):
 
         tool = wikipedia()
-        resp = tool.invoke("姚明")
+        resp = tool.invoke("yao min")
         print(resp)
 
     def test_pythonREPL(self):

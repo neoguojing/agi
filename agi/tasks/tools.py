@@ -16,15 +16,15 @@ def wikipedia():
     from langchain_community.tools import WikipediaQueryRun
     from langchain_community.utilities import WikipediaAPIWrapper
 
-    api_wrapper = WikipediaAPIWrapper(top_k_results=1, doc_content_chars_max=100,lang="cn")
-    tool = WikipediaQueryRun(api_wrapper=api_wrapper)
-    return tool
+    api_wrapper = WikipediaAPIWrapper(top_k_results=1, doc_content_chars_max=100)
+    runner = WikipediaQueryRun(api_wrapper=api_wrapper)
+    return runner
 
 def wikidata():
     from langchain_community.tools.wikidata.tool import WikidataAPIWrapper, WikidataQueryRun
 
-    wikidata = WikidataQueryRun(api_wrapper=WikidataAPIWrapper())
-    return wikidata
+    runner = WikidataQueryRun(api_wrapper=WikidataAPIWrapper())
+    return runner
 
 def pythonREPL():
     from langchain_core.tools import Tool
