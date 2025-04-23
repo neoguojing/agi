@@ -169,7 +169,7 @@ def get_nmc_weather(station_id: str, timeout: float = 5.0) -> Dict[str, Any]:
 @tool("Weather", return_direct=False)
 def get_weather_info(city_name):
     """Utility to fetch real-time weather conditions for specified locations.
-    Input should be a city name."""
+    Input should be a city name in Chinese."""
     _,city_code, _ = find_best_match(city_name)
     return get_nmc_weather(city_code)
     

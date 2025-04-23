@@ -112,7 +112,16 @@ def default_modify_state_messages(state: AgentState):
             continue
         # 修正请求的类型，否则openapi会报错
         if not isinstance(message.content,str):
-             message.content = json.dumps(message.content)
+            # 请求消息处理
+            if isinstance(message,HumanMessage) and isinstance(message.content,list):
+                # 转换为ollama的图片请求协议
+                for item in message.content:
+                    if item.get("type") == "image":
+                        item["type"] = "image_url"
+                        item["image_url"] = item["image"]
+                        del item["image"]
+            else:
+                message.content = json.dumps(message.content)
         filter_messages.append(message)
     return default_template.invoke({"messages": filter_messages,"language":"chinese"}).to_messages()
 
