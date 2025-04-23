@@ -493,7 +493,7 @@ class KnowledgeManager:
                 for source in raw_results:
                     raw_docs.append(
                         Document(
-                            page_content=f"{source.get('date',"")}\n{source.get('title',"")}\n{source.get('snippet')}",
+                        page_content = f'{source.get("date", "")}\n{source.get("title", "")}\n{source.get("snippet")}',
                             metadata={"source": source.get("source"), "link": source.get("link")},
                         )
                     )
