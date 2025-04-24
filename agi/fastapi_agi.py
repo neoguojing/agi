@@ -16,11 +16,11 @@ from fastapi.middleware.cors import CORSMiddleware
 # 假设的 AgiGraph 模块（需要根据实际情况调整）
 from agi.tasks.graph import AgiGraph, State
 from agi.fast_api_file import router_file
-from agi.config import FILE_UPLOAD_PATH
+from agi.config import FILE_UPLOAD_PATH,log,IMAGE_FILE_SAVE_PATH,TTS_FILE_SAVE_PATH
 from pydub import AudioSegment
 import traceback
 
-from agi.config import log
+from agi.tasks.utils import identify_input_type,save_base64_content
 
 
 # 初始化 FastAPI 应用
@@ -84,57 +84,65 @@ async def chat_completions(
 
     internal_messages: List[Union[HumanMessage, Dict[str, Union[str, List[Dict[str, str]]]]]] = []
     input_type = "text"  # 默认输入类型
-        
-    # 只处理最后一条消息
-    # for msg in request.messages:
-    msg = request.messages[-1]
-    if msg.role == "user":
-        if isinstance(msg.content, str):
-            internal_messages.append(HumanMessage(content=msg.content))
+    try:
+        # 只处理最后一条消息
+        # for msg in request.messages:
+        msg = request.messages[-1]
+        if msg.role == "user":
+            if isinstance(msg.content, str):
+                internal_messages.append(HumanMessage(content=msg.content))
+            else:
+                content: List[Dict[str, str]] = []
+                for item in msg.content:
+                    if item["type"] == "image":
+                        # 假设 item["image"] 是图像数据的某种表示（例如，文件路径或 base64 编码）
+                        file_type = identify_input_type(item["image"])
+                        if file_type == "base64":
+                            item["image"], _ = save_base64_content(item["image"],IMAGE_FILE_SAVE_PATH)
+                        content.append({"type": "image", "image": item["image"]})
+                        input_type = "image"
+                    elif item["type"] == "audio":
+                        # 假设 item["audio"] 是音频数据的某种表示
+                        file_type = identify_input_type(item["audio"])
+                        if file_type == "base64":
+                            item["audio"], _ = save_base64_content(item["audio"],TTS_FILE_SAVE_PATH)
+                        content.append({"type": "audio", "audio": item["audio"]})
+                        input_type = "audio"
+                    elif item["type"] == "video":
+                        # 假设 item["audio"] 是音频数据的某种表示
+                        content.append({"type": "video", "video": item["video"]})
+                        input_type = "video"
+                    elif item["type"] == "text": 
+                        content.append({"type":"text","text":item["text"]})
+                    else:
+                        # 处理不支持的类型
+                        raise ValueError(f"不支持的多模态类型: {item['type']}")
+                internal_messages.append(HumanMessage(content=content))
+
+        if request.user is None or request.user == "":
+            request.user = "default_tenant"
+        state_data = State(
+            messages=internal_messages,
+            input_type=input_type,
+            need_speech=request.need_speech,
+            user_id=request.user,
+            conversation_id=request.conversation_id,
+            feature=request.feature,
+            collection_names=request.db_ids
+        )
+
+        if request.stream:
+            log.info(f"request: {request}")
+            return StreamingResponse(generate_stream_response(state_data), media_type="text/event-stream")
         else:
-            content: List[Dict[str, str]] = []
-            for item in msg.content:
-                if item["type"] == "image":
-                    # 假设 item["image"] 是图像数据的某种表示（例如，文件路径或 base64 编码）
-                    content.append({"type": "image", "image": item["image"]})
-                    input_type = "image"
-                elif item["type"] == "audio":
-                    # 假设 item["audio"] 是音频数据的某种表示
-                    content.append({"type": "audio", "audio": item["audio"]})
-                    input_type = "audio"
-                elif item["type"] == "video":
-                    # 假设 item["audio"] 是音频数据的某种表示
-                    content.append({"type": "video", "video": item["video"]})
-                    input_type = "video"
-                elif item["type"] == "text": 
-                    content.append({"type":"text","text":item["text"]})
-                else:
-                    # 处理不支持的类型
-                    raise ValueError(f"不支持的多模态类型: {item['type']}")
-            internal_messages.append(HumanMessage(content=content))
-
-    if request.user is None or request.user == "":
-        request.user = "default_tenant"
-    state_data = State(
-        messages=internal_messages,
-        input_type=input_type,
-        need_speech=request.need_speech,
-        user_id=request.user,
-        conversation_id=request.conversation_id,
-        feature=request.feature,
-        collection_names=request.db_ids
-    )
-
-    if request.stream:
-        log.info(f"request: {request}")
-        return StreamingResponse(generate_stream_response(state_data), media_type="text/event-stream")
-    else:
-        resp = graph.invoke(state_data)
-        if request.feature != "llm":
-            log.info(f"request:{request}")
-            log.info(f"response:{resp}")
-        return format_non_stream_response(resp)
-
+            resp = graph.invoke(state_data)
+            if request.feature != "llm":
+                log.info(f"request:{request}")
+                log.info(f"response:{resp}")
+            return format_non_stream_response(resp)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=e)
+    
 image_style = 'style="width: 100%; max-height: 100vh;"'
 audio_style = "width: 300px; height: 50px;"  # 添加样式
 def handle_response_content_as_string(content: Union[str,List]) -> str:

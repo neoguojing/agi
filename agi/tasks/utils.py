@@ -16,6 +16,12 @@ import json
 import traceback
 import uuid
 import hashlib
+import base64
+import mimetypes
+import os
+from typing import Tuple
+import re
+from urllib.parse import urlparse
 
 # 处理推理模型返回
 def split_think_content(content):
@@ -176,4 +182,80 @@ def add_messages(left: Messages, right: Messages) -> Messages:
     except Exception as e:
         log.error(e)
         print(traceback.format_exc())
+
+
+def identify_input_type(input_str: str) -> str:
+    """
+    判断输入字符串是文件路径、URL 还是 base64 编码。
+
+    Returns:
+        str: "path", "url", "base64", 或 "unknown"
+    """
+
+    # 判断是否为 URL
+    parsed = urlparse(input_str)
+    if parsed.scheme in ("http", "https") and parsed.netloc:
+        return "url"
+
+    # 判断是否为文件路径
+    if os.path.exists(input_str):
+        return "path"
+
+    # 判断是否为 base64（允许带 mime 头的）
+    base64_pattern = re.compile(r"^(data:\w+/\w+;base64,)?[A-Za-z0-9+/=\s]+$")
+    try:
+        # 校验是否 base64 可解码
+        content = input_str.split(",")[-1].strip()  # 支持带 data: 开头
+        if base64_pattern.match(input_str):
+            base64.b64decode(content, validate=True)
+            return "base64"
+    except Exception:
+        pass
+
+    return "unknown"
+
+def save_base64_content(base64_str: str, output_dir: str = "./output") -> Tuple[str, str]:
+    """
+    将 base64 编码的图片或语音内容保存为文件。
+
+    Args:
+        base64_str (str): base64 编码的字符串，支持带有 `data:*/*;base64,` 前缀。
+        output_dir (str): 存储目录，默认为 ./output
+
+    Returns:
+        Tuple[str, str]: 返回文件路径和类型（image 或 audio）
+
+    Raises:
+        ValueError: 当输入不是有效 base64 图片或语音内容时。
+    """
+
+    # 自动创建输出目录
+    os.makedirs(output_dir, exist_ok=True)
+
+    # 检测是否包含 mime 类型头
+    if base64_str.startswith("data:"):
+        header, encoded = base64_str.split(",", 1)
+        mime_type = header.split(";")[0][5:]
+        content_type = "image" if mime_type.startswith("image/") else "audio" if mime_type.startswith("audio/") else None
+        ext = mimetypes.guess_extension(mime_type)
+    else:
+        # 如果没有头部信息，则无法判断类型，默认用 .bin 保存
+        encoded = base64_str
+        mime_type = None
+        content_type = None
+        ext = ".bin"
+
+    if content_type not in {"image", "audio"}:
+        raise ValueError("Unsupported or unknown content type")
+
+    # 生成文件名
+    filename = f"{content_type}_{int(os.times()[4] * 1000)}{ext}"
+    file_path = os.path.join(output_dir, filename)
+
+    # 保存文件
+    with open(file_path, "wb") as f:
+        f.write(base64.b64decode(encoded))
+
+    return file_path, content_type
+
         
