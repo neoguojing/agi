@@ -261,4 +261,24 @@ def save_base64_content(base64_str: str, output_dir: str = CACHE_DIR) -> Tuple[s
         url = os.path.join(BASE_URL, "v1/files", os.path.basename(file_path))
     return file_path,url, content_type
 
-        
+def image_path_to_base64_uri(image_path: str) -> Optional[str]:
+    input_type = identify_input_type(image_path)
+    if input_type != "path":
+        return image_path
+    
+    if not os.path.isfile(image_path):
+        print("路径无效或文件不存在。")
+        return None
+
+    mime_type, _ = mimetypes.guess_type(image_path)
+    if not mime_type or not mime_type.startswith("image/"):
+        print("不是有效的图片类型。")
+        return None
+
+    try:
+        with open(image_path, "rb") as f:
+            encoded = base64.b64encode(f.read()).decode("utf-8")
+            return f"data:{mime_type};base64,{encoded}"
+    except Exception as e:
+        print(f"读取或编码失败: {e}")
+        return None

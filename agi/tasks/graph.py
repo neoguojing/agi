@@ -67,9 +67,9 @@ class AgiGraph:
         self.builder.add_node("doc_chat", self.doc_chat_node)
         self.builder.add_node("agent", TaskFactory.create_task(TASK_AGENT))
         self.builder.add_node("multi_modal", TaskFactory.create_task(TASK_MULTI_MODEL))
-        # 用于处理非agent的请求:1.标题生成等用户自定义提示请求；2.作为决策节点，判定用户意图
+        # 用于处理非agent的请求:1.标题生成等用户自定义提示请求；2.作为决策节点，判定用户意图;3.图像识别等 image2text 请求；该请求base64，对上下文影响较大
         self.builder.add_node("llm", TaskFactory.create_task(TASK_LLM))
-        #1.图像识别等 image2text 请求；2.正常的用户对话等
+        #2.正常的用户对话等
         self.builder.add_node("llm_with_history", TaskFactory.create_task(TASK_LLM_WITH_HISTORY))
         
         self.builder.add_node("human_feedback", self.human_feedback_node)
@@ -182,8 +182,8 @@ class AgiGraph:
     # 控制图像输入决策
     def image_feature_control(self,state: State):
         feature = state.get("feature","")
-        if feature == Feature.IMAGE2TEXT:    #图片转文字
-            return "llm_with_history"
+        if feature == Feature.IMAGE2TEXT:    #图片转文字,涉及到使用base64，对上下文影响较大，不能进入上下文
+            return "llm"
         elif feature == Feature.IMAGE2IMAGE:    #图片转图片
             return "image_gen"
         else:
