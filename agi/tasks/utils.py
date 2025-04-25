@@ -10,7 +10,7 @@ from langchain_core.messages import (
 )
 from agi.tasks.define import AgentState
 from langgraph.graph.message import Messages
-from agi.config import log,AGI_DEBUG
+from agi.config import log,AGI_DEBUG,CACHE_DIR,BASE_URL
 import inspect
 import json
 import traceback
@@ -214,7 +214,7 @@ def identify_input_type(input_str: str) -> str:
 
     return "unknown"
 
-def save_base64_content(base64_str: str, output_dir: str = "./output") -> Tuple[str, str]:
+def save_base64_content(base64_str: str, output_dir: str = CACHE_DIR) -> Tuple[str, str]:
     """
     将 base64 编码的图片或语音内容保存为文件。
 
@@ -256,6 +256,9 @@ def save_base64_content(base64_str: str, output_dir: str = "./output") -> Tuple[
     with open(file_path, "wb") as f:
         f.write(base64.b64decode(encoded))
 
-    return file_path, content_type
+    url = ""
+    if file_path.startswith(CACHE_DIR):
+        url = os.path.join(BASE_URL, "v1/files", os.path.basename(file_path))
+    return file_path,url, content_type
 
         
