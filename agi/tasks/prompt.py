@@ -114,12 +114,11 @@ def default_modify_state_messages(state: AgentState):
         if not isinstance(message.content,str):
             # 请求消息处理
             if isinstance(message,HumanMessage) and isinstance(message.content,list):
-                # 转换为ollama的图片请求协议
+                # ollama的图片请求协议,转换为内部协议
                 for item in message.content:
-                    if item.get("type") == "image":
-                        item["type"] = "image_url"
-                        item["image_url"] = item["image"]
-                        del item["image"]
+                    if item.get("type") == "image_url":
+                        item["type"] = "image"
+                        del item["image_url"]
             else:
                 message.content = json.dumps(message.content)
         filter_messages.append(message)

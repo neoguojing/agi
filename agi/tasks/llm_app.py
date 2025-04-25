@@ -269,7 +269,6 @@ def create_chat(llm):
                 if item.get("type") == "image":
                     item["type"] = "image_url"
                     item["image_url"] = image_path_to_base64_uri(item["image"])
-                    del item["image"]
         messages = [last_message]
         return prompt.invoke({"messages": messages}).to_messages()
     
