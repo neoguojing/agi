@@ -105,7 +105,7 @@ class AgiGraph:
         # 定义状态机chain
         self.decider_chain = decide_modify_state_messages_runnable | TaskFactory.get_llm() | StrOutputParser()
         self.intend_understand = user_understand__modify_state_messages_runnable | TaskFactory.get_llm() 
-        self.node_list = ["image_gen","llm_with_history","agent"]
+        self.node_list = ["image_gen","llm_with_history","agent","llm"]
 
     # 通过用户指定input_type，来决定使用哪个分支
     def routes(self,state: State, config: RunnableConfig):
