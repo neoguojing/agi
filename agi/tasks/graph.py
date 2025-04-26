@@ -288,7 +288,7 @@ class AgiGraph:
         log.debug(state.tasks)
         events = None
         # TODO tasks只有在非空情况下一定是打断吗
-        if state.tasks:
+        if state.tasks and state.tasks[0].interrupts:
             events = self.graph.invoke(Command(resume=input), config)
         else:
             input["step"] = []
@@ -304,7 +304,7 @@ class AgiGraph:
         try:
             state = self.graph.get_state(config)
             log.debug(state)
-            if state.tasks:
+            if state.tasks and state.tasks[0].interrupts:
                 events = self.graph.invoke(Command(resume=input), config)
             else:
                 input["step"] = []

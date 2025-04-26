@@ -67,6 +67,7 @@ GPU显存： 初始：2550MB 峰值：20GB
 - rag缓慢，考虑使用异步 test
 - 用户意图理解和补全chain test
 - 图片信息提取上下文过大，不能使用base64
+- 多媒体格式统一处理，内部统一使用路径，大模型输入为base64,返回web使用url
 ## OPENWEBUI 修改
 - 新增: backend/open_webui/routers/agi.py
 - 修改: backend/open_webui/utils/models.py

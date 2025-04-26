@@ -119,8 +119,8 @@ def default_modify_state_messages(state: AgentState):
                     if item.get("type") == "image_url":
                         item["type"] = "image"
                         del item["image_url"]
-            else:
-                message.content = json.dumps(message.content)
+            
+            message.content = json.dumps(message.content)
         filter_messages.append(message)
     return default_template.invoke({"messages": filter_messages,"language":"chinese"}).to_messages()
 

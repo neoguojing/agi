@@ -18,6 +18,7 @@ import uuid
 import hashlib
 import base64
 import mimetypes
+from PIL import Image
 import os
 from typing import Tuple
 import re
@@ -255,7 +256,25 @@ def save_base64_content(base64_str: str, output_dir: str = CACHE_DIR) -> Tuple[s
     # 保存文件
     with open(file_path, "wb") as f:
         f.write(base64.b64decode(encoded))
-
+    
+    if ext != ".jpg":
+        try:
+            # 转换为JPEG
+            jpeg_filename = f"{os.path.splitext(filename)[0]}.jpg"
+            jpeg_path = os.path.join(output_dir, jpeg_filename)
+            
+            with Image.open(file_path) as img:
+                # 转换为RGB模式（JPEG不支持透明通道）
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                img.save(jpeg_path, 'JPEG', quality=95)
+            
+            # 删除原始文件（可选）
+            os.remove(file_path)
+            file_path = jpeg_path
+        except Exception as e:
+            print(f"Failed to convert to JPEG: {e}")
+            # 如果转换失败，继续使用原始文件
     url = ""
     if file_path.startswith(CACHE_DIR):
         url = os.path.join(BASE_URL, "v1/files", os.path.basename(file_path))
