@@ -37,6 +37,7 @@ from agi.tasks.utils import graph_response_format_runnable,get_last_message_text
 import json
 import os
 import asyncio
+import copy
 from datetime import datetime,timezone
 from langchain.globals import set_debug
 from collections import defaultdict
@@ -262,7 +263,9 @@ def create_chat(llm):
     )
     # 仅取最后一条消息,忽略历史消息
     def modify_state_messages(state: AgentState):
-        last_message = state["messages"][-1]
+        # last_message = state["messages"][-1]
+        # 深度copy，不影响state的值
+        last_message = copy.deepcopy(state["messages"][-1])
         if isinstance(last_message,HumanMessage) and isinstance(last_message.content,list):
             # 转换为ollama的图片请求协议
             for item in last_message.content:

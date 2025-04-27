@@ -257,7 +257,7 @@ def save_base64_content(base64_str: str, output_dir: str = CACHE_DIR) -> Tuple[s
     with open(file_path, "wb") as f:
         f.write(base64.b64decode(encoded))
     
-    if ext != ".jpg":
+    if ext != ".jpg" and content_type == "image":
         try:
             # 转换为JPEG
             jpeg_filename = f"{os.path.splitext(filename)[0]}.jpg"
