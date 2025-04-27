@@ -354,7 +354,7 @@ def build_citations(inputs: dict):
         # 将文档按 source 聚合
         for doc in inputs["docs"]:
             # 使用llm extract 提取内容时，与输入无关会返回NO_OUTPUT
-            if "NO_OUTPUT" in doc.page_content:
+            if doc.page_content.strip().startswith("NO_"):           
                 continue
             
             source_type = ""
