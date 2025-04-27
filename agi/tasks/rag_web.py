@@ -130,9 +130,9 @@ def rag_auto_route(state: State):
     _, result = split_think_content(ai.content)
     log.info(f"rag_auto_route:{result}")
 
-    if result == "summary":
+    if result == "**summary**":
         return "summary"
-    elif result == "rag":
+    elif result == "**rag**":
         return "rag"
     
     return "llm_with_history"
