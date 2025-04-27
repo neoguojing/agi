@@ -54,9 +54,9 @@ GPU显存： 初始：2550MB 峰值：20GB
 - agi自动测试
 - 支持使用sd 3.5作为图片生成 DONE
 - 支持qwen omini作为多模态基模型 Done
-- 支持lang-graph 人工介入确认 test
-- 支持python代码执行器 test
-- 其他常用工具支持 test
+- 支持lang-graph 人工介入确认 DONE
+- 支持python代码执行器 DONE
+- 其他常用工具支持 DONE
 - 流式返回测试 DONE
 - graph 节点重试特性
 - rag 影响图片生成流程 DONE
@@ -65,8 +65,8 @@ GPU显存： 初始：2550MB 峰值：20GB
 - web检索不理想 test
 - web检索缓慢，考虑存文档使用异步 DONE
 - rag缓慢，考虑使用异步 test
-- 用户意图理解和补全chain test
-- 图片信息提取上下文过大，不能使用base64
+- 用户意图理解和补全chain DONE
+- 图片信息提取上下文过大，不能使用base64 DONE
 - 多媒体格式统一处理，内部统一使用路径，大模型输入为base64,返回web使用url Done
 ## OPENWEBUI 修改
 - 新增: backend/open_webui/routers/agi.py
