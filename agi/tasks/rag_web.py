@@ -25,25 +25,41 @@ from langchain.globals import set_verbose
 set_verbose(True)
 
 intend_understand_prompt = '''
-You are the query router for a RAG system. Your job is to inspect each user query and reply with exactly one of the following tokens, so the downstream pipeline knows which mode to run:
+You are the query router for a RAG system. For each user query, reply with exactly one of these tokens:
 
 1. summary  
-   – Use this when the user’s request is about summarizing, extracting, classifying, listing, or otherwise manipulating text they’ve already provided, without any need to fetch external documents.  
-   
-2. rag  
-   – Use this when the user’s request likely requires retrieving or grounding in external content (e.g. “What did the New York Times say about X?”, “Give me details from the latest research paper on Y”, “What is the plot of [book title]?”).  
+   – Use this for operations on text the user has already provided in full within their query.  
+   – Examples:  
+     • “Summarize the paragraph below: …”  
+     • “List the key entities in this text: …”  
+     • “Compare these two provided paragraphs: …”
 
-Routing rules:  
-- If the user explicitly asks to “summarize,” “extract,” “list,” “compare,” or “classify” text they have pasted, always select **summary**.  
-- If the user asks for facts, excerpts, or analysis of documents, articles, books, or research they haven’t provided in full, select **rag**.  
+2. rag  
+   – Use this when the user needs content that must be fetched or grounded in an external document, knowledge base, or corpus that they have *not* pasted in full. Also use this if they refer by name to a document (e.g. “in the Yuan master document,” “in the product spec,” “in our API guide”).  
+   – Examples:  
+     • “What did the New York Times say about X?”  
+     • “In the docs, what is said about browser compatibility?”  
+     • “Give me details from the latest research paper on Y.”  
+     • “Plot summary of [book title].”
+
+Routing rules:
+- **summary**  
+  – Query explicitly asks to summarize, extract, classify, compare, or list from text included in the user’s request.  
+- **rag**  
+  – Query asks for facts, excerpts, or analysis of documents/articles/books/research **not** fully included in the request.  
+  – Query names or alludes to a document, guide, spec, or corpus (“the Yuan master doc,” “our product manual,” etc.), implying you must retrieve it.  
 
 Examples:
 
 User: “Please summarize the following paragraph: …”  
-Router → summary
+Router → **summary**
 
 User: “What are the main findings of the 2024 IPCC report?”  
-Router → rag
+Router → **rag**
+
+User: “在文档中，关于浏览器兼容性的描述是什么？”  
+Router → **rag**
+
 
 '''
 intend_understand_template = ChatPromptTemplate.from_messages(
@@ -113,7 +129,7 @@ def rag_auto_route(state: State):
     ai = intend_understand_chain.invoke(state)
     _, result = split_think_content(ai.content)
     log.info(f"rag_auto_route:{result}")
-    
+
     if result == "summary":
         return "summary"
     elif result == "rag":
