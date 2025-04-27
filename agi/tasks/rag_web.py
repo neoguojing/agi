@@ -103,8 +103,6 @@ def doc_compress_node(state: State,config: RunnableConfig):
     km = TaskFactory.get_knowledge_manager()
     retriever = km.get_compress_retriever(FilterType.LLM_EXTRACT)
     question = get_last_message_text(state)
-    import pdb
-    pdb.set_trace()
     docs = state.get("docs")
     docs = asyncio.run(retriever.acompress_documents(docs,question))
     if docs:

@@ -295,6 +295,7 @@ class AgiGraph:
                         if meta.get("langgraph_node") in ["web","__start__","rag",'user_understand']:
                             pass
                         else:
+                            log.info(f"*************{event}")
                             yield event
                 elif stream_mode == "debug":
                     pass
