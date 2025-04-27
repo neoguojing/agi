@@ -1,9 +1,9 @@
 import unittest
-import logging
+
 from langchain_core.messages import AIMessage, HumanMessage
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
 class TestTextToSpeech(unittest.TestCase):
 
     def setUp(self):
@@ -36,7 +36,7 @@ hay: Haya — 指的是坦桑尼亚的一种语言，由Haya人使用，属于�
         output = self.instance_gpu.invoke(self.input)
         self.assertIsNotNone(output)
         self.assertIsNotNone(output.content)
-        logging.info(output.content)
+        log.info(output.content)
         for item in output.content:
             context_type = item.get("type") 
             if context_type != "audio":
@@ -46,7 +46,7 @@ hay: Haya — 指的是坦桑尼亚的一种语言，由Haya人使用，属于�
         output = self.instance.invoke(self.input)
         self.assertIsNotNone(output)
         self.assertIsNotNone(output.content)
-        logging.info(output.content)
+        log.info(output.content)
         for item in output.content:
             context_type = item.get("type") 
             if context_type != "audio":

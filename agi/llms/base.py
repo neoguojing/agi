@@ -19,9 +19,9 @@ import re
 from scipy.io.wavfile import write
 from agi.config import BASE_URL,CACHE_DIR
 import urllib.parse
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
 
 def remove_data_uri_prefix(data_uri):
     """
@@ -174,6 +174,7 @@ class Media(BaseModel):
         else:
             raise TypeError("Unsupported media format for saving.")
 
+# 从用户消息中抽取content的内容，转换为模型可处理的格式
 def parse_input_messages(input: Union[HumanMessage,list[HumanMessage]]):
     """
     Parse the content of the HumanMessage to extract the image and prompt.

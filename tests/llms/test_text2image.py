@@ -1,8 +1,8 @@
 import unittest
 from langchain_core.messages import AIMessage, HumanMessage
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
 class TestText2Image(unittest.TestCase):
 
     def setUp(self):

@@ -3,9 +3,9 @@ from agi.llms.base import Media
 from agi.llms.image2image import Image2Image
 from langchain_core.messages import AIMessage,HumanMessage
 from PIL import Image as PIL_Image
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
 class TestImage2Image(unittest.TestCase):
 
     def setUp(self):

@@ -4,14 +4,14 @@ import mimetypes
 import urllib.parse
 from fastapi import FastAPI, HTTPException, File, UploadFile, Response,Form,APIRouter
 from fastapi.responses import Response
+from fastapi import Request
 from agi.config import FILE_UPLOAD_PATH,IMAGE_FILE_SAVE_PATH,TTS_FILE_SAVE_PATH
-from agi.tasks.task_factory import TaskFactory,TASK_DOC_DB
+from agi.tasks.task_factory import TaskFactory
 from typing import Optional
 import shutil
 import uuid
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+from agi.config import log
+
 # 允许的 MIME 类型
 ALLOWED_MIME_TYPES = {
     "image/jpeg", "image/png", "application/pdf", "text/plain",
@@ -80,18 +80,26 @@ async def save_file(
         shutil.copyfileobj(file.file, f)
     
     if collection_name and not file_type.startswith("image/") and not file_type.startswith("audio/"):
-        kmanager = TaskFactory.create_task(TASK_DOC_DB)
+        kmanager = TaskFactory.get_knowledge_manager()
         param = {"filename" : file.filename}
-        kmanager.store(collection_name,file_path,tenant=user_id,**param)
+        await kmanager.store(collection_name,file_path,tenant=user_id,**param)
         
     return {"original_filename": file.filename, "saved_filename": unique_filename, "file_type": file_type, "message": "文件上传成功"}
 
 
 @router_file.get("/files/{file_name}")
-async def download_file(file_name: str):
+async def download_file(file_name: str, request: Request):
     content_type = mimetypes.guess_type(file_name)[0] or "application/octet-stream"
     file_path = ""
     headers = {}
+    def is_browser(user_agent: str) -> bool:
+        # 简单判断是否为常见浏览器
+        browsers = ["Chrome", "Firefox", "Safari", "Edge", "Opera"]
+        return any(browser in user_agent for browser in browsers)
+    
+    # 获取User-Agent
+    user_agent = request.headers.get("user-agent", "")
+    disposition_type = "inline" if is_browser(user_agent) else "attachment"
     if content_type.startswith("image/"):
         file_path = os.path.join(IMAGE_FILE_SAVE_PATH, file_name)
         log.debug(f"download_file---,{content_type},{file_path}")
@@ -99,14 +107,14 @@ async def download_file(file_name: str):
             raise HTTPException(status_code=400, detail="Invalid file path")
         if not os.path.exists(file_path):
             return {"error": "image not found"}
-        headers["Content-Disposition"] = f"inline; filename={urllib.parse.quote(file_name)}"
+        headers["Content-Disposition"] = f"{disposition_type}; filename={urllib.parse.quote(file_name)}"
     elif content_type.startswith("audio/"):
         file_path = os.path.join(TTS_FILE_SAVE_PATH, file_name)
         if not os.path.realpath(file_path).startswith(os.path.realpath(TTS_FILE_SAVE_PATH)):
             raise HTTPException(status_code=400, detail="Invalid file path")
         if not os.path.exists(file_path):
             return {"error": "audio not found"}
-        headers["Content-Disposition"] = f"inline; filename={urllib.parse.quote(file_name)}"
+        headers["Content-Disposition"] = f"{disposition_type}; filename={urllib.parse.quote(file_name)}"
     else:
         file_path = os.path.join(FILE_UPLOAD_PATH, file_name)
         if not os.path.realpath(file_path).startswith(os.path.realpath(FILE_UPLOAD_PATH)):

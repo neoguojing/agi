@@ -1,19 +1,33 @@
-langchain==0.3.7
+# langchain==0.3.7
 langchain-chroma==0.1.4
 langchain_openai==0.2.5
-langgraph==0.2.44
+# langgraph==0.2.44
 langchain_community==0.3.5
+langchain_experimental==0.3.4
+langchain==0.3.23 
+langchain-core==0.3.54 
+langchain-text-splitters==0.3.8 
+langgraph==0.3.31
+langgraph-prebuilt==0.1.8
+wikipedia==1.4.0
+mediawikiapi
+wikibase-rest-api-client
 langchain_ollama==0.2.0
-transformers==4.45.0
+git+https://github.com/huggingface/transformers@f742a644ca32e65758c3adb36225aef1731bd2a8
+qwen-omni-utils==0.0.3
+decord==0.6.0
+flash-attn==2.7.4.post1
 spacy[ja]==3.8.2
-torch==2.4.0
-torchaudio==2.4.0
+torch==2.6.0
+torchaudio==2.6.0
+torchvision==0.21.0
 einops==0.8.1
 librosa==0.10.1
 git+https://github.com/neoguojing/TTS.git
 ctranslate2==4.4.0
 faster-whisper==1.0.3
-diffusers==0.21.2
+diffusers==0.32.2
+sentencepiece==0.2.0
 accelerate==1.1.1
 validators==0.34.0
 pypdf==5.1.0
@@ -27,8 +41,12 @@ huggingface_hub==0.25.0
 python-multipart==0.0.20
 pyhub==0.0.11
 pydub==0.25.1
-docx2txt==0.8
+docx2txt==0.9
 uvicorn[standard]==0.30.6
 exa-py==1.9.1 
+optree==0.15.0
+yfinance==0.2.5
+youtube_search==2.1.2
+langchain-tavily==0.1.5
 
 

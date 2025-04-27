@@ -8,6 +8,7 @@ from typing import (
     Optional,
     TypedDict
 )
+
 from langchain.prompts.chat import (
     MessageLikeRepresentation,
     BaseMessagePromptTemplate,
@@ -47,6 +48,9 @@ class _ImageTemplateParam(TypedDict, total=False):
     
 class _AudioTemplateParam(TypedDict, total=False):
     audio: Union[str, dict]
+
+class _VideoTemplateParam(TypedDict, total=False):
+    video: Union[str, dict]
     
 class MultiModalMessagePromptTemplate(BaseMessagePromptTemplate):
     """Human message prompt template. This is a message sent from the user."""
@@ -68,7 +72,7 @@ class MultiModalMessagePromptTemplate(BaseMessagePromptTemplate):
     @classmethod
     def from_template(
         cls: type[MultiModalMessagePromptTemplateT],
-        template: Union[str, list[Union[str, _TextTemplateParam, _ImageTemplateParam,_AudioTemplateParam]]],
+        template: Union[str, list[Union[str, _TextTemplateParam, _ImageTemplateParam,_AudioTemplateParam,_VideoTemplateParam]]],
         template_format: PromptTemplateFormat = "f-string",
         *,
         partial_variables: Optional[dict[str, Any]] = None,
@@ -128,6 +132,16 @@ class MultiModalMessagePromptTemplate(BaseMessagePromptTemplate):
                         text: str = tmpl
                     else:
                         text = cast(_AudioTemplateParam, tmpl)["audio"]  # type: ignore[assignment]
+                    prompt.append(
+                        PromptTemplate.from_template(
+                            text, template_format=template_format
+                        )
+                    )
+                elif isinstance(tmpl, str) or isinstance(tmpl, dict) and "video" in tmpl:
+                    if isinstance(tmpl, str):
+                        text: str = tmpl
+                    else:
+                        text = cast(_VideoTemplateParam, tmpl)["video"]  # type: ignore[assignment]
                     prompt.append(
                         PromptTemplate.from_template(
                             text, template_format=template_format
@@ -222,6 +236,8 @@ class MultiModalMessagePromptTemplate(BaseMessagePromptTemplate):
                         content.append({"type": "image", "image": formatted})
                     elif "audio" in inputs:
                         content.append({"type": "audio", "audio": formatted})
+                    elif "video" in inputs:
+                        content.append({"type": "video", "video": formatted})
             return self._msg_class(
                 content=content, additional_kwargs=self.additional_kwargs
             )
@@ -251,6 +267,8 @@ class MultiModalMessagePromptTemplate(BaseMessagePromptTemplate):
                         content.append({"type": "image", "image": formatted})
                 elif "audio" in inputs:
                     content.append({"type": "audio", "audio": formatted})
+                elif "video" in inputs:
+                    content.append({"type": "video", "video": formatted})
             return self._msg_class(
                 content=content, additional_kwargs=self.additional_kwargs
             )

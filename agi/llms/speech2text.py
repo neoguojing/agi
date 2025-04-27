@@ -9,9 +9,10 @@ from agi.llms.base import CustomerLLM,parse_input_messages
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
 from langchain_core.messages import AIMessage, HumanMessage
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
+# GPU 2600MB
 class Speech2Text(CustomerLLM):
     whisper: Optional[Any] = Field(default=None)
     beam_size: int = Field(default=5)
@@ -25,20 +26,21 @@ class Speech2Text(CustomerLLM):
         if WHISPER_GPU_ENABLE:
             self.model_size = model_root
             self.device = "cuda"
-            logging.info(model_root)
+            log.info(model_root)
             if not os.path.exists(self.model_size):
                 self.model_size = "large-v3"
                 self.local_files_only=False
         else:
             self.device = "cpu"
             self.model_size = model_root
-            logging.info(model_root)
+            log.info(model_root)
             self.compute_type = "default"
 
         
     
     def _load_model(self):
         if self.model is None:
+            log.info("loading Speech2Text model...")
             whisper = WhisperModel(self.model_size, device=self.device, compute_type=self.compute_type,local_files_only=self.local_files_only)
             self.whisper = whisper
             self.model = whisper.model

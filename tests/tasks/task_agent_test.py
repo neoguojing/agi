@@ -3,9 +3,9 @@ from agi.tasks.task_factory import TaskFactory,TASK_AGENT
 from langgraph.errors import GraphRecursionError
 from langchain_core.messages import AIMessage
 import uuid
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
 class TestAgent(unittest.TestCase):
     def setUp(self):
         self.agent = TaskFactory.create_task(TASK_AGENT)

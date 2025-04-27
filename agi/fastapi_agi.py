@@ -11,18 +11,17 @@ import json
 import time
 import os
 from langchain_core.messages import HumanMessage,BaseMessage
-from agi.tasks.task_factory import TaskFactory, TASK_EMBEDDING
+from agi.tasks.task_factory import TaskFactory
 from fastapi.middleware.cors import CORSMiddleware
 # 假设的 AgiGraph 模块（需要根据实际情况调整）
 from agi.tasks.graph import AgiGraph, State
 from agi.fast_api_file import router_file
-from agi.config import FILE_UPLOAD_PATH
+from agi.config import FILE_UPLOAD_PATH,log,IMAGE_FILE_SAVE_PATH,TTS_FILE_SAVE_PATH
 from pydub import AudioSegment
 import traceback
-import logging
 
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+from agi.tasks.utils import identify_input_type,save_base64_content
+
 
 # 初始化 FastAPI 应用
 app = FastAPI(
@@ -85,57 +84,66 @@ async def chat_completions(
 
     internal_messages: List[Union[HumanMessage, Dict[str, Union[str, List[Dict[str, str]]]]]] = []
     input_type = "text"  # 默认输入类型
-    # 处理知识库参数
-    additional_kwargs = {}
-    if request.db_ids is not None:
-        additional_kwargs["collection_names"] = request.db_ids
-        
-    # 只处理最后一条消息
-    # for msg in request.messages:
-    msg = request.messages[-1]
-    if msg.role == "user":
-        if isinstance(msg.content, str):
-            internal_messages.append(HumanMessage(content=msg.content,additional_kwargs=additional_kwargs))
+    try:
+        # 只处理最后一条消息
+        # for msg in request.messages:
+        msg = request.messages[-1]
+        if msg.role == "user":
+            if isinstance(msg.content, str):
+                internal_messages.append(HumanMessage(content=msg.content))
+            else:
+                content: List[Dict[str, str]] = []
+                for item in msg.content:
+                    if item["type"] == "image":
+                        # 假设 item["image"] 是图像数据的某种表示（例如，文件路径或 base64 编码）
+                        file_type = identify_input_type(item["image"])
+                        if file_type == "base64":
+                            item["image"],_, _ = save_base64_content(item["image"],IMAGE_FILE_SAVE_PATH)
+                        log.info(f'image save path:{item["image"]}')
+                        content.append({"type": "image", "image": item["image"]})
+                        input_type = "image"
+                    elif item["type"] == "audio":
+                        # 假设 item["audio"] 是音频数据的某种表示
+                        file_type = identify_input_type(item["audio"])
+                        if file_type == "base64":
+                            item["audio"],_, _ = save_base64_content(item["audio"],TTS_FILE_SAVE_PATH)
+                        content.append({"type": "audio", "audio": item["audio"]})
+                        input_type = "audio"
+                    elif item["type"] == "video":
+                        # 假设 item["audio"] 是音频数据的某种表示
+                        content.append({"type": "video", "video": item["video"]})
+                        input_type = "video"
+                    elif item["type"] == "text": 
+                        content.append({"type":"text","text":item["text"]})
+                    else:
+                        # 处理不支持的类型
+                        raise ValueError(f"不支持的多模态类型: {item['type']}")
+                internal_messages.append(HumanMessage(content=content))
+
+        if request.user is None or request.user == "":
+            request.user = "default_tenant"
+        state_data = State(
+            messages=internal_messages,
+            input_type=input_type,
+            need_speech=request.need_speech,
+            user_id=request.user,
+            conversation_id=request.conversation_id,
+            feature=request.feature,
+            collection_names=request.db_ids
+        )
+
+        if request.stream:
+            log.info(f"request: {request}")
+            return StreamingResponse(generate_stream_response(state_data), media_type="text/event-stream")
         else:
-            content: List[Dict[str, str]] = []
-            for item in msg.content:
-                if item["type"] == "image":
-                    # 假设 item["image"] 是图像数据的某种表示（例如，文件路径或 base64 编码）
-                    content.append({"type": "image", "image": item["image"]})
-                    input_type = "image"
-                elif item["type"] == "audio":
-                    # 假设 item["audio"] 是音频数据的某种表示
-                    content.append({"type": "audio", "audio": item["audio"]})
-                    input_type = "audio"
-                elif item["type"] == "text": 
-                    content.append({"type":"text","text":item["text"]})
-                else:
-                    # 处理不支持的类型
-                    raise ValueError(f"不支持的多模态类型: {item['type']}")
-            internal_messages.append(HumanMessage(content=content,additional_kwargs=additional_kwargs))
-        # elif msg.role == "assistant":
-        #     internal_messages.append({"role": "assistant", "content": msg.content})
-    if request.user is None or request.user == "":
-        request.user = "default_tenant"
-    state_data = State(
-        messages=internal_messages,
-        input_type=input_type,
-        need_speech=request.need_speech,
-        user_id=request.user,
-        conversation_id=request.conversation_id,
-        feature=request.feature
-    )
-
-    # TODO 文章的引用信息如何处理
-    if request.stream:
-        log.info(f"request: {request}")
-        return StreamingResponse(generate_stream_response(state_data), media_type="text/event-stream")
-    else:
-        resp = graph.invoke(state_data)
-        log.info(f"request:{request}")
-        log.info(f"response:{resp}")
-        return format_non_stream_response(resp)
-
+            resp = graph.invoke(state_data)
+            if request.feature != "llm":
+                log.info(f"request:{request}")
+                log.info(f"response:{resp}")
+            return format_non_stream_response(resp)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=e)
+    
 image_style = 'style="width: 100%; max-height: 100vh;"'
 audio_style = "width: 300px; height: 50px;"  # 添加样式
 def handle_response_content_as_string(content: Union[str,List]) -> str:
@@ -177,9 +185,8 @@ def format_non_stream_response(resp: Dict[str, Any],web: bool = False) -> Dict[s
             assistant_content = handle_response_content_as_string(assistant_content)
         
         # 处理additional_kwargs信息
-        additional_kwargs = last_message.additional_kwargs
-        if additional_kwargs is not None and additional_kwargs.get("citations"):
-            assistant_content = [{"type":"text","text":assistant_content,"citations":additional_kwargs.get("citations")}]
+        if resp.get("citations"):
+            assistant_content = [{"type":"text","text":assistant_content,"citations":resp.get("citations")}]
 
         # 处理metadata信息
         response_metadata = last_message.response_metadata
@@ -228,6 +235,8 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
     try:
         events = graph.stream(state_data)
         index = 0  # 初始化 index
+        # 使用finish_reason，控制重复内容的输出
+        finish_reason = None
         for event in events:
             chunk = {
                 "id": f"chatcmpl-{uuid.uuid4()}",
@@ -236,7 +245,7 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
                 "model": "agi-model",
                 "choices": [{"index": index, "delta": {}, "finish_reason": None}] # 使用递增的index
             }
-
+            # 适用于stream_mode 是values的情况
             if isinstance(event, BaseMessage):
                 role = "user" if event.__class__.__name__ == "HumanMessage" else "assistant"
                 # 跳过用户消息
@@ -260,6 +269,22 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
                 finish_reason = getattr(event, "response_metadata", {}).get("finish_reason")
                 if finish_reason:
                     chunk["choices"][0]["finish_reason"] = finish_reason
+            elif isinstance(event, tuple):
+                if event[0] == "messages":
+                    # TODO 若消息未结束，则发送消息，解决agent重复消息发送的问题
+                    if finish_reason is None:
+                        chunk["choices"][0]["delta"] = {"role": "assistant", "content": event[1][0].content}
+                        finish_reason = getattr(event[1][0], "response_metadata", {}).get("finish_reason")
+                        if finish_reason:
+                            chunk["choices"][0]["finish_reason"] = finish_reason
+                elif event[0] == "custom":
+                    citations = event[1].get("citations")
+                    if citations:
+                        chunk["choices"][0]["delta"] = {"role": "assistant", "content": [{"citations":citations}]}
+                elif event[0] == "updates": #处理需要人工确认的场景
+                    interrupt = event[1].get("__interrupt__")
+                    if interrupt:
+                        chunk["choices"][0]["delta"] = {"role": "assistant", "content": interrupt[0].value}
             elif isinstance(event, dict):
                 if "error" in event:
                     chunk["choices"] = []
@@ -270,15 +295,16 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
 
             yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
             index += 1 #index递增
-
-        final_chunk = {
-            "id": f"chatcmpl-{uuid.uuid4()}",
-            "object": "chat.completion.chunk",
-            "created": int(time.time()),
-            "model": "agi-model",
-            "choices": [{"index": index, "delta": {}, "finish_reason": "stop"}]
-        }
-        yield f"data: {json.dumps(final_chunk, ensure_ascii=False)}\n\n"
+        # finish_reason 未填，则发送一个空消息
+        if finish_reason is None:
+            final_chunk = {
+                "id": f"chatcmpl-{uuid.uuid4()}",
+                "object": "chat.completion.chunk",
+                "created": int(time.time()),
+                "model": "agi-model",
+                "choices": [{"index": index, "delta": {}, "finish_reason": "stop"}]
+            }
+            yield f"data: {json.dumps(final_chunk, ensure_ascii=False)}\n\n"
         yield "data: [DONE]\n\n"
 
     except Exception as e:
@@ -473,7 +499,7 @@ async def get_embedding(request: EmbeddingRequest):
     if not request.input:
         raise HTTPException(status_code=400, detail="Text cannot be empty.")
     # 生成嵌入向量
-    llm_task = TaskFactory.create_task(TASK_EMBEDDING)
+    llm_task = TaskFactory.get_embedding()
     embedding = llm_task.embed_query(request.input)
     
     return {

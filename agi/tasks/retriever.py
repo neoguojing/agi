@@ -21,8 +21,7 @@ from langchain.retrievers.multi_query import MultiQueryRetriever
 from langchain.retrievers import ContextualCompressionRetriever, EnsembleRetriever
 from langchain.retrievers.document_compressors import LLMChainExtractor
 from langchain_community.retrievers import BM25Retriever
-from langchain_openai import ChatOpenAI,OpenAIEmbeddings
-from typing import Any,List,Dict,Iterator, Optional, Sequence, Union
+from typing import Any,List,Dict,Iterator, Optional, Sequence, Union, Tuple, Set
 import validators
 import socket
 import urllib.parse
@@ -30,8 +29,6 @@ from langchain.retrievers.document_compressors import DocumentCompressorPipeline
 from langchain_community.document_transformers import EmbeddingsRedundantFilter
 from agi.tasks.vectore_store import CollectionManager
 from agi.tasks.prompt import DEFAULT_SEARCH_PROMPT,rag_filter_template
-from langchain_community.utilities import DuckDuckGoSearchAPIWrapper,SearxSearchWrapper
-from langchain_community.tools import DuckDuckGoSearchResults
 from langchain_community.document_loaders import AsyncChromiumLoader,AsyncHtmlLoader
 from langchain_community.document_transformers import BeautifulSoupTransformer
 from langchain_community.retrievers.web_research import QuestionListOutputParser
@@ -39,7 +36,10 @@ from langchain_core.runnables import (
     RunnableParallel,
     RunnablePassthrough,
 )
+from agi.tasks.utils import refine_last_message_runnable
 import time
+import asyncio
+from asyncio import gather
 from uuid import uuid4
 from agi.config import (
     CACHE_DIR
@@ -47,10 +47,11 @@ from agi.config import (
 from datetime import datetime
 from exa_py import Exa
 from agi.config import EXA_API_KEY
+from agi.utils.search_engine import SearchEngineSelector
 import traceback
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
 
 from enum import Enum
 
@@ -58,7 +59,6 @@ class SourceType(Enum):
     YOUTUBE = "youtube"
     WEB = "web"
     FILE = "file"
-    SEARCH_RESULT = "search_result"
 
 class FilterType(Enum):
     LLM_FILTER = "llm_chain_filter"
@@ -76,16 +76,8 @@ class KnowledgeManager:
         self.embedding = embedding
 
         self.llm =llm
-        self.search_chain = DEFAULT_SEARCH_PROMPT | self.llm | QuestionListOutputParser()
-        self.search_engines = {}
-
-        # Only add Exa if EXA_API_KEY is not empty
-        if EXA_API_KEY:
-            self.search_engines["Exa"] = Exa(EXA_API_KEY)
-
-        # Always add DuckDuckGoSearch
-        self.search_engines["DuckDuckGoSearch"] = DuckDuckGoSearchAPIWrapper(region="wt-wt", safesearch="moderate", time="d", max_results=3, source="news")
-                
+        self.search_chain = DEFAULT_SEARCH_PROMPT | self.llm | refine_last_message_runnable | QuestionListOutputParser()
+        self.search_engines = SearchEngineSelector()
         self.collection_manager = CollectionManager(data_path,embedding)
 
     def list_documets(self,collection_name, tenant=None):
@@ -94,7 +86,7 @@ class KnowledgeManager:
     def list_collections(self, tenant=None):
         return self.collection_manager.list_collections(tenant=tenant)
     
-    def store(self,collection_name: str, source: Union[str, List[str],List[dict]],tenant=None, source_type: SourceType=SourceType.FILE, **kwargs):
+    async def store(self,collection_name: str, source: Union[str, List[str],List[dict]],tenant=None, source_type: SourceType=SourceType.FILE, **kwargs):
         """
         存储 URL 或文件，支持单个或多个 source。
         
@@ -107,71 +99,74 @@ class KnowledgeManager:
                     - "file_name": 文件名
                     - "content_type": 文件的内容类型
         """
-         # 处理单个或多个 source
+        # 处理单个或多个 source
         if isinstance(source, str):
             sources = [source]  # 如果是字符串，转为列表
         elif isinstance(source, list):
             sources = source  # 如果是列表，直接使用
         else:
             raise ValueError("Source must be a string or a list of strings.")
-    
+        
         loader = None
         known_type = None
         raw_docs = []
+        tasks = []  # 用来存储异步任务
+
         try:
-            exist_sources = self.collection_manager.get_sources(collection_name,tenant=tenant)
-            store = self.collection_manager.get_vector_store(collection_name,tenant=tenant)
+            exist_sources = self.collection_manager.get_sources(collection_name, tenant=tenant)
+            store = self.collection_manager.get_vector_store(collection_name, tenant=tenant)
+            
             for source in sources:
                 if source in exist_sources:
                     continue
-                
-                if source_type == SourceType.YOUTUBE:
-                    loader = self.get_youtube_loader(source)
-                elif source_type == SourceType.WEB:
-                    loader = self.get_web_loader(source)
-                elif source_type == SourceType.SEARCH_RESULT:
-                    raw_docs.append(
-                        Document(
-                            page_content=f"{source.get('date')}\n{source.get('title')}\n{source.get('snippet')}",
-                            metadata={"source":source.get("source"),"link":source.get("link")},
-                        )
-                    )
 
-                else:
-                    file_name = kwargs.get('filename')
-                    content_type = kwargs.get('content_type')
-                    if file_name is None:
-                        raise ValueError("File name is required for file storage.")
-                    loader,known_type = self.get_loader(file_name,source,content_type)
-                
-                log.info("start load file---------")
-                if loader:
-                    raw_docs = loader.load()
+                # Create asynchronous task for each source processing
+                async def process_source(source):
+                    nonlocal loader, raw_docs, known_type
 
-                for doc in raw_docs:
-                    # doc.page_content = doc.page_content.replace("\n", " ")
-                    # doc.page_content = doc.page_content.replace("\t", "")
-                    doc.metadata["collection_name"] = collection_name
-                    doc.metadata["type"] = source_type.value
-                    doc.metadata["timestamp"] = str(time.time())
-                    if doc.metadata.get("source") is None:
-                        doc.metadata["source"] = source
-                    doc.metadata = {**doc.metadata, **kwargs}
+                    if source_type == SourceType.YOUTUBE:
+                        loader = self.get_youtube_loader(source)
+                    elif source_type == SourceType.WEB:
+                        loader = self.get_web_loader(source)
+                    else:
+                        file_name = kwargs.get('filename')
+                        content_type = kwargs.get('content_type')
+                        if file_name is None:
+                            raise ValueError("File name is required for file storage.")
+                        loader, known_type = self.get_loader(file_name, source, content_type)
 
-                log.info(f"loader file count:{len(raw_docs)}")
-                docs = self.split_documents(raw_docs)
-                log.info(f"splited documents count:{len(docs)}")
-                uuids = [str(uuid4()) for _ in range(len(docs))]
-                if len(docs) > 0:
-                    store.add_documents(docs,ids=uuids)
+                    # If we have a loader, use it to load documents asynchronously
+                    if loader:
+                        docs = loader.load()  # Assuming `loader.load()` is async
+
+                        for doc in docs:
+                            doc.metadata["collection_name"] = collection_name
+                            doc.metadata["type"] = source_type.value
+                            doc.metadata["timestamp"] = str(time.time())
+                            if doc.metadata.get("source") is None:
+                                doc.metadata["source"] = source
+
+                        # After documents are loaded, split them asynchronously as well
+                        split_docs = self.split_documents(docs)
+                        uuids = [str(uuid4()) for _ in range(len(split_docs))]
+                        if len(split_docs) > 0:
+                            store.add_documents(split_docs, ids=uuids)  # Assuming this can be async
+
+                # Add each source processing task to the list
+                tasks.append(process_source(source))
+
+            # Run all tasks concurrently
+            await asyncio.gather(*tasks)
+
             log.info("add documents done------")
-            return collection_name,known_type,raw_docs
+            return collection_name, known_type, raw_docs
+
         except Exception as e:
             if e.__class__.__name__ == "UniqueConstraintError":
                 return True
             log.exception(e)
             log.error(e)
-            return collection_name,known_type,raw_docs
+            return collection_name, known_type, raw_docs
 
     def get_compress_retriever(self,retriever,filter_type:FilterType):
         relevant_filter = None
@@ -187,6 +182,7 @@ class KnowledgeManager:
         elif filter_type == FilterType.LLM_EXTRACT:
             relevant_filter = LLMChainExtractor.from_llm(self.llm)
 
+        # 通过embding，去除相似内容
         redundant_filter = EmbeddingsRedundantFilter(embeddings=self.embedding)
         
         pipeline_compressor = DocumentCompressorPipeline(
@@ -232,7 +228,7 @@ class KnowledgeManager:
                 elif sim_algo == SimAlgoType.SST:
                     # chroma_retriever = self.collection_manager.get_vector_store(collection_name,tenant=tenant).as_retriever(
                     #     search_type="similarity_score_threshold",
-                    #     search_kwargs={"score_threshold": 0.5}
+                    #     search_kwargs={"score_threshold": 0.1}
                     # )
                     chroma_retriever = self.collection_manager.get_vector_store(collection_name,tenant=tenant).as_retriever(
                         search_kwargs={"k": k}
@@ -248,8 +244,6 @@ class KnowledgeManager:
                 retrievers=retrievers
             )
             
-            # retriever = RunnableParallel(input=RunnablePassthrough(), docs=retriever)
-
             if filter_type is not None:
                 retriever = self.get_compress_retriever(retriever,filter_type)
             
@@ -283,7 +277,8 @@ class KnowledgeManager:
             retriever = self.get_retriever(collection_names,tenant=tenant,k=k,bm25=bm25,filter_type=filter_type)
             if retriever is None:
                 return None
-            docs = retriever.invoke(query)
+            docs = asyncio.run(retriever.ainvoke(query))
+            docs = [d for d in docs if d.page_content and not d.page_content.strip().startswith("NO_")]
             if to_dict:
                 docs = {
                     "distances": [[d.metadata.get("score") for d in docs]],
@@ -477,30 +472,43 @@ class KnowledgeManager:
                 vector_store.add_documents(docs,ids=uuids)
         return docs
         
-    def web_search(self,query,tenant=None,collection_name="web",max_results=3):
+    def web_search(self,query,tenant=None,collection_name="web",max_results=3,bm25=False):
         if query is None:
             return 
     
-        raw_results = []
-        raw_docs = []
         try:
             questions = self.search_chain.invoke({"date":datetime.now().date(),"text":query,"results_num":max_results})
             log.info(f"questions:{questions}")
             # Relevant urls
-            urls,raw_results = self.do_search(questions,max_results=max_results)        
+            # urls,raw_results = self.do_search(questions)   
+            async def do(questions, collection_name, tenant):
+                raw_results = []
+                raw_docs = []
+                urls,raw_results = await self.do_asearch(questions)
+                known_type = None
+                # TODO 执行网页爬虫 效果很差
+                # collection_name,known_type,raw_docs = await self.store(collection_name,list(urls),source_type=SourceType.WEB,tenant=tenant)
+                # log.info(f"scrach results: {raw_docs}")
+                # 未爬到信息，则使用检索结果拼装
+                for source in raw_results:
+                    raw_docs.append(
+                        Document(
+                        page_content = f'{source.get("date", "")}\n{source.get("title", "")}\n{source.get("snippet")}',
+                            metadata={"source": source.get("source"), "link": source.get("link")},
+                        )
+                    )
+                    
+                # 使用bm25算法重排
+                if raw_docs and bm25:
+                    raw_docs= self.bm25_retriever(raw_docs,k=1).invoke(query)
+                    log.info(f"bm25 results: {raw_docs}")
 
-            # TODO 执行网页爬虫 效果很差
-            # collection_name,known_type,raw_docs = self.store(collection_name,list(urls),source_type=SourceType.WEB,tenant=tenant)
-            # log.info(f"scrach results: {raw_docs}")
-            # 未爬到信息，则使用检索结果拼装
-            if len(raw_docs) == 0:
-                collection_name,known_type,raw_docs = self.store(collection_name,raw_results,source_type=SourceType.SEARCH_RESULT,tenant=tenant)
-            # 使用bm25算法重排
-            if raw_docs and len(raw_docs) > 1:
-                raw_docs= self.bm25_retriever(raw_docs,k=1).invoke(query)
-                log.info(f"bm25 results: {raw_docs}")
-            # docs = self.web_parser(urls,url_meta_map,collection_name)
-            return collection_name,known_type,raw_results,raw_docs
+                return known_type,raw_results,raw_docs
+            
+            known_type,raw_results,raw_docs = asyncio.run(
+                do(questions, collection_name, tenant)
+            )
+            return collection_name, known_type,raw_results,raw_docs
         except Exception as e:
             log.error(f"Error search: {e}")
             print(traceback.format_exc())
@@ -523,70 +531,72 @@ class KnowledgeManager:
                                                 chunk_size=chunk_size, chunk_overlap=chunk_overlap,add_start_index=True)
         return text_splitter.split_documents(documents)
 
-    def do_search(self, questions, max_results=2, max_retries=3):
-        import random
+    def do_search(self, questions):
         urls_to_look = []
         raw_results = []
         
         try:
             log.info("Searching for relevant urls...")
             for q in questions:
-                retries = 0
-                success = False
-                
-                # 尝试最大次数
-                while retries < max_retries and not success:
-                    try:
-                        # 随机选择一个搜索引擎
-                        random_key = random.choice(list(self.search_engines.keys()))
-                        search = self.search_engines[random_key]
-                        
-                        # 获取搜索结果
-                        search_results = []
-                        if isinstance(search,DuckDuckGoSearchAPIWrapper):
-                            search_results = search.results(q, max_results=max_results)
-                        elif isinstance(search,Exa):
-                            resp = search.search_and_contents(
-                                q,
-                                type="auto",
-                                num_results=max_results,
-                                text=True,
-                            )
-                            search_results = []
-                            for r in resp.results:
-                                search_results.append({
-                                    "snippet": r.text,
-                                    "title": r.title,
-                                    "link": r.url,
-                                    "date": r.published_date,
-                                    "source": r.url,
-                                })
-                            
-                        for res in search_results:
-                            if res.get("link", None):
-                                urls_to_look.append(res["link"])
-                        
-                        raw_results.extend(search_results)
-                        
-                        log.info(f"Search results for query '{q}': {search_results}")
-                        success = True  # 如果成功，就跳出重试循环
+                search_results = self.search_engines.invoke(q)
+                if search_results:
+                    for res in search_results:
+                        if res.get("link", None):
+                            urls_to_look.append(res["link"])
                     
-                    except Exception as e:
-                        retries += 1
-                        log.error(f"Error with search engine {random_key}, retrying {retries}/{max_retries}...")
-                        log.error(e)
-                        if retries >= max_retries:
-                            log.error("Max retries reached, skipping this query.")
-                        else:
-                            continue  # 如果还没有达到最大重试次数，则继续尝试其他引擎
-            
+                    raw_results.extend(search_results)
+                    
             log.info(f"Final search results: {raw_results}")
-        
         except Exception as e:
             log.error(e)
             print(traceback.format_exc())
             
         return set(urls_to_look),raw_results
+    
+    async def do_asearch(self, questions: List[str]) -> Tuple[Set[str], List[Dict]]:
+        """
+        异步执行多问题搜索，返回去重URL集合和原始结果列表
+        
+        参数:
+            questions: 待查询的问题列表
+            
+        返回:
+            Tuple[Set[str], List[Dict]]: (去重URL集合, 原始结果列表)
+        """
+        urls_to_look = set()
+        raw_results = []
+        
+        async def search_single_question(q: str) -> List[Dict]:
+            """异步处理单个问题的搜索"""
+            try:
+                # 使用异步接口调用搜索引擎
+                search_results = await self.search_engines.ainvoke(q)  # 假设有异步接口
+                if search_results:
+                    # 提取有效链接
+                    valid_links = {res["link"] for res in search_results if res.get("link")}
+                    return list(valid_links), search_results
+            except Exception as e:
+                log.error(f"Error searching for '{q}': {str(e)}")
+                return [], []
+            return [], []
+
+        try:
+            log.info("Starting parallel search...")
+            # 并行执行所有搜索任务
+            tasks = [search_single_question(q) for q in questions]
+            results = await asyncio.gather(*tasks)
+            
+            # 合并结果
+            for links, res in results:
+                urls_to_look.update(links)
+                raw_results.extend(res)
+                
+            log.info(f"Found {len(urls_to_look)} unique URLs from {len(raw_results)} total results")
+        except Exception as e:
+            log.error(f"Global search error: {str(e)}")
+            print(traceback.format_exc())
+
+        return urls_to_look, raw_results
     
 class SafeWebBaseLoader(WebBaseLoader):
     """WebBaseLoader with enhanced error handling for URLs."""
@@ -612,25 +622,3 @@ class SafeWebBaseLoader(WebBaseLoader):
             except Exception as e:
                 # Log the error and continue with the next URL
                 log.error(f"Error loading {path}: {e}")
-
-def create_retriever(km: KnowledgeManager,**kwargs):
-    collection_names = kwargs.get("collection_names","all")
-    top_k = kwargs.get("top_k",3)
-    bm25 = kwargs.get("bm25",False)
-    filter_type = kwargs.get("filter_type",None)
-    sim_algo = kwargs.get("sim_algo",SimAlgoType.SST)
-    return km.get_retriever(collection_names,k=top_k,bm25=bm25,filter_type=filter_type,sim_algo=sim_algo)
-
-# if __name__ == '__main__':
-#     knowledgeBase = KnowledgeManager(data_path="./test/")
-#     # knowledgeBase.store(collection_name="test",source="/home/neo/Downloads/ir2023_ashare.docx",
-#     #                     source_type=SourceType.FILE,file_name='ir2023_ashare.docx')
-#     docs = knowledgeBase.query_doc("web","中国股市",k=2,bm25=False)
-#     # log.debug(docs)
-#     # emb = knowledgeBase.embedding.embed_query("wsewqeqe")
-#     # log.debug(emb)
-#     # resp = knowledgeBase.llm.invoke("hhhhh")
-#     # log.debug(resp)
-#     # docs = knowledgeBase.web_search("中国的股市如何估值？")
-#     # docs = knowledgeBase.web_parser(["https://new.qq.com/rain/a/20241005A071AG00"])
-#     log.debug(docs)

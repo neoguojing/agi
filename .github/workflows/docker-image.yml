@@ -3,6 +3,12 @@ name: Docker Image CI
 on:
   workflow_dispatch:
 
+<<<<<<< HEAD
+=======
+env:
+  REGISTRY: ghcr.io
+
+>>>>>>> dev
 jobs:
 
   build:

@@ -5,6 +5,7 @@ from agi.llms.image2image import Image2Image
 from agi.llms.text2image import Text2Image
 from agi.llms.tts import TextToSpeech
 from agi.llms.speech2text import Speech2Text
+from agi.llms.multimodel import MultiModel
 from agi.config import MODEL_PATH as model_root
 from agi.llms.base import CustomerLLM
 from agi.config import (
@@ -15,13 +16,13 @@ from agi.config import (
 )
 from collections import OrderedDict
 from langchain_core.runnables import Runnable
-import logging
-log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+
+from agi.config import log
+
 class ModelFactory:
     _instances =  OrderedDict()
     _lock = threading.Lock()
-    max_models = 2
+    max_models = 1
     
     @staticmethod
     def get_model(model_type: str, model_name: str = "") -> CustomerLLM:
@@ -32,6 +33,7 @@ class ModelFactory:
                 if len(ModelFactory._instances) > ModelFactory.max_models:
                     # 如果超出了最大运行模型数，移除最久未使用的模型
                     removed_model = ModelFactory._instances.popitem(last=False)
+                    log.info(f"try to unload model {removed_model[0]} {removed_model[1].model}")
                     if isinstance(removed_model[1],CustomerLLM):
                         removed_model[1].destroy()
             else:
@@ -56,6 +58,9 @@ class ModelFactory:
         
         elif model_type == "text2speech":
             model = TextToSpeech()
+        
+        elif model_type == "multimodel":
+            model = MultiModel()
                 
         if not model:
             raise ValueError(f"Invalid model type: {model_type}")

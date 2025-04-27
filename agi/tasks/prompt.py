@@ -1,13 +1,25 @@
 from langchain.prompts import MessagesPlaceholder,ChatPromptTemplate,PromptTemplate
-
+from langchain_core.runnables import (
+    RunnableLambda
+)
 from langchain_core.messages import HumanMessage, BaseMessage,SystemMessage,AIMessage
 from langchain.output_parsers.boolean import BooleanOutputParser
-
 from agi.tasks.agi_prompt import MultiModalChatPromptTemplate
+from agi.tasks.define import AgentState
+from agi.tasks.utils import get_last_message_text
+import json
 
 english_traslate_template = ChatPromptTemplate.from_messages([
-        ("human", "Translate the following into English and only return the translation result: {text}"),
-    ])
+    ("human", "Translate the following into English and only return the translation result: {text}"),
+])
+
+# 使用默认系统模版的，消息修改器
+def traslate_modify_state_messages(state: AgentState):
+    text = get_last_message_text(state)
+    return english_traslate_template.invoke({"text": text}).to_messages()
+
+
+traslate_modify_state_messages_runnable = RunnableLambda(traslate_modify_state_messages)
 
 agent_prompt = ChatPromptTemplate.from_messages(
         [
@@ -23,35 +35,36 @@ agent_prompt = ChatPromptTemplate.from_messages(
     )
 # 用于路由决策的promt，分析用户意图，提供决策路径
 decider_prompt = (
-    "You are an AI assistant tasked with determining a single command based on the user's input type and their question. The input consists of two parts:"
+    "You are an AI assistant tasked with determining a single command based on the user's input type,dialogue context, and their question. The input consists of two parts:"
     '1. Input Type: {input_type}'
-    '2. User Question: {text}'
+    '2. Dialogue Context: {context}'
+    '3. User Question: {text}'
 
     'Please follow these decision rules:'
 
     '- If the input type is "image":'
-    '    - If the question requests extracting information from the image (e.g., reading text, describing image content), output: "image_parser".'
+    '    - If the question requests extracting information from the image (e.g., reading text, describing image content), output: "llm".'
     '    - If the question requires modifying the image, transforming its style, or generating a new image based on the input, output: "image_gen".'
 
     '- If the input type is "text":'
     '    - If the question indicates a request to generate or create an image (e.g., "Draw a cat", "Generate a futuristic cityscape"), output: "image_gen". '
-    '    - If the question requires current or external information (e.g., latest news, real-time data, factual verification), output: "web".'
-    '    - Otherwise, for typical text-based inquiries that do not require external data retrieval, output: "llm".'
+    '    - If the question requires current or external information (e.g., latest news, real-time data, factual verification, Wikipedia, Wikidata, Python code execution, arXiv papers, weather, or stock market data), output: "agent".'
+    '    - Otherwise, for typical text-based inquiries that do not require external data retrieval, output: "llm_with_history".'
 
-    'Your output should be a single command chosen from: "image_parser", "image_gen", "web", or "llm". Do not include any additional explanation or details.'
+    'Your output should be a single command chosen from: "image_gen", "agent","llm" or "llm_with_history". Do not include any additional explanation or details.'
 
     'Examples:'
     '1. Input Type: "image"; Question: "Can you read the text in this photo?" '
-    '-> Output: "image_parser"'
+    '-> Output: "llm"'
 
     '2. Input Type: "image"; Question: "Please convert this image into a watercolor painting." '
     '-> Output: "image_gen"'
 
     '3. Input Type: "text"; Question: "What is the latest update on the stock market?" '
-    '-> Output: "web"'
+    '-> Output: "agent"'
 
     '4. Input Type: "text"; Question: "Tell me about the history of the Eiffel Tower." '
-    '-> Output: "llm"'
+    '-> Output: "llm_with_history"'
 )
 
 decide_template = ChatPromptTemplate.from_messages(
@@ -59,22 +72,60 @@ decide_template = ChatPromptTemplate.from_messages(
         ("human", decider_prompt)
     ]
 )
+def decide_modify_state_messages(state: AgentState):
+    # 过滤掉非法的消息类型
+    state["messages"] = list(filter(lambda x: not isinstance(x.content, dict), state["messages"]))
+    text = get_last_message_text(state)
+    context = context = state["messages"][:-1]
+    if len(state["messages"]) >= 5:
+        context = state["messages"][-5:-1]
+
+    return decide_template.invoke({"input_type": state["input_type"],"context":context,"text":text}).to_messages()
+
+decide_modify_state_messages_runnable = RunnableLambda(decide_modify_state_messages)
 
 system_prompt = (
     "You are a helpful assistant. Answer all questions to the best of your ability."
     "Please respond in {language}."
 )
 
+# 给有历史的llm使用的提示
 default_template = ChatPromptTemplate.from_messages(
     [
         (
             "system",
             system_prompt
         ),
-        MessagesPlaceholder(variable_name="chat_history",optional=True),
-        ("human", "{text}")
+        ("placeholder", "{messages}")
     ]
 )
+
+# 使用默认系统模版的，消息修改器
+def default_modify_state_messages(state: AgentState):
+    # 过滤掉非法的消息类型
+    state["messages"] = list(filter(lambda x: not isinstance(x.content, dict), state["messages"]))
+    # 可能会存在重复的系统消息需要去掉
+    # 
+    filter_messages = []
+    for message in state["messages"]:
+        if isinstance(message,SystemMessage):
+            continue
+        # 修正请求的类型，否则openapi会报错
+        if not isinstance(message.content,str):
+            # 请求消息处理
+            if isinstance(message,HumanMessage) and isinstance(message.content,list):
+                # ollama的图片请求协议,转换为内部协议
+                for item in message.content:
+                    if item.get("type") == "image_url":
+                        item["type"] = "image"
+                        del item["image_url"]
+            
+            message.content = json.dumps(message.content)
+        filter_messages.append(message)
+    return default_template.invoke({"messages": filter_messages,"language":"chinese"}).to_messages()
+
+
+default_modify_state_messages_runnable = RunnableLambda(default_modify_state_messages)
 
 # 支持collection_names作为系统参数
 custome_rag_system_prompt = (
@@ -139,10 +190,16 @@ doc_qa_template = ChatPromptTemplate.from_messages(
             "system",
             doc_qa_prompt
         ),
-        MessagesPlaceholder("chat_history",optional=True),
-        ("human", "{text}")
+        ("placeholder", "{messages}"),
     ]
 )
+
+def docqa_modify_state_messages(state: AgentState):
+    # 过滤掉非法的消息类型
+    state["messages"] = list(filter(lambda x: not isinstance(x.content, dict), state["messages"]))
+    return doc_qa_template.invoke({"messages": state["messages"],"context":state["context"],"language":"chinese"}).to_messages()
+
+docqa_modify_state_messages_runnable = RunnableLambda(docqa_modify_state_messages)
 
 DEFAULT_SEARCH_PROMPT = PromptTemplate(
     input_variables=["text","date","results_num"],
@@ -171,18 +228,7 @@ rag_filter_template = PromptTemplate(
 )
 
 
-def stock_code_prompt(input_text):
-    template = """Stock Symbol or Ticker Symbol of {text}"""
-    prompt = PromptTemplate.from_template(template)
-    return prompt.format(input=input_text)
-
-
-# multimodal_input_template = PromptTemplate(
-#     template='{"type":"{{type}}","data":"{{data}}","text":"{{text}}"}',
-#     partial_variables={"text":None,"type":None,"data":None},
-#     template_format="mustache"
-# )
-
+# 用于llm模块，多模态消息的渲染
 multimodal_input_template = MultiModalChatPromptTemplate(
     [
         (
@@ -190,8 +236,89 @@ multimodal_input_template = MultiModalChatPromptTemplate(
                 {"type": "text", "text": "{text}"},
                 {"type": "image", "image": "{image}"},
                 {"type": "audio", "audio": "{audio}"},
+                {"type": "video", "video": "{video}"},
             ]
         )
     ],
-    optional_variables=["text","image","audio"]
+    optional_variables=["text","image","audio","video"]
 )
+
+
+user_understand_prompt = '''
+    You are an assistant whose job is to clarify and refine user requests. When you receive a user’s query, follow these steps:
+
+    1.Detect references to prior content
+
+        - If the user mentions a past interaction (text or image), identify and reference that specific content.
+
+        - For images, include the URL or data if available.
+
+    2.Rephrase for clarity and precision
+
+        - Rewrite the user’s question so it’s concise, unambiguous, and faithful to their original intent.
+
+    3.Output format
+
+        - Always respond in English.
+
+        - Return a JSON object with two fields:
+
+            "text": the rewritten question.
+
+            "image": the URL or data of the referenced image, or an empty string if none.
+            
+    Example 1:
+
+    User: "I want to change the last picture you made for me." (Assume the last picture was an oil painting of a cat, URL: `http://localhost:8000/v1/files/1745247442.png`)
+
+    Response:
+    {{
+        "text": "Modify the last generated image (an oil painting of a cat).",
+        "image": "http://localhost:8000/v1/files/1745247442.png"
+    }}
+    
+    Example 2:
+
+    User: "Can you tell me more about the last project?" (Assume the last project was "Project Chimera - a research initiative on AI ethics.")
+
+    Response:
+    {{
+        "text": "More details about the last project, 'Project Chimera - a research initiative on AI ethics.'",
+        "image": ""
+    }}
+    
+    Example 3 (addressing the redraw scenario):
+
+    User: "The previously generated image is blurry and difficult to see, please redraw it." (Assume the previous request was for an oil painting of a landscape)
+
+    Response:
+    {{
+        "text": "Redraw an oil painting of a landscape).",
+        "image": ""
+    }}
+'''
+
+user_understand_template = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            user_understand_prompt
+        ),
+        ("placeholder", "{messages}")
+    ]
+)
+
+def user_understand_modify_state_messages(state: AgentState):
+    # 可能会存在重复的系统消息需要去掉
+    filter_messages = []
+    for message in state["messages"]:
+        if isinstance(message,SystemMessage):
+            continue
+        # 修正请求的类型，否则openapi会报错
+        if not isinstance(message.content,str):
+             message.content = json.dumps(message.content)
+        filter_messages.append(message)
+    return user_understand_template.invoke({"messages": filter_messages}).to_messages()
+
+
+user_understand__modify_state_messages_runnable = RunnableLambda(user_understand_modify_state_messages)

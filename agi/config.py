@@ -2,6 +2,7 @@
 import os
 from dotenv import load_dotenv
 
+
 load_dotenv()  # 加载 .env 文件中的环境变量
 
 #服务相关
@@ -38,7 +39,7 @@ if not WHISPER_GPU_ENABLE:
 
 ## tts 
 TTS_SPEAKER_WAV = os.getenv("TTS_SPEAKER_WAV", os.path.join(MODEL_PATH,"XTTS-v2","samples/zh-cn-sample.wav"))
-TTS_GPU_ENABLE = os.getenv("TTS_DEVICE", True)
+TTS_GPU_ENABLE = os.getenv("TTS_GPU_ENABLE", True)
 TTS_MODEL_DIR = os.getenv("TTS_MODEL_DIR", os.path.join(MODEL_PATH,"tts_models--multilingual--multi-dataset--xtts_v2"))
 if not TTS_GPU_ENABLE:
     TTS_MODEL_DIR = "tts_models/zh-CN/baker/tacotron2-DDC-GST"
@@ -47,12 +48,37 @@ TTS_FILE_SAVE_PATH = os.getenv("TTS_FILE_SAVE_PATH",os.path.join(CACHE_DIR, "aud
 
 ## image 
 IMAGE_TO_IMAGE_MODEL_PATH = os.getenv("IMAGE_TO_IMAGE_MODEL_PATH",os.path.join(MODEL_PATH, "sdxl-turbo"))
-TEXT_TO_IMAGE_MODEL_PATH = IMAGE_TO_IMAGE_MODEL_PATH
+# TEXT_TO_IMAGE_MODEL_PATH = os.getenv("TEXT_TO_IMAGE_MODEL_PATH",os.path.join(MODEL_PATH, "stable-diffusion-3.5-medium"))
+TEXT_TO_IMAGE_MODEL_PATH = os.getenv("TEXT_TO_IMAGE_MODEL_PATH",os.path.join(MODEL_PATH, "sdxl-turbo"))
 IMAGE_FILE_SAVE_PATH = os.getenv("IMAGE_FILE_SAVE_PATH",os.path.join(CACHE_DIR, "image"))
 
 
 ## rag
 FILE_UPLOAD_PATH = os.getenv("FILE_UPLOAD_PATH",os.path.join(CACHE_DIR,"upload"))
 
+## multi model
+MULTI_MODEL_PATH = os.getenv("MULTI_MODEL_PATH",os.path.join(MODEL_PATH, "Qwen2.5-Omni-7B"))
+
 ## web
-EXA_API_KEY = os.getenv("FILE_UPLOAD_PATH","")
+EXA_API_KEY = os.getenv("EXA_API_KEY","")
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY","")
+## stock
+ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY","")
+
+## 系统参数
+AGI_DEBUG = os.getenv("AGI_DEBUG",False)
+## 日志设置
+import logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
+# 创建控制台 handler
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+
+# 设置带文件名和行号的格式
+formatter = logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
+)
+
+ch.setFormatter(formatter)
+log.addHandler(ch)
