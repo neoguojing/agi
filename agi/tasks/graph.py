@@ -292,7 +292,7 @@ class AgiGraph:
                     # TODO decide chain 和 tranlate chain 以及 web search chain会输出中间结果,需要想办法处理
                     if (isinstance(event[1][0],AIMessage)) and event[1][0].content:
                         meta = event[1][1]
-                        if meta.get("langgraph_node") in ["web","__start__","rag",'user_understand']:
+                        if meta.get("langgraph_node") in ["web","__start__","rag",'user_understand',"compress"]:
                             pass
                         else:
                             log.info(f"*************{event}")
