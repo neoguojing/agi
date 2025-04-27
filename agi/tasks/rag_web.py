@@ -102,7 +102,11 @@ def doc_compress_node(state: State,config: RunnableConfig):
     retriever = km.get_compress_retriever(FilterType.LLM_EXTRACT)
     question = get_last_message_text(state)
     docs = state.get("docs")
-    state["docs"] = asyncio.run(retriever.acompress_documents(docs,question))
+    docs = asyncio.run(retriever.acompress_documents(docs,question))
+    if docs:
+        docs = [d for d in docs if d.page_content and not d.page_content.strip().startswith("NO_")]
+    state["docs"] = docs
+    log.info(f"doc_compress_node:{docs}")
     return state 
 
 # 列举collection前面部分的文本页,用于总结文章
