@@ -16,6 +16,7 @@ from langgraph.types import StreamWriter
 from langgraph.graph import END, StateGraph, START
 from langgraph.checkpoint.memory import MemorySaver
 from agi.tasks.retriever import FilterType
+from agi.tasks.llm_app import build_citations
 from agi.tasks.utils import get_last_message_text,split_think_content
 from agi.config import log
 import asyncio
@@ -93,6 +94,7 @@ intend_understand_chain = intend_understand__modify_state_messages_runnable | Ta
 # 文档对话
 def doc_chat_node(state: State,config: RunnableConfig,writer: StreamWriter):
     chain = TaskFactory.create_task(TASK_DOC_CHAT)
+    state["citations"] = build_citations(state)
     if state.get("citations"):
         writer({"citations":state["citations"],"docs":state["docs"]})
     return chain.invoke(state,config=config)
@@ -101,6 +103,8 @@ def doc_compress_node(state: State,config: RunnableConfig):
     km = TaskFactory.get_knowledge_manager()
     retriever = km.get_compress_retriever(FilterType.LLM_EXTRACT)
     question = get_last_message_text(state)
+    import pdb
+    pdb.set_trace()
     docs = state.get("docs")
     docs = asyncio.run(retriever.acompress_documents(docs,question))
     if docs:

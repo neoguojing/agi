@@ -211,7 +211,7 @@ def create_websearch(km: KnowledgeManager):
     web_search_runable = RunnableLambda(web_search)
     web_search_chain = RunnablePassthrough.assign(
             docs=web_search_runable.with_config(run_name="web_search_runable"),
-    ).assign(citations=build_citations)
+    )
     
     return debug_tool | web_search_chain
 
@@ -248,7 +248,7 @@ def create_rag(km: KnowledgeManager):
     retrieval_docs = RunnableLambda(query_docs)
     rag_runable = RunnablePassthrough.assign(
             docs=retrieval_docs.with_config(run_name="retrieval_docs"),
-        ).assign(citations=build_citations)
+        )
     
     return debug_tool | rag_runable
 
@@ -354,7 +354,7 @@ def build_citations(inputs: dict):
         # 将文档按 source 聚合
         for doc in inputs["docs"]:
             # 使用llm extract 提取内容时，与输入无关会返回NO_OUTPUT
-            if doc.page_content.strip().startswith("NO_"):           
+            if doc.page_content.strip().startswith("NO"):           
                 continue
             
             source_type = ""
