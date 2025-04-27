@@ -135,6 +135,7 @@ def create_speech2text_chain():
 def create_llm_task(**kwargs):
     llm = None
     model_name = kwargs.get("model_name") or OLLAMA_DEFAULT_MODE
+    log.info(f"use {model_name} as the default llm")
     if kwargs.get("ollama"):
         llm = ChatOllama(
             model=model_name,

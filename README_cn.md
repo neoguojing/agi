@@ -68,6 +68,7 @@ GPU显存： 初始：2550MB 峰值：20GB
 - 用户意图理解和补全chain DONE
 - 图片信息提取上下文过大，不能使用base64 DONE
 - 多媒体格式统一处理，内部统一使用路径，大模型输入为base64,返回web使用url Done
+- 异步图改造
 ## OPENWEBUI 修改
 - 新增: backend/open_webui/routers/agi.py
 - 修改: backend/open_webui/utils/models.py

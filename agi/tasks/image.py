@@ -9,19 +9,20 @@ import json
 import os
 from agi.tasks.task_factory import (
     TaskFactory,
-    TASK_IMAGE_GEN
+    TASK_IMAGE_GEN,
+    TASK_LLM_WITH_HISTORY
 )
 from langchain_core.runnables import (
     RunnableLambda,
     RunnableConfig
 )
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage,HumanMessage
 from langchain.prompts import ChatPromptTemplate
 
 from langgraph.graph import END, StateGraph, START
 from langgraph.checkpoint.memory import MemorySaver
 from agi.tasks.define import State,Feature,InputType
-
+from langgraph.types import Command
 
 import traceback
 
@@ -113,7 +114,7 @@ def intend_understand_node(state: State,config: RunnableConfig):
     
     try:
         ai = intend_understand_chain.invoke(state)
-        log.info(f"user_understand:{ai}\n{state}")
+        log.info(f"intend_understand_node:{ai}\n{state}")
         # think 标签过滤
         _, result = split_think_content(ai.content)
         log.debug(result)
@@ -132,8 +133,12 @@ def intend_understand_node(state: State,config: RunnableConfig):
     except Exception as e:
         log.error(f"Error during user_understand output_parser: {e}")
         print(traceback.format_exc())
-        return state
-    
+    # 失败的情况下：跳转到父节点
+    return Command(graph=Command.PARENT,goto="llm_with_history")
+
+def intend_control(state: State):
+    if isinstance(state["messages"][-1],HumanMessage):
+        return "image_gen"
 # graph
 checkpointer = MemorySaver()
 
@@ -145,7 +150,5 @@ image_graph_builder.add_node("image_gen", TaskFactory.create_task(TASK_IMAGE_GEN
 image_graph_builder.add_edge(START, "intend")
 image_graph_builder.add_edge("intend", "image_gen")
 image_graph_builder.add_edge("image_gen", END)
-
-
 
 image_graph = image_graph_builder.compile(checkpointer=checkpointer)

@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 
 
-load_dotenv()  # 加载 .env 文件中的环境变量
+load_dotenv(override=True)  # 加载 .env 文件中的环境变量
 
 #服务相关
 BASE_URL = os.environ.get("BASE_URL","http://localhost:8000")
