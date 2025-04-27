@@ -91,7 +91,7 @@ intend_understand_chain = intend_understand__modify_state_messages_runnable | Ta
 # 文档对话
 def doc_chat_node(state: State,config: RunnableConfig,writer: StreamWriter):
     chain = TaskFactory.create_task(TASK_DOC_CHAT)
-    if state["citations"]:
+    if state.get("citations"):
         writer({"citations":state["citations"],"docs":state["docs"]})
     return chain.invoke(state,config=config)
 
