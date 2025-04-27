@@ -69,7 +69,7 @@ class CollectionManager:
     def get_documents(self, collection_name,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE) -> list[Document]:
         """Retrieve all documents and their metadata from the collection."""
         collection = self.get_or_create_collection(collection_name,tenant,database)
-        result = collection.get()
+        result = collection.get(limit=3,offset=0)
         
         return [Document(page_content=document, metadata=metadata) 
                 for document, metadata in zip(result['documents'], result['metadatas'])]

@@ -44,21 +44,21 @@ decider_prompt = (
 
     '- If the input type is "image":'
     '    - If the question requests extracting information from the image (e.g., reading text, describing image content), output: "llm".'
-    '    - If the question requires modifying the image, transforming its style, or generating a new image based on the input, output: "image_gen".'
+    '    - If the question requires modifying the image, transforming its style, or generating a new image based on the input, output: "image".'
 
     '- If the input type is "text":'
-    '    - If the question indicates a request to generate or create an image (e.g., "Draw a cat", "Generate a futuristic cityscape"), output: "image_gen". '
+    '    - If the question indicates a request to generate or create an image (e.g., "Draw a cat", "Generate a futuristic cityscape"), output: "image". '
     '    - If the question requires current or external information (e.g., latest news, real-time data, factual verification, Wikipedia, Wikidata, Python code execution, arXiv papers, weather, or stock market data), output: "agent".'
     '    - Otherwise, for typical text-based inquiries that do not require external data retrieval, output: "llm_with_history".'
 
-    'Your output should be a single command chosen from: "image_gen", "agent","llm" or "llm_with_history". Do not include any additional explanation or details.'
+    'Your output should be a single command chosen from: "image", "agent","llm" or "llm_with_history". Do not include any additional explanation or details.'
 
     'Examples:'
     '1. Input Type: "image"; Question: "Can you read the text in this photo?" '
     '-> Output: "llm"'
 
     '2. Input Type: "image"; Question: "Please convert this image into a watercolor painting." '
-    '-> Output: "image_gen"'
+    '-> Output: "image"'
 
     '3. Input Type: "text"; Question: "What is the latest update on the stock market?" '
     '-> Output: "agent"'

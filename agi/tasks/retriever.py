@@ -151,12 +151,14 @@ class KnowledgeManager:
                         uuids = [str(uuid4()) for _ in range(len(split_docs))]
                         if len(split_docs) > 0:
                             store.add_documents(split_docs, ids=uuids)  # Assuming this can be async
-
+                        raw_docs = split_docs
+                    return raw_docs
+            
                 # Add each source processing task to the list
                 tasks.append(process_source(source))
 
             # Run all tasks concurrently
-            await asyncio.gather(*tasks)
+            raw_docs = await asyncio.gather(*tasks)
 
             log.info("add documents done------")
             return collection_name, known_type, raw_docs
@@ -168,7 +170,7 @@ class KnowledgeManager:
             log.error(e)
             return collection_name, known_type, raw_docs
 
-    def get_compress_retriever(self,retriever,filter_type:FilterType):
+    def get_compress_retriever(self,filter_type:FilterType):
         relevant_filter = None
         # 关联性检查
         if filter_type == FilterType.LLM_FILTER:
@@ -189,11 +191,7 @@ class KnowledgeManager:
             transformers=[redundant_filter, relevant_filter]
         )
 
-        compression_retriever = ContextualCompressionRetriever(
-            base_compressor=pipeline_compressor, base_retriever=retriever
-        )
-
-        return compression_retriever
+        return pipeline_compressor
     
     def bm25_retriever(self,docs:List[Document],k=1):
         try:
@@ -205,7 +203,7 @@ class KnowledgeManager:
             log.error(f"{e} {type(docs)}")
             print(traceback.format_exc())
     
-    def get_retriever(self,collection_names="all",tenant=None,k: int=3,bm25: bool=False,filter_type=FilterType.LLM_EXTRACT,
+    def get_retriever(self,collection_names="all",tenant=None,k: int=3,bm25: bool=False,filter_type=None,
                       sim_algo:SimAlgoType = SimAlgoType.SST):
         retriever = None
         try:
@@ -245,7 +243,10 @@ class KnowledgeManager:
             )
             
             if filter_type is not None:
-                retriever = self.get_compress_retriever(retriever,filter_type)
+                pipeline_compressor = self.get_compress_retriever(filter_type)
+                retriever = ContextualCompressionRetriever(
+                    base_compressor=pipeline_compressor, base_retriever=retriever
+                )
             
             # 生成3个问题，增加检索的多样性
             retriever_from_llm = MultiQueryRetriever.from_llm(

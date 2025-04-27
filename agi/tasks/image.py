@@ -138,9 +138,14 @@ def intend_understand_node(state: State,config: RunnableConfig):
 checkpointer = MemorySaver()
 
 image_graph_builder = StateGraph(State)
+
 image_graph_builder.add_node("intend", intend_understand_node)
 image_graph_builder.add_node("image_gen", TaskFactory.create_task(TASK_IMAGE_GEN))
 
+image_graph_builder.add_edge(START, "intend")
 image_graph_builder.add_edge("intend", "image_gen")
+image_graph_builder.add_edge("image_gen", END)
+
+
 
 image_graph = image_graph_builder.compile(checkpointer=checkpointer)

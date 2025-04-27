@@ -9,12 +9,12 @@ from langchain_core.output_parsers import StrOutputParser
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.runnables import  RunnableConfig
 from agi.tasks.image import image_graph
+from agi.tasks.rag_web import rag_graph
 from langchain.globals import set_debug
 from langchain.globals import set_verbose
 from agi.tasks.task_factory import (
     TaskFactory,
     TASK_AGENT,
-    TASK_IMAGE_GEN,
     TASK_SPEECH_TEXT,
     TASK_TTS,
     TASK_WEB_SEARCH,
@@ -56,13 +56,13 @@ class AgiGraph:
 
         self.builder = StateGraph(State)
         self.builder.add_node("image", image_graph)
+        self.builder.add_node("rag", rag_graph)
         self.builder.add_node("agent", TaskFactory.create_task(TASK_AGENT))
 
 
         self.builder.add_node("speech2text", TaskFactory.create_task(TASK_SPEECH_TEXT))
         self.builder.add_node("tts", TaskFactory.create_task(TASK_TTS))
-        self.builder.add_node("rag", TaskFactory.create_task(TASK_RAG))
-        self.builder.add_node("web", TaskFactory.create_task(TASK_WEB_SEARCH))
+        
         self.builder.add_node("multi_modal", TaskFactory.create_task(TASK_MULTI_MODEL))
         # 用于处理非agent的请求:1.标题生成等用户自定义提示请求；2.作为决策节点，判定用户意图;3.图像识别等 image2text 请求；该请求base64，对上下文影响较大
         self.builder.add_node("llm", TaskFactory.create_task(TASK_LLM))
@@ -71,18 +71,11 @@ class AgiGraph:
         
         self.builder.add_node("human_feedback", self.human_feedback_node)
 
-        self.builder.add_edge("user_understand", "image_gen")
         self.builder.add_conditional_edges("human_feedback", self.human_feedback_control)
         self.builder.add_conditional_edges("agent", self.agent_control)
         self.builder.add_conditional_edges("llm", self.output_control)
         self.builder.add_conditional_edges("llm_with_history", self.output_control)
-        self.builder.add_conditional_edges("doc_chat", self.output_control)
-
-        # 有上下文的请求支持平行处理
-        self.builder.add_conditional_edges("rag", self.context_control)
-        self.builder.add_conditional_edges("web", self.context_control)
-   
-        
+        self.builder.add_conditional_edges("rag", self.output_control)
 
         self.builder.add_edge("multi_modal", END)
         self.builder.add_edge("image", END)
@@ -97,10 +90,6 @@ class AgiGraph:
             # interrupt_before=["tools"],
             # interrupt_after=["tools"]
             )
-        
-        # 定义状态机chain
-        self.decider_chain = decide_modify_state_messages_runnable | TaskFactory.get_llm() | StrOutputParser()
-        self.node_list = ["image_gen","llm_with_history","agent","llm"]
 
     # 通过用户指定input_type，来决定使用哪个分支
     def routes(self,state: State, config: RunnableConfig):
@@ -125,23 +114,24 @@ class AgiGraph:
     def auto_state_machine(self,state: State):
         config={"configurable": {"user_id": "tools", "conversation_id": "",
                                  "thread_id": "tools"}}
-        next_step = self.decider_chain.invoke(state,config=config)
+        # 定义状态机chain
+        decider_chain = decide_modify_state_messages_runnable | TaskFactory.get_llm() | StrOutputParser()
+        node_list = ["image","llm_with_history","agent","llm"]
+        next_step = decider_chain.invoke(state,config=config)
         # 去除think标签
         _,next_step = split_think_content(next_step)
         log.info(f"auto_state_machine: {next_step}")
         
         result = "llm_with_history"
         # 判断返回是否在决策列表里
-        if next_step in self.node_list:
+        if next_step in node_list:
             result = next_step
         else: # 若大模型返回的值不标准，则看是否包含节点
-            match = next((option for option in self.node_list if option in next_step), None)
+            match = next((option for option in node_list if option in next_step), None)
             if match:
                 result = match
         state["auto_decide_result"] = result
-        # 特殊情况，在没有明确是图生图还是文生图的情况下(即单纯输入text的情况下，也可能是需要对上一次的图片做修改)，需要理解用户意图做出决策
-        if result == "image_gen" and state["input_type"] == InputType.TEXT:
-            result = "user_understand"
+
         return result
     
     # 控制图像输入决策
@@ -150,7 +140,7 @@ class AgiGraph:
         if feature == Feature.IMAGE2TEXT:    #图片转文字,涉及到使用base64，对上下文影响较大，不能进入上下文
             return "llm"
         elif feature == Feature.IMAGE2IMAGE:    #图片转图片
-            return "image_gen"
+            return "image"
         else:
             return self.auto_state_machine(state)
     
@@ -176,7 +166,7 @@ class AgiGraph:
         elif feature == Feature.RAG:
             return "rag"
         elif feature == Feature.WEB:
-            return "web"
+            return "rag"
         elif feature == Feature.TTS:   #文字转语音
             return "tts"
         elif feature == Feature.SPEECH:  #语音转文字，直接输出
@@ -213,21 +203,8 @@ class AgiGraph:
     def output_control(self,state: State):
         if state["need_speech"]:
             return "tts"
-        # 处理agent返回冗余信息的问题，从倒数第一个humanmessage开始输出
-        # for i in range(len(state["messages"])-1, -1, -1):
-        #     if isinstance(state["messages"][i],HumanMessage):
-        #         state["messages"] = state["messages"][i:]
-        #         break
         return END
     
-    # 适用于web 和 rag的情况，当无法获取有效的上下文信息时，
-    # 1.重置feature特性
-    # 2.交给agent处理
-    def context_control(self,state: State):
-        docs = state.get("docs")
-        if docs:
-            return "doc_chat"
-        return "agent"
     
     def human_feedback_node(self,state: State):
         messages = []
