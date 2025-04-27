@@ -20,6 +20,9 @@ from agi.tasks.utils import get_last_message_text,split_think_content
 from agi.config import log
 import asyncio
 import json
+from langchain.globals import set_debug
+from langchain.globals import set_verbose
+set_verbose(True)
 
 intend_understand_prompt = '''
 You are the query router for a RAG system. Your job is to inspect each user query and reply with exactly one of the following tokens, so the downstream pipeline knows which mode to run:
@@ -103,8 +106,11 @@ def doc_compress_node(state: State,config: RunnableConfig):
 # 列举collection前面部分的文本页,用于总结文章
 def doc_list_node(state: State,config: RunnableConfig):
     km = TaskFactory.get_knowledge_manager()
-    docs = km.list_documets(state.get("collection_names",[]),tenant=state.get("user_id"))
-    state["docs"] = docs
+    collection_names = state.get("collection_names",[])
+    tenant = state.get("user_id")
+    if len(collection_names) > 0 :
+        docs = km.list_documets(collection_names[0],tenant=tenant)
+        state["docs"] = docs
     return state 
 
 # 适用于web 和 rag的情况，当无法获取有效的上下文信息时，
