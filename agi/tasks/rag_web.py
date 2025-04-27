@@ -102,7 +102,7 @@ def doc_compress_node(state: State,config: RunnableConfig):
 # 列举collection前面部分的文本页,用于总结文章
 def doc_list_node(state: State,config: RunnableConfig):
     km = TaskFactory.get_knowledge_manager()
-    docs = km.list_documets()
+    docs = km.list_documets(state.get("collection_names",[]),tenant=state.get("user_id"))
     state["docs"] = docs
     return state 
 
@@ -127,7 +127,7 @@ def rag_auto_route(state: State):
     else:
         return "llm_with_history"
     
-def route_node(state: State):
+def route(state: State):
     feature = state.get("feature","")
 
     if feature == Feature.RAG:
@@ -148,16 +148,19 @@ rag_graph_builder.add_node("compress", doc_compress_node)
 rag_graph_builder.add_node("rag", TaskFactory.create_task(TASK_RAG))
 rag_graph_builder.add_node("summary", doc_list_node)
 rag_graph_builder.add_node("llm_with_history", TaskFactory.create_task(TASK_LLM_WITH_HISTORY))
-
 rag_graph_builder.add_node("web", TaskFactory.create_task(TASK_WEB_SEARCH))
 
 
-rag_graph_builder.add_edge(START, route_node)
-rag_graph_builder.add_conditional_edges("rag", context_control)
+rag_graph_builder.add_conditional_edges(START, route)
+
 rag_graph_builder.add_conditional_edges("web", context_control)
+
+rag_graph_builder.add_conditional_edges("rag", context_control)
 rag_graph_builder.add_edge("summary", "doc_chat")
+
+rag_graph_builder.add_edge("llm_with_history", END)
+
 rag_graph_builder.add_edge("compress", "doc_chat")
 rag_graph_builder.add_edge("doc_chat", END)
-rag_graph_builder.add_edge("llm_with_history", END)
 
 rag_graph = rag_graph_builder.compile(checkpointer=checkpointer)
