@@ -28,8 +28,7 @@ from typing import Dict, Any, Iterator,Union
 from langchain_core.messages import BaseMessage,AIMessage,HumanMessage,ToolMessage,AIMessageChunk
 from agi.tasks.define import State,Feature,InputType
 from agi.tasks.prompt import (
-    decide_modify_state_messages_runnable,
-    user_understand__modify_state_messages_runnable
+    decide_modify_state_messages_runnable
 )
 from agi.tasks.utils import split_think_content
 import traceback

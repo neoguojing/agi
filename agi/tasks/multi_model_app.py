@@ -1,6 +1,5 @@
 from agi.llms.model_factory import ModelFactory
 from agi.tasks.prompt import (
-    user_understand__modify_state_messages_runnable,
     traslate_modify_state_messages_runnable
 )
 from langchain_core.output_parsers import StrOutputParser,ListOutputParser
@@ -68,37 +67,6 @@ def create_text2image_chain(llm):
     text2image = ModelFactory.get_model("text2image")
     
     return translate| multimodel_state_modifier_runnable | text2image | graph_response_format_runnable
-
-# 用户意图理解和问题完善
-# Input: AgentState
-# Output: AgentState
-def user_understand(llm):
-    chain = user_understand__modify_state_messages_runnable | llm 
-    def user_understand_node(state: AgentState):
-        try:
-            ai = chain.invoke(state)
-            log.info(f"user_understand:{ai}\n{state}")
-            # think 标签过滤
-            _, result = split_think_content(ai.content)
-            log.debug(result)
-            obj = json.loads(result)
-            text = obj.get("text")
-            image = obj.get("image")
-            last_message = state["messages"][-1]
-            if text and last_message:
-                last_message.content = [{"type":"text","text":text}]
-                if image:
-                    if image.startswith(BASE_URL):
-                        image = os.path.join(IMAGE_FILE_SAVE_PATH,os.path.basename(image))
-                    last_message.content.append({"type":"image","image":image})     
-            log.info(f"user_understand end:{state}")
-            return state["messages"]
-        except Exception as e:
-            log.error(f"Error during user_understand output_parser: {e}")
-            print(traceback.format_exc())
-            return state["messages"]
-    user_understand_runnable = RunnableLambda(user_understand_node)
-    return RunnablePassthrough.assign(messages=user_understand_runnable).with_config(run_name="user_understand_chain")
 
 # Input: AgentState
 # Output: AgentState
