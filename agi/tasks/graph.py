@@ -7,8 +7,8 @@ import uuid
 from langgraph.types import Command, interrupt
 from langchain_core.output_parsers import StrOutputParser
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.types import StreamWriter
 from langchain_core.runnables import  RunnableConfig
+from agi.tasks.image import image_graph
 from langchain.globals import set_debug
 from langchain.globals import set_verbose
 from agi.tasks.task_factory import (
@@ -19,7 +19,6 @@ from agi.tasks.task_factory import (
     TASK_TTS,
     TASK_WEB_SEARCH,
     TASK_RAG,
-    TASK_DOC_CHAT,
     TASK_LLM,
     TASK_MULTI_MODEL,
     TASK_LLM_WITH_HISTORY
@@ -34,7 +33,6 @@ from agi.tasks.prompt import (
 )
 from agi.tasks.utils import split_think_content
 import traceback
-import threading
 from agi.config import (
     log,
     BASE_URL,
@@ -49,23 +47,22 @@ from agi.tasks.tools import AskHuman
 # 2. tts： 需要支持将直接转文本和问答之后转文本 done
 # 3. rag 流程独立，支持输出检索结果和转向llm done
 # 4. web检索 流程独立，支持输出检索结果和转向llm done
-# 5. 加入人工check环节，返回结果，提示用户输入
-# 6.模型可以绑定工具 
-# 7.rag没有检索到合适的内容，则转换到agent模式，解决图片的问题
+# 5. 加入人工check环节，返回结果，提示用户输入 done
+# 7.rag没有检索到合适的内容，则转换到agent模式，解决图片的问题 done
     
 class AgiGraph:
     def __init__(self):
         checkpointer = MemorySaver()
 
         self.builder = StateGraph(State)
+        self.builder.add_node("image", image_graph)
+        self.builder.add_node("agent", TaskFactory.create_task(TASK_AGENT))
+
+
         self.builder.add_node("speech2text", TaskFactory.create_task(TASK_SPEECH_TEXT))
         self.builder.add_node("tts", TaskFactory.create_task(TASK_TTS))
-        self.builder.add_node("image_gen", TaskFactory.create_task(TASK_IMAGE_GEN))
         self.builder.add_node("rag", TaskFactory.create_task(TASK_RAG))
         self.builder.add_node("web", TaskFactory.create_task(TASK_WEB_SEARCH))
-        # self.builder.add_node("doc_chat", TaskFactory.create_task(TASK_DOC_CHAT))
-        self.builder.add_node("doc_chat", self.doc_chat_node)
-        self.builder.add_node("agent", TaskFactory.create_task(TASK_AGENT))
         self.builder.add_node("multi_modal", TaskFactory.create_task(TASK_MULTI_MODEL))
         # 用于处理非agent的请求:1.标题生成等用户自定义提示请求；2.作为决策节点，判定用户意图;3.图像识别等 image2text 请求；该请求base64，对上下文影响较大
         self.builder.add_node("llm", TaskFactory.create_task(TASK_LLM))
@@ -73,7 +70,6 @@ class AgiGraph:
         self.builder.add_node("llm_with_history", TaskFactory.create_task(TASK_LLM_WITH_HISTORY))
         
         self.builder.add_node("human_feedback", self.human_feedback_node)
-        self.builder.add_node("user_understand", self.user_understand_node)
 
         self.builder.add_edge("user_understand", "image_gen")
         self.builder.add_conditional_edges("human_feedback", self.human_feedback_control)
@@ -89,7 +85,7 @@ class AgiGraph:
         
 
         self.builder.add_edge("multi_modal", END)
-        self.builder.add_edge("image_gen", END)
+        self.builder.add_edge("image", END)
         self.builder.add_edge("tts", END)
         
         
@@ -104,7 +100,6 @@ class AgiGraph:
         
         # 定义状态机chain
         self.decider_chain = decide_modify_state_messages_runnable | TaskFactory.get_llm() | StrOutputParser()
-        self.intend_understand = user_understand__modify_state_messages_runnable | TaskFactory.get_llm() 
         self.node_list = ["image_gen","llm_with_history","agent","llm"]
 
     # 通过用户指定input_type，来决定使用哪个分支
@@ -126,36 +121,6 @@ class AgiGraph:
 
         return END
     
-    # 文档对话
-    def doc_chat_node(self,state: State,config: RunnableConfig,writer: StreamWriter):
-        chain = TaskFactory.create_task(TASK_DOC_CHAT)
-        if state["citations"]:
-            writer({"citations":state["citations"],"docs":state["docs"]})
-        return chain.invoke(state,config=config)
-    # 理解用户意图，并生成结构化的输入
-    def user_understand_node(self,state: AgentState,config: RunnableConfig):
-        try:
-            ai = self.intend_understand.invoke(state)
-            log.info(f"user_understand:{ai}\n{state}")
-            # think 标签过滤
-            _, result = split_think_content(ai.content)
-            log.debug(result)
-            obj = json.loads(result)
-            text = obj.get("text")
-            image = obj.get("image")
-            last_message = state["messages"][-1]
-            if text and last_message:
-                last_message.content = [{"type":"text","text":text}]
-                if image:
-                    if image.startswith(BASE_URL):
-                        image = os.path.join(IMAGE_FILE_SAVE_PATH,os.path.basename(image))
-                    last_message.content.append({"type":"image","image":image})     
-            log.info(f"user_understand end:{state}")
-            return state
-        except Exception as e:
-            log.error(f"Error during user_understand output_parser: {e}")
-            print(traceback.format_exc())
-            return state
         
     def auto_state_machine(self,state: State):
         config={"configurable": {"user_id": "tools", "conversation_id": "",
