@@ -17,6 +17,7 @@ from langgraph.graph import END, StateGraph, START
 from langgraph.checkpoint.memory import MemorySaver
 from agi.tasks.retriever import FilterType
 from agi.tasks.utils import get_last_message_text,split_think_content
+from agi.config import log
 import asyncio
 import json
 
@@ -119,7 +120,7 @@ def context_control(state: State):
 def rag_auto_route(state: State):
     ai = intend_understand_chain.invoke(state)
     _, result = split_think_content(ai.content)
-
+    log.info(f"rag_auto_route:{result}")
     if result == "summary":
         return "summary"
     elif result == "rag":
