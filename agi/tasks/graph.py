@@ -93,10 +93,6 @@ class AgiGraph:
     # 通过用户指定input_type，来决定使用哪个分支
     def routes(self,state: State, config: RunnableConfig):
         msg_type = state.get("input_type")
-        # 状态初始化
-        state["context"] = None
-        state["docs"] = None
-        state["citations"] = None
 
         if msg_type == InputType.TEXT:
             return self.text_feature_control(state)
@@ -299,6 +295,8 @@ class AgiGraph:
                         if meta.get("langgraph_node") in ["web","__start__","rag",'user_understand']:
                             pass
                         else:
+                            import pdb
+                            pdb.set_trace()
                             yield event
                 elif stream_mode == "debug":
                     pass

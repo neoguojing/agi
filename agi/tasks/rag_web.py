@@ -146,8 +146,12 @@ def rag_auto_route(state: State):
     return "llm_with_history"
     
 def route(state: State):
-    feature = state.get("feature","")
+    # 状态初始化
+    state["context"] = None
+    state["docs"] = None
+    state["citations"] = None
 
+    feature = state.get("feature","")
     if feature == Feature.RAG:
         return rag_auto_route(state)
     elif feature == Feature.WEB:
