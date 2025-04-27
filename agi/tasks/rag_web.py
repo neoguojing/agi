@@ -32,17 +32,10 @@ You are the query router for a RAG system. Your job is to inspect each user quer
    
 2. rag  
    – Use this when the user’s request likely requires retrieving or grounding in external content (e.g. “What did the New York Times say about X?”, “Give me details from the latest research paper on Y”, “What is the plot of [book title]?”).  
-   
-3. other  
-   – Use this for any query that is neither a pure summary/extraction nor needs external retrieval. In this case, the router may either:  
-     • Ask the user for clarification (“Could you clarify what you’d like?”),  
-     • Route to a general-purpose chat/QA module,  
-     • Or trigger another specialized pipeline (e.g. translation, code execution, scheduling).  
 
 Routing rules:  
 - If the user explicitly asks to “summarize,” “extract,” “list,” “compare,” or “classify” text they have pasted, always select **summary**.  
 - If the user asks for facts, excerpts, or analysis of documents, articles, books, or research they haven’t provided in full, select **rag**.  
-- Otherwise, select **other**.
 
 Examples:
 
@@ -51,13 +44,6 @@ Router → summary
 
 User: “What are the main findings of the 2024 IPCC report?”  
 Router → rag
-
-User: “How do I bake a chocolate cake?”  
-Router → other
-
----
-
-Feel free to extend the “other” branch with additional tokens or clarifying questions as your system requires.
 
 '''
 intend_understand_template = ChatPromptTemplate.from_messages(
@@ -127,12 +113,13 @@ def rag_auto_route(state: State):
     ai = intend_understand_chain.invoke(state)
     _, result = split_think_content(ai.content)
     log.info(f"rag_auto_route:{result}")
+    
     if result == "summary":
         return "summary"
     elif result == "rag":
         return "rag"
-    else:
-        return "llm_with_history"
+    
+    return "llm_with_history"
     
 def route(state: State):
     feature = state.get("feature","")
