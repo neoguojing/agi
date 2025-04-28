@@ -23,10 +23,6 @@ from langchain_ollama import OllamaEmbeddings,ChatOllama
 from urllib.parse import urljoin
 from agi.tasks.utils import split_think_content
 from agi.config import log
-from agi.tasks.llm_app import create_llm_with_history
-import json
-import os
-import traceback
 
 # Input: AgentState
 # Output: AgentState

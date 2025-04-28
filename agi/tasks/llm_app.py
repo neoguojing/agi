@@ -98,6 +98,7 @@ def get_session_history(user_id: str, conversation_id: str):
 # Input: List[BaseMessage]
 # Output: AIMessage
 # 该工具不能单独使用
+# not for async
 def create_llm_with_history(runnable,dict_input=False):
     # 支持历史消息裁剪
     runnable = debug_tool | trimmer | runnable
@@ -285,8 +286,9 @@ def create_chat(llm):
 # Output: AgentState
 # chat with history
 def create_chat_with_history(llm):
-    llm_with_history = create_llm_with_history(runnable=llm,dict_input=False)
-    chat = debug_tool | default_modify_state_messages_runnable | llm_with_history | graph_response_format_runnable
+    # 不适合于async
+    # llm_with_history = create_llm_with_history(runnable=llm,dict_input=False)
+    chat = debug_tool | default_modify_state_messages_runnable | llm | graph_response_format_runnable
     return chat
 
 
