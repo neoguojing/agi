@@ -242,12 +242,12 @@ class AgiGraph:
             state = self.graph.get_state(config)
             log.debug(state)
             if state.tasks and state.tasks[0].interrupts:
-                events = await self.graph.astream(Command(resume=input), config)
+                events = self.graph.astream(Command(resume=input), config)
             else:
                 input["step"] = []
-                events = await self.graph.astream(input, config=config, stream_mode=stream_mode)
+                events = self.graph.astream(input, config=config, stream_mode=stream_mode)
 
-            for event in events:
+            async for event in events:
                 log.debug(event)
                 # 返回非HumanMessage
                 if "values" in stream_mode:
