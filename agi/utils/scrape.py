@@ -9,11 +9,8 @@ from requests.exceptions import RequestException
 import random
 import time
 from typing import Any, Optional, Type,List
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
+from playwright.sync_api import sync_playwright
+from playwright.async_api import async_playwright
 from pydantic import Field,BaseModel,PrivateAttr
 from langchain_core.tools import BaseTool
 from agi.config import log
@@ -46,7 +43,7 @@ class WebScraper(BaseTool):
     def _scrape(self, url: str) -> BeautifulSoup:
         """Scrape content from URL, with option for dynamic content loading via Selenium."""
         if self.use_selenium or "toutiao" in url:
-            return self._scrape_with_selenium(url)
+            return self._scrape_dynamic_sync(url)
         else:
             return self._scrape_with_requests(url)
 
@@ -77,21 +74,40 @@ class WebScraper(BaseTool):
             log.error(f"Error fetching {url} with aiohttp: {e}")
             raise
 
-    def _scrape_with_selenium(self, url: str) -> BeautifulSoup:
-        """Use Selenium for scraping dynamic content."""
-        try:
-            options = Options()
-            options.headless = True
-            driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-            driver.get(url)
-            time.sleep(3)  # Wait for JavaScript to load
-            html = driver.page_source
-            driver.quit()
-            soup = BeautifulSoup(html, "html.parser")
+    def _scrape_dynamic_sync(self, url: str) -> BeautifulSoup:
+        """Use Playwright for scraping dynamic content synchronously."""
+        with sync_playwright() as p:
+            # 启动 Chromium 浏览器
+            browser = p.chromium.launch(headless=True)  # headless=True 表示无头模式
+            page = browser.new_page()
+
+            # 打开网页并获取页面的 HTML 内容
+            page.goto(url)
+            html_content = page.content()  # 获取完整的 HTML 内容，而不是 inner_html('body')
+
+            # 关闭浏览器
+            browser.close()
+
+            # 用 BeautifulSoup 解析 HTML
+            soup = BeautifulSoup(html_content, "html.parser")
             return soup
-        except Exception as e:
-            log.error(f"Error fetching {url} with Selenium: {e}")
-            raise
+
+    async def _scrape_dynamic_async(self, url: str) -> BeautifulSoup:
+        """Use Selenium for scraping dynamic content."""
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)  # headless=True 表示无头模式
+            page = await browser.new_page()
+
+            # 打开网页并获取页面的 HTML 内容
+            await page.goto(url)
+            html_content = await page.content()  # 获取完整的 HTML 内容，而不是 inner_html('body')
+
+            # 关闭浏览器
+            await browser.close()
+
+            # 用 BeautifulSoup 解析 HTML
+            soup = BeautifulSoup(html_content, "html.parser")
+            return soup
 
     def _get_random_headers(self) -> dict:
         """Generate random headers to mimic real user requests."""
@@ -140,7 +156,7 @@ class WebScraper(BaseTool):
                 content = soup.find(tag)
             else:
                 # 如果类名不为 None，则使用正则表达式匹配类名
-                content = soup.find(tag, class_=re.compile(cls)) or soup.find_all(tag, id=re.compile('.*content.*'))
+                content = soup.find(tag, class_=re.compile(cls)) or soup.find(tag, id=re.compile('.*content.*'))
             
             # 如果找到了匹配的元素，停止查找
             if content:
