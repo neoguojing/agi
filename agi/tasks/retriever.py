@@ -147,7 +147,7 @@ class KnowledgeManager:
                                 doc.metadata["source"] = source
 
                         # After documents are loaded, split them asynchronously as well
-                        split_docs = self.split_documents(docs)
+                        split_docs = await self.split_documents(docs)
                         uuids = [str(uuid4()) for _ in range(len(split_docs))]
                         if len(split_docs) > 0:
                             store.add_documents(split_docs, ids=uuids)  # Assuming this can be async
@@ -257,7 +257,7 @@ class KnowledgeManager:
         return retriever_from_llm
     
     
-    def query_doc(self,
+    async def query_doc(self,
         collection_name: Union[str, List[str]],
         query: str,
         tenant: str = None,
@@ -278,7 +278,7 @@ class KnowledgeManager:
             retriever = self.get_retriever(collection_names,tenant=tenant,k=k,bm25=bm25,filter_type=filter_type)
             if retriever is None:
                 return None
-            docs = asyncio.run(retriever.ainvoke(query))
+            docs = await retriever.ainvoke(query)
             docs = [d for d in docs if d.page_content and not d.page_content.strip().startswith("NO_")]
             if to_dict:
                 docs = {
@@ -447,7 +447,7 @@ class KnowledgeManager:
 
         return loader, known_type
     # decrease
-    def web_parser(self,urls,tenant=None,metadata=None,collection_name=None):
+    async def web_parser(self,urls,tenant=None,metadata=None,collection_name=None):
         bs_transformer = BeautifulSoupTransformer()
         vector_store = None
         if collection_name:
@@ -456,14 +456,14 @@ class KnowledgeManager:
         if urls:
             loader = AsyncChromiumLoader(urls)
             log.info("Indexing new urls...")
-            docs = loader.load()
+            docs = await loader.aload()
             log.info(f"load docs:{len(docs)}")
             docs_transformed = bs_transformer.transform_documents(
                 docs, tags_to_extract=["span"]
             )
             docs = list(docs_transformed)
             log.info(f"transform docs:{len(docs)}")
-            docs = self.split_documents(docs)
+            docs = await self.split_documents(docs)
             log.info(f"split docs:{len(docs)}")
             uuids = [str(uuid4()) for _ in range(len(docs))]
             if metadata:
@@ -513,7 +513,7 @@ class KnowledgeManager:
             return "", False,raw_results,[]
          
 
-    def split_documents(self, documents,chunk_size=4000,chunk_overlap=200):
+    async def split_documents(self, documents,chunk_size=4000,chunk_overlap=200):
         text_splitter = RecursiveCharacterTextSplitter(separators=[
                                                     "\n\n",
                                                     "\n",
@@ -527,7 +527,7 @@ class KnowledgeManager:
                                                     "\u3002",  # Ideographic full stop
                                                 ],
                                                 chunk_size=chunk_size, chunk_overlap=chunk_overlap,add_start_index=True)
-        return text_splitter.split_documents(documents)
+        return await text_splitter.atransform_documents(documents)
 
     def do_search(self, questions):
         urls_to_look = []

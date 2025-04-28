@@ -220,7 +220,7 @@ def create_websearch(km: KnowledgeManager):
 # Output: AgentState
 # TODO 在未获取到知识库，或者未检索到相关文档的情况下，直接交给大模型型回答
 def create_rag(km: KnowledgeManager):
-    def query_docs(input: AgentState,config: RunnableConfig):
+    async def query_docs(input: AgentState,config: RunnableConfig):
         input["docs"] = None
         input["citations"] = None
         log.debug(f"query_docs----{input}")
@@ -237,7 +237,7 @@ def create_rag(km: KnowledgeManager):
         retriever = km.get_retriever(collection_names=collections,tenant=tenant)
         if retriever:
             text = get_last_message_text(input)
-            docs = asyncio.run(retriever.ainvoke(text))
+            docs = await retriever.ainvoke(text)
             if docs:
                 docs = [d for d in docs if d.page_content and not d.page_content.strip().startswith("NO_")]
 

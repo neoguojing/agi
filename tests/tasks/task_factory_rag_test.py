@@ -34,7 +34,7 @@ class TestTaskRagFactory(unittest.TestCase):
         self.assertNotEqual(len(raw_docs),0)
 
     def test_doc_search(self):
-        docs = self.kmanager.query_doc("test","完善动平衡计算模块")
+        docs = asyncio.run(self.kmanager.query_doc("test","完善动平衡计算模块"))
         self.assertEqual(docs[0].metadata["page"],0)
         self.assertEqual(docs[0].metadata["source"],"./tests/test.pdf")
         self.assertIn("平衡计算模块",docs[0].page_content)
