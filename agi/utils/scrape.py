@@ -80,17 +80,15 @@ class WebScraper(BaseTool):
             # 启动 Chromium 浏览器
             browser = p.chromium.launch(headless=True)  # headless=True 表示无头模式
             page = browser.new_page()
-
-            # 打开网页并获取页面的 HTML 内容
-            page.goto(url)
-            html_content = page.content()  # 获取完整的 HTML 内容，而不是 inner_html('body')
-
-            # 关闭浏览器
-            browser.close()
-
-            # 用 BeautifulSoup 解析 HTML
-            soup = BeautifulSoup(html_content, "html.parser")
-            return soup
+            try:
+                page.goto(url, wait_until="networkidle", timeout=15000)
+                page.wait_for_selector("body", timeout=5000)  # 额外保险
+                html_content = page.content()
+                # 用 BeautifulSoup 解析 HTML
+                soup = BeautifulSoup(html_content, "html.parser")
+                return soup
+            finally:
+                browser.close()
 
     async def _scrape_dynamic_async(self, url: str) -> BeautifulSoup:
         """Use Selenium for scraping dynamic content."""
