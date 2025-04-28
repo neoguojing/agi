@@ -130,10 +130,13 @@ class WebScraper(BaseTool):
             ('div','.*content.*')
         ]
 
-        # 使用生成器表达式查找第一个匹配的元素
         content = next(
-            (soup.find(tag, class_=re.compile(cls)) for tag, cls in search_patterns if soup.find(tag, class_=re.compile(cls))),
-            ""  # 如果没有找到任何元素，返回 None
+            # 生成器表达式: 遍历 search_patterns 中的每个 tag 和 cls
+            (soup.find(tag, class_=re.compile(cls)) 
+            for tag, cls in search_patterns
+            # 检查是否找到匹配的元素
+            if (cls is None and soup.find(tag)) or (cls and soup.find(tag, class_=re.compile(cls)))),
+            ""  # 如果没有找到任何匹配元素，返回空字符串
         )
 
         if content:
