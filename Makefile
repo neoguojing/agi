@@ -43,6 +43,7 @@ test_api:
 # 启动 FastAPI 服务
 .PHONY: run
 run:
+	python -m playwright install chromium
 	$(PYTHON) -m uvicorn $(TARGET) --host 0.0.0.0 --port 8000 --reload
 
 # 清理目标

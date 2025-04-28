@@ -48,7 +48,5 @@ optree==0.15.0
 yfinance==0.2.5
 youtube_search==2.1.2
 langchain-tavily==0.1.5
-selenium==4.31.0
-webdriver-manager==4.0.2
-
+playwright==1.51.0
 
