@@ -178,7 +178,7 @@ def create_stuff_documents_chain(
     doc_chain = (
         RunnablePassthrough.assign(context=format_docs).with_config(run_name="format_inputs")
         | docqa_modify_state_messages_runnable
-        | llm_with_history
+        | llm
     ).with_config(run_name="stuff_documents_chain")
 
     target_chain = RunnableBranch(
