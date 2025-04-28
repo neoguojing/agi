@@ -233,11 +233,12 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
     """
     
     try:
-        events = await graph.stream(state_data)
+        # events = await graph.stream(state_data)
         index = 0  # 初始化 index
         # 使用finish_reason，控制重复内容的输出
         finish_reason = None
-        for event in events:
+        # for event in events:
+        async for event in graph.stream(state_data):
             chunk = {
                 "id": f"chatcmpl-{uuid.uuid4()}",
                 "object": "chat.completion.chunk",
