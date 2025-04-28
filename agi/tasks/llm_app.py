@@ -172,7 +172,8 @@ def create_stuff_documents_chain(
         # 最终结果保存在 combined_documents 变量中
         return combined_documents
     
-    llm_with_history = create_llm_with_history(runnable=llm,dict_input=False)
+    # 不能用于异步
+    # llm_with_history = create_llm_with_history(runnable=llm,dict_input=False)
 
     doc_chain = (
         RunnablePassthrough.assign(context=format_docs).with_config(run_name="format_inputs")
@@ -185,7 +186,7 @@ def create_stuff_documents_chain(
             # Both empty string and empty list evaluate to False
             lambda x: not x.get("docs", False),
             # If no docs, then we just pass input to llm
-            default_modify_state_messages_runnable | llm_with_history
+            default_modify_state_messages_runnable | llm
         ),
         # If docs, then we pass inputs to tag chain
         doc_chain
