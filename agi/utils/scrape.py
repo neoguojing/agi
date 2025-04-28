@@ -1,4 +1,5 @@
 import requests
+import re
 import aiohttp
 import asyncio
 from bs4 import BeautifulSoup
@@ -125,14 +126,16 @@ class WebScraper(BaseTool):
             ('div', 'article-content'),
             ('div', 'answer-content'),
             ('div', 'answer-body'),
-            ('div','post-content')
+            ('div','post-content'),
+            ('div','.*content.*')
         ]
 
         # 使用生成器表达式查找第一个匹配的元素
         content = next(
-            (soup.find(tag, class_=cls) for tag, cls in search_patterns if soup.find(tag, class_=cls)),
+            (soup.find(tag, class_=re.compile(cls)) for tag, cls in search_patterns if soup.find(tag, class_=re.compile(cls))),
             ""  # 如果没有找到任何元素，返回 None
         )
+
         if content:
             content = content.get_text(separator='\n', strip=True)
         
@@ -152,11 +155,11 @@ class WebScraper(BaseTool):
         data = {}
         # 提取商品名称
         name = soup.find('h1') or soup.find('span', class_='product-name')
-        data['name'] = name.get_text(strip=True) if name else "No name found"
+        data['name'] = name.get_text(strip=True) if name else ""
 
         # 提取价格
         price = soup.find('span', class_='price')
-        data['price'] = price.get_text(strip=True) if price else "No price found"
+        data['price'] = price.get_text(strip=True) if price else "0"
 
         # 提取销量
         sales = soup.find('div', class_='sales')
