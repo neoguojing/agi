@@ -8,7 +8,7 @@ from typing import Iterator, List, Optional
 from requests.exceptions import RequestException
 import random
 import time
-from typing import Any, Optional, Type,List
+from typing import Any, Optional, Type,List,Union
 from playwright.sync_api import sync_playwright
 from playwright.async_api import async_playwright
 from pydantic import Field,BaseModel,PrivateAttr
@@ -23,7 +23,7 @@ from langchain_core.documents import Document
 class WLInput(BaseModel):
     """Input for the web loader tool."""
 
-    urls: List[str] = Field(description="urls need to be scraped")
+    web_paths: str = Field(description="urls need to be scraped")
 
 class WebScraper(BaseTool):
     name: str = "web scraper"
@@ -43,9 +43,16 @@ class WebScraper(BaseTool):
     def _scrape(self, url: str) -> BeautifulSoup:
         """Scrape content from URL, with option for dynamic content loading via Selenium."""
         if self.use_selenium or "toutiao" in url:
-            return self._scrape_dynamic_sync(url)
+            return self._scrape_dynamic(url)
         else:
             return self._scrape_with_requests(url)
+
+    async def _ascrape(self, url: str) -> BeautifulSoup:
+        """Scrape content from URL, with option for dynamic content loading via Selenium."""
+        if self.use_selenium or "toutiao" in url:
+            return await self._ascrape_dynamic(url)
+        else:
+            return await self._scrape_with_aiohttp(url)
 
     def _scrape_with_requests(self, url: str) -> BeautifulSoup:
         """Use requests and BeautifulSoup to scrape static content."""
@@ -74,7 +81,7 @@ class WebScraper(BaseTool):
             log.error(f"Error fetching {url} with aiohttp: {e}")
             raise
 
-    def _scrape_dynamic_sync(self, url: str) -> BeautifulSoup:
+    def _scrape_dynamic(self, url: str) -> BeautifulSoup:
         """Use Playwright for scraping dynamic content synchronously."""
         with sync_playwright() as p:
             # 启动 Chromium 浏览器
@@ -90,22 +97,43 @@ class WebScraper(BaseTool):
             finally:
                 browser.close()
 
-    async def _scrape_dynamic_async(self, url: str) -> BeautifulSoup:
-        """Use Selenium for scraping dynamic content."""
+    async def _ascrape_dynamic(self, url: str) -> BeautifulSoup:
+        """优化后的动态内容爬取方法"""
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)  # headless=True 表示无头模式
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--disable-blink-features=AutomationControlled"]  # 反检测措施:ml-citation{ref="5" data="citationList"}
+            )
             page = await browser.new_page()
+            
+            try:
+                # 设置合理的默认超时
+                page.set_default_timeout(15000)  # 全局超时15秒:ml-citation{ref="3" data="citationList"}
 
-            # 打开网页并获取页面的 HTML 内容
-            await page.goto(url)
-            html_content = await page.content()  # 获取完整的 HTML 内容，而不是 inner_html('body')
+                # 加载页面并等待关键条件
+                await page.goto(
+                    url,
+                    wait_until="networkidle",  # 或使用 "domcontentloaded" + "load" 组合:ml-citation{ref="8" data="citationList"}
+                    timeout=30000
+                )
+                
+                # 双重保险：等待特定动态元素
+                await page.wait_for_function(
+                    "document.readyState === 'complete'",
+                    timeout=5000
+                )
+                
+                # 获取完整HTML
+                html_content = await page.content()
+                
+            except Exception as e:
+                await page.screenshot(path="load_fail.png")
+                raise
+            finally:
+                await browser.close()
+                
+        return BeautifulSoup(html_content, "html.parser")
 
-            # 关闭浏览器
-            await browser.close()
-
-            # 用 BeautifulSoup 解析 HTML
-            soup = BeautifulSoup(html_content, "html.parser")
-            return soup
 
     def _get_random_headers(self) -> dict:
         """Generate random headers to mimic real user requests."""
@@ -198,10 +226,15 @@ class WebScraper(BaseTool):
         return data
 
     def _run(
-        self, web_paths: List[str], run_manager: Optional[CallbackManagerForToolRun] = None
+        self, web_paths: Union[str,List[str],dict], run_manager: Optional[CallbackManagerForToolRun] = None
     ) -> List[Document]:
         """Use the tool."""
         docs = []
+        if isinstance(web_paths,str):
+            web_paths = [web_paths]
+        elif isinstance(web_paths,dict):
+            web_paths = web_paths.get("urls")
+            
         for path in web_paths:            
             try:
                 soup = self._scrape(path)
@@ -221,13 +254,18 @@ class WebScraper(BaseTool):
 
     async def _arun(
         self,
-        web_paths: List[str],
+        web_paths: Union[str,List[str],dict],
         run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
     ) -> List[Document]:
         """Use the tool asynchronously."""
+        
+        if isinstance(web_paths,str):
+            web_paths = [web_paths]
+        elif isinstance(web_paths,dict):
+            web_paths = [web_paths.get("url")]
         tasks = []
         for path in web_paths:
-            tasks.append(self._scrape(path))
+            tasks.append(self._ascrape(path))
 
         # Use asyncio.gather to wait for all tasks to complete
         pages = await asyncio.gather(*tasks)
