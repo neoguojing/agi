@@ -33,8 +33,8 @@ class WebScraper(BaseTool):
     )
 
     args_schema: Type[BaseModel] = WLInput
-    use_selenium: bool
-    web_paths: List[str]
+    use_selenium: bool = False
+    web_paths: List[str] = None
 
     def __init__(self,web_paths:List[str] = None, use_selenium: bool = False,**kwargs):
         super().__init__(**kwargs)
