@@ -60,7 +60,7 @@ class WebScraper(BaseTool):
             log.error(f"Error fetching {url}: {e}")
             raise
 
-    async def _scrape_with_requests(self, url: str) -> BeautifulSoup:
+    async def _scrape_with_aiohttp(self, url: str) -> BeautifulSoup:
         """Use requests and BeautifulSoup to scrape static content."""
         try:
             headers = self._get_random_headers()
