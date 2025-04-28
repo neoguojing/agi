@@ -82,6 +82,7 @@ class TestTaskRagFactory(unittest.TestCase):
         print(docs)
         loader = self.kmanager.get_web_loader(["https://world.huanqiu.com/article/4MSVE1DOKy3"])
         docs = loader.load()
+        print(docs)
         loader = self.kmanager.get_web_loader(["https://www.toutiao.com/article/7497472910076953139/?log_from=5372de4ab4e0b_1745828583840"])
         docs = loader.load()
         print(docs)
