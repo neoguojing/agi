@@ -198,13 +198,13 @@ def create_stuff_documents_chain(
 # Input: AgentState
 # Output: AgentState
 def create_websearch(km: KnowledgeManager):
-    def web_search(input: AgentState,config: RunnableConfig):
+    async def web_search(input: AgentState,config: RunnableConfig):
         input["docs"] = None
         input["citations"] = None
 
         tenant = config.get("configurable", {}).get("user_id", None)
         text = get_last_message_text(input)
-        _,_,_,raw_docs = km.web_search(text,tenant=tenant)
+        _,_,_,raw_docs = await km.web_search(text,tenant=tenant)
         log.debug(f"web_search---{raw_docs}")
         return raw_docs
     

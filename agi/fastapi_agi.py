@@ -136,7 +136,7 @@ async def chat_completions(
             log.info(f"request: {request}")
             return StreamingResponse(generate_stream_response(state_data), media_type="text/event-stream")
         else:
-            resp = graph.invoke(state_data)
+            resp = await graph.invoke(state_data)
             if request.feature != "llm":
                 log.info(f"request:{request}")
                 log.info(f"response:{resp}")
@@ -233,7 +233,7 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
     """
     
     try:
-        events = graph.stream(state_data)
+        events = await graph.stream(state_data)
         index = 0  # 初始化 index
         # 使用finish_reason，控制重复内容的输出
         finish_reason = None

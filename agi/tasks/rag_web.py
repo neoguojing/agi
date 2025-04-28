@@ -73,7 +73,7 @@ intend_understand_template = ChatPromptTemplate.from_messages(
     ]
 )
 
-def intend_understand_modify_state_messages(state: State):
+async def intend_understand_modify_state_messages(state: State):
     # 可能会存在重复的系统消息需要去掉
     filter_messages = []
     for message in state["messages"]:
@@ -83,7 +83,7 @@ def intend_understand_modify_state_messages(state: State):
         if not isinstance(message.content,str):
              message.content = json.dumps(message.content)
         filter_messages.append(message)
-    return intend_understand_template.invoke({"messages": filter_messages}).to_messages()
+    return await intend_understand_template.ainvoke({"messages": filter_messages}).to_messages()
 
 
 intend_understand__modify_state_messages_runnable = RunnableLambda(intend_understand_modify_state_messages)
@@ -92,19 +92,19 @@ intend_understand_chain = intend_understand__modify_state_messages_runnable | Ta
 
 # NODE
 # 文档对话
-def doc_chat_node(state: State,config: RunnableConfig,writer: StreamWriter):
+async def doc_chat_node(state: State,config: RunnableConfig,writer: StreamWriter):
     chain = TaskFactory.create_task(TASK_DOC_CHAT)
     state["citations"] = build_citations(state)
     if state.get("citations"):
         writer({"citations":state["citations"],"docs":state["docs"]})
-    return chain.invoke(state,config=config)
+    return await chain.ainvoke(state,config=config)
 
-def doc_compress_node(state: State,config: RunnableConfig):
+async def doc_compress_node(state: State,config: RunnableConfig):
     km = TaskFactory.get_knowledge_manager()
     retriever = km.get_compress_retriever(FilterType.LLM_EXTRACT)
     question = get_last_message_text(state)
     docs = state.get("docs")
-    docs = asyncio.run(retriever.acompress_documents(docs,question))
+    docs = await retriever.acompress_documents(docs,question)
     if docs:
         docs = [d for d in docs if d.page_content and not d.page_content.strip().startswith("NO")]
     state["docs"] = docs
@@ -112,7 +112,7 @@ def doc_compress_node(state: State,config: RunnableConfig):
     return state 
 
 # 列举collection前面部分的文本页,用于总结文章
-def doc_list_node(state: State,config: RunnableConfig):
+async def doc_list_node(state: State,config: RunnableConfig):
     km = TaskFactory.get_knowledge_manager()
     collection_names = state.get("collection_names",[])
     tenant = state.get("user_id")
@@ -124,15 +124,15 @@ def doc_list_node(state: State,config: RunnableConfig):
 # 适用于web 和 rag的情况，当无法获取有效的上下文信息时，
     # 1.重置feature特性
     # 2.交给llm_with_history处理
-def context_control(state: State):
+async def context_control(state: State):
     docs = state.get("docs")
     if docs:
         return "compress"
     return "llm_with_history"
 
 # 分析用户意图，自主决策
-def rag_auto_route(state: State):
-    ai = intend_understand_chain.invoke(state)
+async def rag_auto_route(state: State):
+    ai = await intend_understand_chain.ainvoke(state)
     _, result = split_think_content(ai.content)
     log.info(f"rag_auto_route:{result}")
 
@@ -143,7 +143,7 @@ def rag_auto_route(state: State):
     
     return "llm_with_history"
     
-def route(state: State):
+async def route(state: State):
     # 状态初始化
     state["context"] = None
     state["docs"] = None
@@ -151,11 +151,11 @@ def route(state: State):
 
     feature = state.get("feature","")
     if feature == Feature.RAG:
-        return rag_auto_route(state)
+        return await rag_auto_route(state)
     elif feature == Feature.WEB:
         return "web"
     elif state.get("collection_names"):
-        return rag_auto_route(state)
+        return await rag_auto_route(state)
 
 
 # graph

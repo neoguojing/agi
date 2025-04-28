@@ -91,28 +91,28 @@ class AgiGraph:
             )
 
     # 通过用户指定input_type，来决定使用哪个分支
-    def routes(self,state: State, config: RunnableConfig):
+    async def routes(self,state: State, config: RunnableConfig):
         msg_type = state.get("input_type")
 
         if msg_type == InputType.TEXT:
-            return self.text_feature_control(state)
+            return await self.text_feature_control(state)
         elif msg_type == InputType.IMAGE:
-            return self.image_feature_control(state)
+            return await self.image_feature_control(state)
         elif msg_type == InputType.AUDIO:
-            return self.audio_feature_control(state)
+            return await self.audio_feature_control(state)
         elif msg_type == InputType.VIDEO:
-            return self.video_feature_control(state)
+            return await self.video_feature_control(state)
 
         return END
     
         
-    def auto_state_machine(self,state: State):
+    async def auto_state_machine(self,state: State):
         config={"configurable": {"user_id": "tools", "conversation_id": "",
                                  "thread_id": "tools"}}
         # 定义状态机chain
         decider_chain = decide_modify_state_messages_runnable | TaskFactory.get_llm() | StrOutputParser()
         node_list = ["image","llm_with_history","agent","llm"]
-        next_step = decider_chain.invoke(state,config=config)
+        next_step = await decider_chain.ainvoke(state,config=config)
         # 去除think标签
         _,next_step = split_think_content(next_step)
         log.info(f"auto_state_machine: {next_step}")
@@ -130,31 +130,31 @@ class AgiGraph:
         return result
     
     # 控制图像输入决策
-    def image_feature_control(self,state: State):
+    async def image_feature_control(self,state: State):
         feature = state.get("feature","")
         if feature == Feature.IMAGE2TEXT:    #图片转文字,涉及到使用base64，对上下文影响较大，不能进入上下文
             return "llm"
         elif feature == Feature.IMAGE2IMAGE:    #图片转图片
             return "image"
         else:
-            return self.auto_state_machine(state)
+            return await self.auto_state_machine(state)
     
     # 语音输出决策
-    def audio_feature_control(self,state: State):
+    async def audio_feature_control(self,state: State):
         feature = state.get("feature","")
         if feature == Feature.VOICECHAT:  #语音对话
             return "multi_modal"
         return "speech2text"
     
     # 视频输入决策
-    def video_feature_control(self,state: State):
+    async def video_feature_control(self,state: State):
         feature = state.get("feature","")
         if feature == Feature.VIDEOPARSE:  #视频内容解析
             return "multi_modal"
         return "multi_modal"
 
     # 文本输入决策
-    def text_feature_control(self,state: State):
+    async def text_feature_control(self,state: State):
         feature = state.get("feature","")
         if feature == Feature.AGENT:
             return "agent"
@@ -171,9 +171,9 @@ class AgiGraph:
         elif feature == Feature.HUMAN: #人工介入，用于测试
             return "human_feedback"
         else: #通用任务处理：如标题生成、tag生成等 或者 自主决策
-            return self.auto_state_machine(state)
+            return await self.auto_state_machine(state)
     
-    def agent_control(self,state: State):
+    async def agent_control(self,state: State):
         messages = state["messages"]
         last_message = messages[-1]
         # If there is no function call, then we finish
@@ -189,19 +189,19 @@ class AgiGraph:
         # else:
         #     return "action"
     
-    def human_feedback_control(self,state: State):
+    async def human_feedback_control(self,state: State):
         if state["step"]:
             return state["step"][-1]
         
-        return self.output_control(state)
+        return await self.output_control(state)
     
-    def output_control(self,state: State):
+    async def output_control(self,state: State):
         if state["need_speech"]:
             return "tts"
         return END
     
     
-    def human_feedback_node(self,state: State):
+    async def human_feedback_node(self,state: State):
         messages = []
         # agent的场景,需要使用到AskHuman
         if isinstance(state["messages"][-1],ToolMessage):
@@ -217,7 +217,7 @@ class AgiGraph:
         
         return state
         
-    def invoke(self,input:State) -> State:
+    async def invoke(self,input:State) -> State:
         config={"configurable": {"user_id": input.get("user_id","default_tenant"), "conversation_id": input.get("conversation_id",""),
                                  "thread_id": input.get("user_id",None) or str(uuid.uuid4())}}
         state = self.graph.get_state(config)
@@ -226,13 +226,13 @@ class AgiGraph:
         events = None
         # TODO tasks只有在非空情况下一定是打断吗
         if state.tasks and state.tasks[0].interrupts:
-            events = self.graph.invoke(Command(resume=input), config)
+            events = await self.graph.ainvoke(Command(resume=input), config)
         else:
             input["step"] = []
-            events = self.graph.invoke(input, config)
+            events = await self.graph.ainvoke(input, config)
         return events
 
-    def stream(self, input: State,stream_mode=["messages","updates", "custom"]) -> Iterator[Union[BaseMessage, Dict[str, Any]]]:
+    async def stream(self, input: State,stream_mode=["messages","updates", "custom"]) -> Iterator[Union[BaseMessage, Dict[str, Any]]]:
         thread_id =  input.get("user_id",None) or str(uuid.uuid4())
         config={"configurable": {"user_id": input.get("user_id","default_tenant"), "conversation_id": input.get("conversation_id",""),
                                  "thread_id":thread_id}}
@@ -242,10 +242,10 @@ class AgiGraph:
             state = self.graph.get_state(config)
             log.debug(state)
             if state.tasks and state.tasks[0].interrupts:
-                events = self.graph.invoke(Command(resume=input), config)
+                events = await self.graph.astream(Command(resume=input), config)
             else:
                 input["step"] = []
-                events = self.graph.stream(input, config=config, stream_mode=stream_mode)
+                events = await self.graph.astream(input, config=config, stream_mode=stream_mode)
 
             for event in events:
                 log.debug(event)

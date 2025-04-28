@@ -90,7 +90,7 @@ intend_understand_template = ChatPromptTemplate.from_messages(
     ]
 )
 
-def intend_understand_modify_state_messages(state: State):
+async def intend_understand_modify_state_messages(state: State):
     # 可能会存在重复的系统消息需要去掉
     filter_messages = []
     for message in state["messages"]:
@@ -100,7 +100,7 @@ def intend_understand_modify_state_messages(state: State):
         if not isinstance(message.content,str):
              message.content = json.dumps(message.content)
         filter_messages.append(message)
-    return intend_understand_template.invoke({"messages": filter_messages}).to_messages()
+    return await intend_understand_template.ainvoke({"messages": filter_messages}).to_messages()
 
 
 intend_understand__modify_state_messages_runnable = RunnableLambda(intend_understand_modify_state_messages)
@@ -108,12 +108,12 @@ intend_understand__modify_state_messages_runnable = RunnableLambda(intend_unders
 intend_understand_chain = intend_understand__modify_state_messages_runnable | TaskFactory.get_llm() 
 
 # 理解用户意图，并生成结构化的输入
-def intend_understand_node(state: State,config: RunnableConfig):
+async def intend_understand_node(state: State,config: RunnableConfig):
     if state["input_type"] == InputType.IMAGE:
         return state
     
     try:
-        ai = intend_understand_chain.invoke(state)
+        ai = await intend_understand_chain.ainvoke(state)
         log.info(f"intend_understand_node:{ai}\n{state}")
         # think 标签过滤
         _, result = split_think_content(ai.content)
@@ -136,9 +136,6 @@ def intend_understand_node(state: State,config: RunnableConfig):
     # 失败的情况下：跳转到父节点
     return Command(graph=Command.PARENT,goto="llm_with_history")
 
-def intend_control(state: State):
-    if isinstance(state["messages"][-1],HumanMessage):
-        return "image_gen"
 # graph
 checkpointer = MemorySaver()
 

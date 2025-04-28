@@ -473,42 +473,39 @@ class KnowledgeManager:
                 vector_store.add_documents(docs,ids=uuids)
         return docs
         
-    def web_search(self,query,tenant=None,collection_name="web",max_results=3,bm25=False):
+    async def web_search(self,query,tenant=None,collection_name="web",max_results=3,bm25=False):
         if query is None:
             return 
     
         try:
             questions = self.search_chain.invoke({"date":datetime.now().date(),"text":query,"results_num":max_results})
             log.info(f"questions:{questions}")
-            # Relevant urls
-            # urls,raw_results = self.do_search(questions)   
-            async def do(questions, collection_name, tenant):
-                raw_results = []
-                raw_docs = []
-                urls,raw_results = await self.do_asearch(questions)
-                known_type = None
-                # TODO 执行网页爬虫 效果很差
-                # collection_name,known_type,raw_docs = await self.store(collection_name,list(urls),source_type=SourceType.WEB,tenant=tenant)
-                # log.info(f"scrach results: {raw_docs}")
-                # 未爬到信息，则使用检索结果拼装
-                for source in raw_results:
-                    raw_docs.append(
-                        Document(
-                        page_content = f'{source.get("date", "")}\n{source.get("title", "")}\n{source.get("snippet")}',
-                            metadata={"source": source.get("source"), "link": source.get("link")},
-                        )
-                    )
-                    
-                # 使用bm25算法重排
-                if raw_docs and bm25:
-                    raw_docs= self.bm25_retriever(raw_docs,k=1).invoke(query)
-                    log.info(f"bm25 results: {raw_docs}")
-
-                return known_type,raw_results,raw_docs
             
-            known_type,raw_results,raw_docs = asyncio.run(
-                do(questions, collection_name, tenant)
-            )
+            raw_results = []
+            raw_docs = []
+            # Relevant urls
+            urls,raw_results = await self.do_asearch(questions)
+            known_type = None
+            # TODO 执行网页爬虫 效果很差
+            # collection_name,known_type,raw_docs = await self.store(collection_name,list(urls),source_type=SourceType.WEB,tenant=tenant)
+            # log.info(f"scrach results: {raw_docs}")
+            # 未爬到信息，则使用检索结果拼装
+            for source in raw_results:
+                raw_docs.append(
+                    Document(
+                    page_content = f'{source.get("date", "")}\n{source.get("title", "")}\n{source.get("snippet")}',
+                        metadata={"source": source.get("source"), "link": source.get("link")},
+                    )
+                )
+                
+            # 使用bm25算法重排
+            if raw_docs and bm25:
+                raw_docs= await self.bm25_retriever(raw_docs,k=1).ainvoke(query)
+                log.info(f"bm25 results: {raw_docs}")
+
+                # return known_type,raw_results,raw_docs
+            
+            # known_type,raw_results,raw_docs = await do(questions, collection_name, tenant)
             return collection_name, known_type,raw_results,raw_docs
         except Exception as e:
             log.error(f"Error search: {e}")
