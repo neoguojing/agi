@@ -83,7 +83,8 @@ async def intend_understand_modify_state_messages(state: State):
         if not isinstance(message.content,str):
              message.content = json.dumps(message.content)
         filter_messages.append(message)
-    return await intend_understand_template.ainvoke({"messages": filter_messages}).to_messages()
+    render_result = await intend_understand_template.ainvoke({"messages": filter_messages})
+    return render_result.to_messages()
 
 
 intend_understand__modify_state_messages_runnable = RunnableLambda(intend_understand_modify_state_messages)
