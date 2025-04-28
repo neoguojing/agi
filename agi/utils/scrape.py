@@ -2,6 +2,7 @@ import requests
 import re
 import aiohttp
 import asyncio
+import traceback
 from bs4 import BeautifulSoup
 from typing import Iterator, List, Optional
 from requests.exceptions import RequestException
@@ -130,19 +131,28 @@ class WebScraper(BaseTool):
             ('div','.*content.*')
         ]
 
-        content = next(
-            # 生成器表达式: 遍历 search_patterns 中的每个 tag 和 cls
-            (soup.find(tag, class_=re.compile(cls)) 
-            for tag, cls in search_patterns
-            # 检查是否找到匹配的元素
-            if (cls is None and soup.find(tag)) or (cls and soup.find(tag, class_=re.compile(cls)))),
-            ""  # 如果没有找到任何匹配元素，返回空字符串
-        )
+        content = ""  # 默认值为空字符串
 
+        # 遍历所有的搜索模式
+        for tag, cls in search_patterns:
+            if cls is None:
+                # 如果类名为 None，则只根据标签名查找
+                content = soup.find(tag)
+            else:
+                # 如果类名不为 None，则使用正则表达式匹配类名
+                content = soup.find(tag, class_=re.compile(cls)) or soup.find_all(tag, id=re.compile('.*content.*'))
+            
+            # 如果找到了匹配的元素，停止查找
+            if content:
+                break
+        
+        # 如果找到匹配的元素，提取其文本内容
         if content:
             content = content.get_text(separator='\n', strip=True)
-        
+
+        # 返回提取的文本内容
         return content
+        
     
     def _get_comment(self,soup):
         # 提取点赞数
@@ -192,6 +202,7 @@ class WebScraper(BaseTool):
             except Exception as e:
                 # Log the error and continue with the next URL
                 log.error(f"Error processing {path}: {e}")
+                print(traceback.format_exc())
         return docs
 
     async def _arun(
