@@ -326,14 +326,9 @@ class KnowledgeManager:
         # Check if the URL is valid
         if not self.validate_url(url):
             raise ValueError("Oops! The URL you provided is invalid. Please double-check and try again.")
-        return SafeWebBaseLoader(
-            url,
-            verify_ssl=verify_ssl,
-            requests_per_second=10,
-            continue_on_failure=True,
-        )
-        # return AsyncChromiumLoader(url)
-    
+        from agi.utils.scrape import WebScraper
+        return WebScraper(web_paths=url)
+        
     def get_youtube_loader(self,url: Union[str, Sequence[str]]):
         loader = YoutubeLoader.from_youtube_url(
                 url,
@@ -473,7 +468,7 @@ class KnowledgeManager:
                 vector_store.add_documents(docs,ids=uuids)
         return docs
         
-    async def web_search(self,query,tenant=None,collection_name="web",max_results=3,bm25=False):
+    async def web_search(self,query,max_results=3,bm25=False):
         if query is None:
             return 
     
@@ -485,7 +480,6 @@ class KnowledgeManager:
             raw_docs = []
             # Relevant urls
             urls,raw_results = await self.do_asearch(questions)
-            known_type = None
             # TODO 执行网页爬虫 效果很差
             # collection_name,known_type,raw_docs = await self.store(collection_name,list(urls),source_type=SourceType.WEB,tenant=tenant)
             # log.info(f"scrach results: {raw_docs}")
@@ -500,13 +494,11 @@ class KnowledgeManager:
                 
             # 使用bm25算法重排
             if raw_docs and bm25:
-                raw_docs= await self.bm25_retriever(raw_docs,k=1).ainvoke(query)
+                bm25_rag = self.bm25_retriever(raw_docs,k=1)
+                raw_docs= await bm25_rag.ainvoke(query)
                 log.info(f"bm25 results: {raw_docs}")
-
-                # return known_type,raw_results,raw_docs
             
-            # known_type,raw_results,raw_docs = await do(questions, collection_name, tenant)
-            return collection_name, known_type,raw_results,raw_docs
+            return urls,raw_results,raw_docs
         except Exception as e:
             log.error(f"Error search: {e}")
             print(traceback.format_exc())
@@ -595,28 +587,3 @@ class KnowledgeManager:
             print(traceback.format_exc())
 
         return urls_to_look, raw_results
-    
-class SafeWebBaseLoader(WebBaseLoader):
-    """WebBaseLoader with enhanced error handling for URLs."""
-
-    def lazy_load(self) -> Iterator[Document]:
-        """Lazy load text from the url(s) in web_path with error handling."""
-        for path in self.web_paths:
-            try:
-                soup = self._scrape(path, bs_kwargs=self.bs_kwargs)
-                text = soup.get_text(**self.bs_get_text_kwargs)
-                # Build metadata
-                metadata = {"source": path}
-                if title := soup.find("title"):
-                    metadata["title"] = title.get_text()
-                if description := soup.find("meta", attrs={"name": "description"}):
-                    metadata["description"] = description.get(
-                        "content", "No description found."
-                    )
-                if html := soup.find("html"):
-                    metadata["language"] = html.get("lang", "No language found.")
-
-                yield Document(page_content=text, metadata=metadata)
-            except Exception as e:
-                # Log the error and continue with the next URL
-                log.error(f"Error loading {path}: {e}")

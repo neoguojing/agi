@@ -29,9 +29,10 @@ class TestTaskRagFactory(unittest.TestCase):
         self.assertEqual(len(docs),2)
     
     def test_web_search(self):
-        collect_name,know_type,raw_results,raw_docs = asyncio.run(self.kmanager.web_search("上海未来一周天气如何？"))
+        urls,raw_results,raw_docs = asyncio.run(self.kmanager.web_search("上海未来一周天气如何？"))
         self.assertNotEqual(len(raw_results),0)
         self.assertNotEqual(len(raw_docs),0)
+        self.assertNotEqual(len(urls),0)
 
     def test_doc_search(self):
         docs = asyncio.run(self.kmanager.query_doc("test","完善动平衡计算模块"))

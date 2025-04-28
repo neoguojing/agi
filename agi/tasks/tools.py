@@ -5,6 +5,7 @@ from langchain.agents import Tool
 from agi.utils.weather import get_weather_info
 from agi.utils.search_engine import SearchEngineSelector
 from agi.utils.stock_market import get_stock
+from agi.utils.scrape import WebScraper
 from agi.config import log
 from pydantic import BaseModel,Field
 from langchain_community.tools.yahoo_finance_news import YahooFinanceNewsTool
@@ -70,6 +71,7 @@ tools = [
     # TEST FAIED
     # YahooFinanceNewsTool(),
     YouTubeSearchTool(),
+    WebScraper(),
     wikipedia(),
     # wikidata(),
     pythonREPL(),
