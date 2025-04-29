@@ -26,38 +26,28 @@ intend_understand_prompt = '''
 You are the query router for a RAG system. For each user query, reply with exactly one of these tokens:
 
 1. summary  
-   – Use this for operations on text the user has already provided in full within their query.  
+   – Use this only when the user explicitly asks you to operate on text they have pasted *in full* within their query—e.g. summarizing, extracting, classifying, comparing, or listing items from that provided text.  
    – Examples:  
-     • Summarize the paragraph below: …
-     • List the key entities in this text: …
-     • Compare these two provided paragraphs: …
+     • Summarize the paragraph below: …  
+     • List the key entities in this text: …  
+     • Compare these two provided paragraphs: …  
 
 2. rag  
-   – Use this when the user needs content that must be fetched or grounded in an external document, knowledge base, or corpus that they have *not* pasted in full. Also use this if they refer by name to a document (e.g. “in the Yuan master document,” “in the product spec,” “in our API guide”).  
+   – Use this for every other information request, including when the user asks for facts, excerpts, or analysis of any document, article, or source they have NOT fully included in their query, or when they refer by name to an external document or corpus.  
    – Examples:  
-     • What did the New York Times say about X?
-     • In the docs, what is said about browser compatibility?
-     • Give me details from the latest research paper on Y.
-     • Plot summary of [book title].
+     • What did the New York Times say about X?  
+     • In the docs, what is said about browser compatibility?  
+     • Give me details from the latest research paper on Y.  
+     • Plot summary of [book title].  
 
 Routing rules:
-- summary
-  – Query explicitly asks to summarize, extract, classify, compare, or list from text included in the user’s request.  
-- rag
-  – Query asks for facts, excerpts, or analysis of documents/articles/books/research **not** fully included in the request.  
-  – Query names or alludes to a document, guide, spec, or corpus (“the Yuan master doc,” “our product manual,” etc.), implying you must retrieve it.  
+- summary  
+  – The query must include the full text to be processed right in the user’s prompt.  
+  – The user must explicitly ask to “summarize,” “extract,” “list,” “compare,” etc., from that text.  
 
-Examples:
-
-User: Please summarize the following paragraph: …
-Router → summary
-
-User: What are the main findings of the 2024 IPCC report?  
-Router → rag
-
-User: 在文档中，关于浏览器兼容性的描述是什么？
-Router → rag
-
+- rag  
+  – All other queries—unless they meet the strict criteria for **summary** above—should route to **rag**.  
+  – This includes any request for external knowledge, named documents, or background facts not fully supplied in the prompt.
 
 '''
 intend_understand_template = ChatPromptTemplate.from_messages(

@@ -167,7 +167,7 @@ class AgiGraph:
         last_message = messages[-1]
         # If there is no function call, then we finish
         if not last_message.tool_calls:
-            return self.output_control(state=state)
+            return await self.output_control(state=state)
         # If tool call is asking Human, we return that node
         # You could also add logic here to let some system know that there's something that requires Human input
         # For example, send a slack message, etc
