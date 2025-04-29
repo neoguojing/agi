@@ -7,6 +7,7 @@ from langchain.output_parsers.boolean import BooleanOutputParser
 from agi.tasks.agi_prompt import MultiModalChatPromptTemplate
 from agi.tasks.define import AgentState
 from agi.tasks.utils import get_last_message_text
+from agi.config import log
 import json
 
 english_traslate_template = ChatPromptTemplate.from_messages([
@@ -195,8 +196,7 @@ doc_qa_template = ChatPromptTemplate.from_messages(
 )
 
 def docqa_modify_state_messages(state: AgentState):
-    # 过滤掉非法的消息类型
-    state["messages"] = list(filter(lambda x: not isinstance(x.content, dict), state["messages"]))
+    log.info(f"docqa_modify_state_messages:{state}")
     return doc_qa_template.invoke({"messages": state["messages"],"context":state["context"],"language":"chinese"}).to_messages()
 
 docqa_modify_state_messages_runnable = RunnableLambda(docqa_modify_state_messages)
