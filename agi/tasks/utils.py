@@ -97,13 +97,13 @@ def format_state_message_to_str(messages):
 
 # TODO parent_name不是实际的函数
 def debug_info(x : Any):
-    if AGI_DEBUG:
+    if AGI_DEBUG == True:
         parent_name = ""
         stack = inspect.stack()
         if len(stack) > 2:  # stack[0] 是 get_parent_function_name，stack[1] 是调用它的函数
             parent_name = stack[2].function  # stack[2] 是再往上的函数，即父函数
         
-        log.info(f"type:{parent_name}\nmessage:{x}")
+        log.info(f"message:{x}")
 
     return x
 
