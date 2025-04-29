@@ -172,7 +172,7 @@ rag_graph_builder.add_node("scrape", web_scrape_node)
 
 rag_graph_builder.add_conditional_edges(START, route)
 
-rag_graph_builder.add_conditional_edges("web","scrape")
+rag_graph_builder.add_edge("web","scrape")
 rag_graph_builder.add_conditional_edges("scrape", context_control)
 
 rag_graph_builder.add_conditional_edges("rag", context_control)
