@@ -187,6 +187,7 @@ class AgiGraph:
     async def output_control(self,state: State):
         if state["need_speech"]:
             return "tts"
+        
         return END
     
     
@@ -237,7 +238,7 @@ class AgiGraph:
                 events = self.graph.astream(input, config=config, stream_mode=stream_mode)
 
             async for event in events:
-                log.debug(event)
+                log.info(event)
                 # 返回非HumanMessage
                 if "values" in stream_mode:
                     # event是 State类型
@@ -284,6 +285,19 @@ class AgiGraph:
                         if meta.get("langgraph_node") in ["web","__start__","rag",'user_understand',"compress","intend"]:
                             pass
                         else:
+                            # 某些场景下，如agent，返回消息非流式返回，整体作为一个返回：
+                            # 1.finish_reason一定等于stop
+                            # 2.在包含think的场景下，think的内容一起返回，导致出现问题
+                            # 3.此处将该类消息拆为两条,分别发送
+                            last_message = event[1][0]
+                            if last_message.response_metadata.get("finish_reason","") == "stop" and last_message.content:
+                                think_content,other_content = split_think_content(last_message.content)
+                                if think_content:
+                                    last_message.content = think_content
+                                    last_message.response_metadata["finish_reason"] = None
+                                    yield event
+                                    last_message.content = other_content
+                                    last_message.response_metadata["finish_reason"] = "stop"
                             yield event
                 elif stream_mode == "debug":
                     pass
