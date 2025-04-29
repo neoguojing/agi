@@ -81,7 +81,7 @@ async def doc_chat_node(state: State,config: RunnableConfig,writer: StreamWriter
     state["citations"] = build_citations(state)
     if state.get("citations"):
         writer({"citations":state["citations"],"docs":state["docs"]})
-    log.info(f"doc_chat_node:{len(state["docs"])}")
+    log.info(f"doc_chat_node:{len(state['docs'])}")
     return await chain.ainvoke(state,config=config)
 
 async def doc_compress_node(state: State,config: RunnableConfig):
@@ -104,7 +104,7 @@ async def doc_list_node(state: State,config: RunnableConfig):
     if len(collection_names) > 0 :
         docs = km.list_documets(collection_names[0],tenant=tenant)
         state["docs"] = docs
-        log.info(f"doc_list_node:{len(state["docs"])}")
+        log.info(f"doc_list_node:{len(state['docs'])}")
     return state 
 
 # 网页爬虫节点
@@ -114,7 +114,7 @@ async def web_scrape_node(state: State,config: RunnableConfig):
     if urls and not state.get("docs"):
         _,_,docs = await km.store("web",source=urls,source_type=SourceType.WEB)
         state["docs"] = docs
-        log.info(f"web_scrape_node:{len(state["docs"])}")
+        log.info(f"web_scrape_node:{len(state['docs'])}")
 
     return state 
 
