@@ -163,37 +163,55 @@ class WebScraper(BaseTool):
         author = soup.find('span', class_='author') or soup.find('meta', {'name': 'author'})
         return {"author":author.get_text(strip=True) if author else ""}
     
-    def _get_content(self,soup):
+    def _get_content(self, soup):
+        # 三元组：(tag, attr, pattern)
+        # attr=None: 只按标签；attr='class' / 'id'：按 class 或 id 正则匹配
         search_patterns = [
-            ('article', None),
-            ('div', 'article-content'),
-            ('div', 'answer-content'),
-            ('div', 'answer-body'),
-            ('div','post-content'),
-            ('div','.*content.*')
+            ('article',      None,            None),
+            ('section',      None,            None),
+            ('main',         None,            None),
+
+            ('div',          'class',     r'.*content.*'),
+            ('div',          'id',        r'.*content.*'),
+            ('div',          'class',     r'rich-text.*'),
+            ('div',          'id',        r'rich-text.*'),
+            ('div',          'class',     r'post-body.*'),
+            ('div',          'id',        r'post-body.*'),
+            ('div',          'class',     r'answer-body.*'),
+            ('div',          'id',     r'answer-body.*'),
         ]
 
-        content = ""  # 默认值为空字符串
+        # 如果 class/id 包含下列关键词，就认为是评论、页脚、元信息，不要提取
+        blacklist = re.compile(r'comment|reply|footer|meta', re.IGNORECASE)
 
-        # 遍历所有的搜索模式
-        for tag, cls in search_patterns:
-            if cls is None:
-                # 如果类名为 None，则只根据标签名查找
-                content = soup.find(tag)
-            else:
-                # 如果类名不为 None，则使用正则表达式匹配类名
-                content = soup.find(tag, class_=re.compile(cls)) or soup.find(tag, id=re.compile('.*content.*'))
-            
-            # 如果找到了匹配的元素，停止查找
-            if content:
-                break
-        
-        # 如果找到匹配的元素，提取其文本内容
-        if content:
-            content = content.get_text(separator='\n', strip=True)
+        for tag, attr, pattern in search_patterns:
+            # 找到所有候选元素
+            if attr is None:
+                candidates = soup.find_all(tag)
+            elif attr == 'class':
+                candidates = soup.find_all(tag, class_=re.compile(pattern, re.IGNORECASE))
+            else:  # attr == 'id'
+                candidates = soup.find_all(tag, id=re.compile(pattern, re.IGNORECASE))
 
-        # 返回提取的文本内容
-        return content
+            # 过滤掉黑名单元素
+            filtered = []
+            for el in candidates:
+                # 检查 class 和 id
+                cls = ' '.join(el.get('class', [])) if el.get('class') else ''
+                _id = el.get('id', '') or ''
+                if not (blacklist.search(cls) or blacklist.search(_id)):
+                    filtered.append(el)
+
+            if not filtered:
+                continue
+
+            # 拼接所有符合的元素文本
+            texts = [el.get_text(separator='\n', strip=True) for el in filtered]
+            return '\n\n'.join(texts)
+
+        # 都没匹配到，返回空字符串
+        return ""
+
         
     
     def _get_comment(self,soup):
