@@ -15,15 +15,12 @@ from langchain.prompts import ChatPromptTemplate
 from langgraph.types import StreamWriter
 from langgraph.graph import END, StateGraph, START
 from langgraph.checkpoint.memory import MemorySaver
-from agi.tasks.retriever import FilterType
+from agi.tasks.retriever import FilterType,SourceType
 from agi.tasks.llm_app import build_citations
-from agi.tasks.utils import get_last_message_text,split_think_content
+from agi.tasks.utils import get_last_message_text,split_think_content,graph_print
 from agi.config import log
 import asyncio
 import json
-from langchain.globals import set_debug
-from langchain.globals import set_verbose
-set_verbose(True)
 
 intend_understand_prompt = '''
 You are the query router for a RAG system. For each user query, reply with exactly one of these tokens:
@@ -122,6 +119,15 @@ async def doc_list_node(state: State,config: RunnableConfig):
         state["docs"] = docs
     return state 
 
+# 网页爬虫节点
+async def web_scrape_node(state: State,config: RunnableConfig):
+    km = TaskFactory.get_knowledge_manager()
+    urls = state.get("urls")
+    if urls and not state.get("docs"):
+        _,_,docs = await km.store("web",source=urls,source_type=SourceType.WEB)
+        state["docs"] = docs
+    return state 
+
 # 适用于web 和 rag的情况，当无法获取有效的上下文信息时，
     # 1.重置feature特性
     # 2.交给llm_with_history处理
@@ -170,11 +176,14 @@ rag_graph_builder.add_node("rag", TaskFactory.create_task(TASK_RAG))
 rag_graph_builder.add_node("summary", doc_list_node)
 rag_graph_builder.add_node("llm_with_history", TaskFactory.create_task(TASK_LLM_WITH_HISTORY))
 rag_graph_builder.add_node("web", TaskFactory.create_task(TASK_WEB_SEARCH))
+rag_graph_builder.add_node("scrape", web_scrape_node)
+
 
 
 rag_graph_builder.add_conditional_edges(START, route)
 
-rag_graph_builder.add_conditional_edges("web", context_control)
+rag_graph_builder.add_conditional_edges("web","scrape")
+rag_graph_builder.add_conditional_edges("scrape", context_control)
 
 rag_graph_builder.add_conditional_edges("rag", context_control)
 rag_graph_builder.add_edge("summary", "doc_chat")
@@ -184,4 +193,6 @@ rag_graph_builder.add_edge("llm_with_history", END)
 rag_graph_builder.add_edge("compress", "doc_chat")
 rag_graph_builder.add_edge("doc_chat", END)
 
-rag_graph = rag_graph_builder.compile(checkpointer=checkpointer)
+rag_graph = rag_graph_builder.compile(checkpointer=checkpointer,name="rag")
+
+graph_print(rag_graph)

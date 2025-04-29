@@ -238,6 +238,9 @@ class WebScraper(BaseTool):
         for path in web_paths:            
             try:
                 soup = self._scrape(path)
+                content = self._get_content(soup)
+                if not content:
+                    continue
                 # Build metadata
                 metadata = {"source": path}
                 metadata.update(self._get_author(soup))
@@ -245,7 +248,8 @@ class WebScraper(BaseTool):
                 metadata.update(self._get_goods(soup))
                 metadata.update(self._get_pub_date(soup))
                 metadata.update(self._get_titile(soup))
-                docs.append(Document(page_content=self._get_content(soup), metadata=metadata))
+
+                docs.append(Document(page_content=content, metadata=metadata))
             except Exception as e:
                 # Log the error and continue with the next URL
                 log.error(f"Error processing {path}: {e}")
@@ -273,6 +277,9 @@ class WebScraper(BaseTool):
         docs = []
         for path, soup in zip(web_paths, pages):            
             try:
+                content = self._get_content(soup)
+                if not content:
+                    continue
                 # Build metadata
                 metadata = {"source": path}
                 metadata.update(self._get_author(soup))
@@ -280,7 +287,7 @@ class WebScraper(BaseTool):
                 metadata.update(self._get_goods(soup))
                 metadata.update(self._get_pub_date(soup))
                 metadata.update(self._get_titile(soup))
-                docs.append(Document(page_content=self._get_content(soup), metadata=metadata))
+                docs.append(Document(page_content=content, metadata=metadata))
 
             except Exception as e:
                 # Log the error and continue with the next URL

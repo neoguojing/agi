@@ -1,7 +1,3 @@
-import io
-import json
-import os
-from PIL import Image as PILImage
 from langgraph.graph import END, StateGraph, START
 import uuid
 from langgraph.types import Command, interrupt
@@ -10,36 +6,28 @@ from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.runnables import  RunnableConfig
 from agi.tasks.image import image_graph
 from agi.tasks.rag_web import rag_graph
-from langchain.globals import set_debug
-from langchain.globals import set_verbose
+
 from agi.tasks.task_factory import (
     TaskFactory,
     TASK_AGENT,
     TASK_SPEECH_TEXT,
     TASK_TTS,
-    TASK_WEB_SEARCH,
-    TASK_RAG,
     TASK_LLM,
     TASK_MULTI_MODEL,
     TASK_LLM_WITH_HISTORY
     )
-from agi.tasks.define import AgentState
 from typing import Dict, Any, Iterator,Union
-from langchain_core.messages import BaseMessage,AIMessage,HumanMessage,ToolMessage,AIMessageChunk
+from langchain_core.messages import BaseMessage,AIMessage,HumanMessage,ToolMessage
 from agi.tasks.define import State,Feature,InputType
 from agi.tasks.prompt import (
     decide_modify_state_messages_runnable
 )
-from agi.tasks.utils import split_think_content
+from agi.tasks.utils import split_think_content,graph_print
 import traceback
 from agi.config import (
-    log,
-    BASE_URL,
-    IMAGE_FILE_SAVE_PATH
+    log
 )
 from agi.tasks.tools import AskHuman
-# set_verbose(True)
-# set_debug(True)
 
 # TODO
 # 1. 语音：需要支持直接转换为文本和转文本之后问答 done
@@ -87,7 +75,8 @@ class AgiGraph:
         self.graph = self.builder.compile(
             checkpointer=checkpointer,
             # interrupt_before=["tools"],
-            # interrupt_after=["tools"]
+            # interrupt_after=["tools"],
+            name="main"
             )
 
     # 通过用户指定input_type，来决定使用哪个分支
@@ -304,16 +293,4 @@ class AgiGraph:
             yield {"error": str(e)}  # 返回错误信息
     
     def display(self):
-        try:
-               # Generate the image as a byte stream
-            image_data = self.graph.get_graph().draw_mermaid_png()
-
-            # Create a PIL Image object from the byte stream
-            image = PILImage.open(io.BytesIO(image_data))
-
-            # Save the image to a file
-            image.save("graph.png")
-            log.debug("Image saved as output_image.png")
-        except Exception:
-            # This requires some extra dependencies and is optional
-            pass
+        graph_print(self.graph)

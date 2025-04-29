@@ -3,7 +3,7 @@ from agi.config import (
     BASE_URL,
     IMAGE_FILE_SAVE_PATH
 )
-from agi.tasks.utils import split_think_content
+from agi.tasks.utils import split_think_content,graph_print
 from agi.tasks.define import State
 import json
 import os
@@ -148,4 +148,6 @@ image_graph_builder.add_edge(START, "intend")
 image_graph_builder.add_edge("intend", "image_gen")
 image_graph_builder.add_edge("image_gen", END)
 
-image_graph = image_graph_builder.compile(checkpointer=checkpointer)
+image_graph = image_graph_builder.compile(checkpointer=checkpointer,name="image")
+graph_print(image_graph)
+

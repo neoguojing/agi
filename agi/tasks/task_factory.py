@@ -1,19 +1,14 @@
-import time
 from typing import Any,Union
 import threading
-from agi.llms.model_factory import ModelFactory
 from agi.tasks.agent import create_react_agent_task
 from langchain_core.embeddings import Embeddings
 from langchain_core.runnables import Runnable
 from urllib.parse import urljoin
 from agi.config import (
     OLLAMA_API_BASE_URL,
-    OPENAI_API_KEY,
     RAG_EMBEDDING_MODEL,
-    OLLAMA_DEFAULT_MODE,
     CACHE_DIR
 )
-from langchain_openai import ChatOpenAI
 from langchain_ollama import OllamaEmbeddings
 from agi.tasks.llm_app import (
     create_chat,
@@ -21,19 +16,14 @@ from agi.tasks.llm_app import (
 )
 from agi.tasks.multi_model_app import (
     create_image_gen_chain,
-    create_text2image_chain,
     create_translate_chain,
     create_text2speech_chain,
     create_speech2text_chain,
-    create_embedding_task,
     create_llm_task,
     create_multimodel_chain,
 )
-from agi.tasks.retriever import FilterType,SimAlgoType
-from langchain.globals import set_debug
 from agi.tasks.retriever import KnowledgeManager
 
-# set_debug(True)
 
 TASK_LLM = "llm"
 TASK_LLM_WITH_HISTORY = "llm_with_history"

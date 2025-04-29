@@ -19,6 +19,7 @@ import hashlib
 import base64
 import mimetypes
 from PIL import Image
+import io
 import os
 from typing import Tuple
 import re
@@ -301,3 +302,17 @@ def image_path_to_base64_uri(image_path: str) -> Optional[str]:
     except Exception as e:
         print(f"读取或编码失败: {e}")
         return None
+
+def graph_print(graph):
+    try:
+            # Generate the image as a byte stream
+        image_data = graph.get_graph().draw_mermaid_png()
+
+        # Create a PIL Image object from the byte stream
+        image = Image.open(io.BytesIO(image_data))
+
+        # Save the image to a file
+        image.save(f"{graph.get_name()}.png")
+    except Exception:
+        # This requires some extra dependencies and is optional
+        pass

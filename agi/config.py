@@ -67,13 +67,26 @@ ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY","")
 
 ## 系统参数
 AGI_DEBUG = os.getenv("AGI_DEBUG",False)
+LANGCHAIN_DEBUG = os.getenv("LANGCHAIN_DEBUG",False)
+
+## LANGCHAIN 设置
+if LANGCHAIN_DEBUG:
+    from langchain.globals import set_debug
+    from langchain.globals import set_verbose
+    set_debug(True)
+    set_verbose(True)
+    
 ## 日志设置
 import logging
 log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
 # 创建控制台 handler
 ch = logging.StreamHandler()
-ch.setLevel(logging.INFO)
+if AGI_DEBUG:
+    log.setLevel(logging.DEBUG)
+    ch.setLevel(logging.DEBUG)
+else:
+    log.setLevel(logging.INFO)
+    ch.setLevel(logging.INFO)
 
 # 设置带文件名和行号的格式
 formatter = logging.Formatter(

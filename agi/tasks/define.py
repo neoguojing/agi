@@ -65,6 +65,7 @@ class State(AgentState):
     feature: str  # 支持的特性，1.agent，2.web 3.rag，4.tts，5.speech，6.image_recog 默认为agent
     
     context: str
+    urls: list[str]
     docs: list[Document]
     citations: list[any]
     collection_names: list[str]

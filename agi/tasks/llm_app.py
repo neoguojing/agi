@@ -1,34 +1,22 @@
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder,format_document
+from langchain_core.prompts import ChatPromptTemplate,format_document
 from langchain_core.runnables.history import RunnableWithMessageHistory
-from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import ConfigurableFieldSpec
 from langchain_community.chat_message_histories import SQLChatMessageHistory
-from langchain.retrievers import EnsembleRetriever
-from langchain_core.messages import HumanMessage,BaseMessage,AIMessage,ToolMessage,trim_messages
-from langchain_core.runnables.utils import AddableDict
+from langchain_core.messages import HumanMessage,trim_messages
 from langchain_core.runnables.base import Runnable,RunnableConfig
 from langchain_core.language_models import LanguageModelLike
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import BasePromptTemplate
-from langchain_core.retrievers import RetrieverLike, RetrieverOutputLike
 from agi.tasks.define import AgentState
 
 from langchain_core.runnables import (
-    RunnableParallel,
     RunnablePassthrough,
     RunnableBranch,
     RunnableLambda
 )
-from langchain_core.retrievers import (
-    BaseRetriever,
-    RetrieverOutput
-)
 from langchain.chains.combine_documents.base import (
     DEFAULT_DOCUMENT_SEPARATOR,
-    DOCUMENTS_KEY,
     DEFAULT_DOCUMENT_PROMPT,
-    _validate_prompt,
 )
 from langchain_core.output_parsers import StrOutputParser,BaseOutputParser
 from agi.tasks.prompt import doc_qa_template,docqa_modify_state_messages_runnable,default_modify_state_messages_runnable
@@ -36,10 +24,7 @@ from agi.tasks.retriever import KnowledgeManager
 from agi.tasks.utils import graph_response_format_runnable,get_last_message_text
 import json
 import os
-import asyncio
 import copy
-from datetime import datetime,timezone
-from langchain.globals import set_debug
 from collections import defaultdict
 import validators
 from agi.config import (
@@ -60,10 +45,6 @@ import traceback
 
 from agi.config import log
 from agi.tasks.utils import debug_tool,image_path_to_base64_uri
-
-
-set_debug(False)
-
 
 # 裁剪历史消息
 trimmer = trim_messages(
@@ -206,8 +187,9 @@ def create_websearch(km: KnowledgeManager):
 
         # tenant = config.get("configurable", {}).get("user_id", None)
         text = get_last_message_text(input)
-        _,_,raw_docs = await km.web_search(text)
+        urls,_,raw_docs = await km.web_search(text)
         log.debug(f"web_search---{raw_docs}")
+        input["urls"] = urls
         return raw_docs
     
     web_search_runable = RunnableLambda(web_search)

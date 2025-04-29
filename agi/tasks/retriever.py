@@ -480,11 +480,9 @@ class KnowledgeManager:
             raw_docs = []
             # Relevant urls
             urls,raw_results = await self.do_asearch(questions)
-            # TODO 执行网页爬虫 效果很差
-            # collection_name,known_type,raw_docs = await self.store(collection_name,list(urls),source_type=SourceType.WEB,tenant=tenant)
-            # log.info(f"scrach results: {raw_docs}")
-            # 未爬到信息，则使用检索结果拼装
             for source in raw_results:
+                if not source.get("snippet"):
+                    continue
                 raw_docs.append(
                     Document(
                     page_content = f'{source.get("date", "")}\n{source.get("title", "")}\n{source.get("snippet")}',
@@ -502,7 +500,7 @@ class KnowledgeManager:
         except Exception as e:
             log.error(f"Error search: {e}")
             print(traceback.format_exc())
-            return "", False,raw_results,[]
+            return urls,raw_results,[]
          
 
     async def split_documents(self, documents,chunk_size=4000,chunk_overlap=200):
