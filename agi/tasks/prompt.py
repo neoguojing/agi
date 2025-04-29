@@ -196,8 +196,9 @@ doc_qa_template = ChatPromptTemplate.from_messages(
 )
 
 def docqa_modify_state_messages(state: AgentState):
-    log.info(f"docqa_modify_state_messages:{state}")
-    return doc_qa_template.invoke({"messages": state["messages"],"context":state["context"],"language":"chinese"}).to_messages()
+    messages = doc_qa_template.invoke({"messages": state["messages"],"context":state["context"],"language":"chinese"}).to_messages()
+    log.info(f"docqa_modify_state_messages:{messages}")
+    return messages
 
 docqa_modify_state_messages_runnable = RunnableLambda(docqa_modify_state_messages)
 
