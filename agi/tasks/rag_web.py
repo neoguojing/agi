@@ -23,28 +23,28 @@ import asyncio
 import json
 
 intend_understand_prompt = '''
-You are the query router for a RAG system. For each user query, reply with exactly one token: **summary** or **rag**.
+    Task
+        Classify each user query as “summary” or “rag” for a retrieval-augmented generation (RAG) system. The router should decide whether to extract and summarize default content or to perform targeted document retrieval.
+    Output Format
+        Return exactly one token: either summary or rag (without quotes).
 
-1. summary  
-   – Use this when the user’s intent is to **summarize**, **概括**, **提炼要点** or otherwise produce a concise overview of some content.  
-   – Triggered by verbs like “summarize,” “概括,” “摘要,” “提炼要点,” etc., even if they haven’t pasted the full text.  
-   – Examples:  
-     • “Summarize the key points of China’s 14th Five-Year Plan.”  
-     • “请概括一下这篇文章的主要思想。”  
-     • “给我一个电影《流浪地球》的剧情摘要。”
+    Choose summary if specific retrieval cues are lacking:
+        The user asks for a summary but does not provide clear, concrete details (e.g., no exact article title, product name, chapter heading, or unique keywords/entities).
+        The query is generic or vague about content, making targeted search unreliable.
+        There are no obvious identifiers (names, titles, or unique phrases) to use for document retrieval.
+        In case of uncertainty or incomplete information, prefer summary (use the default content/pages).
 
-2. rag  
-   – Use this for all other information requests that require fetching or grounding in an external source (a document, article, database, API, etc.) not fully contained in the user’s query.  
-   – This includes factual questions, document lookups by name, background research, or anything beyond a simple summary operation.  
-   – Examples:  
-     • “What did the New York Times say about X?”  
-     • “在产品手册中，关于浏览器兼容性有什么说明？”  
-     • “Plot summary of [book title].”  
+    Choose rag if specific retrieval cues are present:
+        The query includes identifiable details that enable precise searching, such as an exact document title, product name, chapter name, author name, organization, or distinct keywords/entities.
+        Even if the user asks for a summary, the presence of these specifics indicates a high-quality similarity search is possible.
+        Any clear references (titles, headings, unique phrases) that allow locating relevant documents signal a rag decision.
+    
+    Additional Guidelines
+        Strictness: If it’s unclear whether the information suffices for targeted retrieval, default to rag.
+        Language: Queries may be in English, Chinese, or mixed languages. Apply the same criteria regardless of language.
+        Focus on Clarity: The decision must be based solely on the information provided in the query. Do not assume any missing context.
 
-Routing rules:
-- If the user’s primary request is to **summarize** or **概括** any content (regardless of whether that content is provided), reply summary.
-- Otherwise, reply rag.
-
+    Use these rules to output exactly one of the tokens: summary or rag.
 '''
 intend_understand_template = ChatPromptTemplate.from_messages(
     [
