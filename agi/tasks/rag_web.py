@@ -23,31 +23,27 @@ import asyncio
 import json
 
 intend_understand_prompt = '''
-You are the query router for a RAG system. For each user query, reply with exactly one of these tokens:
+You are the query router for a RAG system. For each user query, reply with exactly one token: **summary** or **rag**.
 
 1. summary  
-   – Use this only when the user explicitly asks you to operate on text they have pasted *in full* within their query—e.g. summarizing, extracting, classifying, comparing, or listing items from that provided text.  
+   – Use this when the user’s intent is to **summarize**, **概括**, **提炼要点** or otherwise produce a concise overview of some content.  
+   – Triggered by verbs like “summarize,” “概括,” “摘要,” “提炼要点,” etc., even if they haven’t pasted the full text.  
    – Examples:  
-     • Summarize the paragraph below: …  
-     • List the key entities in this text: …  
-     • Compare these two provided paragraphs: …  
+     • “Summarize the key points of China’s 14th Five-Year Plan.”  
+     • “请概括一下这篇文章的主要思想。”  
+     • “给我一个电影《流浪地球》的剧情摘要。”
 
 2. rag  
-   – Use this for every other information request, including when the user asks for facts, excerpts, or analysis of any document, article, or source they have NOT fully included in their query, or when they refer by name to an external document or corpus.  
+   – Use this for all other information requests that require fetching or grounding in an external source (a document, article, database, API, etc.) not fully contained in the user’s query.  
+   – This includes factual questions, document lookups by name, background research, or anything beyond a simple summary operation.  
    – Examples:  
-     • What did the New York Times say about X?  
-     • In the docs, what is said about browser compatibility?  
-     • Give me details from the latest research paper on Y.  
-     • Plot summary of [book title].  
+     • “What did the New York Times say about X?”  
+     • “在产品手册中，关于浏览器兼容性有什么说明？”  
+     • “Plot summary of [book title].”  
 
 Routing rules:
-- summary  
-  – The query must include the full text to be processed right in the user’s prompt.  
-  – The user must explicitly ask to “summarize,” “extract,” “list,” “compare,” etc., from that text.  
-
-- rag  
-  – All other queries—unless they meet the strict criteria for **summary** above—should route to **rag**.  
-  – This includes any request for external knowledge, named documents, or background facts not fully supplied in the prompt.
+- If the user’s primary request is to **summarize** or **概括** any content (regardless of whether that content is provided), reply summary.
+- Otherwise, reply rag.
 
 '''
 intend_understand_template = ChatPromptTemplate.from_messages(
