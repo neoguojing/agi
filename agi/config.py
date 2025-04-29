@@ -70,7 +70,7 @@ AGI_DEBUG = os.getenv("AGI_DEBUG",False)
 LANGCHAIN_DEBUG = os.getenv("LANGCHAIN_DEBUG",False)
 
 ## LANGCHAIN 设置
-if LANGCHAIN_DEBUG:
+if LANGCHAIN_DEBUG == True:
     from langchain.globals import set_debug
     from langchain.globals import set_verbose
     set_debug(True)
@@ -81,7 +81,7 @@ import logging
 log = logging.getLogger(__name__)
 # 创建控制台 handler
 ch = logging.StreamHandler()
-if AGI_DEBUG:
+if AGI_DEBUG == True:
     log.setLevel(logging.DEBUG)
     ch.setLevel(logging.DEBUG)
 else:
