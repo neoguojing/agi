@@ -135,7 +135,7 @@ def create_stuff_documents_chain(
     def format_docs(inputs: AgentState) -> str:
         # 1. 从输入数据中获取需要处理的文档列表
         documents = inputs["docs"]
-
+        log.info(f"stuff_documents_chain:{len(documents)}")
         # 2. 创建一个空列表用于存储格式化后的文档内容
         formatted_documents = []
 
