@@ -242,6 +242,8 @@ class AgiGraph:
 
             async for event in events:
                 log.debug(event)
+                if not isinstance(event,tuple):
+                    continue
                 # 返回非HumanMessage
                 if "values" in stream_mode:
                     # event是 State类型
