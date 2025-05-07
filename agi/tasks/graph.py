@@ -59,7 +59,7 @@ class AgiGraph:
         self.builder.add_node("human_feedback", self.human_feedback_node)
 
         self.builder.add_conditional_edges("human_feedback", self.human_feedback_control)
-        self.builder.add_conditional_edges("agent", self.agent_control)
+        self.builder.add_conditional_edges("agent", self.output_control)
         self.builder.add_conditional_edges("llm", self.output_control)
         self.builder.add_conditional_edges("llm_with_history", self.output_control)
         self.builder.add_conditional_edges("rag", self.output_control)

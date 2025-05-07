@@ -51,7 +51,7 @@ from langgraph.graph.message import add_messages
 from langgraph.managed import IsLastStep, RemainingSteps
 from langgraph.prebuilt.tool_node import ToolNode
 from langgraph.store.base import BaseStore
-from langgraph.types import Checkpointer, Send
+from langgraph.types import Checkpointer, Send,Command
 from langgraph.utils.runnable import RunnableCallable, RunnableLike
 
 StructuredResponse = Union[dict, BaseModel]
@@ -499,8 +499,9 @@ def create_react_agent(
         # If there is no function call, then we finish
         if not isinstance(last_message, AIMessage) or not last_message.tool_calls:
             return END if response_format is None else "generate_structured_response"
-        # elif last_message.tool_calls[0]["name"] == "AskHuman":
-        #     return END
+        elif last_message.tool_calls[0]["name"] == "AskHuman":
+            state["step"].append("agent")
+            return Command(graph=Command.PARENT,goto="human_feedback")
         # Otherwise if there is, we continue
         else:
             if version == "v1":
