@@ -209,7 +209,7 @@ class AgiGraph:
         
     async def invoke(self,input:State) -> State:
         config={"configurable": {"user_id": input.get("user_id","default_tenant"), "conversation_id": input.get("conversation_id",""),
-                                 "thread_id": input.get("user_id",None) or str(uuid.uuid4())}}
+                                 "thread_id": input.get("conversation_id",None) or str(uuid.uuid4())}}
         state = self.graph.get_state(config)
         # Print the pending tasks
         log.debug(state.tasks)
@@ -223,7 +223,7 @@ class AgiGraph:
         return events
 
     async def stream(self, input: State,stream_mode=["messages","updates", "custom"]) -> Iterator[Union[BaseMessage, Dict[str, Any]]]:
-        thread_id =  input.get("user_id",None) or str(uuid.uuid4())
+        thread_id =  input.get("conversation_id",None) or str(uuid.uuid4())
         config={"configurable": {"user_id": input.get("user_id","default_tenant"), "conversation_id": input.get("conversation_id",""),
                                  "thread_id":thread_id}}
         
@@ -238,12 +238,12 @@ class AgiGraph:
                 events = self.graph.astream(input, config=config, stream_mode=stream_mode)
 
             async for event in events:
-                log.info(event)
+                log.debug(event)
                 # 返回非HumanMessage
                 if "values" in stream_mode:
                     # event是 State类型
                     if "messages" in event and event["messages"]:
-                        log.info(f"last state message:{event['messages'][-1]}")
+                        log.debug(f"last state message:{event['messages'][-1]}")
                         last_message = event['messages'][-1]
                         # 部返回最后一个
                         if isinstance(last_message,HumanMessage):
