@@ -500,7 +500,8 @@ def create_react_agent(
         if not isinstance(last_message, AIMessage) or not last_message.tool_calls:
             return END if response_format is None else "generate_structured_response"
         elif last_message.tool_calls[0]["name"] == "AskHuman":
-            return Command(goto="human_feedback")
+            # return Command(graph=Command.PARENT,goto="human_feedback")
+            return END
         # Otherwise if there is, we continue
         else:
             if version == "v1":
@@ -627,5 +628,15 @@ def create_react_agent_task(llm):
     # langgraph_agent_executor.step_timeout = 10
     return langgraph_agent_executor
 
-
+def create_react_agent_as_subgraph(llm):
+    langgraph_agent_executor = create_react_agent(llm, 
+                                                  tools,state_modifier=modify_state_messages,
+                                                  debug=True,
+                                                  pre_model_hook=pre_model_hook,
+                                                  name="agent",
+                                                #   interrupt_before="tools",
+                                                    
+                                                  )
+    # langgraph_agent_executor.step_timeout = 10
+    return langgraph_agent_executor
 

@@ -4,8 +4,8 @@ from langgraph.types import Command, interrupt
 from langchain_core.output_parsers import StrOutputParser
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.runnables import  RunnableConfig
-from agi.tasks.image import image_graph
-from agi.tasks.rag_web import rag_graph
+from agi.tasks.image import image_as_graph
+from agi.tasks.rag_web import rag_as_subgraph
 
 from agi.tasks.task_factory import (
     TaskFactory,
@@ -23,6 +23,7 @@ from agi.tasks.prompt import (
     decide_modify_state_messages_runnable
 )
 from agi.tasks.utils import split_think_content,graph_print
+from agi.tasks.agent import create_react_agent_as_subgraph
 import traceback
 from agi.config import (
     log
@@ -42,9 +43,9 @@ class AgiGraph:
         checkpointer = MemorySaver()
 
         self.builder = StateGraph(State)
-        self.builder.add_node("image", image_graph)
-        self.builder.add_node("rag", rag_graph)
-        self.builder.add_node("agent", TaskFactory.create_task(TASK_AGENT))
+        self.builder.add_node("image", image_as_graph)
+        self.builder.add_node("rag", rag_as_subgraph)
+        self.builder.add_node("agent", create_react_agent_as_subgraph(TaskFactory.get_llm()))
 
         self.builder.add_node("speech2text", TaskFactory.create_task(TASK_SPEECH_TEXT))
         self.builder.add_node("tts", TaskFactory.create_task(TASK_TTS))
@@ -58,7 +59,7 @@ class AgiGraph:
         self.builder.add_node("human_feedback", self.human_feedback_node)
 
         self.builder.add_conditional_edges("human_feedback", self.human_feedback_control)
-        self.builder.add_conditional_edges("agent", self.output_control)
+        self.builder.add_conditional_edges("agent", self.agent_control)
         self.builder.add_conditional_edges("llm", self.output_control)
         self.builder.add_conditional_edges("llm_with_history", self.output_control)
         self.builder.add_conditional_edges("rag", self.output_control)
@@ -194,7 +195,6 @@ class AgiGraph:
         messages = []
         # agent的场景,需要使用到AskHuman
         if isinstance(state["messages"][-1],ToolMessage):
-            state["step"].append("agent")
             ask = AskHuman.model_validate(state["messages"][-1].tool_calls[0]["args"])
             # feedback的类型是State
             feedback = interrupt(ask.question)

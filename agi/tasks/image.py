@@ -133,8 +133,8 @@ async def intend_understand_node(state: State,config: RunnableConfig):
     except Exception as e:
         log.error(f"Error during user_understand output_parser: {e}")
         print(traceback.format_exc())
-    # 失败的情况下：跳转到父节点
-    return Command(graph=Command.PARENT,goto="llm_with_history")
+        # 失败的情况下：跳转到父节点
+        return Command(graph=Command.PARENT,goto="llm_with_history")
 
 # graph
 checkpointer = MemorySaver()
@@ -149,5 +149,7 @@ image_graph_builder.add_edge("intend", "image_gen")
 image_graph_builder.add_edge("image_gen", END)
 
 image_graph = image_graph_builder.compile(checkpointer=checkpointer,name="image")
+image_as_graph = image_graph_builder.compile(checkpointer=checkpointer,name="image")
+
 graph_print(image_graph)
 
