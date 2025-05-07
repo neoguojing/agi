@@ -194,11 +194,13 @@ class AgiGraph:
     async def human_feedback_node(self,state: State):
         messages = []
         # agent的场景,需要使用到AskHuman
-        if isinstance(state["messages"][-1],ToolMessage):
+        if isinstance(state["messages"][-1],AIMessage):
+            tool_call_id = state["messages"][-1].tool_calls[0]["id"]
             ask = AskHuman.model_validate(state["messages"][-1].tool_calls[0]["args"])
             # feedback的类型是State
             feedback = interrupt(ask.question)
-            return feedback
+            tool_message = [{"tool_call_id": tool_call_id, "type": "tool", "content": feedback["messages"][-1].content}]
+            return {"messages": tool_message}
         elif isinstance(state["messages"][-1],HumanMessage): #用于测试
             feedback = interrupt("breaked")
             # TODO 此处并没有返回
