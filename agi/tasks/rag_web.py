@@ -184,5 +184,5 @@ rag_graph_builder.add_edge("compress", "doc_chat")
 rag_graph_builder.add_edge("doc_chat", END)
 
 rag_graph = rag_graph_builder.compile(checkpointer=checkpointer,name="rag")
-
+rag_as_subgraph = rag_graph_builder.compile(name="rag")
 graph_print(rag_graph)
