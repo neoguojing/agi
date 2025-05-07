@@ -75,7 +75,12 @@ if LANGCHAIN_DEBUG == True:
     from langchain.globals import set_verbose
     set_debug(True)
     set_verbose(True)
-    
+
+LANGSMITH_TRACING = os.getenv("LANGSMITH_TRACING",True)
+LANGSMITH_ENDPOINT="https://api.smith.langchain.com"
+LANGSMITH_API_KEY= os.getenv("LANGSMITH_API_KEY","")
+LANGSMITH_PROJECT= os.getenv("LANGSMITH_PROJECT","agi")
+
 ## 日志设置
 import logging
 log = logging.getLogger(__name__)
