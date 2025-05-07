@@ -22,7 +22,6 @@ from agi.tasks.define import State,Feature,InputType
 from agi.tasks.prompt import (
     decide_modify_state_messages_runnable
 )
-from agi.tasks.agent import create_react_agent_task
 from agi.tasks.utils import split_think_content,graph_print
 import traceback
 from agi.config import (
@@ -45,9 +44,7 @@ class AgiGraph:
         self.builder = StateGraph(State)
         self.builder.add_node("image", image_graph)
         self.builder.add_node("rag", rag_graph)
-        # self.builder.add_node("agent", TaskFactory.create_task(TASK_AGENT))
-        self.builder.add_node("agent",create_react_agent_task(TaskFactory.get_llm()))
-
+        self.builder.add_node("agent", TaskFactory.create_task(TASK_AGENT))
 
         self.builder.add_node("speech2text", TaskFactory.create_task(TASK_SPEECH_TEXT))
         self.builder.add_node("tts", TaskFactory.create_task(TASK_TTS))
