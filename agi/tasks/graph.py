@@ -195,6 +195,7 @@ class AgiGraph:
         messages = []
         # agent的场景,需要使用到AskHuman
         if isinstance(state["messages"][-1],ToolMessage):
+            state["step"].append("agent")
             ask = AskHuman.model_validate(state["messages"][-1].tool_calls[0]["args"])
             # feedback的类型是State
             feedback = interrupt(ask.question)
