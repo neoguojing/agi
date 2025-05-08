@@ -266,8 +266,8 @@ def human_feedback_node(state: StateSchema, config: RunnableConfig=None
         # feedback的类型是State
         feedback = interrupt(ask.question)
         tool_message = ToolMessage(tool_call_id=tool_call_id, content=feedback["messages"][-1].content)
-        state["messages"].append(tool_message)
-        return state
+        # state["messages"].append(tool_message)
+        return {"messages": [tool_message]} 
     elif isinstance(state["messages"][-1],HumanMessage): #用于测试
         feedback = interrupt("breaked")
         # TODO 此处并没有返回
