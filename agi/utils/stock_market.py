@@ -34,6 +34,7 @@ def get_stock(input:str,topk=5) ->str:
         return "JSON data is invalid."
 
     if "Time Series (Daily)" not in data:
+        log.error(data)
         return "JSON data does not contain 'Time Series (Daily)'."
 
     time_series_data = []
