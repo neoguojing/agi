@@ -23,7 +23,7 @@ from agi.tasks.prompt import (
     decide_modify_state_messages_runnable
 )
 from agi.tasks.utils import split_think_content,graph_print
-from agi.tasks.agent import create_react_agent_as_subgraph,human_feedback_node
+from agi.tasks.agent import create_react_agent_as_subgraph,ahuman_feedback_node
 import traceback
 from agi.config import (
     log
@@ -56,17 +56,18 @@ class AgiGraph:
         #2.正常的用户对话等
         self.builder.add_node("llm_with_history", TaskFactory.create_task(TASK_LLM_WITH_HISTORY))
         
-        self.builder.add_node("human_feedback", human_feedback_node)
+        self.builder.add_node("human_feedback", ahuman_feedback_node)
 
         self.builder.add_conditional_edges("human_feedback", self.human_feedback_control)
         self.builder.add_conditional_edges("agent", self.output_control)
-        self.builder.add_conditional_edges("llm", self.output_control)
         self.builder.add_conditional_edges("llm_with_history", self.output_control)
         self.builder.add_conditional_edges("rag", self.output_control)
 
         self.builder.add_edge("multi_modal", END)
         self.builder.add_edge("image", END)
         self.builder.add_edge("tts", END)
+        self.builder.add_edge("llm", END)
+
         
         
         
