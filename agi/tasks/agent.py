@@ -526,8 +526,8 @@ def create_react_agent(
         if not isinstance(last_message, AIMessage) or not last_message.tool_calls:
             return END if response_format is None else "generate_structured_response"
         elif last_message.tool_calls[0]["name"] == "AskHuman":
-            return Command(goto="human_feedback")
-            # return "human_feedback"
+            # return Command(goto="human_feedback")
+            return "human_feedback"
         # Otherwise if there is, we continue
         else:
             if version == "v1":
