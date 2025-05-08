@@ -1,9 +1,10 @@
 from agi.tasks.tools import tools,AskHuman
+from agi.config import log
+from agi.tasks.utils import split_think_content
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.prompts import ChatPromptTemplate
 from agi.tasks.define import AgentState
 from langchain_core.messages import trim_messages
-from agi.config import log
 from agi.tasks.utils import refine_last_message_text,format_state_message_to_str
 from agi.tasks.define import State
 
@@ -402,7 +403,8 @@ def create_react_agent(
         response = cast(AIMessage, model_runnable.invoke(state, config))
         # add agent name to the AIMessage
         response.name = name
-
+        # filter the think resp
+        _, response.content = split_think_content(response.content)
         if _are_more_steps_needed(state, response):
             return {
                 "messages": [
@@ -420,6 +422,8 @@ def create_react_agent(
         response = cast(AIMessage, await model_runnable.ainvoke(state, config))
         # add agent name to the AIMessage
         response.name = name
+        # filter the think resp
+        _, response.content = split_think_content(response.content)
         if _are_more_steps_needed(state, response):
             return {
                 "messages": [

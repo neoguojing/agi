@@ -261,7 +261,7 @@ class AgiGraph:
                             # 2.在包含think的场景下，think的内容一起返回，导致出现问题
                             # 3.此处将该类消息拆为两条,分别发送
                             last_message = event[1][0]
-                            if last_message.response_metadata.get("finish_reason","") == "stop" and last_message.content:
+                            if last_message.response_metadata.get("finish_reason","") in ["stop","tool_calls"] and last_message.content:
                                 think_content,other_content = split_think_content(last_message.content)
                                 if think_content:
                                     last_message.content = think_content
