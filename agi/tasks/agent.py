@@ -265,9 +265,9 @@ def human_feedback_node(state: StateSchema, config: RunnableConfig=None
         ask = AskHuman.model_validate(state["messages"][-1].tool_calls[0]["args"])
         # feedback的类型是State
         feedback = interrupt(ask.question)
-        messages = [ToolMessage(tool_call_id=tool_call_id, content=feedback["messages"][-1].content)]
-        # state["messages"].append(tool_message)
-        return {"messages":messages}
+        tool_message = ToolMessage(tool_call_id=tool_call_id, content=feedback["messages"][-1].content)
+        state["messages"].append(tool_message)
+        return state
     elif isinstance(state["messages"][-1],HumanMessage): #用于测试
         feedback = interrupt("breaked")
         # TODO 此处并没有返回
