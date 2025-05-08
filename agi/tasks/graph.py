@@ -68,9 +68,6 @@ class AgiGraph:
         self.builder.add_edge("tts", END)
         self.builder.add_edge("llm", END)
 
-        
-        
-        
         self.builder.add_conditional_edges("speech2text",self.text_feature_control)
         self.builder.add_conditional_edges(START, self.routes)
         self.graph = self.builder.compile(

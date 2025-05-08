@@ -75,7 +75,7 @@ class KnowledgeManager:
     def __init__(self, data_path,llm,embedding):
         self.embedding = embedding
 
-        self.llm =llm
+        self.llm =llm | refine_last_message_runnable
         self.search_chain = DEFAULT_SEARCH_PROMPT | self.llm | refine_last_message_runnable | QuestionListOutputParser()
         self.search_engines = SearchEngineSelector()
         self.collection_manager = CollectionManager(data_path,embedding)
