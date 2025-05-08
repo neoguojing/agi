@@ -23,7 +23,7 @@ from agi.tasks.prompt import (
     decide_modify_state_messages_runnable
 )
 from agi.tasks.utils import split_think_content,graph_print
-from agi.tasks.agent import create_react_agent_as_subgraph
+from agi.tasks.agent import create_react_agent_as_subgraph,human_feedback_node
 import traceback
 from agi.config import (
     log
@@ -56,10 +56,10 @@ class AgiGraph:
         #2.正常的用户对话等
         self.builder.add_node("llm_with_history", TaskFactory.create_task(TASK_LLM_WITH_HISTORY))
         
-        self.builder.add_node("human_feedback", self.human_feedback_node)
+        self.builder.add_node("human_feedback", human_feedback_node)
 
         self.builder.add_conditional_edges("human_feedback", self.human_feedback_control)
-        self.builder.add_conditional_edges("agent", self.agent_control)
+        self.builder.add_conditional_edges("agent", self.output_control)
         self.builder.add_conditional_edges("llm", self.output_control)
         self.builder.add_conditional_edges("llm_with_history", self.output_control)
         self.builder.add_conditional_edges("rag", self.output_control)
@@ -162,22 +162,6 @@ class AgiGraph:
         else: #通用任务处理：如标题生成、tag生成等 或者 自主决策
             return await self.auto_state_machine(state)
     
-    async def agent_control(self,state: State):
-        messages = state["messages"]
-        last_message = messages[-1]
-        # If there is no function call, then we finish
-        if not last_message.tool_calls:
-            return await self.output_control(state=state)
-        # If tool call is asking Human, we return that node
-        # You could also add logic here to let some system know that there's something that requires Human input
-        # For example, send a slack message, etc
-        elif last_message.tool_calls[0]["name"] == "AskHuman":
-            state["step"].append("agent")
-            return "human_feedback"
-        # Otherwise if there is, we continue
-        # else:
-        #     return "action"
-    
     async def human_feedback_control(self,state: State):
         if state["step"]:
             return state["step"][-1]
@@ -190,25 +174,6 @@ class AgiGraph:
         
         return END
     
-    
-    async def human_feedback_node(self,state: State):
-        messages = []
-        # agent的场景,需要使用到AskHuman
-        if isinstance(state["messages"][-1],AIMessage):
-            tool_call_id = state["messages"][-1].tool_calls[0]["id"]
-            ask = AskHuman.model_validate(state["messages"][-1].tool_calls[0]["args"])
-            # feedback的类型是State
-            feedback = interrupt(ask.question)
-            tool_message = ToolMessage(tool_call_id=tool_call_id, content=feedback["messages"][-1].content)
-            state["messages"].append(tool_message)
-            return state
-        elif isinstance(state["messages"][-1],HumanMessage): #用于测试
-            feedback = interrupt("breaked")
-            # TODO 此处并没有返回
-            messages = [AIMessage(content=feedback["messages"][-1].content)]
-            return {"messages": messages} 
-        
-        return state
         
     async def invoke(self,input:State) -> State:
         config={"configurable": {"user_id": input.get("user_id","default_tenant"), "conversation_id": input.get("conversation_id",""),

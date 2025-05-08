@@ -1,4 +1,4 @@
-from agi.tasks.tools import tools
+from agi.tasks.tools import tools,AskHuman
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.prompts import ChatPromptTemplate
 from agi.tasks.define import AgentState
@@ -33,6 +33,7 @@ from langchain_core.messages import (
     BaseMessage,
     SystemMessage,
     ToolMessage,
+    HumanMessage
 )
 from langchain_core.runnables import (
     Runnable,
@@ -51,7 +52,7 @@ from langgraph.graph.message import add_messages
 from langgraph.managed import IsLastStep, RemainingSteps
 from langgraph.prebuilt.tool_node import ToolNode
 from langgraph.store.base import BaseStore
-from langgraph.types import Checkpointer, Send,Command
+from langgraph.types import Checkpointer, Send,Command,interrupt
 from langgraph.utils.runnable import RunnableCallable, RunnableLike
 
 StructuredResponse = Union[dict, BaseModel]
@@ -254,6 +255,25 @@ def _validate_chat_history(
     )
     raise ValueError(error_message)
 
+
+async def human_feedback_node(state: State):
+    messages = []
+    # agent的场景,需要使用到AskHuman
+    if isinstance(state["messages"][-1],AIMessage):
+        tool_call_id = state["messages"][-1].tool_calls[0]["id"]
+        ask = AskHuman.model_validate(state["messages"][-1].tool_calls[0]["args"])
+        # feedback的类型是State
+        feedback = interrupt(ask.question)
+        tool_message = ToolMessage(tool_call_id=tool_call_id, content=feedback["messages"][-1].content)
+        # state["messages"].append(tool_message)
+        return {"messages":[tool_message]}
+    elif isinstance(state["messages"][-1],HumanMessage): #用于测试
+        feedback = interrupt("breaked")
+        # TODO 此处并没有返回
+        messages = [AIMessage(content=feedback["messages"][-1].content)]
+        return {"messages": messages} 
+    
+    return state
 
 @_convert_modifier_to_prompt
 def create_react_agent(
@@ -501,7 +521,7 @@ def create_react_agent(
             return END if response_format is None else "generate_structured_response"
         elif last_message.tool_calls[0]["name"] == "AskHuman":
             # return Command(graph=Command.PARENT,goto="human_feedback")
-            return END
+            return "human_feedback"
         # Otherwise if there is, we continue
         else:
             if version == "v1":
@@ -521,6 +541,8 @@ def create_react_agent(
         "agent", RunnableCallable(call_model, acall_model), input=input_schema
     )
     workflow.add_node("tools", tool_node)
+
+    workflow.add_node("human_feedback",human_feedback_node)
 
     # Optionally add a pre-model hook node that will be called
     # every time before the "agent" (LLM-calling node)
@@ -557,6 +579,8 @@ def create_react_agent(
         should_continue,
         path_map=should_continue_destinations,
     )
+
+    workflow.add_edge("human_feedback","agent")
 
     def route_tool_responses(state: StateSchema) -> str:
         for m in reversed(_get_state_value(state, "messages")):
