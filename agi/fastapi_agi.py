@@ -286,6 +286,7 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
                     interrupt = event[1].get("__interrupt__")
                     if interrupt:
                         chunk["choices"][0]["delta"] = {"role": "assistant", "content": interrupt[0].value}
+                        chunk["choices"][0]["finish_reason"] = "stop"
             elif isinstance(event, dict):
                 if "error" in event:
                     chunk["choices"] = []
