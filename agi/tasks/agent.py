@@ -256,7 +256,8 @@ def _validate_chat_history(
     raise ValueError(error_message)
 
 
-async def human_feedback_node(state: State):
+def human_feedback_node(state: StateSchema, config: RunnableConfig=None
+    ) -> StateSchema:
     messages = []
     # agent的场景,需要使用到AskHuman
     if isinstance(state["messages"][-1],AIMessage):
@@ -264,9 +265,9 @@ async def human_feedback_node(state: State):
         ask = AskHuman.model_validate(state["messages"][-1].tool_calls[0]["args"])
         # feedback的类型是State
         feedback = interrupt(ask.question)
-        tool_message = ToolMessage(tool_call_id=tool_call_id, content=feedback["messages"][-1].content)
+        messages = [ToolMessage(tool_call_id=tool_call_id, content=feedback["messages"][-1].content)]
         # state["messages"].append(tool_message)
-        return {"messages":[tool_message]}
+        return {"messages":messages}
     elif isinstance(state["messages"][-1],HumanMessage): #用于测试
         feedback = interrupt("breaked")
         # TODO 此处并没有返回
@@ -274,6 +275,11 @@ async def human_feedback_node(state: State):
         return {"messages": messages} 
     
     return state
+
+async def ahuman_feedback_node(state: StateSchema, config: RunnableConfig=None
+    ) -> StateSchema:
+    return human_feedback_node(state,config)
+    
 
 @_convert_modifier_to_prompt
 def create_react_agent(
@@ -542,7 +548,9 @@ def create_react_agent(
     )
     workflow.add_node("tools", tool_node)
 
-    workflow.add_node("human_feedback",human_feedback_node)
+    workflow.add_node("human_feedback",RunnableCallable(human_feedback_node,ahuman_feedback_node))
+    workflow.add_edge("human_feedback","agent")
+
 
     # Optionally add a pre-model hook node that will be called
     # every time before the "agent" (LLM-calling node)
@@ -579,8 +587,6 @@ def create_react_agent(
         should_continue,
         path_map=should_continue_destinations,
     )
-
-    workflow.add_edge("human_feedback","agent")
 
     def route_tool_responses(state: StateSchema) -> str:
         for m in reversed(_get_state_value(state, "messages")):
