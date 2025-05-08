@@ -549,8 +549,6 @@ def create_react_agent(
     workflow.add_node("tools", tool_node)
 
     workflow.add_node("human_feedback",RunnableCallable(human_feedback_node,ahuman_feedback_node))
-    workflow.add_edge("human_feedback","agent")
-
 
     # Optionally add a pre-model hook node that will be called
     # every time before the "agent" (LLM-calling node)
@@ -602,6 +600,8 @@ def create_react_agent(
         )
     else:
         workflow.add_edge("tools", entrypoint)
+
+    workflow.add_edge("human_feedback",entrypoint)
 
     # Finally, we compile it!
     # This compiles it into a LangChain Runnable,
