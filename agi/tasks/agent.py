@@ -572,9 +572,9 @@ def create_react_agent(
             ),
         )
         workflow.add_edge("generate_structured_response", END)
-        should_continue_destinations = ["tools", "generate_structured_response"]
+        should_continue_destinations = ["tools", "generate_structured_response","human_feedback"]
     else:
-        should_continue_destinations = ["tools", END]
+        should_continue_destinations = ["tools", END,"human_feedback"]
 
     # We now add a conditional edge
     workflow.add_conditional_edges(
