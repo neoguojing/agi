@@ -69,7 +69,9 @@ GPU显存： 初始：2550MB 峰值：20GB
 - 图片信息提取上下文过大，不能使用base64 DONE
 - 多媒体格式统一处理，内部统一使用路径，大模型输入为base64,返回web使用url Done
 - 异步图改造 DONE
-- web检索+内容爬虫
+- web检索+内容爬虫：1.使用内容爬虫填充检索结果；2.尝试使用llm执行爬虫任务更加准确
+- 使用cosy2.0替换xtts；
+- 使用qwen2.5 omni3b模型替换7b
 - rag的决策不够精确
 ## OPENWEBUI 修改
 - 新增: backend/open_webui/routers/agi.py

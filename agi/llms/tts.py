@@ -60,6 +60,7 @@ class TextToSpeech(CustomerLLM):
 
     def list_available_models(self):
         """Return a list of available TTS models."""
+        self._load_model()
         return self.tts.list_models()
     
     def invoke(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
