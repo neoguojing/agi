@@ -49,4 +49,4 @@ yfinance==0.2.5
 youtube_search==2.1.2
 langchain-tavily==0.1.5
 playwright==1.51.0
-
+numpy==1.26.4
