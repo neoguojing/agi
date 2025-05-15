@@ -48,6 +48,7 @@ Return **only** valid JSON with exactly these keys:
   "sales": 678,
   "content": "..."
 }}
+
 Use null for any field you cannot find or parse.
 
 Do not include any additional keys or commentary.

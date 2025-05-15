@@ -4,7 +4,7 @@ from agi.tasks.task_factory import TaskFactory
 
 class TestScrape(unittest.TestCase):
     def setUp(self):
-        self.llm_scrape = WebScraper(llm=TaskFactory.get_llm())
+        self.llm_scrape = WebScraper(llm=TaskFactory.get_llm_with_output_format())
         self.scrape = WebScraper()
 
     def test_scrape(self):

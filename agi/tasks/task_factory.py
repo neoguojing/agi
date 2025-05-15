@@ -23,7 +23,7 @@ from agi.tasks.multi_model_app import (
     create_multimodel_chain,
 )
 from agi.tasks.retriever import KnowledgeManager
-
+from agi.tasks.utils import refine_last_message_runnable
 
 TASK_LLM = "llm"
 TASK_LLM_WITH_HISTORY = "llm_with_history"
@@ -117,6 +117,10 @@ class TaskFactory:
     @staticmethod
     def get_llm():
         return TaskFactory._llm
+    
+    @staticmethod
+    def get_llm_with_output_format():
+        return TaskFactory._llm | refine_last_message_runnable
     
     @staticmethod
     def create_task(task_type,**kwargs) -> Union[Runnable,Embeddings,KnowledgeManager]:
