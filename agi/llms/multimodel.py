@@ -22,7 +22,7 @@ from agi.config import log
 audio_style = "width: 300px; height: 50px;"  # 添加样式
 
 _load_lock = threading.Lock()
-
+# GPU: 3B 13GB
 class MultiModel(CustomerLLM):
     processor: Optional[Any] = Field(default=None)
     speaker_wav: str = Field(default="Chelsie") # also Ethan
