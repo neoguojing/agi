@@ -37,7 +37,7 @@ You are an expert HTML analyzer. Given the raw HTML source of a web page, extrac
 
 Return **only** valid JSON with exactly these keys:
 ```json
-{
+{{
   "title": "...",
   "time": "...",
   "author": "...",
@@ -47,7 +47,7 @@ Return **only** valid JSON with exactly these keys:
   "price": "...",
   "sales": 678,
   "content": "..."
-}
+}}
 Use null for any field you cannot find or parse.
 
 Do not include any additional keys or commentary.
