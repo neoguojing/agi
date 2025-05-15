@@ -92,7 +92,8 @@ class WebScraper(BaseTool):
 
     def _scrape(self, url: str) :
         """Scrape content from URL, with option for dynamic content loading via Selenium."""
-        if self.use_selenium or "toutiao" in url:
+        platforms = ["toutiao","zhihu","baidu"]
+        if self.use_selenium or any(phrase in url for phrase in platforms):
             return self._scrape_dynamic(url)
         else:
             return self._scrape_with_requests(url)
