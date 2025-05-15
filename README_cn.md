@@ -49,11 +49,11 @@ GPU显存： 初始：2550MB 峰值：20GB
 - 探索graph将知识库和检索结果实时返回的场景：1.拆分流程；2.流程可以直接返回 DONE
 - 支持多模态图片作为输入的ocr解读 Done
 - 上传文件之后，其他的问答军基于该文档问答，会导致问题 DONE
-- doc文件提取有问题 done
+- doc文件提取有问题 DONE
 - 需要agent决策是否检索文档 DONE
 - agi自动测试
 - 支持使用sd 3.5作为图片生成 DONE
-- 支持qwen omini作为多模态基模型 Done
+- 支持qwen omini作为多模态基模型 DONE
 - 支持lang-graph 人工介入确认 DONE
 - 支持python代码执行器 DONE
 - 其他常用工具支持 DONE
@@ -62,16 +62,16 @@ GPU显存： 初始：2550MB 峰值：20GB
 - rag 影响图片生成流程 DONE
 - 图片生成决策错误 DONE
 - agent返回会有重复 DONE
-- web检索不理想 done
+- web检索不理想 DONE
 - web检索缓慢，考虑存文档使用异步 DONE
-- rag缓慢，考虑使用异步 done
+- rag缓慢，考虑使用异步 DONE
 - 用户意图理解和补全chain DONE
 - 图片信息提取上下文过大，不能使用base64 DONE
-- 多媒体格式统一处理，内部统一使用路径，大模型输入为base64,返回web使用url Done
+- 多媒体格式统一处理，内部统一使用路径，大模型输入为base64,返回web使用url DONE
 - 异步图改造 DONE
-- web检索+内容爬虫：1.使用内容爬虫填充检索结果；2.尝试使用llm执行爬虫任务更加准确
+- web检索+内容爬虫：1.使用内容爬虫填充检索结果；2.尝试使用llm执行爬虫任务更加准确  test
 - 使用cosy2.0替换xtts；
-- 使用qwen2.5 omni3b模型替换7b
+- 使用qwen2.5 omni3b模型替换7b DONE
 - rag的决策不够精确
 ## OPENWEBUI 修改
 - 新增: backend/open_webui/routers/agi.py

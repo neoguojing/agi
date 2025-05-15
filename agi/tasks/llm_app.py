@@ -188,7 +188,7 @@ def create_websearch(km: KnowledgeManager):
         # tenant = config.get("configurable", {}).get("user_id", None)
         text = get_last_message_text(input)
         urls,_,raw_docs = await km.web_search(text)
-        log.debug(f"web_search---{raw_docs}")
+        log.debug(f"web_search---{raw_docs},{urls}")
         input["urls"] = urls
         return raw_docs
     
