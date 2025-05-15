@@ -19,6 +19,52 @@ from langchain_core.callbacks import (
     CallbackManagerForToolRun,
 )
 from langchain_core.documents import Document
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import PromptTemplate
+
+scrape_template = '''
+You are an expert HTML analyzer. Given the raw HTML source of a web page, extract the following fields related to a product or article:
+
+1. title – The content of the `<title>` tag or the main page title.
+2. time – The publication or update timestamp found on the page (e.g., in `<time>` tags or “Published on …”); normalize to ISO 8601 (YYYY-MM-DD) if possible, else return null.
+3. author – The name of the author or seller if present; else null.
+4. likes – The number of “likes” or upvotes displayed on the page; parse as an integer, else null.
+5. comments – The number of comments or reviews displayed on the page; parse as an integer, else null.
+6. name – The product’s name or item title (if this is a product page); else null.
+7. price – The product’s price, including currency symbol if present (e.g., “$19.99”); else null.
+8. sales – The number of units sold or sales count displayed; parse as an integer, else null.
+9. content – The main body of the article or product description, stripped of HTML tags and whitespace-normalized; else null.
+
+Return **only** valid JSON with exactly these keys:
+```json
+{
+  "title": "...",
+  "time": "...",
+  "author": "...",
+  "likes": 123,
+  "comments": 45,
+  "name": "...",
+  "price": "...",
+  "sales": 678,
+  "content": "..."
+}
+Use null for any field you cannot find or parse.
+
+Do not include any additional keys or commentary.
+
+If a numeric field cannot be parsed, set it to null.
+
+Here is the HTML to analyze:
+{text}
+'''
+
+parser = JsonOutputParser()
+
+prompt = PromptTemplate(
+    template=scrape_template,
+    input_variables=["text"],
+)
+
 
 class WLInput(BaseModel):
     """Input for the web loader tool."""
@@ -34,39 +80,41 @@ class WebScraper(BaseTool):
     args_schema: Type[BaseModel] = WLInput
     use_selenium: bool = False
     web_paths: List[str] = None
+    chain: Any = None
 
-    def __init__(self,web_paths:List[str] = None, use_selenium: bool = False,**kwargs):
+    def __init__(self,web_paths:List[str] = None,llm: Any = None, use_selenium: bool = False,**kwargs):
         super().__init__(**kwargs)
         self.use_selenium = use_selenium  # Flag to use Selenium for dynamic pages
         self.web_paths = web_paths
+        if llm:
+            self.chain = prompt | llm | parser
 
-    def _scrape(self, url: str) -> BeautifulSoup:
+    def _scrape(self, url: str) :
         """Scrape content from URL, with option for dynamic content loading via Selenium."""
         if self.use_selenium or "toutiao" in url:
             return self._scrape_dynamic(url)
         else:
             return self._scrape_with_requests(url)
 
-    async def _ascrape(self, url: str) -> BeautifulSoup:
+    async def _ascrape(self, url: str):
         """Scrape content from URL, with option for dynamic content loading via Selenium."""
         if self.use_selenium or "toutiao" in url:
             return await self._ascrape_dynamic(url)
         else:
             return await self._scrape_with_aiohttp(url)
 
-    def _scrape_with_requests(self, url: str) -> BeautifulSoup:
+    def _scrape_with_requests(self, url: str):
         """Use requests and BeautifulSoup to scrape static content."""
         try:
             headers = self._get_random_headers()
             response = requests.get(url, headers=headers, timeout=10)
             response.raise_for_status()
-            soup = BeautifulSoup(response.content, "html.parser")
-            return soup
+            return response.content
         except RequestException as e:
             log.error(f"Error fetching {url}: {e}")
             raise
 
-    async def _scrape_with_aiohttp(self, url: str) -> BeautifulSoup:
+    async def _scrape_with_aiohttp(self, url: str):
         """Use requests and BeautifulSoup to scrape static content."""
         try:
             headers = self._get_random_headers()
@@ -74,14 +122,13 @@ class WebScraper(BaseTool):
                 async with session.get(url, headers=headers, timeout=10) as response:
                     response.raise_for_status()
                     html = await response.text()
-                    # Pass bs_kwargs to BeautifulSoup to customize parsing
-                    soup = BeautifulSoup(html, "html.parser")
-                    return soup
+
+                    return html
         except Exception as e:
             log.error(f"Error fetching {url} with aiohttp: {e}")
             raise
 
-    def _scrape_dynamic(self, url: str) -> BeautifulSoup:
+    def _scrape_dynamic(self, url: str):
         """Use Playwright for scraping dynamic content synchronously."""
         with sync_playwright() as p:
             # 启动 Chromium 浏览器
@@ -91,13 +138,12 @@ class WebScraper(BaseTool):
                 page.goto(url, wait_until="networkidle", timeout=15000)
                 page.wait_for_selector("body", timeout=5000)  # 额外保险
                 html_content = page.content()
-                # 用 BeautifulSoup 解析 HTML
-                soup = BeautifulSoup(html_content, "html.parser")
-                return soup
+
+                return html_content
             finally:
                 browser.close()
 
-    async def _ascrape_dynamic(self, url: str) -> BeautifulSoup:
+    async def _ascrape_dynamic(self, url: str):
         """优化后的动态内容爬取方法"""
         async with async_playwright() as p:
             browser = await p.chromium.launch(
@@ -132,7 +178,7 @@ class WebScraper(BaseTool):
             finally:
                 await browser.close()
                 
-        return BeautifulSoup(html_content, "html.parser")
+        return html_content
 
 
     def _get_random_headers(self) -> dict:
@@ -243,6 +289,43 @@ class WebScraper(BaseTool):
         data['comments'] = comments.get_text(strip=True) if comments else "0"
         return data
 
+    def _analyser(self,html_content,path):
+        soup = BeautifulSoup(html_content, "html.parser")
+        content = self._get_content(soup)
+        if not content:
+            return None
+        # Build metadata
+        metadata = {"source": path}
+        metadata.update(self._get_author(soup))
+        metadata.update(self._get_comment(soup))
+        metadata.update(self._get_goods(soup))
+        metadata.update(self._get_pub_date(soup))
+        metadata.update(self._get_titile(soup))
+
+        return Document(page_content=content, metadata=metadata)
+    
+    def _analyser_with_llm(self,html_content,path):
+        soup = BeautifulSoup(html_content, "lxml")
+        text = soup.get_text(separator="\n")
+        json_ret = self.chain.invoke({"text":text})
+        print(json_ret)
+        if json_ret.get("content"):
+            return None
+        # Build metadata
+        metadata = {
+            "source": path,
+            "title": json_ret.get("title",""),
+            "time": json_ret.get("time",""),
+            "author": json_ret.get("author",""),
+            "likes": json_ret.get("likes",0),
+            "comments": json_ret.get("comments",0),
+            "name": json_ret.get("name",""),
+            "price": json_ret.get("price",""),
+            "sales": json_ret.get("sales",0),      
+        }
+
+        return Document(page_content=json_ret.content, metadata=metadata)
+
     def _run(
         self, web_paths: Union[str,List[str],dict], run_manager: Optional[CallbackManagerForToolRun] = None
     ) -> List[Document]:
@@ -255,19 +338,16 @@ class WebScraper(BaseTool):
             
         for path in web_paths:            
             try:
-                soup = self._scrape(path)
-                content = self._get_content(soup)
-                if not content:
-                    continue
-                # Build metadata
-                metadata = {"source": path}
-                metadata.update(self._get_author(soup))
-                metadata.update(self._get_comment(soup))
-                metadata.update(self._get_goods(soup))
-                metadata.update(self._get_pub_date(soup))
-                metadata.update(self._get_titile(soup))
+                html_content = self._scrape(path)
+                doc = None
+                if self.chain:
+                    doc = self._analyser_with_llm(html_content,path)
+                else:
+                    doc = self._analyser(html_content,path)
 
-                docs.append(Document(page_content=content, metadata=metadata))
+                if doc:
+                    docs.append(doc)
+                
             except Exception as e:
                 # Log the error and continue with the next URL
                 log.error(f"Error processing {path}: {e}")
@@ -293,19 +373,16 @@ class WebScraper(BaseTool):
         pages = await asyncio.gather(*tasks)
         
         docs = []
-        for path, soup in zip(web_paths, pages):            
+        for path, html_content in zip(web_paths, pages):            
             try:
-                content = self._get_content(soup)
-                if not content:
-                    continue
-                # Build metadata
-                metadata = {"source": path}
-                metadata.update(self._get_author(soup))
-                metadata.update(self._get_comment(soup))
-                metadata.update(self._get_goods(soup))
-                metadata.update(self._get_pub_date(soup))
-                metadata.update(self._get_titile(soup))
-                docs.append(Document(page_content=content, metadata=metadata))
+                doc = None
+                if self.chain:
+                    doc = self._analyser_with_llm(html_content,path)
+                else:
+                    doc = self._analyser(html_content,path)
+                    
+                if doc:
+                    docs.append(doc)
 
             except Exception as e:
                 # Log the error and continue with the next URL
