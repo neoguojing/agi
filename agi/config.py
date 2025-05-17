@@ -66,11 +66,11 @@ TAVILY_API_KEY = os.getenv("TAVILY_API_KEY","")
 ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY","")
 
 ## 系统参数
-AGI_DEBUG = os.getenv("AGI_DEBUG",False)
-LANGCHAIN_DEBUG = os.getenv("LANGCHAIN_DEBUG",False)
+AGI_DEBUG = os.getenv("AGI_DEBUG",None)
+LANGCHAIN_DEBUG = os.getenv("LANGCHAIN_DEBUG",None)
 
 ## LANGCHAIN 设置
-if LANGCHAIN_DEBUG is True:
+if LANGCHAIN_DEBUG:
     from langchain.globals import set_debug
     from langchain.globals import set_verbose
     set_debug(True)
@@ -86,7 +86,7 @@ import logging
 log = logging.getLogger(__name__)
 # 创建控制台 handler
 ch = logging.StreamHandler()
-if AGI_DEBUG is True:
+if AGI_DEBUG:
     log.setLevel(logging.DEBUG)
     ch.setLevel(logging.DEBUG)
 else:

@@ -119,8 +119,12 @@ class TaskFactory:
         return TaskFactory._llm
     
     @staticmethod
-    def get_llm_with_output_format():
-        return TaskFactory._llm | refine_last_message_runnable
+    def get_llm_with_output_format(debug=False):
+        chain = TaskFactory._llm | refine_last_message_runnable
+        if debug:
+            from agi.tasks.utils import debug_tool
+            chain = debug_tool | TaskFactory._llm | debug_tool| refine_last_message_runnable
+        return chain
     
     @staticmethod
     def create_task(task_type,**kwargs) -> Union[Runnable,Embeddings,KnowledgeManager]:

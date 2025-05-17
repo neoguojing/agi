@@ -49,12 +49,6 @@ Return **only** valid JSON with exactly these keys:
   "content": "..."
 }}
 
-Use null for any field you cannot find or parse.
-
-Do not include any additional keys or commentary.
-
-If a numeric field cannot be parsed, set it to null.
-
 Here is the HTML to analyze:
 {text}
 '''
@@ -95,13 +89,18 @@ class WebScraper(BaseTool):
         platforms = ["toutiao","zhihu","baidu"]
         if self.use_selenium or any(phrase in url for phrase in platforms):
             return self._scrape_dynamic(url)
+        elif "weixin" in url:
+            return self.weixin_article_scrape(url)
         else:
             return self._scrape_with_requests(url)
 
     async def _ascrape(self, url: str):
         """Scrape content from URL, with option for dynamic content loading via Selenium."""
-        if self.use_selenium or "toutiao" in url:
+        platforms = ["toutiao","zhihu","baidu"]
+        if self.use_selenium or any(phrase in url for phrase in platforms):
             return await self._ascrape_dynamic(url)
+        elif "weixin" in url:
+            return await self.aweixin_article_scrape(url)
         else:
             return await self._scrape_with_aiohttp(url)
 
@@ -133,15 +132,49 @@ class WebScraper(BaseTool):
     def _scrape_dynamic(self, url: str):
         """Use Playwright for scraping dynamic content synchronously."""
         with sync_playwright() as p:
-            # 启动 Chromium 浏览器
-            browser = p.chromium.launch(headless=True)  # headless=True 表示无头模式
-            page = browser.new_page()
+            browser = p.chromium.launch(
+                headless=False,  # 非无头模式更隐蔽
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    f"--user-agent={self._get_user_agent()}",
+                    "--disable-infobars",
+                    "--no-first-run",
+                    "--disable-extensions",
+                    "--disable-web-security"
+                ],
+                ignore_default_args=["--enable-automation"]
+            )
+            
+            context = browser.new_context(
+                locale='zh-CN',
+                timezone_id="Asia/Shanghai",
+                viewport={'width': 1920, 'height': 1080}
+            )
+            
+            page = context.new_page()
+            
+            # 关键JS注入
+            page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3]});
+                window.chrome = {runtime: {}};
+            """)
+            
             try:
-                page.goto(url, wait_until="networkidle", timeout=15000)
-                page.wait_for_selector("body", timeout=5000)  # 额外保险
-                html_content = page.content()
-
-                return html_content
+                # 模拟人类操作间隔
+                time.sleep(random.uniform(1.0, 3.0))
+                
+                # 带随机滚动的页面加载
+                page.goto(url, wait_until="networkidle", timeout=20000)
+                page.evaluate("window.scrollBy(0, document.body.scrollHeight * 0.5)")
+                time.sleep(random.uniform(0.5, 1.5))
+                page.evaluate("window.scrollBy(0, document.body.scrollHeight * 0.8)")
+                
+                # 多层等待策略
+                page.wait_for_selector("body", state="attached", timeout=15000)
+                page.wait_for_function("document.readyState === 'complete'")
+                
+                return page.content()
             finally:
                 browser.close()
 
@@ -149,54 +182,230 @@ class WebScraper(BaseTool):
         """优化后的动态内容爬取方法"""
         async with async_playwright() as p:
             browser = await p.chromium.launch(
-                headless=True,
-                args=["--disable-blink-features=AutomationControlled"]  # 反检测措施:ml-citation{ref="5" data="citationList"}
+                headless=False,  # 非无头模式更隐蔽
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    f"--user-agent={self._get_user_agent()}",
+                    "--disable-infobars",
+                    "--no-first-run",
+                    "--disable-extensions",
+                    "--disable-web-security"
+                ],
+                ignore_default_args=["--enable-automation"]
             )
-            page = await browser.new_page()
+            
+            context = await browser.new_context(
+                locale='zh-CN',
+                timezone_id="Asia/Shanghai",
+                viewport={'width': 1920, 'height': 1080}
+            )
+            
+            page = await context.new_page()
+            
+            # 关键JS注入
+            await page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3]});
+                window.chrome = {runtime: {}};
+            """)
             
             try:
-                # 设置合理的默认超时
-                page.set_default_timeout(15000)  # 全局超时15秒:ml-citation{ref="3" data="citationList"}
-
-                # 加载页面并等待关键条件
-                await page.goto(
-                    url,
-                    wait_until="networkidle",  # 或使用 "domcontentloaded" + "load" 组合:ml-citation{ref="8" data="citationList"}
-                    timeout=30000
-                )
+                # 模拟人类操作间隔
+                await page.wait_for_timeout(random.randint(1000, 3000))
                 
-                # 双重保险：等待特定动态元素
-                await page.wait_for_function(
-                    "document.readyState === 'complete'",
-                    timeout=5000
-                )
+                # 带随机滚动的页面加载
+                await page.goto(url, wait_until="networkidle", timeout=30000)
+                await page.evaluate("window.scrollBy(0, document.body.scrollHeight * 0.5)")
+                await page.wait_for_timeout(random.randint(500, 1500))
+                await page.evaluate("window.scrollBy(0, document.body.scrollHeight * 0.8)")
                 
-                # 获取完整HTML
-                html_content = await page.content()
+                # 多层等待策略
+                await page.wait_for_selector("body", state="attached", timeout=15000)
+                await page.wait_for_function("document.readyState === 'complete'")
                 
+                return await page.content()
             except Exception as e:
                 await page.screenshot(path="load_fail.png")
                 raise
             finally:
                 await browser.close()
+
+    def weixin_article_scrape(self, url: str):
+        _ua_pool = [
+            # 安卓微信X5内核
+            "Mozilla/5.0 (Linux; Android 10; MI 9 Build/QKQ1.190825.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/89.0.4389.72 MQQBrowser/6.2 TBS/046211 Mobile Safari/537.36 MicroMessenger/8.0.40.2400(0x28002851) WeChat/arm64",
+            # iOS微信
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.40(0x18002831) NetType/WIFI Language/zh_CN"
+        ]
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=False,
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    f"--user-agent={random.choice(_ua_pool)}",
+                    "--disable-web-security"
+                ],
+                ignore_default_args=["--enable-automation"]
+            )
+            
+            context = browser.new_context(
+                locale='zh-CN',
+                timezone_id="Asia/Shanghai",
+                viewport={'width': 414, 'height': 896},
+                device_scale_factor=random.choice([2, 3])
+            )
+            
+            page = context.new_page()
+            page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                window.__wxjs_environment = 'miniprogram';
+                window.chrome = {runtime: {}};
+                document.cookie = "wxuin=123456789; domain=.weixin.qq.com";
+            """)
+            
+            try:
+                page.wait_for_timeout(random.randint(1000, 3000))
+                page.goto(url, wait_until="networkidle", timeout=30000)
+                page.wait_for_selector("#img-content", state="attached", timeout=15000)
+                page.evaluate("window.scrollBy(0, 500)")
+                page.wait_for_timeout(random.randint(800, 1500))
                 
-        return html_content
+                content = page.evaluate("""
+                    () => document.getElementById('js_content')?.innerText || ''
+                """)
+                return content
+            except Exception as e:
+                page.screenshot(path="debug.png")
+                raise
+            finally:
+                browser.close()
 
-
+    async def aweixin_article_scrape(self, url: str):
+        """爬取微信文章核心方法"""
+        _ua_pool = [
+            # 安卓微信X5内核
+            "Mozilla/5.0 (Linux; Android 10; MI 9 Build/QKQ1.190825.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/89.0.4389.72 MQQBrowser/6.2 TBS/046211 Mobile Safari/537.36 MicroMessenger/8.0.40.2400(0x28002851) WeChat/arm64",
+            # iOS微信
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.40(0x18002831) NetType/WIFI Language/zh_CN"
+        ]
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=False,
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    f"--user-agent={random.choice(_ua_pool)}",
+                    "--disable-web-security",
+                    "--disable-infobars"
+                ],
+                ignore_default_args=["--enable-automation"]
+            )
+            
+            context = await browser.new_context(
+                locale='zh-CN',
+                timezone_id="Asia/Shanghai",
+                viewport={'width': 414, 'height': 896},  # 移动端尺寸
+                device_scale_factor=random.choice([2, 3])  # 高DPI设备
+            )
+            
+            page = await context.new_page()
+            
+            # 关键微信环境注入
+            await page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                window.__wxjs_environment = 'miniprogram';
+                window.chrome = {runtime: {}};
+                document.cookie = "wxuin=123456789; domain=.weixin.qq.com";
+            """)
+            
+            try:
+                # 模拟人类操作序列
+                await page.wait_for_timeout(random.randint(1000, 3000))
+                await page.goto(url, wait_until="networkidle", timeout=30000)
+                
+                # 微信特有元素检测
+                await page.wait_for_selector("#img-content", state="attached", timeout=15000)
+                await page.evaluate("window.scrollBy(0, 500)")
+                await page.wait_for_timeout(random.randint(800, 1500))
+                
+                # 获取净化后的内容
+                content = await page.evaluate("""
+                    () => {
+                        const article = document.getElementById('js_content');
+                        return article ? article.innerText : '';
+                    }
+                """)
+                
+                return content
+            except Exception as e:
+                await page.screenshot(path="debug.png")
+                raise
+            finally:
+                await browser.close()
+                
     def _get_random_headers(self) -> dict:
         """Generate random headers to mimic real user requests."""
-        user_agents = [
-            # Example user agents, can be expanded
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:76.0) Gecko/20100101 Firefox/76.0",
-            "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:34.0) Gecko/20100101 Firefox/34.0"
-        ]
         return {
-            "User-Agent": random.choice(user_agents),
+            "User-Agent": self._get_user_agent(),
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
             "Accept-Encoding": "gzip, deflate, br",
             "Connection": "keep-alive",
         }
+    
+    
+    def _get_user_agent(self) -> str:
+        """生成动态更新的用户代理，包含设备指纹特征"""
+        platforms = [
+            # Windows设备(占60%权重)
+            {
+                'template': "Mozilla/5.0 (Windows NT {version}; {arch}) AppleWebKit/{webkit} (KHTML, like Gecko) Chrome/{chrome_version} Safari/{webkit}",
+                'versions': ['10.0', '11.0'],
+                'arches': ['Win64; x64', 'WOW64'],
+                'weights': 0.6
+            },
+            # macOS设备(占25%权重)
+            {
+                'template': "Mozilla/5.0 (Macintosh; Intel Mac OS X {version}) AppleWebKit/{webkit} (KHTML, like Gecko) Chrome/{chrome_version} Safari/{webkit}",
+                'versions': ['10_15_7', '13_5', '14_0'],
+                'weights': 0.25
+            },
+            # 移动设备(占15%权重)
+            {
+                'template': "Mozilla/5.0 ({device}; {os}) AppleWebKit/{webkit} (KHTML, like Gecko) Chrome/{chrome_version} Mobile Safari/{webkit}",
+                'devices': ['iPhone', 'iPad', 'Android Mobile'],
+                'oses': ['CPU iPhone OS 16_5 like Mac OS X', 'Linux; Android 13'],
+                'weights': 0.15
+            }
+        ]
+        
+        # 动态生成版本号
+        chrome_version = f"{random.randint(110, 125)}.0.{random.randint(1000, 9999)}.{random.randint(50, 200)}"
+        webkit_version = "537.36" if random.random() > 0.3 else "605.1.15"
+        
+        # 按权重选择平台
+        chosen_platform = random.choices(platforms, weights=[p['weights'] for p in platforms])[0]
+        
+        # 构造最终UA
+        if 'Windows' in chosen_platform['template']:
+            return chosen_platform['template'].format(
+                version=random.choice(chosen_platform['versions']),
+                arch=random.choice(chosen_platform['arches']),
+                webkit=webkit_version,
+                chrome_version=chrome_version
+            )
+        elif 'Macintosh' in chosen_platform['template']:
+            return chosen_platform['template'].format(
+                version=random.choice(chosen_platform['versions']),
+                webkit=webkit_version,
+                chrome_version=chrome_version
+            )
+        else:
+            return chosen_platform['template'].format(
+                device=random.choice(chosen_platform['devices']),
+                os=random.choice(chosen_platform['oses']),
+                webkit=webkit_version,
+                chrome_version=chrome_version
+            )
+
 
     def _get_titile(self,soup):
         title = soup.find('h1') or soup.find('meta', {'name': 'title'}) or soup.find('div', class_='question-title')
@@ -306,9 +515,51 @@ class WebScraper(BaseTool):
 
         return Document(page_content=content, metadata=metadata)
     
+    def extract_main_content(self,html_content):
+        """
+        通用网页正文提取函数
+        参数:
+            html_content: 网页HTML内容
+        返回:
+            净化后的正文文本
+        """
+        soup = BeautifulSoup(html_content, 'lxml')
+        
+        # 常见正文容器识别规则
+        CONTENT_SELECTORS = [
+            {'name': 'article'},  # HTML5标准
+            {'class': re.compile(r'content|main|post|article')},
+            {'id': re.compile(r'content|main|body|article')},
+            {'role': 'main'}
+        ]
+        
+        # 尝试定位正文容器
+        content_node = None
+        for selector in CONTENT_SELECTORS:
+            content_node = soup.find(**selector)
+            if content_node: break
+        
+        # 回退方案：使用body或整个文档
+        content_node = content_node or soup.find('body') or soup
+        
+        # 净化处理
+        for element in content_node(['script', 'style', 'nav', 'footer', 
+                                'aside', 'iframe', 'form', 'button']):
+            element.decompose()
+        
+        # 高级文本处理
+        text = content_node.get_text('\n', strip=True)
+        lines = [
+            line for line in text.split('\n') 
+            if len(line.strip()) > 20  # 过滤短文本行
+            and not re.search(r'广告|推荐|相关阅读|copyright', line.lower())
+        ]
+        return '\n'.join(lines)
+
     def _analyser_with_llm(self,html_content,path):
-        soup = BeautifulSoup(html_content, "lxml")
-        text = soup.get_text(separator="\n")
+        # soup = BeautifulSoup(html_content, "lxml")
+        # text = soup.get_text(separator="\n")
+        text = self.extract_main_content(html_content)
         json_ret = self.chain.invoke({"text":text})
         print(json_ret)
         if json_ret.get("content"):
@@ -326,7 +577,7 @@ class WebScraper(BaseTool):
             "sales": json_ret.get("sales",0),      
         }
 
-        return Document(page_content=json_ret.content, metadata=metadata)
+        return Document(page_content=json_ret.get("content"), metadata=metadata)
 
     def _run(
         self, web_paths: Union[str,List[str],dict], run_manager: Optional[CallbackManagerForToolRun] = None

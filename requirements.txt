@@ -49,3 +49,5 @@ youtube_search==2.1.2
 playwright==1.51.0
 numpy==1.26.4
 lxml==5.4.0
+google=3.0.0 
+protobuf=6.31.0

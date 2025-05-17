@@ -97,7 +97,7 @@ def format_state_message_to_str(messages):
 
 # TODO parent_name不是实际的函数
 def debug_info(x : Any):
-    if AGI_DEBUG == True:
+    if AGI_DEBUG:
         parent_name = ""
         stack = inspect.stack()
         if len(stack) > 2:  # stack[0] 是 get_parent_function_name，stack[1] 是调用它的函数
