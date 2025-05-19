@@ -89,8 +89,6 @@ class WebScraper(BaseTool):
         platforms = ["toutiao","zhihu","baidu"]
         if self.use_selenium or any(phrase in url for phrase in platforms):
             return self._scrape_dynamic(url)
-        elif "weixin" in url:
-            return self.weixin_article_scrape(url)
         else:
             return self._scrape_with_requests(url)
 
@@ -99,8 +97,6 @@ class WebScraper(BaseTool):
         platforms = ["toutiao","zhihu","baidu"]
         if self.use_selenium or any(phrase in url for phrase in platforms):
             return await self._ascrape_dynamic(url)
-        elif "weixin" in url:
-            return await self.aweixin_article_scrape(url)
         else:
             return await self._scrape_with_aiohttp(url)
 
@@ -229,119 +225,7 @@ class WebScraper(BaseTool):
                 raise
             finally:
                 await browser.close()
-
-    def weixin_article_scrape(self, url: str):
-        _ua_pool = [
-            # 安卓微信X5内核
-            "Mozilla/5.0 (Linux; Android 10; MI 9 Build/QKQ1.190825.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/89.0.4389.72 MQQBrowser/6.2 TBS/046211 Mobile Safari/537.36 MicroMessenger/8.0.40.2400(0x28002851) WeChat/arm64",
-            # iOS微信
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.40(0x18002831) NetType/WIFI Language/zh_CN"
-        ]
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=False,
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    f"--user-agent={random.choice(_ua_pool)}",
-                    "--disable-web-security"
-                ],
-                ignore_default_args=["--enable-automation"]
-            )
-            
-            context = browser.new_context(
-                locale='zh-CN',
-                timezone_id="Asia/Shanghai",
-                viewport={'width': 414, 'height': 896},
-                device_scale_factor=random.choice([2, 3])
-            )
-            
-            page = context.new_page()
-            page.add_init_script("""
-                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                window.__wxjs_environment = 'miniprogram';
-                window.chrome = {runtime: {}};
-                document.cookie = "wxuin=123456789; domain=.weixin.qq.com";
-            """)
-            
-            try:
-                page.wait_for_timeout(random.randint(1000, 3000))
-                page.goto(url, wait_until="networkidle", timeout=30000)
-                page.wait_for_selector("#img-content", state="attached", timeout=15000)
-                page.evaluate("window.scrollBy(0, 500)")
-                page.wait_for_timeout(random.randint(800, 1500))
-                
-                content = page.evaluate("""
-                    () => document.getElementById('js_content')?.innerText || ''
-                """)
-                return content
-            except Exception as e:
-                page.screenshot(path="debug.png")
-                raise
-            finally:
-                browser.close()
-
-    async def aweixin_article_scrape(self, url: str):
-        """爬取微信文章核心方法"""
-        _ua_pool = [
-            # 安卓微信X5内核
-            "Mozilla/5.0 (Linux; Android 10; MI 9 Build/QKQ1.190825.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/89.0.4389.72 MQQBrowser/6.2 TBS/046211 Mobile Safari/537.36 MicroMessenger/8.0.40.2400(0x28002851) WeChat/arm64",
-            # iOS微信
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.40(0x18002831) NetType/WIFI Language/zh_CN"
-        ]
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=False,
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    f"--user-agent={random.choice(_ua_pool)}",
-                    "--disable-web-security",
-                    "--disable-infobars"
-                ],
-                ignore_default_args=["--enable-automation"]
-            )
-            
-            context = await browser.new_context(
-                locale='zh-CN',
-                timezone_id="Asia/Shanghai",
-                viewport={'width': 414, 'height': 896},  # 移动端尺寸
-                device_scale_factor=random.choice([2, 3])  # 高DPI设备
-            )
-            
-            page = await context.new_page()
-            
-            # 关键微信环境注入
-            await page.add_init_script("""
-                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                window.__wxjs_environment = 'miniprogram';
-                window.chrome = {runtime: {}};
-                document.cookie = "wxuin=123456789; domain=.weixin.qq.com";
-            """)
-            
-            try:
-                # 模拟人类操作序列
-                await page.wait_for_timeout(random.randint(1000, 3000))
-                await page.goto(url, wait_until="networkidle", timeout=30000)
-                
-                # 微信特有元素检测
-                await page.wait_for_selector("#img-content", state="attached", timeout=15000)
-                await page.evaluate("window.scrollBy(0, 500)")
-                await page.wait_for_timeout(random.randint(800, 1500))
-                
-                # 获取净化后的内容
-                content = await page.evaluate("""
-                    () => {
-                        const article = document.getElementById('js_content');
-                        return article ? article.innerText : '';
-                    }
-                """)
-                
-                return content
-            except Exception as e:
-                await page.screenshot(path="debug.png")
-                raise
-            finally:
-                await browser.close()
-                
+ 
     def _get_random_headers(self) -> dict:
         """Generate random headers to mimic real user requests."""
         return {
@@ -435,7 +319,7 @@ class WebScraper(BaseTool):
             ('div',          'class',     r'post-body.*'),
             ('div',          'id',        r'post-body.*'),
             ('div',          'class',     r'answer-body.*'),
-            ('div',          'id',     r'answer-body.*'),
+            ('div',          'id',        r'answer-body.*'),
         ]
 
         # 如果 class/id 包含下列关键词，就认为是评论、页脚、元信息，不要提取
