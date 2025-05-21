@@ -5,7 +5,8 @@ import io
 import time
 from datetime import date
 from pathlib import Path
-from diffusers import  AutoPipelineForText2Image,StableDiffusion3Pipeline
+from diffusers import  AutoPipelineForText2Image
+# from diffusers import StableDiffusion3Pipeline
 import torch
 from langchain.llms.base import LLM
 from typing import Any, List, Mapping, Optional,Union

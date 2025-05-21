@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 import torch
 import soundfile as sf
-from transformers import Qwen2_5OmniModel, Qwen2_5OmniProcessor
+from transformers import Qwen2_5OmniForConditionalGeneration, Qwen2_5OmniProcessor
 from qwen_omni_utils import process_mm_info
 
 from agi.config import MULTI_MODEL_PATH as model_root,TTS_FILE_SAVE_PATH
@@ -45,7 +45,7 @@ class MultiModel(CustomerLLM):
         with _load_lock:
             if self.model is None or self.processor is None:
                 log.info("loading MultiModel model...")
-                self.model = Qwen2_5OmniModel.from_pretrained(
+                self.model = Qwen2_5OmniForConditionalGeneration.from_pretrained(
                     model_root,
                     torch_dtype=torch.float16,
                     device_map="auto",
