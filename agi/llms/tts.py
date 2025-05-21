@@ -17,7 +17,9 @@ from pydantic import BaseModel, Field
 
 from langchain_core.messages import AIMessage, HumanMessage
 import base64
-
+import numpy as np
+from pydub import AudioSegment
+import io
 from torch.serialization import add_safe_globals
 from agi.config import log
 
@@ -75,23 +77,16 @@ class TextToSpeech(CustomerLLM):
             
         if self.save_file:
             file_path = self.save_audio_to_file(text=input_str)
+            audio_source = path_to_preview_url(file_path)
             return AIMessage(content=[
-                # {"type": "text", "text": input_str},
-                {"type": "audio", "audio": file_path,"text":input_str}
+                {"type": "audio", "audio": audio_source,"file_path":file_path,"text":input_str}
             ])
         
         # Generate audio samples and return as ByteIO
         # 原始音频需要编码，不方便使用
-        # samples = self.generate_audio_samples(input_str)
-        file_path = self.save_audio_to_file(text=input_str)
-        audio_source = path_to_preview_url(file_path)
-        
-        if kwargs.get('base64') is True:
-            with open(file_path, 'rb') as audio_file:
-                audio_bytes = audio_file.read()
-            audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
-            audio_source = f"data:audio/wav;base64,{audio_base64}"
-
+        samples = self.generate_audio_samples(input_str)
+        # 默认返回base64
+        audio_source = self.list_int_to_base64_mp3(samples,debug=True)
         # 是否需要编码html
         if kwargs.get('html') is True:
             return AIMessage(content=[
@@ -99,7 +94,7 @@ class TextToSpeech(CustomerLLM):
             ])
         
         return AIMessage(content=[
-            {"type": "audio", "audio": audio_source,"file_path":file_path,"text":input_str}
+            {"type": "audio", "audio": audio_source,"text":input_str}
         ])
 
     def generate_audio_samples(self, text: str) -> Any:
@@ -132,3 +127,30 @@ class TextToSpeech(CustomerLLM):
             raise RuntimeError("Failed to save audio to file.")
         
         return file_path
+
+    def list_int_to_base64_mp3(self,wav_data: list, sample_rate: int=16000,debug=False) -> str:
+        # 将 List[int] 转为 int16 numpy 数组
+        audio_array = np.array(wav_data, dtype=np.int16)
+
+        # 创建音频段（单声道，int16格式）
+        audio_segment = AudioSegment(
+            audio_array.tobytes(),
+            frame_rate=sample_rate,
+            sample_width=2,  # int16 = 2 bytes
+            channels=1
+        )
+
+        # 写入内存中的 BytesIO
+        mp3_io = io.BytesIO()
+        audio_segment.export(mp3_io, format="mp3")
+        mp3_io.seek(0)
+
+        # Base64 编码
+        mp3_base64 = base64.b64encode(mp3_io.read()).decode("utf-8")
+        if debug:
+            file_path = f'{TTS_FILE_SAVE_PATH}/{int(time.time())}.wav'
+            audio_segment.export(file_path, format="mp3")
+        
+        audio_source = f"data:audio/mp3;base64,{mp3_base64}"
+
+        return audio_source
