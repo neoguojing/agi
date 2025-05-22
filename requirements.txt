@@ -2,7 +2,7 @@
 ./depend/matcha_tts-0.0.5.1-cp311-cp311-manylinux1_x86_64.whl
 ./depend/cosyvoice_tts-0.0.1.0-py3-none-any.whl
 langchain-chroma==0.2.4
-chromadb-1.0.10
+chromadb==1.0.10
 langchain_openai==0.2.5
 langchain_community==0.3.5
 langchain_experimental==0.3.4
