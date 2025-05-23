@@ -8,7 +8,7 @@ class TestCosyVoice(unittest.TestCase):
 
     def setUp(self):
         self.cosyvoice2 = CosyVoice2('/data/model/cosyvoice/CosyVoice2-0.5B', load_jit=False, load_trt=False, fp16=False)
-        self.cosyvoice = CosyVoice('/data/model/cosyvoice/CosyVoice2-300M', load_jit=False, load_trt=False, fp16=False)
+        # self.cosyvoice = CosyVoice('/data/model/cosyvoice/CosyVoice2-300M', load_jit=False, load_trt=False, fp16=False)
 
 
     def test_cosyvoice(self):
