@@ -2,7 +2,7 @@ import unittest
 from cosyvoice.cli.cosyvoice import CosyVoice, CosyVoice2
 from cosyvoice.utils.file_utils import load_wav
 import torchaudio
-from agi.config import log
+# from agi.config import log
 import os
 
 class TestCosyVoice(unittest.TestCase):

@@ -32,7 +32,7 @@ audio_style = "width: 300px; height: 50px;"  # 添加样式
 add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
 class TextToSpeech(CustomerLLM):
     tts: Optional[Any] = Field(default=None)
-    speaker_wav: Union[str,any] = Field(default=TTS_SPEAKER_WAV)
+    speaker_wav: Any = Field(default=TTS_SPEAKER_WAV)
     is_gpu: bool = Field(default=TTS_GPU_ENABLE)
     language: str = Field(default="zh-cn")
     save_file: bool = Field(default=True)
