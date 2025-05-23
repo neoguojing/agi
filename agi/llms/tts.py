@@ -3,11 +3,15 @@ import time
 from datetime import date
 from pathlib import Path
 import torch
+import numpy as np
+import torchaudio
 from TTS.api import TTS
 from TTS.utils.radam import RAdam 
 from TTS.tts.configs.xtts_config import XttsConfig 
 from TTS.tts.models.xtts import XttsAudioConfig,XttsArgs
 from TTS.config.shared_configs import BaseDatasetConfig
+from cosyvoice.cli.cosyvoice import CosyVoice2
+from cosyvoice.utils.file_utils import load_wav
 from collections import defaultdict
 from agi.config import TTS_MODEL_DIR as model_root, CACHE_DIR, TTS_SPEAKER_WAV,TTS_GPU_ENABLE,TTS_FILE_SAVE_PATH
 from agi.llms.base import CustomerLLM,parse_input_messages,path_to_preview_url
@@ -28,7 +32,7 @@ audio_style = "width: 300px; height: 50px;"  # 添加样式
 add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
 class TextToSpeech(CustomerLLM):
     tts: Optional[Any] = Field(default=None)
-    speaker_wav: str = Field(default=TTS_SPEAKER_WAV)
+    speaker_wav: Union[str,any] = Field(default=TTS_SPEAKER_WAV)
     is_gpu: bool = Field(default=TTS_GPU_ENABLE)
     language: str = Field(default="zh-cn")
     save_file: bool = Field(default=True)
@@ -47,9 +51,13 @@ class TextToSpeech(CustomerLLM):
                 log.info("loading TextToSpeech model(GPU)...")
                 # model_path = os.path.join(model_root, "tts_models--multilingual--multi-dataset--xtts_v2")
                 model_path = model_root
-                config_path = os.path.join(model_path, "config.json")
-                log.info("use ts_models--multilingual--multi-dataset--xtts_v2")
-                self.tts = TTS(model_path=model_path, config_path=config_path).to(torch.device("cuda"))
+                if "cosyvoice" in model_path:
+                    self.speaker_wav = load_wav(TTS_SPEAKER_WAV, 16000)
+                    self.tts = CosyVoice2(model_path, load_jit=False, load_trt=False, fp16=False)
+                else:
+                    config_path = os.path.join(model_path, "config.json")
+                    log.info("use ts_models--multilingual--multi-dataset--xtts_v2")
+                    self.tts = TTS(model_path=model_path, config_path=config_path).to(torch.device("cuda"))
             else:
                 log.info("loading TextToSpeech model(CPU)...")
                 # self.tts = TTS(model_name="tts_models/zh-CN/baker/tacotron2-DDC-GST").to(torch.device("cpu"))
@@ -85,6 +93,7 @@ class TextToSpeech(CustomerLLM):
         # Generate audio samples and return as ByteIO
         # 原始音频需要编码，不方便使用
         samples = self.generate_audio_samples(input_str)
+        samples = self.format_model_output(samples)
         # 默认返回base64
         audio_source = self.list_int_to_base64_mp3(samples,debug=True)
         # 是否需要编码html
@@ -101,7 +110,10 @@ class TextToSpeech(CustomerLLM):
         """Generate audio samples from the input text."""
         try:
             if self.is_gpu:
-                return self.tts.tts(text=text, speaker_wav=self.speaker_wav, language=self.language)
+                if "cosyvoice" in model_root:
+                    return self.tts.inference_cross_lingual(text, self.speaker_wav, stream=False)[0]['tts_speech']
+                else:
+                    return self.tts.tts(text=text, speaker_wav=self.speaker_wav, language=self.language)
             else:
                 return self.tts.tts(text=text, speaker_wav=self.speaker_wav)
         except Exception as e:
@@ -116,17 +128,33 @@ class TextToSpeech(CustomerLLM):
             Path(file_path).parent.mkdir(parents=True, exist_ok=True)
         
         try:
-            self.tts.tts_to_file(
-                text=text,
-                speaker_wav=self.speaker_wav,
-                language=self.language if self.is_gpu else None,
-                file_path=file_path
-            )
+            if "cosyvoice" in model_root:
+                samples = self.tts.inference_cross_lingual(text, self.speaker_wav, stream=False)
+                torchaudio.save(file_path, samples['tts_speech'], self.tts.sample_rate)
+            else:
+                self.tts.tts_to_file(
+                    text=text,
+                    speaker_wav=self.speaker_wav,
+                    language=self.language if self.is_gpu else None,
+                    file_path=file_path
+                )
         except Exception as e:
             log.error(f"Error saving audio to file: {e}")
             raise RuntimeError("Failed to save audio to file.")
         
         return file_path
+
+    def format_model_output(self,obj):
+        if isinstance(obj, torch.Tensor) or isinstance(obj, np.ndarray):
+            ndim = obj.ndim
+            if ndim == 2:
+                obj = obj[0].tolist()
+            else:
+                obj = obj.tolist()
+
+        else:
+            print(f"是其他类型: {type(obj)}")
+        return obj
 
     def list_int_to_base64_mp3(self,wav_data: list, sample_rate: int=16000,debug=False) -> str:
         # 将 List[int] 转为 int16 numpy 数组
