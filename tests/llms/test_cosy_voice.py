@@ -30,6 +30,8 @@ class TestCosyVoice(unittest.TestCase):
 
         # fine grained control, for supported control, check cosyvoice/tokenizer/tokenizer.py#L248
         for i, j in enumerate(self.cosyvoice2.inference_cross_lingual('在他讲述那个荒诞故事的过程中，他突然[laughter]停下来，因为他自己也被逗笑了[laughter]。', prompt_speech_16k, stream=False)):
+            print(type(j))
+            print(type(j['tts_speech']),j['tts_speech'].ndim)
             torchaudio.save('fine_grained_control_{}.wav'.format(i), j['tts_speech'], self.cosyvoice2.sample_rate)
         assert os.path.exists("fine_grained_control_0.wav")
         os.remove("fine_grained_control_0.wav")

@@ -54,10 +54,12 @@ class TextToSpeech(CustomerLLM):
                 if "cosyvoice" in model_path:
                     self.speaker_wav = load_wav(TTS_SPEAKER_WAV, 16000)
                     self.tts = CosyVoice2(model_path, load_jit=False, load_trt=False, fp16=False)
+                    self.model = self.tts.model
                 else:
                     config_path = os.path.join(model_path, "config.json")
                     log.info("use ts_models--multilingual--multi-dataset--xtts_v2")
                     self.tts = TTS(model_path=model_path, config_path=config_path).to(torch.device("cuda"))
+                    self.model = self.tts.synthesizer
             else:
                 log.info("loading TextToSpeech model(CPU)...")
                 # self.tts = TTS(model_name="tts_models/zh-CN/baker/tacotron2-DDC-GST").to(torch.device("cpu"))
@@ -66,7 +68,7 @@ class TextToSpeech(CustomerLLM):
                 # model_path = os.path.join(model_dir, "model_file.pth")
                 # config_path = os.path.join(model_dir, "config.json")
                 # return TTS(model_path=model_path, config_path=config_path)
-            self.model = self.tts.synthesizer
+                self.model = self.tts.synthesizer
 
     def list_available_models(self):
         """Return a list of available TTS models."""
@@ -111,7 +113,10 @@ class TextToSpeech(CustomerLLM):
         try:
             if self.is_gpu:
                 if "cosyvoice" in model_root:
-                    return self.tts.inference_cross_lingual(text, self.speaker_wav, stream=False)[0]['tts_speech']
+                    for c_idx, data in enumerate(self.tts.inference_cross_lingual(text, self.speaker_wav, stream=False)):
+                        tensor_data = data['tts_speech']
+                        print("************",tensor_data.shape)
+                        return tensor_data
                 else:
                     return self.tts.tts(text=text, speaker_wav=self.speaker_wav, language=self.language)
             else:
@@ -129,8 +134,8 @@ class TextToSpeech(CustomerLLM):
         
         try:
             if "cosyvoice" in model_root:
-                samples = self.tts.inference_cross_lingual(text, self.speaker_wav, stream=False)
-                torchaudio.save(file_path, samples['tts_speech'], self.tts.sample_rate)
+                for c_idx, data in enumerate(self.tts.inference_cross_lingual(text, self.speaker_wav, stream=False)):
+                    torchaudio.save(file_path, data['tts_speech'], self.tts.sample_rate)
             else:
                 self.tts.tts_to_file(
                     text=text,
@@ -157,6 +162,7 @@ class TextToSpeech(CustomerLLM):
         return obj
 
     def list_int_to_base64_mp3(self,wav_data: list, sample_rate: int=16000,debug=False) -> str:
+        wav_data = self.convert_to_int16_with_normalization(wav_data)
         # 将 List[int] 转为 int16 numpy 数组
         audio_array = np.array(wav_data, dtype=np.int16)
 
@@ -170,15 +176,54 @@ class TextToSpeech(CustomerLLM):
 
         # 写入内存中的 BytesIO
         mp3_io = io.BytesIO()
-        audio_segment.export(mp3_io, format="mp3")
+        audio_segment.export(mp3_io, format="wav")
         mp3_io.seek(0)
 
         # Base64 编码
         mp3_base64 = base64.b64encode(mp3_io.read()).decode("utf-8")
         if debug:
             file_path = f'{TTS_FILE_SAVE_PATH}/{int(time.time())}.wav'
-            audio_segment.export(file_path, format="mp3")
+            audio_segment.export(file_path, format="wav")
         
-        audio_source = f"data:audio/mp3;base64,{mp3_base64}"
+        audio_source = f"data:audio/wav;base64,{mp3_base64}"
 
         return audio_source
+            
+    def convert_to_int16_with_normalization(self,audio_data):
+        """
+        将音频数据转换为 int16 格式，尽量减少音质损失，通过归一化和缩放。
+        
+        :param audio_data: 输入的音频数据，可以是 list、ndarray 或其他类型
+        :return: 转换后的 int16 格式的音频数据
+        """
+        # 将输入数据转换为 numpy 数组
+        audio_array = np.array(audio_data)
+        
+        # 如果音频数据已经是 int16 类型，直接返回
+        if audio_array.dtype == np.int16:
+            print("音频数据已经是 int16 格式，无需转换。")
+            return audio_array
+        
+        # 如果是浮动类型（如 float32），先缩放到 [-32768, 32767] 范围
+        if np.issubdtype(audio_array.dtype, np.floating):
+            print("检测到浮动类型音频数据，正在进行归一化并转换为 int16。")
+            # 将浮动数值缩放到 int16 范围
+            audio_array = np.clip(audio_array, -1.0, 1.0)  # 防止溢出
+            audio_array = np.int16(audio_array * 32767)  # 缩放到 int16 范围
+            return audio_array
+        
+        # 如果是其他整数类型（如 int32），首先缩放到 int16 范围
+        if np.issubdtype(audio_array.dtype, np.integer):
+            print(f"检测到整数类型音频数据（{audio_array.dtype}），正在进行缩放并转换为 int16。")
+            # 如果数据是 int32，可以通过其最大值和最小值来进行缩放
+            max_val = np.max(audio_array)
+            min_val = np.min(audio_array)
+            
+            # 根据 int32 的范围缩放到 int16 的范围
+            if max_val != min_val:  # 防止除以零
+                scaling_factor = 32767.0 / max(abs(max_val), abs(min_val))  # 计算缩放因子
+                audio_array = np.int16(audio_array * scaling_factor)
+            else:
+                audio_array = np.int16(audio_array)  # 如果数据范围很小，直接转换
+            
+            return audio_array

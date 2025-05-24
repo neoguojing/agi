@@ -437,7 +437,7 @@ async def create_transcription(file: UploadFile, api_key: str = Depends(verify_a
             feature="speech"
         )
 
-        resp = graph.invoke(state_data)
+        resp = await graph.invoke(state_data)
         last_message = resp.get("messages")
         assistant_content = ""
         if last_message is not None:
@@ -475,7 +475,7 @@ async def generate_speech(request: SpeechRequest, api_key: str = Depends(verify_
             feature="tts"
         )
 
-        resp = graph.invoke(state_data)
+        resp = await graph.invoke(state_data)
         
         last_message = resp.get("messages")
         file_path = ""
