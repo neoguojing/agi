@@ -161,7 +161,7 @@ class TextToSpeech(CustomerLLM):
             print(f"是其他类型: {type(obj)}")
         return obj
 
-    def list_int_to_base64_mp3(self,wav_data: list, sample_rate: int=16000,debug=False) -> str:
+    def list_int_to_base64_mp3(self,wav_data: list, sample_rate: int=24000,debug=False) -> str:
         wav_data = self.convert_to_int16_with_normalization(wav_data)
         # 将 List[int] 转为 int16 numpy 数组
         audio_array = np.array(wav_data, dtype=np.int16)
