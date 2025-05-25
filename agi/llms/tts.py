@@ -18,8 +18,11 @@ from agi.llms.base import CustomerLLM,parse_input_messages,path_to_preview_url
 from langchain_core.runnables import RunnableConfig
 from typing import Any, Optional,Union
 from pydantic import BaseModel, Field
-
-from langchain_core.messages import AIMessage, HumanMessage
+from collections.abc import (
+    AsyncIterator,
+    Iterator,
+)
+from langchain_core.messages import AIMessage, HumanMessage,AIMessageChunk
 import base64
 import numpy as np
 from pydub import AudioSegment
@@ -74,7 +77,7 @@ class TextToSpeech(CustomerLLM):
         """Return a list of available TTS models."""
         self._load_model()
         return self.tts.list_models()
-    
+
     def invoke(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
         """Generate speech audio from input text."""
         self._load_model()
@@ -107,7 +110,25 @@ class TextToSpeech(CustomerLLM):
         return AIMessage(content=[
             {"type": "audio", "audio": audio_source,"text":input_str}
         ])
+    
+    def stream(self, 
+               input: Union[list[HumanMessage],HumanMessage,str], 
+               config: Optional[RunnableConfig] = None,
+               **kwargs: Any
+    ) -> Iterator[AIMessageChunk]:
+        self._load_model()
 
+        input_str = None
+        if isinstance(input,str):
+            input_str = input
+        else:
+            _,input_str = parse_input_messages(input)
+        
+        sentences = self.sentence_segmenter(input_str)
+        for sentence in sentences:
+            ret = self.invoke(sentence,config=config)
+            yield AIMessageChunk(content=ret.content)
+        
     def generate_audio_samples(self, text: str) -> Any:
         """Generate audio samples from the input text."""
         try:
@@ -227,3 +248,49 @@ class TextToSpeech(CustomerLLM):
                 audio_array = np.int16(audio_array)  # 如果数据范围很小，直接转换
             
             return audio_array
+    # 句子分割
+    def sentence_segmenter(self,text, min_length=10, max_length=30):
+        import re
+        # 使用正则表达式根据中英文标点进行分割
+        sentence_endings = r'(?<=[。！？.!?])\s*'
+        sentences = re.split(sentence_endings, text)
+        
+        # 移除空的句子
+        sentences = [sentence.strip() for sentence in sentences if sentence.strip()]
+        
+        # 合并小于 min_length 的句子
+        i = 0
+        while i < len(sentences) - 1:
+            if len(sentences[i]) + len(sentences[i + 1]) < min_length:
+                sentences[i] = sentences[i] + " " + sentences[i + 1]
+                sentences.pop(i + 1)
+            else:
+                i += 1
+        
+        # 拆分大于 max_length 的句子
+        result = []
+        for sentence in sentences:
+            if len(sentence) <= max_length:
+                result.append(sentence)  # 如果句子长度小于或等于 max_length，直接添加
+            
+            else:
+                while len(sentence) > max_length:
+                    # 优先在较大的标点符号后拆分，如：句号（。）、问号（？）等
+                    split_point = max(sentence.rfind(p, 0, max_length) for p in ['。', '！', '？', '.', '!', '?'])
+                    
+                    if split_point == -1:  # 如果找不到大的标点符号，则尝试更小的标点符号（如逗号）
+                        # 在中英文逗号、分号、冒号后拆分
+                        split_point = max(sentence.rfind(p, 0, max_length) for p in [',', '，', ';', '；', ':', '：'])
+                        
+                        if split_point == -1:  # 如果没有找到标点符号，则直接按 max_length 截取
+                            split_point = max_length
+                    
+                    # 分割句子
+                    result.append(sentence[:split_point + 1].strip())
+                    sentence = sentence[split_point + 1:].strip()
+                
+                # 添加剩余的部分
+                if sentence:
+                    result.append(sentence)
+        
+        return result

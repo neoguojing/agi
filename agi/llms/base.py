@@ -132,6 +132,7 @@ class Media(BaseModel):
                     return BytesIO(file.read())
             else:
                 try:
+                    audio = remove_data_uri_prefix(audio)
                     audio_data = base64.b64decode(audio)
                     return BytesIO(audio_data)
                 except (ValueError, TypeError):

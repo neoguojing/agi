@@ -78,8 +78,8 @@ async def chat_completions(
     处理聊天完成请求，支持流式和非流式响应，兼容 OpenAI API。
     """
     
-    if request.need_speech and request.stream:
-        raise HTTPException(status_code=400, detail="语音输出不支持流式响应")
+    # if request.need_speech and request.stream:
+    #     raise HTTPException(status_code=400, detail="语音输出不支持流式响应")
 
 
     internal_messages: List[Union[HumanMessage, Dict[str, Union[str, List[Dict[str, str]]]]]] = []

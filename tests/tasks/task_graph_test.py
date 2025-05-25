@@ -9,7 +9,7 @@ class TestGraph(unittest.TestCase):
     def setUp(self):        
         self.graph = AgiGraph()
         self.graph.display()
-    '''
+    
     def test_agent(self):
         input_example = {
             "messages":  [
@@ -241,7 +241,7 @@ class TestGraph(unittest.TestCase):
                 self.assertIsInstance(event,tuple)
                 self.assertIsInstance(event[1][0],AIMessage)
                 self.assertIsInstance(event[1][1],dict)
-    '''
+    
     def test_human_feedback(self):
         input_example = {
             "messages":  [
