@@ -50,9 +50,10 @@ decider_prompt = (
     '- If the input type is "text":'
     '    - If the question indicates a request to generate or create an image (e.g., "Draw a cat", "Generate a futuristic cityscape"), output: "image". '
     '    - If the question requires current or external information (e.g., latest news, real-time data, factual verification, Wikipedia, Wikidata, Python code execution, arXiv papers, weather, or stock market data), output: "agent".'
+    '    - If the question has no meaning and is chaotic, output: "__end__". '
     '    - Otherwise, for typical text-based inquiries that do not require external data retrieval, output: "llm_with_history".'
 
-    'Your output should be a single command chosen from: "image", "agent","llm" or "llm_with_history". Do not include any additional explanation or details.'
+    'Your output should be a single command chosen from: "image", "agent","llm","__end__" or "llm_with_history". Do not include any additional explanation or details.'
 
     'Examples:'
     '1. Input Type: "image"; Question: "Can you read the text in this photo?" '
@@ -66,6 +67,9 @@ decider_prompt = (
 
     '4. Input Type: "text"; Question: "Tell me about the history of the Eiffel Tower." '
     '-> Output: "llm_with_history"'
+    
+    '5. Input Type: "text"; Question: "asassas 户户俄数据和" '
+    '-> Output: "__end__"'
 )
 
 decide_template = ChatPromptTemplate.from_messages(
