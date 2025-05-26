@@ -1,0 +1,12 @@
+langchain==0.3.23
+langchain-core==0.3.60
+langchain-text-splitters==0.3.8 
+langchain-chroma==0.2.4
+chromadb==1.0.10
+langchain_openai==0.2.5
+langchain_community==0.3.5
+langchain_experimental==0.3.4
+langgraph==0.3.31
+langgraph-prebuilt==0.1.8
+langchain-tavily==0.1.5
+langchain_ollama==0.2.0
