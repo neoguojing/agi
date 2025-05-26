@@ -2,20 +2,58 @@ name: Docker Image CI
 
 on:
   workflow_dispatch:
+    inputs:
+      branch:
+        description: "Git branch to build"
+        required: true
+        default: "main"
 
-<<<<<<< HEAD
-=======
 env:
   REGISTRY: ghcr.io
+  IMAGE_NAME: agi
+  DOCKER_NAMESPACE: neoguojing  # 替换为你的 GH 用户名或组织名
 
->>>>>>> dev
 jobs:
-
-  build:
-
+  build-and-push:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write  # 🔐 推送 GHCR 镜像需要权限
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag neoguojing/agi:$(git rev-parse --abbrev-ref HEAD)-$(git rev-parse --short HEAD)
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+
+      - name: Set up Docker tags
+        id: vars
+        run: |
+          BRANCH=${{ github.event.inputs.branch }}
+          COMMIT=$(git rev-parse --short HEAD)
+          IMAGE_TAG=${BRANCH}-${COMMIT}
+          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Docker image
+        run: |
+          docker build . \
+            -f Dockerfile \
+            -t ${{ env.REGISTRY }}/${{ env.DOCKER_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.image_tag }}
+
+      - name: Push Docker image with tag
+        run: |
+          docker push ${{ env.REGISTRY }}/${{ env.DOCKER_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.image_tag }}
+
+      - name: Also tag and push as latest (if main)
+        if: ${{ github.event.inputs.branch == 'main' }}
+        run: |
+          docker tag ${{ env.REGISTRY }}/${{ env.DOCKER_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.image_tag }} \
+            ${{ env.REGISTRY }}/${{ env.DOCKER_NAMESPACE }}/${{ env.IMAGE_NAME }}:latest
+          docker push ${{ env.REGISTRY }}/${{ env.DOCKER_NAMESPACE }}/${{ env.IMAGE_NAME }}:latest
