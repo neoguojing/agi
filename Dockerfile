@@ -1,6 +1,6 @@
 # 使用官方 Python 3.11 slim 作为基础镜像
 # FROM python:3.11-slim
-FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn8-devel
+FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel
 
 # 设置工作目录
 WORKDIR /agi
