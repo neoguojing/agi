@@ -175,7 +175,8 @@ class AgiGraph:
         
     async def invoke(self,input:State) -> State:
         config={"configurable": {"user_id": input.get("user_id","default_tenant"), "conversation_id": input.get("conversation_id",""),
-                                 "thread_id": input.get("conversation_id",None) or str(uuid.uuid4())}}
+                                 "thread_id": input.get("conversation_id",None) or str(uuid.uuid4()),
+                                 "need_speech":input.get("need_speech",False)}}
         state = self.graph.get_state(config)
         # Print the pending tasks
         log.debug(state.tasks)
@@ -191,7 +192,7 @@ class AgiGraph:
     async def stream(self, input: State,stream_mode=["messages","updates", "custom"]) -> Iterator[Union[BaseMessage, Dict[str, Any]]]:
         thread_id =  input.get("conversation_id",None) or str(uuid.uuid4())
         config={"configurable": {"user_id": input.get("user_id","default_tenant"), "conversation_id": input.get("conversation_id",""),
-                                 "thread_id":thread_id}}
+                                 "thread_id":thread_id,"need_speech":input.get("need_speech",False)}}
         
         events = None        
         try:

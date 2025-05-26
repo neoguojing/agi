@@ -129,6 +129,9 @@ class TextToSpeech(CustomerLLM):
             ret = self.invoke(sentence,config=config)
             yield AIMessageChunk(content=ret.content)
         
+        yield AIMessageChunk(content="",response_metadata={"finish_reason":"stop"})
+
+        
     def generate_audio_samples(self, text: str) -> Any:
         """Generate audio samples from the input text."""
         try:

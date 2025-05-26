@@ -73,7 +73,7 @@ GPU显存： 初始：2550MB 峰值：20GB
 - 使用cosy2.0替换xtts； DONE
 - 使用qwen2.5 omni3b模型替换7b DONE
 - rag的决策不够精确
-- speech to text 过滤非法输入
+- speech to text 过滤非法输入 test
 - 语音流式处理方案
 ## OPENWEBUI 修改
 - 新增: backend/open_webui/routers/agi.py
