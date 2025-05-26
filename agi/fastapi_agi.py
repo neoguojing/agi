@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # 假设的 AgiGraph 模块（需要根据实际情况调整）
 from agi.tasks.graph import AgiGraph, State
 from agi.fast_api_file import router_file
-from agi.config import FILE_UPLOAD_PATH,log,IMAGE_FILE_SAVE_PATH,TTS_FILE_SAVE_PATH
+from agi.config import FILE_UPLOAD_PATH,log,IMAGE_FILE_SAVE_PATH,TTS_FILE_SAVE_PATH,LLM_WITH_NO_THINKING
 from pydub import AudioSegment
 import traceback
 
@@ -90,6 +90,7 @@ async def chat_completions(
         msg = request.messages[-1]
         if msg.role == "user":
             if isinstance(msg.content, str):
+                msg.content = f"{msg.content} {LLM_WITH_NO_THINKING}"
                 internal_messages.append(HumanMessage(content=msg.content))
             else:
                 content: List[Dict[str, str]] = []
@@ -114,6 +115,7 @@ async def chat_completions(
                         content.append({"type": "video", "video": item["video"]})
                         input_type = "video"
                     elif item["type"] == "text": 
+                        item["text"] = f"{item['text']} {LLM_WITH_NO_THINKING}"
                         content.append({"type":"text","text":item["text"]})
                     else:
                         # 处理不支持的类型

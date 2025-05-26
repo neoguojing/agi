@@ -28,6 +28,8 @@ OLLAMA_API_BASE_URL = os.environ.get(
 OLLAMA_DEFAULT_MODE = os.environ.get("OLLAMA_DEFAULT_MODE", "qwen2.5:14b")
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "xxx")
+
+LLM_WITH_NO_THINKING = os.environ.get("LLM_WITH_NO_THINKING", "/no_think")
 ## embedding
 RAG_EMBEDDING_MODEL = os.environ.get("RAG_EMBEDDING_MODEL", "bge-m3:latest")
 

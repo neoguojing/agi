@@ -51,7 +51,6 @@ GPU显存： 初始：2550MB 峰值：20GB
 - 上传文件之后，其他的问答军基于该文档问答，会导致问题 DONE
 - doc文件提取有问题 DONE
 - 需要agent决策是否检索文档 DONE
-- agi自动测试
 - 支持使用sd 3.5作为图片生成 DONE
 - 支持qwen omini作为多模态基模型 DONE
 - 支持lang-graph 人工介入确认 DONE
@@ -72,9 +71,10 @@ GPU显存： 初始：2550MB 峰值：20GB
 - web检索+内容爬虫：1.使用内容爬虫填充检索结果；2.尝试使用llm执行爬虫任务更加准确  test
 - 使用cosy2.0替换xtts； DONE
 - 使用qwen2.5 omni3b模型替换7b DONE
-- rag的决策不够精确
+- rag的决策不够精确 pedding
 - speech to text 过滤非法输入 test
 - 语音流式处理方案
+- agi自动测试
 ## OPENWEBUI 修改
 - 新增: backend/open_webui/routers/agi.py
 - 修改: backend/open_webui/utils/models.py

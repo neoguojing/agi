@@ -81,3 +81,17 @@ class CollectionManager:
         
         return [ metadata["source"]
                 for metadata in result['metadatas']]
+    
+    # 执行全文检索
+    def search(self,texts,collection_name,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE):
+        collection = self.get_or_create_collection(collection_name,tenant=tenant,database=database)
+
+        results = collection.query(
+            query_texts=texts,
+            n_results=2,
+            where={"source": "doc2"},
+            where_document={"$contains": "牛排"},
+            include=["documents", "metadatas"]
+        )
+
+        return results
