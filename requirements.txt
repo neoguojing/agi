@@ -20,7 +20,6 @@ langchain_ollama==0.2.0
 transformers==4.52.1
 qwen-omni-utils==0.0.3
 decord==0.6.0
-flash-attn==2.7.4.post1
 spacy[ja]==3.8.2
 torch==2.6.0
 torchaudio==2.6.0
@@ -57,4 +56,6 @@ google==3.0.0
 python-multipart==0.0.20
 huggingface-hub==0.31.4
 # huggingface-hub==0.25.2
+flash-attn==2.7.4.post1
+
 
