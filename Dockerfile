@@ -13,10 +13,6 @@ COPY depend/ ./depend/
 # 更新 apt-get 并安装必要的系统依赖（可根据需要调整）
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential git \
-    && rm -rf /var/lib/apt/lists/*
-RUN pip install --upgrade pip && pip install packaging && pip install -r requirements.txt && rm -rf /root/.cache
-
-RUN apt-get install -y \
     libglib2.0-0 \
     libnss3 \
     libnspr4 \
@@ -38,7 +34,7 @@ RUN apt-get install -y \
     libasound2 \
     libatspi2.0-0 \
     && rm -rf /var/lib/apt/lists/*
-
+RUN pip install --upgrade pip && pip install packaging && pip install -r requirements.txt && rm -rf /root/.cache
 RUN python -m playwright install chromium && rm -rf /root/.cache
 
 # 将应用代码拷贝到容器中
