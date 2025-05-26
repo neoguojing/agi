@@ -5,19 +5,41 @@ FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel
 # 设置工作目录
 WORKDIR /agi
 
-# 更新 apt-get 并安装必要的系统依赖（可根据需要调整）
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential git \
-    && rm -rf /var/lib/apt/lists/*
-
 # 将 requirements.txt 拷贝到容器中，并安装 Python 依赖
 COPY requirements.txt .
 COPY requirements/ ./requirements/
 COPY depend/ ./depend/
 
-RUN pip install --upgrade pip && pip install packaging && pip install -r requirements.txt
-# RUN pip install --no-build-isolation flash-attn==2.7.4.post1
-RUN python -m playwright install chromium
+# 更新 apt-get 并安装必要的系统依赖（可根据需要调整）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential git \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --upgrade pip && pip install packaging && pip install -r requirements.txt && rm -rf /root/.cache
+
+RUN apt-get install -y \
+    libglib2.0-0 \
+    libnss3 \
+    libnspr4 \
+    libdbus-1-3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libx11-6 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libxcb1 \
+    libxkbcommon0 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libasound2 \
+    libatspi2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m playwright install chromium && rm -rf /root/.cache
 
 # 将应用代码拷贝到容器中
 COPY . .
