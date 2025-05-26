@@ -233,13 +233,23 @@ def save_base64_content(base64_str: str, output_dir: str = CACHE_DIR) -> Tuple[s
 
     # 自动创建输出目录
     os.makedirs(output_dir, exist_ok=True)
-
+    ext = None
+    content_type = None
     # 检测是否包含 mime 类型头
     if base64_str.startswith("data:"):
         header, encoded = base64_str.split(",", 1)
         mime_type = header.split(";")[0][5:]
-        content_type = "image" if mime_type.startswith("image/") else "audio" if mime_type.startswith("audio/") else None
         ext = mimetypes.guess_extension(mime_type)
+        
+        if mime_type.startswith("image/"):
+            content_type = "image" 
+            if ext is None:
+                ext = "jpg"
+        if mime_type.startswith("audio/"):
+            content_type = "audio" 
+            if ext is None:
+                ext = "wav"
+        
     else:
         # 如果没有头部信息，则无法判断类型，默认用 .bin 保存
         encoded = base64_str
@@ -251,7 +261,7 @@ def save_base64_content(base64_str: str, output_dir: str = CACHE_DIR) -> Tuple[s
         raise ValueError("Unsupported or unknown content type")
 
     # 生成文件名
-    filename = f"{content_type}_{int(os.times()[4] * 1000)}{ext}"
+    filename = f"{content_type}_{int(os.times()[4] * 1000)}.{ext}"
     file_path = os.path.join(output_dir, filename)
 
     # 保存文件

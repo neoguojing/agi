@@ -21,6 +21,6 @@ huggingface-hub==0.31.4
 # huggingface-hub==0.25.2
 validators==0.34.0
 lxml==5.4.0
-qwen-omni-utils==0.0.3
+qwen-omni-utils==0.0.4
 flash-attn==2.7.4.post1 #需要单独安装
 
