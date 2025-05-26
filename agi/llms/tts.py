@@ -110,6 +110,9 @@ class TextToSpeech(CustomerLLM):
         return AIMessage(content=[
             {"type": "audio", "audio": audio_source,"text":input_str}
         ])
+        
+    async def ainvoke(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
+        return self.invoke(input,config=config, **kwargs)
     
     def stream(self, 
                input: Union[list[HumanMessage],HumanMessage,str], 
@@ -131,6 +134,25 @@ class TextToSpeech(CustomerLLM):
         
         yield AIMessageChunk(content="",response_metadata={"finish_reason":"stop"})
 
+    async def astream(self, 
+               input: Union[list[HumanMessage],HumanMessage,str], 
+               config: Optional[RunnableConfig] = None,
+               **kwargs: Any
+    ) -> AsyncIterator[AIMessageChunk]:
+        self._load_model()
+
+        input_str = None
+        if isinstance(input,str):
+            input_str = input
+        else:
+            _,input_str = parse_input_messages(input)
+        
+        sentences = self.sentence_segmenter(input_str)
+        for sentence in sentences:
+            ret = await self.ainvoke(sentence,config=config)
+            yield AIMessageChunk(content=ret.content)
+        
+        yield AIMessageChunk(content="",response_metadata={"finish_reason":"stop"})
         
     def generate_audio_samples(self, text: str) -> Any:
         """Generate audio samples from the input text."""
