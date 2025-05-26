@@ -11,7 +11,7 @@ services:
       - 'BASE_URL=http://localhost:8000'
       - 'MODEL_PATH=/agi/models'
       - 'OLLAMA_API_BASE_URL=http://host.docker.internal:11434'
-      - 'OLLAMA_DEFAULT_MODE=qwen2.5:14b'
+      - 'OLLAMA_DEFAULT_MODE=qwen3:14b'
       - 'OPENAI_API_KEY=xxx'
     extra_hosts:
       - host.docker.internal:host-gateway
