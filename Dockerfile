@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 COPY depend/ ./depend/
 
-RUN pip install --upgrade pip && pip install -r requirements.txt
+RUN pip install --upgrade pip && pip install packaging && && pip install -r requirements.txt
 RUN python -m playwright install chromium
 
 # 将应用代码拷贝到容器中
