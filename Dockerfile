@@ -15,6 +15,7 @@ COPY requirements/ ./requirements/
 COPY depend/ ./depend/
 
 RUN pip install --upgrade pip && pip install packaging && pip install -r requirements.txt
+RUN pip install --no-build-isolation flash-attn==2.7.4.post1
 RUN python -m playwright install chromium
 
 # 将应用代码拷贝到容器中
