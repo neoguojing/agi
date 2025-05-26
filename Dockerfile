@@ -1,5 +1,6 @@
 # 使用官方 Python 3.11 slim 作为基础镜像
-FROM python:3.11-slim
+# FROM python:3.11-slim
+FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn8-devel
 
 # 设置工作目录
 WORKDIR /agi
@@ -15,7 +16,7 @@ COPY requirements/ ./requirements/
 COPY depend/ ./depend/
 
 RUN pip install --upgrade pip && pip install packaging && pip install -r requirements.txt
-RUN pip install --no-build-isolation flash-attn==2.7.4.post1
+# RUN pip install --no-build-isolation flash-attn==2.7.4.post1
 RUN python -m playwright install chromium
 
 # 将应用代码拷贝到容器中
