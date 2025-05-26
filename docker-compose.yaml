@@ -25,7 +25,7 @@ services:
     depends_on:
       - agi
     ports:
-      - 8080:8080
+      - 3000:3000
     environment:
       - 'OLLAMA_BASE_URL=http://host.docker.internal:11434'
       - 'WEBUI_SECRET_KEY='
