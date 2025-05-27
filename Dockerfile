@@ -36,7 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libatspi2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 RUN pip install --upgrade pip && pip install packaging && pip install -r requirements.txt && rm -rf /root/.cache
-RUN python -m playwright install chromium && rm -rf /root/.cache
+RUN python -m playwright install chromium
 
 # 将应用代码拷贝到容器中
 COPY . .
