@@ -22,7 +22,7 @@ from agi.tasks.define import State,Feature,InputType
 from agi.tasks.prompt import (
     decide_modify_state_messages_runnable
 )
-from agi.tasks.utils import split_think_content,graph_print
+from agi.tasks.utils import split_think_content,graph_print,refine_human_message
 from agi.tasks.agent import create_react_agent_as_subgraph,ahuman_feedback_node
 import traceback
 from agi.config import (
@@ -98,7 +98,7 @@ class AgiGraph:
                                  "thread_id": "tools"}}
         # 定义状态机chain
         decider_chain = decide_modify_state_messages_runnable | TaskFactory.get_llm() | StrOutputParser()
-        node_list = ["image","llm_with_history","agent","llm"]
+        node_list = ["image","llm_with_history","agent","llm",END]
         next_step = await decider_chain.ainvoke(state,config=config)
         # 去除think标签
         _,next_step = split_think_content(next_step)
@@ -142,6 +142,8 @@ class AgiGraph:
 
     # 文本输入决策
     async def text_feature_control(self,state: State):
+        if state.get("user_id") == "raspberrypi":
+            refine_human_message(state,lambda x:f"{x} /no_think")
         feature = state.get("feature","")
         if feature == Feature.AGENT:
             return "agent"

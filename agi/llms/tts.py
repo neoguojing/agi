@@ -112,11 +112,7 @@ class TextToSpeech(CustomerLLM):
         ])
         
     async def ainvoke(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None, 
-            lambda: self.invoke(input, config=config, **kwargs)
-        )
+        return self.invoke(input, config=config, **kwargs)
 
     
     def stream(self, 

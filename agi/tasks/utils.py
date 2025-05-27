@@ -21,7 +21,7 @@ import mimetypes
 from PIL import Image
 import io
 import os
-from typing import Tuple
+from typing import Tuple,Callable
 import re
 from urllib.parse import urlparse
 
@@ -55,6 +55,35 @@ def get_last_message_text(state: AgentState):
                 if item["type"] == "text":
                     return item["text"]
     return ""
+
+def refine_human_message(
+    state: AgentState,
+    formatter: Callable[[Any], Any] = None
+) -> Union[str, None]:
+    """
+    处理最后一条人类消息，可应用自定义格式化函数
+    
+    参数:
+        state: 包含消息列表的状态字典
+        formatter: 可选的消息格式化函数
+    
+    返回:
+        处理后的文本内容或None
+    """
+    if not state.get("messages"):
+        return
+        
+    last_message = state["messages"][-1]
+    
+    if not isinstance(last_message, HumanMessage):
+        return
+    
+    if isinstance(last_message.content, str):
+        last_message.content = formatter(last_message.content)
+    elif isinstance(last_message.content , list):
+        for item in last_message.content :
+            if item["type"] == "text":
+                _,item["text"] = formatter(item["text"])
 
 # 修复最后一条AI消息的text内容,去除特定标签内容
 def refine_last_message_text(message :Union[AIMessage,ToolMessage,list[BaseMessage]]):
