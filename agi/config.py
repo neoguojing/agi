@@ -80,7 +80,7 @@ if LANGCHAIN_DEBUG:
     set_debug(True)
     set_verbose(True)
 
-LANGSMITH_TRACING = os.getenv("LANGSMITH_TRACING",True)
+LANGSMITH_TRACING = os.getenv("LANGSMITH_TRACING",False)
 LANGSMITH_ENDPOINT="https://api.smith.langchain.com"
 LANGSMITH_API_KEY= os.getenv("LANGSMITH_API_KEY","")
 LANGSMITH_PROJECT= os.getenv("LANGSMITH_PROJECT","agi")

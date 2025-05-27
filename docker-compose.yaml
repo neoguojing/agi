@@ -1,6 +1,6 @@
 services:
   agi:
-    image: guojingneo/agi-fastapi-app:b46e693-main
+    image: ghcr.io/neoguojing/agi:dev-37521db
     container_name: agi
     volumes:
       - /data/agi:/agi/cache

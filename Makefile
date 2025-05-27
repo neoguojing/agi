@@ -17,8 +17,6 @@ all: install test
 .PHONY: install
 install:
 	$(PIP) install -r requirements.txt
-	$(PIP) install --no-build-isolation flash-attn==2.7.4.post1
-
 # 打包
 .PHONY: package
 package:
