@@ -70,8 +70,8 @@ TAVILY_API_KEY = os.getenv("TAVILY_API_KEY","")
 ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY","")
 
 ## 系统参数
-AGI_DEBUG = os.getenv("AGI_DEBUG",None)
-LANGCHAIN_DEBUG = os.getenv("LANGCHAIN_DEBUG",None)
+AGI_DEBUG = os.getenv("AGI_DEBUG","")
+LANGCHAIN_DEBUG = os.getenv("LANGCHAIN_DEBUG","")
 
 ## LANGCHAIN 设置
 if LANGCHAIN_DEBUG:
@@ -97,6 +97,9 @@ else:
     log.setLevel(logging.INFO)
     ch.setLevel(logging.INFO)
 
+logging.getLogger("chromadb").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 # 设置带文件名和行号的格式
 formatter = logging.Formatter(
     '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
