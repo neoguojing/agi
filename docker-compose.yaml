@@ -13,6 +13,7 @@ services:
       - 'OLLAMA_API_BASE_URL=http://host.docker.internal:11434'
       - 'OLLAMA_DEFAULT_MODE=qwen3:14b'
       - 'OPENAI_API_KEY=xxx'
+      - 'AGI_DEBUG=True'
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped
