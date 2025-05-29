@@ -267,6 +267,8 @@ def save_media_content(source: str, output_dir: str = CACHE_DIR) -> Tuple[str, s
     ext = None
     content_type = None
     encoded = None
+    url = ""
+
     # 检测是否包含 mime 类型头
     if source.startswith("data:"):
         header, encoded = source.split(",", 1)
@@ -289,12 +291,12 @@ def save_media_content(source: str, output_dir: str = CACHE_DIR) -> Tuple[str, s
         if not os.path.isfile(target_path):
             shutil.copy(source, target_path)
         if target_path.startswith(CACHE_DIR):
-            url = os.path.join(BASE_URL, "v1/files", os.path.basename(file_path))
+            url = os.path.join(BASE_URL, "v1/files", os.path.basename(target_path))
         return target_path,url,None
 
     elif source.startswith(('http://', 'https://')):
         # Load audio from URL
-        response = requests.get(source)
+        response = requests.get(source, timeout=10)
         response.raise_for_status()
 
         # 生成文件名：使用 URL 最后的路径部分或 fallback
@@ -337,7 +339,7 @@ def save_media_content(source: str, output_dir: str = CACHE_DIR) -> Tuple[str, s
         except Exception as e:
             print(f"Failed to convert to JPEG: {e}")
             # 如果转换失败，继续使用原始文件
-    url = ""
+
     if file_path.startswith(CACHE_DIR):
         url = os.path.join(BASE_URL, "v1/files", os.path.basename(file_path))
     return file_path,url, content_type

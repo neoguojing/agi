@@ -123,7 +123,7 @@ class Media(BaseModel):
         if isinstance(audio, str):
             if audio.startswith(('http://', 'https://')):
                 # Load audio from URL
-                response = requests.get(audio)
+                response = requests.get(audio,timeout=10)
                 response.raise_for_status()  # Ensure successful request
                 return BytesIO(response.content)
             elif os.path.isfile(audio):
