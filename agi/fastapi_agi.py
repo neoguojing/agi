@@ -16,21 +16,31 @@ from fastapi.middleware.cors import CORSMiddleware
 # 假设的 AgiGraph 模块（需要根据实际情况调整）
 from agi.tasks.graph import AgiGraph, State
 from agi.fast_api_file import router_file
+from agi.fast_api_audio import router_audio,tts_pcm_producer
 from agi.config import FILE_UPLOAD_PATH,log,IMAGE_FILE_SAVE_PATH,TTS_FILE_SAVE_PATH,LLM_WITH_NO_THINKING
 from pydub import AudioSegment
 import traceback
-
+import threading
+from contextlib import asynccontextmanager
 from agi.tasks.utils import identify_input_type,save_media_content
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    threading.Thread(target=tts_pcm_producer, daemon=True).start()
+    yield
+    
 # 初始化 FastAPI 应用
 app = FastAPI(
     title="AGI API",
     description="兼容 OpenAI API 的 AGI 接口",
     version="1.0.0",
+    lifespan=lifespan
 )
 
 app.include_router(router_file)
+app.include_router(router_audio)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -38,6 +48,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+
 # 实例化 AgiGraph（假设的外部模块）
 graph = AgiGraph()
 
