@@ -20,6 +20,7 @@ import base64
 import mimetypes
 import shutil
 import requests
+import base64
 from PIL import Image
 import io
 import os
@@ -379,3 +380,12 @@ def graph_print(graph):
     except Exception:
         # This requires some extra dependencies and is optional
         pass
+
+
+# 音频转换为Base64（带前缀）
+def audio_to_base64(audio_path):
+    with open(audio_path, "rb") as audio_file:
+        encoded_audio = base64.b64encode(audio_file.read()).decode('utf-8')
+    mime_type, _ = mimetypes.guess_type(audio_path)
+    prefix = f"data:{mime_type};base64," if mime_type else "data:audio/wav;base64,"
+    return prefix + encoded_audio

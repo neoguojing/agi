@@ -3,18 +3,8 @@ from openai import OpenAI
 import base64
 
 from agi.config import log
+from agi.tasks.utils import audio_to_base64,image_path_to_base64_uri
 
-# 图片转换为Base64
-def image_to_base64(image_path):
-    with open(image_path, "rb") as image_file:
-        encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
-    return encoded_image
-
-# 音频转换为Base64
-def audio_to_base64(audio_path):
-    with open(audio_path, "rb") as audio_file:
-        encoded_audio = base64.b64encode(audio_file.read()).decode('utf-8')
-    return encoded_audio
 
 class TestFastApiAgi(unittest.TestCase):
     def setUp(self):        
@@ -180,7 +170,7 @@ class TestFastApiAgi(unittest.TestCase):
                         {"type": "text", "text": "变成人首蛇身"},
                         {
                             "type": "image",
-                            "image": image_to_base64("tests/cat.jpg")
+                            "image": image_path_to_base64_uri("tests/cat.jpg")
                         }
                     ]
                 }
@@ -207,7 +197,7 @@ class TestFastApiAgi(unittest.TestCase):
                         {"type": "text", "text": "变成一条狗"},
                         {
                             "type": "image",
-                            "image": image_to_base64("tests/cat.jpg")
+                            "image": image_path_to_base64_uri("tests/cat.jpg")
                         }
                     ]
                 }
