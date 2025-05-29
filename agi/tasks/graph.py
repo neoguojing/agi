@@ -210,7 +210,7 @@ class AgiGraph:
                 events = self.graph.astream(input, config=config, stream_mode=stream_mode)
 
             async for event in events:
-                log.debug(event)
+                log.debug(f"stream-event:{event}")
                 if not isinstance(event,tuple):
                     continue
                 # 返回非HumanMessage
