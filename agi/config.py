@@ -94,12 +94,13 @@ def init_langchain_debug():
     os.environ["LANGSMITH_API_KEY"] = os.getenv("LANGSMITH_API_KEY", "")
     os.environ["LANGSMITH_PROJECT"] = os.getenv("LANGSMITH_PROJECT", "agi")
 
+AGI_DEBUG = get_env_bool("AGI_DEBUG")
+
 def init_logger(name=__name__) -> logging.Logger:
     log = logging.getLogger(name)
 
     if not log.handlers:  # 避免重复添加 handler
         handler = logging.StreamHandler()
-
         debug_mode = get_env_bool("AGI_DEBUG")
         level = logging.DEBUG if debug_mode else logging.INFO
         log.setLevel(level)
