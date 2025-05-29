@@ -96,8 +96,8 @@ def init_langchain_debug():
 
 AGI_DEBUG = get_env_bool("AGI_DEBUG")
 
-def init_logger(name=__name__) -> logging.Logger:
-    log = logging.getLogger(name)
+def init_logger() -> logging.Logger:
+    log = logging.getLogger()
 
     if not log.handlers:  # 避免重复添加 handler
         handler = logging.StreamHandler()
