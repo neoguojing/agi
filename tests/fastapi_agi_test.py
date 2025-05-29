@@ -297,6 +297,7 @@ class TestFastApiAgi(unittest.TestCase):
     def test_tts(self):
         response = self.client.chat.completions.create(
             model="agi-model",
+            stream=True,
             extra_body={"need_speech": True},
             messages=[
                 {
@@ -321,7 +322,7 @@ class TestFastApiAgi(unittest.TestCase):
         stream = self.client.chat.completions.create(
             model="agi-model",
             stream=True,
-            extra_body={"need_speech": True,"feature": "tts"},
+            extra_body={"need_speech": True},
             messages=[
                 {
                     "role": "user",
