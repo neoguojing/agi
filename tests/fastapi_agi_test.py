@@ -308,16 +308,26 @@ class TestFastApiAgi(unittest.TestCase):
             user="tts1"
         )
         print(response)
-        self.assertIsNotNone(response.choices)
-        self.assertGreater(len(response.choices),0)
-        self.assertIsNotNone(response.choices[0].message)
-        self.assertIsNotNone(response.choices[0].message.content)
-        self.assertIsInstance(response.choices[0].message.content,list)
-        self.assertEqual(response.choices[0].message.content[0]["type"],"audio")
-        # self.assertIsNotNone(response.choices[0].message.content[0]["file_path"])
-        self.assertIsNotNone(response.choices[0].message.content[0]["text"])
-        self.assertIsInstance(response.choices[0].message.content[0]["audio"],str)
-        self.assertGreater(len(response.choices[0].message.content[0]["audio"]),0)
+        is_stoped = False
+        for chunk in response:
+            print("------",chunk)
+            self.assertIsNotNone(chunk.choices)
+            self.assertGreater(len(chunk.choices),0)
+            if chunk.choices[0].finish_reason is None:
+                self.assertIsNotNone(chunk.choices)
+                self.assertGreater(len(chunk.choices),0)
+                self.assertIsNotNone(chunk.choices[0].delta)
+                self.assertIsNotNone(chunk.choices[0].delta.content)
+                self.assertIsInstance(chunk.choices[0].delta.content,list)
+                self.assertEqual(chunk.choices[0].delta.content[0]["type"],"audio")
+                # self.assertIsNotNone(response.choices[0].delta.content[0]["file_path"])
+                self.assertIsNotNone(chunk.choices[0].delta.content[0]["text"])
+                self.assertIsInstance(chunk.choices[0].delta.content[0]["audio"],str)
+                self.assertGreater(len(chunk.choices[0].delta.content[0]["audio"]),0)
+            else:
+                if chunk.choices[0].finish_reason == "stop":
+                    is_stoped = True
+        self.assertEqual(is_stoped,True)
         
         stream = self.client.chat.completions.create(
             model="agi-model",
