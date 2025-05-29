@@ -296,7 +296,9 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
                 else:
                     content = event.get("content", str(event))
                     chunk["choices"][0]["delta"] = {"content": content}
-
+            else:
+                continue
+            
             yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
             index += 1 #index递增
         # finish_reason 未填，则发送一个空消息
