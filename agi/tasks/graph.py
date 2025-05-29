@@ -170,6 +170,7 @@ class AgiGraph:
     
     async def output_control(self,state: State):
         if state["need_speech"]:
+            log.info(f"to tts:{state['messages'][-1]}")
             return "tts"
         
         return END

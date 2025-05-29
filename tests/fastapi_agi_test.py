@@ -35,18 +35,18 @@ class TestFastApiAgi(unittest.TestCase):
             base_url="http://localhost:8000/v1",
         )
          # 创建一个异步函数来启动Uvicorn服务器
-        def start_uvicorn():
-            config = uvicorn.Config(app, host="0.0.0.0", port=8000)
-            server = uvicorn.Server(config)
-            asyncio.run(server.serve())
+        # def start_uvicorn():
+        #     config = uvicorn.Config(app, host="0.0.0.0", port=8000)
+        #     server = uvicorn.Server(config)
+        #     asyncio.run(server.serve())
         
-        # 启动Uvicorn服务器的线程
-        cls.server_thread = threading.Thread(target=start_uvicorn)
-        cls.server_thread.daemon = True  # 设置为daemon线程，这样主程序结束时会自动退出
-        cls.server_thread.start()
+        # # 启动Uvicorn服务器的线程
+        # cls.server_thread = threading.Thread(target=start_uvicorn)
+        # cls.server_thread.daemon = True  # 设置为daemon线程，这样主程序结束时会自动退出
+        # cls.server_thread.start()
 
-        # 等待服务器启动
-        cls.wait_for_server_start()
+        # # 等待服务器启动
+        # cls.wait_for_server_start()
         
     @classmethod
     def wait_for_server_start(cls, timeout=60):
@@ -301,7 +301,7 @@ class TestFastApiAgi(unittest.TestCase):
             messages=[
                 {
                     "role": "user",
-                    "content": "介绍下中国"
+                    "content": "今天上海的天气"
                 }
             ],
             user="tts1"

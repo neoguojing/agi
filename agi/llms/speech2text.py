@@ -58,7 +58,7 @@ class Speech2Text(CustomerLLM):
         
         # Transcribe the audio input
         content, response_metadata = self._transcribe_audio(audio_input.data)
-
+        log.info(f"speech to text:{content}")
         # Return the transcription result
         return AIMessage(content=content, response_metadata=response_metadata)
 
