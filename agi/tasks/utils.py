@@ -18,6 +18,8 @@ import uuid
 import hashlib
 import base64
 import mimetypes
+import shutil
+import requests
 from PIL import Image
 import io
 import os
@@ -245,12 +247,12 @@ def identify_input_type(input_str: str) -> str:
 
     return "unknown"
 
-def save_base64_content(base64_str: str, output_dir: str = CACHE_DIR) -> Tuple[str, str]:
+def save_media_content(source: str, output_dir: str = CACHE_DIR) -> Tuple[str, str]:
     """
     将 base64 编码的图片或语音内容保存为文件。
 
     Args:
-        base64_str (str): base64 编码的字符串，支持带有 `data:*/*;base64,` 前缀。
+        source (str): base64 编码的字符串，支持带有 `data:*/*;base64,` 前缀。
         output_dir (str): 存储目录，默认为 ./output
 
     Returns:
@@ -264,9 +266,10 @@ def save_base64_content(base64_str: str, output_dir: str = CACHE_DIR) -> Tuple[s
     os.makedirs(output_dir, exist_ok=True)
     ext = None
     content_type = None
+    encoded = None
     # 检测是否包含 mime 类型头
-    if base64_str.startswith("data:"):
-        header, encoded = base64_str.split(",", 1)
+    if source.startswith("data:"):
+        header, encoded = source.split(",", 1)
         mime_type = header.split(";")[0][5:]
         ext = mimetypes.guess_extension(mime_type)
         
@@ -278,10 +281,29 @@ def save_base64_content(base64_str: str, output_dir: str = CACHE_DIR) -> Tuple[s
             content_type = "audio" 
             if ext is None:
                 ext = "wav"
-        
+    elif os.path.isfile(source):
+        # Load audio from local file and copy it to the target directory
+        filename = os.path.basename(source)
+        target_path = os.path.join(output_dir, filename)
+
+        if not os.path.isfile(target_path):
+            shutil.copy(source, target_path)
+        if target_path.startswith(CACHE_DIR):
+            url = os.path.join(BASE_URL, "v1/files", os.path.basename(file_path))
+        return target_path,url,None
+
+    elif source.startswith(('http://', 'https://')):
+        # Load audio from URL
+        response = requests.get(source)
+        response.raise_for_status()
+
+        # 生成文件名：使用 URL 最后的路径部分或 fallback
+        filename = os.path.basename(urlparse(source).path) or 'audio_from_url'
+        target_path = os.path.join(output_dir, filename)
+        return target_path,source,None
     else:
         # 如果没有头部信息，则无法判断类型，默认用 .bin 保存
-        encoded = base64_str
+        encoded = source
         mime_type = None
         content_type = None
         ext = ".bin"

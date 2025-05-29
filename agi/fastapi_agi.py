@@ -20,7 +20,7 @@ from agi.config import FILE_UPLOAD_PATH,log,IMAGE_FILE_SAVE_PATH,TTS_FILE_SAVE_P
 from pydub import AudioSegment
 import traceback
 
-from agi.tasks.utils import identify_input_type,save_base64_content
+from agi.tasks.utils import identify_input_type,save_media_content
 
 
 # 初始化 FastAPI 应用
@@ -99,7 +99,7 @@ async def chat_completions(
                         # 假设 item["image"] 是图像数据的某种表示（例如，文件路径或 base64 编码）
                         file_type = identify_input_type(item["image"])
                         if file_type == "base64":
-                            item["image"],_, _ = save_base64_content(item["image"],IMAGE_FILE_SAVE_PATH)
+                            item["image"],_, _ = save_media_content(item["image"],IMAGE_FILE_SAVE_PATH)
                         log.info(f'image save path:{item["image"]}')
                         content.append({"type": "image", "image": item["image"]})
                         input_type = "image"
@@ -107,7 +107,7 @@ async def chat_completions(
                         # 假设 item["audio"] 是音频数据的某种表示
                         file_type = identify_input_type(item["audio"])
                         if file_type == "base64":
-                            item["audio"],_, _ = save_base64_content(item["audio"],TTS_FILE_SAVE_PATH)
+                            item["audio"],_, _ = save_media_content(item["audio"],TTS_FILE_SAVE_PATH)
                         content.append({"type": "audio", "audio": item["audio"]})
                         input_type = "audio"
                     elif item["type"] == "video":
