@@ -71,7 +71,8 @@ GPU显存： 初始：2550MB 峰值：20GB
 - web检索+内容爬虫：1.使用内容爬虫填充检索结果；2.尝试使用llm执行爬虫任务更加准确  test
 - 使用cosy2.0替换xtts； DONE
 - 使用qwen2.5 omni3b模型替换7b DONE
-- rag的决策不够精确 pedding
+- 语言请求绕过need_speech的问题
+- rag的决策不够精确 需要更加宏大的方案 pedding
 - speech to text 过滤非法输入 test
 - 语音流式处理方案
 - agi自动测试

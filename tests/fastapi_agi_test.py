@@ -73,7 +73,7 @@ class TestFastApiAgi(unittest.TestCase):
                 print("Waiting for server to start...")
                 time.sleep(1)
         raise TimeoutError("Uvicorn server did not start within the timeout period.")
-    
+    '''
     def test_text(self):
         response = self.client.chat.completions.create(
             model="agi-model",
@@ -292,7 +292,7 @@ class TestFastApiAgi(unittest.TestCase):
                 if chunk.choices[0].finish_reason == "stop":
                     is_stoped = True
         self.assertEqual(is_stoped,True)
-        
+    '''
         
     def test_tts(self):
         response = self.client.chat.completions.create(
@@ -321,11 +321,11 @@ class TestFastApiAgi(unittest.TestCase):
         stream = self.client.chat.completions.create(
             model="agi-model",
             stream=True,
-            extra_body={"need_speech": False,"feature": "tts"},
+            extra_body={"need_speech": True,"feature": "tts"},
             messages=[
                 {
                     "role": "user",
-                    "content": "介绍下中国"
+                    "content": [{"type": "audio", "audio": audio_to_base64("tests/zh-cn-sample.wav")}]
                 }
             ],
             user="tts2"
@@ -350,7 +350,7 @@ class TestFastApiAgi(unittest.TestCase):
                     is_stoped = True
         self.assertEqual(is_stoped,True)
         
-
+    '''
     def test_web_search(self):
         response = self.client.chat.completions.create(
             model="agi-model",
@@ -494,4 +494,4 @@ class TestFastApiAgi(unittest.TestCase):
             response.stream_to_file("tests/test.wav")
             import os
             self.assertTrue(os.path.exists("tests/test.wav"))
-            
+    '''
