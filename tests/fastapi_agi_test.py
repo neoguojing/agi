@@ -310,7 +310,7 @@ class TestFastApiAgi(unittest.TestCase):
         print(response)
         is_stoped = False
         for chunk in response:
-            # print("------",chunk)
+            print("------",chunk)
             self.assertIsNotNone(chunk.choices)
             self.assertGreater(len(chunk.choices),0)
             if chunk.choices[0].finish_reason is None:
