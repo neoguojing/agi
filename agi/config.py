@@ -1,6 +1,7 @@
 
 import os
 from dotenv import load_dotenv
+import logging
 
 
 load_dotenv(override=True)  # 加载 .env 文件中的环境变量
@@ -70,40 +71,52 @@ TAVILY_API_KEY = os.getenv("TAVILY_API_KEY","")
 ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY","")
 
 ## 系统参数
-AGI_DEBUG = os.getenv("AGI_DEBUG","")
-LANGCHAIN_DEBUG = os.getenv("LANGCHAIN_DEBUG","")
 
-## LANGCHAIN 设置
-if LANGCHAIN_DEBUG:
-    from langchain.globals import set_debug
-    from langchain.globals import set_verbose
+def get_env_bool(name: str, default=False) -> bool:
+    val = os.getenv(name, str(default))
+    return val.lower() in ("1", "true", "yes", "on")
+
+
+def init_langchain_debug():
+    if not get_env_bool("LANGCHAIN_DEBUG"):
+        return
+
+    from langchain.globals import set_debug, set_verbose
+
     set_debug(True)
     set_verbose(True)
 
-LANGSMITH_TRACING = os.getenv("LANGSMITH_TRACING",False)
-LANGSMITH_ENDPOINT="https://api.smith.langchain.com"
-LANGSMITH_API_KEY= os.getenv("LANGSMITH_API_KEY","")
-LANGSMITH_PROJECT= os.getenv("LANGSMITH_PROJECT","agi")
+    # 可根据需要导出环境变量或做其他处理
+    # 设置相关环境变量
+    os.environ["LANGSMITH_TRACING"] = "true" if get_env_bool("LANGSMITH_TRACING") else "false"
+    os.environ["LANGSMITH_ENDPOINT"] = "https://api.smith.langchain.com"
+    # 从 .env 中读取，若未设置则设默认
+    os.environ["LANGSMITH_API_KEY"] = os.getenv("LANGSMITH_API_KEY", "")
+    os.environ["LANGSMITH_PROJECT"] = os.getenv("LANGSMITH_PROJECT", "agi")
 
-## 日志设置
-import logging
-log = logging.getLogger(__name__)
-# 创建控制台 handler
-ch = logging.StreamHandler()
-if AGI_DEBUG:
-    log.setLevel(logging.DEBUG)
-    ch.setLevel(logging.DEBUG)
-else:
-    log.setLevel(logging.INFO)
-    ch.setLevel(logging.INFO)
+def init_logger(name=__name__) -> logging.Logger:
+    log = logging.getLogger(name)
 
-logging.getLogger("chromadb").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
-logging.getLogger("httpx").setLevel(logging.WARNING)
-# 设置带文件名和行号的格式
-formatter = logging.Formatter(
-    '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
-)
+    if not log.handlers:  # 避免重复添加 handler
+        handler = logging.StreamHandler()
 
-ch.setFormatter(formatter)
-log.addHandler(ch)
+        debug_mode = get_env_bool("AGI_DEBUG")
+        level = logging.DEBUG if debug_mode else logging.INFO
+        log.setLevel(level)
+        handler.setLevel(level)
+
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
+        )
+        handler.setFormatter(formatter)
+        log.addHandler(handler)
+
+        # 降低冗余库的日志等级
+        for noisy_logger in ["chromadb", "httpcore", "httpx"]:
+            logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+
+    return log
+
+
+# 初始化
+log = init_logger()
