@@ -238,6 +238,8 @@ class AgiGraph:
                     # 仅返回__interrupt__消息
                     if event[1].get("__interrupt__"):
                         yield event
+                    else:
+                        continue
                 elif "custom" in stream_mode and event[0] == "custom":
                     # 用户自定义消息
                     # ("custom":())
@@ -256,8 +258,9 @@ class AgiGraph:
                     # TODO decide chain 和 tranlate chain 以及 web search chain会输出中间结果,需要想办法处理
                     if (isinstance(event[1][0],AIMessage)) and event[1][0].content:
                         meta = event[1][1]
+                        log.debug(f"stream-event-message:{event}")
                         if meta.get("langgraph_node") in ["web","__start__","rag",'user_understand',"compress","intend"]:
-                            pass
+                            continue
                         else:
                             # 某些场景下，如agent，返回消息非流式返回，整体作为一个返回：
                             # 1.finish_reason一定等于stop
@@ -273,8 +276,12 @@ class AgiGraph:
                                     last_message.content = other_content
                                     last_message.response_metadata["finish_reason"] = "stop"
                             yield event
+                    else:
+                        continue
                 elif stream_mode == "debug":
-                    pass
+                    continue
+                else:
+                    continue
         except Exception as e:
             log.error(f"Error during streaming: {e}")
             print(traceback.format_exc())

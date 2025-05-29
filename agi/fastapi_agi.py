@@ -275,20 +275,26 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
             elif isinstance(event, tuple):
                 if event[0] == "messages":
                     # TODO 若消息未结束，则发送消息，解决agent重复消息发送的问题
-                    if finish_reason is None:
+                    if finish_reason is None and event[1][0].content:
                         chunk["choices"][0]["delta"] = {"role": "assistant", "content": event[1][0].content}
                         finish_reason = getattr(event[1][0], "response_metadata", {}).get("finish_reason")
                         if finish_reason:
                             chunk["choices"][0]["finish_reason"] = finish_reason
+                    else:
+                        continue
                 elif event[0] == "custom":
                     citations = event[1].get("citations")
                     if citations:
                         chunk["choices"][0]["delta"] = {"role": "assistant", "content": [{"citations":citations}]}
+                    else:
+                        continue
                 elif event[0] == "updates": #处理需要人工确认的场景
                     interrupt = event[1].get("__interrupt__")
                     if interrupt:
                         chunk["choices"][0]["delta"] = {"role": "assistant", "content": interrupt[0].value}
                         chunk["choices"][0]["finish_reason"] = "stop"
+                    else:
+                        continue
             elif isinstance(event, dict):
                 if "error" in event:
                     chunk["choices"] = []
@@ -298,7 +304,7 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
                     chunk["choices"][0]["delta"] = {"content": content}
             else:
                 continue
-            
+
             yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
             index += 1 #index递增
         # finish_reason 未填，则发送一个空消息
