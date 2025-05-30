@@ -109,19 +109,18 @@ class TextToSpeech(CustomerLLM):
         
         final_np_pcm = np.array([], dtype=np.int16)
         file_path = None
-        sentences = self.sentence_segmenter(input_str)
-        for sentence in sentences:
-            if self.save_file:
-                file_path = self.save_audio_to_file(text=sentence)
-                audio_source = path_to_preview_url(file_path)
-                return AIMessage(content=[
-                    {"type": "audio", "audio": audio_source,"file_path":file_path,"text":sentence}
-                ])
-            
-            # Generate audio samples and return as ByteIO
-            # 原始音频需要编码，不方便使用
-            samples = self.generate_audio_samples(sentence)
-            list_pcm = self.uniform_model_output(samples)
+
+        if self.save_file:
+            file_path = self.save_audio_to_file(text=input_str)
+            audio_source = path_to_preview_url(file_path)
+            return AIMessage(content=[
+                {"type": "audio", "audio": audio_source,"file_path":file_path,"text":input_str}
+            ])
+        
+        # Generate audio samples and return as ByteIO
+        # 原始音频需要编码，不方便使用
+        for sample in self.generate_audio_samples(input_str):
+            list_pcm = self.uniform_model_output(sample)
             np_pcm = self.list_pcm_normalization_int16(list_pcm)
             self.send_pcm(user_id,np_pcm)
             np.append(final_np_pcm,np_pcm)
@@ -141,61 +140,22 @@ class TextToSpeech(CustomerLLM):
     async def ainvoke(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
         log.debug("tts ainvoke ---------------")
         return self.invoke(input, config=config, **kwargs)
-
-    
-    def stream(self, 
-               input: Union[list[HumanMessage],HumanMessage,str], 
-               config: Optional[RunnableConfig] = None,
-               **kwargs: Any
-    ) -> Iterator[AIMessageChunk]:
-        log.debug("tts stream ---------------")
-
-        input_str = None
-        if isinstance(input,str):
-            input_str = input
-        else:
-            _,input_str = parse_input_messages(input)
         
-        sentences = self.sentence_segmenter(input_str)
-        for sentence in sentences:
-            ret = self.invoke(sentence,config=config)
-            yield AIMessageChunk(content=ret.content)
-        
-        yield AIMessageChunk(content="",response_metadata={"finish_reason":"stop"})
-
-    async def astream(self, 
-               input: Union[list[HumanMessage],HumanMessage,str], 
-               config: Optional[RunnableConfig] = None,
-               **kwargs: Any
-    ) -> AsyncIterator[AIMessageChunk]:
-        log.debug("tts astream ---------------")
-
-        input_str = None
-        if isinstance(input,str):
-            input_str = input
-        else:
-            _,input_str = parse_input_messages(input)
-        
-        sentences = self.sentence_segmenter(input_str)
-        for sentence in sentences:
-            ret = await self.ainvoke(sentence,config=config)
-            yield AIMessageChunk(content=ret.content)
-        
-        yield AIMessageChunk(content="",response_metadata={"finish_reason":"stop"})
-        
-    def generate_audio_samples(self, text: str) -> Any:
+    def generate_audio_samples(self, text: str):
         """Generate audio samples from the input text."""
         try:
             if self.is_gpu:
                 if "cosyvoice" in model_root:
-                    for c_idx, data in enumerate(self.tts.inference_cross_lingual(text, self.speaker_wav, stream=False)):
+                    for c_idx, data in enumerate(self.tts.inference_cross_lingual(self.sentence_segmenter(text), self.speaker_wav, stream=False)):
                         tensor_data = data['tts_speech']
                         print("************",tensor_data.shape)
-                        return tensor_data
+                        yield tensor_data
                 else:
-                    return self.tts.tts(text=text, speaker_wav=self.speaker_wav, language=self.language)
+                    for sentence in self.sentence_segmenter(text):
+                        yield self.tts.tts(text=sentence, speaker_wav=self.speaker_wav, language=self.language)
             else:
-                return self.tts.tts(text=text, speaker_wav=self.speaker_wav)
+                for sentence in self.sentence_segmenter(text):
+                    yield self.tts.tts(text=sentence, speaker_wav=self.speaker_wav)
         except Exception as e:
             log.error(f"Error generating audio samples: {e}")
             raise RuntimeError("Failed to generate audio samples.")
@@ -309,7 +269,8 @@ class TextToSpeech(CustomerLLM):
     def sentence_segmenter(self,text, min_length=10, max_length=30):
         log.debug(f"sentence_segmenter input:{text}")
         if len(text) < max_length:
-            return [text]
+            yield text
+
         import re
         # 使用正则表达式根据中英文标点进行分割
         sentence_endings = r'(?<=[。！？.!?])\s*'
@@ -328,10 +289,11 @@ class TextToSpeech(CustomerLLM):
                 i += 1
         
         # 拆分大于 max_length 的句子
-        result = []
+        # result = []
         for sentence in sentences:
             if len(sentence) <= max_length:
-                result.append(sentence)  # 如果句子长度小于或等于 max_length，直接添加
+                # result.append(sentence)  # 如果句子长度小于或等于 max_length，直接添加
+                yield sentence
             
             else:
                 while len(sentence) > max_length:
@@ -346,14 +308,16 @@ class TextToSpeech(CustomerLLM):
                             split_point = max_length
                     
                     # 分割句子
-                    result.append(sentence[:split_point + 1].strip())
+                    # result.append(sentence[:split_point + 1].strip())
+                    yield sentence[:split_point + 1].strip()
                     sentence = sentence[split_point + 1:].strip()
                 
                 # 添加剩余的部分
                 if sentence:
-                    result.append(sentence)
-        log.debug(f"sentence_segmenter out:{result}")
-        return result
+                    # result.append(sentence)
+                    yield sentence
+        # log.debug(f"sentence_segmenter out:{result}")
+        # return result
     
     def send_pcm(self,tenant_id: str,pcm_np: np.ndarray,chunk_size: int = 1024):
         queue = self.get_queue(tenant_id)
