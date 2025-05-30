@@ -3,41 +3,26 @@ import time
 from queue import Queue, Empty
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
-
+from agi.llms.tts import TextToSpeech
 import numpy as np
 
 router_audio = APIRouter(prefix="/v1")
 
-pcm_queue = Queue(maxsize=100)
-
-def tts_pcm_producer():
-    sample_rate = 16000
-    freq = 440
-    chunk_size = 1024
-    t = 0
-    while True:
-        t_vals = np.arange(t, t + chunk_size)
-        wave = 0.1 * np.sin(2 * np.pi * freq * t_vals / sample_rate)
-        pcm_chunk = (wave * 32767).astype('int16').tobytes()
-        try:
-            pcm_queue.put(pcm_chunk, timeout=1)
-        except:
-            pass
-        t += chunk_size
-        time.sleep(chunk_size / sample_rate)
-
-def generate_pcm():
+def generate_pcm(pcm_queue: Queue, wait_timeout=1.0, idle_sleep=0.1):
     while True:
         try:
-            pcm_chunk = pcm_queue.get(block=True)
+            pcm_chunk = pcm_queue.get(timeout=wait_timeout)  # 等待数据
+            yield pcm_chunk
         except Empty:
-            yield b''  # 队列空，发空包防断流
-            continue
-        yield pcm_chunk
+            # 没拿到数据，发送空包保持连接
+            yield b''
+            # 避免忙等
+            time.sleep(idle_sleep)
 
-@router_audio.get("/audio_stream")
-def audio_stream():
+@router_audio.get("/audio_stream/{tenant_id}")
+def audio_stream(tenant_id: str):
+    pcm_queue = TextToSpeech.get_queue(tenant_id)
     headers = {
-        "Content-Type": "audio/L16; rate=16000; channels=1"
+        "Content-Type": "audio/L16; rate=24000; channels=1"
     }
-    return StreamingResponse(generate_pcm(), headers=headers)
+    return StreamingResponse(generate_pcm(pcm_queue), headers=headers)

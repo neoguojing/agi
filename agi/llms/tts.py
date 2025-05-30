@@ -30,6 +30,9 @@ import io
 from torch.serialization import add_safe_globals
 from agi.config import log
 
+from queue import Queue
+from threading import Lock
+
 audio_style = "width: 300px; height: 50px;"  # 添加样式
 # for torch 2.6
 add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
@@ -39,12 +42,24 @@ class TextToSpeech(CustomerLLM):
     is_gpu: bool = Field(default=TTS_GPU_ENABLE)
     language: str = Field(default="zh-cn")
     save_file: bool = Field(default=True)
+
+    # 类变量：多租户队列 + 线程锁
+    _queues: dict[str, Queue] = {}
+    _lock = Lock()
     
     def __init__(self,save_file: bool = False,**kwargs):
         super().__init__(**kwargs)
 
         self.save_file = save_file
         self.model = None
+
+    @classmethod
+    def get_queue(cls, tenant_id: str="default") -> Queue:
+        if tenant_id not in cls._queues:
+            with cls._lock:  # 确保线程安全
+                if tenant_id not in cls._queues:
+                    cls._queues[tenant_id] = Queue(maxsize=100)
+        return cls._queues[tenant_id]
        
     def _load_model(self):
         """Initialize the TTS model based on the available hardware."""
@@ -82,25 +97,35 @@ class TextToSpeech(CustomerLLM):
         """Generate speech audio from input text."""
         self._load_model()
 
+        user_id = config.get("configurable").get("user_id")
+
         input_str = None
         if isinstance(input,str):
             input_str = input
         else:
             _,input_str = parse_input_messages(input)
-            
-        if self.save_file:
-            file_path = self.save_audio_to_file(text=input_str)
-            audio_source = path_to_preview_url(file_path)
-            return AIMessage(content=[
-                {"type": "audio", "audio": audio_source,"file_path":file_path,"text":input_str}
-            ])
         
-        # Generate audio samples and return as ByteIO
-        # 原始音频需要编码，不方便使用
-        samples = self.generate_audio_samples(input_str)
-        samples = self.format_model_output(samples)
-        # 默认返回base64
-        audio_source = self.list_int_to_base64_mp3(samples,debug=True)
+        final_np_pcm = np.array([], dtype=np.int16)
+        file_path = None
+        sentences = self.sentence_segmenter(input_str)
+        for sentence in sentences:
+            if self.save_file:
+                file_path = self.save_audio_to_file(text=sentence)
+                audio_source = path_to_preview_url(file_path)
+                return AIMessage(content=[
+                    {"type": "audio", "audio": audio_source,"file_path":file_path,"text":sentence}
+                ])
+            
+            # Generate audio samples and return as ByteIO
+            # 原始音频需要编码，不方便使用
+            samples = self.generate_audio_samples(sentence)
+            list_pcm = self.uniform_model_output(samples)
+            np_pcm = self.list_pcm_normalization_int16(list_pcm)
+            self.send_pcm(user_id,np_pcm)
+            np.append(final_np_pcm,np_pcm)
+
+        # 默认返回路径
+        audio_source = self.np_pcm_to_wave(final_np_pcm)
         # 是否需要编码html
         if kwargs.get('html') is True:
             return AIMessage(content=[
@@ -196,7 +221,8 @@ class TextToSpeech(CustomerLLM):
         
         return file_path
 
-    def format_model_output(self,obj):
+    # 将模型输出，统一转换为list
+    def uniform_model_output(self,obj):
         if isinstance(obj, torch.Tensor) or isinstance(obj, np.ndarray):
             ndim = obj.ndim
             if ndim == 2:
@@ -208,11 +234,8 @@ class TextToSpeech(CustomerLLM):
             print(f"是其他类型: {type(obj)}")
         return obj
 
-    def list_int_to_base64_mp3(self,wav_data: list, sample_rate: int=24000,debug=False) -> str:
-        wav_data = self.convert_to_int16_with_normalization(wav_data)
-        # 将 List[int] 转为 int16 numpy 数组
-        audio_array = np.array(wav_data, dtype=np.int16)
-
+    # 将np格式的pcm转换为wav格式，然后内存编码为base64或者文件
+    def np_pcm_to_wave(self,audio_array: np.ndarray, sample_rate: int=24000,to_base64=False) -> str:
         # 创建音频段（单声道，int16格式）
         audio_segment = AudioSegment(
             audio_array.tobytes(),
@@ -221,22 +244,27 @@ class TextToSpeech(CustomerLLM):
             channels=1
         )
 
-        # 写入内存中的 BytesIO
-        mp3_io = io.BytesIO()
-        audio_segment.export(mp3_io, format="wav")
-        mp3_io.seek(0)
+        audio_source = None
+        if to_base64:
+            # 写入内存中的 BytesIO
+            mp3_io = io.BytesIO()
+            audio_segment.export(mp3_io, format="wav")
+            mp3_io.seek(0)
 
-        # Base64 编码
-        mp3_base64 = base64.b64encode(mp3_io.read()).decode("utf-8")
-        if debug:
-            file_path = f'{TTS_FILE_SAVE_PATH}/{int(time.time())}.wav'
-            audio_segment.export(file_path, format="wav")
-        
-        audio_source = f"data:audio/wav;base64,{mp3_base64}"
+            # Base64 编码
+            mp3_base64 = base64.b64encode(mp3_io.read()).decode("utf-8")
+            audio_source = f"data:audio/wav;base64,{mp3_base64}"
+        else:
+            audio_source = f'{TTS_FILE_SAVE_PATH}/{int(time.time())}.wav'
+            audio_segment.export(audio_source, format="wav")
+
+        audio_source = path_to_preview_url(audio_source)
 
         return audio_source
-            
-    def convert_to_int16_with_normalization(self,audio_data):
+    
+    # 列表格式的pcm数据归一化，转换为int16
+    # 输出： np.array
+    def list_pcm_normalization_int16(self,audio_data):
         """
         将音频数据转换为 int16 格式，尽量减少音质损失，通过归一化和缩放。
         
@@ -320,3 +348,22 @@ class TextToSpeech(CustomerLLM):
                     result.append(sentence)
         
         return result
+    
+    def send_pcm(self,tenant_id: str,pcm_np: np.ndarray,chunk_size: int = 1024):
+        queue = self.get_queue(tenant_id)
+        total_len = len(pcm_np)
+        offset = 0
+
+        while offset < total_len:
+            end = min(offset + chunk_size, total_len)
+            chunk = pcm_np[offset:end]
+
+            # 补齐小于 chunk_size 的分片
+            if len(chunk) < chunk_size:
+                padding = np.zeros(chunk_size - len(chunk), dtype=pcm_np.dtype)
+                chunk = np.concatenate([chunk, padding])
+
+            queue.put(chunk.tobytes())
+            offset += chunk_size
+
+
