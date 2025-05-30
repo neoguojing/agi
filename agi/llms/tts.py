@@ -16,7 +16,7 @@ from collections import defaultdict
 from agi.config import TTS_MODEL_DIR as model_root, CACHE_DIR, TTS_SPEAKER_WAV,TTS_GPU_ENABLE,TTS_FILE_SAVE_PATH
 from agi.llms.base import CustomerLLM,parse_input_messages,path_to_preview_url
 from langchain_core.runnables import RunnableConfig
-from typing import Any, Optional,Union
+from typing import Any, Optional,Union,ClassVar
 from pydantic import BaseModel, Field
 from collections.abc import (
     AsyncIterator,
@@ -43,9 +43,9 @@ class TextToSpeech(CustomerLLM):
     language: str = Field(default="zh-cn")
     save_file: bool = Field(default=True)
 
-    # 类变量：多租户队列 + 线程锁
-    _queues: dict[str, Queue] = {}
-    _lock = Lock()
+     # ✅ 明确声明为类变量，避免 Pydantic 处理
+    _queues: ClassVar[dict[str, Queue]] = {}
+    _lock: ClassVar[Lock] = Lock()
     
     def __init__(self,save_file: bool = False,**kwargs):
         super().__init__(**kwargs)
