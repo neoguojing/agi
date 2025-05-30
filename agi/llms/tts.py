@@ -269,6 +269,7 @@ class TextToSpeech(CustomerLLM):
     def sentence_segmenter(self,text, min_length=10, max_length=30):
         log.debug(f"sentence_segmenter input:{text}")
         if len(text) < max_length:
+            log.debug(f"sentence_segmenter:{text}")
             yield text
 
         import re
@@ -293,6 +294,7 @@ class TextToSpeech(CustomerLLM):
         for sentence in sentences:
             if len(sentence) <= max_length:
                 # result.append(sentence)  # 如果句子长度小于或等于 max_length，直接添加
+                log.debug(f"sentence_segmenter:{sentence}")
                 yield sentence
             
             else:
@@ -309,12 +311,14 @@ class TextToSpeech(CustomerLLM):
                     
                     # 分割句子
                     # result.append(sentence[:split_point + 1].strip())
+                    log.debug(f"sentence_segmenter:{sentence[:split_point + 1].strip()}")
                     yield sentence[:split_point + 1].strip()
                     sentence = sentence[split_point + 1:].strip()
                 
                 # 添加剩余的部分
                 if sentence:
                     # result.append(sentence)
+                    log.debug(f"sentence_segmenter:{sentence}")
                     yield sentence
         # log.debug(f"sentence_segmenter out:{result}")
         # return result
