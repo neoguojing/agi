@@ -15,7 +15,7 @@ from cosyvoice.utils.file_utils import load_wav
 from collections import defaultdict
 from agi.config import TTS_MODEL_DIR as model_root, CACHE_DIR, TTS_SPEAKER_WAV,TTS_GPU_ENABLE,TTS_FILE_SAVE_PATH
 from agi.llms.base import CustomerLLM,parse_input_messages,path_to_preview_url
-from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables import RunnableConfig,run_in_executor
 from typing import Any, Optional,Union,ClassVar
 from pydantic import BaseModel, Field
 from collections.abc import (
@@ -139,7 +139,8 @@ class TextToSpeech(CustomerLLM):
         
     async def ainvoke(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
         log.debug("tts ainvoke ---------------")
-        return self.invoke(input, config=config, **kwargs)
+        # return self.invoke(input, config=config, **kwargs)
+        return await run_in_executor(config, self.invoke, input, config, **kwargs)
         
     def generate_audio_samples(self, text: str):
         """Generate audio samples from the input text."""
