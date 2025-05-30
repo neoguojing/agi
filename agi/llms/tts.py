@@ -266,7 +266,7 @@ class TextToSpeech(CustomerLLM):
             
             return audio_array
     # 句子分割
-    def sentence_segmenter(self,text, min_length=10, max_length=30):
+    def sentence_segmenter(self,text, min_length=20, max_length=50):
         log.debug(f"sentence_segmenter input:{text}")
         if len(text) < max_length:
             log.debug(f"sentence_segmenter:{text}")
