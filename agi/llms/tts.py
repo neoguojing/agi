@@ -71,7 +71,7 @@ class TextToSpeech(CustomerLLM):
                 model_path = model_root
                 if "cosyvoice" in model_path:
                     self.speaker_wav = load_wav(TTS_SPEAKER_WAV, 16000)
-                    self.tts = CosyVoice2(model_path, load_jit=False, load_trt=False, fp16=False)
+                    self.tts = CosyVoice2(model_path, load_jit=False, load_trt=False, fp16=False,use_flow_cache=True)
                     self.model = self.tts.model
                 else:
                     config_path = os.path.join(model_path, "config.json")
