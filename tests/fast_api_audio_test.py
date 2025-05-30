@@ -14,7 +14,7 @@ client = TestClient(app)
 # 测试列出文件 API
 def test_audio_stream():
     tenant_id = "test_tenant"
-    response = client.get(f"/audio_stream/{tenant_id}")
+    response = client.get(f"/v1/audio_stream/{tenant_id}")
     assert response.status_code == 200
     assert response.headers["Content-Type"] == "audio/L16; rate=24000; channels=1"
 

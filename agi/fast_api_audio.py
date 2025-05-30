@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from agi.llms.tts import TextToSpeech
 import numpy as np
 
-router_audio = APIRouter(prefix="/v1")
+
 
 def generate_pcm(pcm_queue: Queue, wait_timeout=1.0, idle_sleep=0.1):
     while True:
@@ -19,6 +19,7 @@ def generate_pcm(pcm_queue: Queue, wait_timeout=1.0, idle_sleep=0.1):
             # 避免忙等
             time.sleep(idle_sleep)
 
+router_audio = APIRouter(prefix="/v1")
 @router_audio.get("/audio_stream/{tenant_id}")
 def audio_stream(tenant_id: str):
     pcm_queue = TextToSpeech.get_queue(tenant_id)
