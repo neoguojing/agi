@@ -4,6 +4,7 @@ from queue import Queue, Empty
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from agi.llms.tts import TextToSpeech
+from agi.config import log
 import numpy as np
 
 
@@ -12,6 +13,7 @@ def generate_pcm(pcm_queue: Queue, wait_timeout=1.0, idle_sleep=0.1):
     while True:
         try:
             pcm_chunk = pcm_queue.get(timeout=wait_timeout)  # 等待数据
+            log.debug(f"generate_pcm:{len(pcm_chunk)}")
             yield pcm_chunk
         except Empty:
             # 没拿到数据，发送空包保持连接

@@ -337,7 +337,7 @@ class TextToSpeech(CustomerLLM):
             if len(chunk) < chunk_size:
                 padding = np.zeros(chunk_size - len(chunk), dtype=pcm_np.dtype)
                 chunk = np.concatenate([chunk, padding])
-
+            log.debug(f"send_pcm:{len(chunk.tobytes())}")
             queue.put(chunk.tobytes())
             offset += chunk_size
 
