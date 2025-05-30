@@ -147,7 +147,7 @@ class TextToSpeech(CustomerLLM):
         try:
             if self.is_gpu:
                 if "cosyvoice" in model_root:
-                    for c_idx, data in enumerate(self.tts.inference_cross_lingual(self.sentence_segmenter(text), self.speaker_wav, stream=False)):
+                    for c_idx, data in enumerate(self.tts.inference_cross_lingual(self.sentence_segmenter(text), self.speaker_wav, stream=True)):
                         tensor_data = data['tts_speech']
                         print("************",tensor_data.shape)
                         yield tensor_data
