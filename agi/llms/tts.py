@@ -95,6 +95,8 @@ class TextToSpeech(CustomerLLM):
 
     def invoke(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
         """Generate speech audio from input text."""
+        log.debug("tts invoke ---------------")
+
         self._load_model()
 
         user_id = config.get("configurable").get("user_id")
@@ -137,6 +139,7 @@ class TextToSpeech(CustomerLLM):
         ])
         
     async def ainvoke(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
+        log.debug("tts ainvoke ---------------")
         return self.invoke(input, config=config, **kwargs)
 
     
@@ -145,7 +148,7 @@ class TextToSpeech(CustomerLLM):
                config: Optional[RunnableConfig] = None,
                **kwargs: Any
     ) -> Iterator[AIMessageChunk]:
-        self._load_model()
+        log.debug("tts stream ---------------")
 
         input_str = None
         if isinstance(input,str):
@@ -165,7 +168,7 @@ class TextToSpeech(CustomerLLM):
                config: Optional[RunnableConfig] = None,
                **kwargs: Any
     ) -> AsyncIterator[AIMessageChunk]:
-        self._load_model()
+        log.debug("tts astream ---------------")
 
         input_str = None
         if isinstance(input,str):
@@ -304,6 +307,9 @@ class TextToSpeech(CustomerLLM):
             return audio_array
     # 句子分割
     def sentence_segmenter(self,text, min_length=10, max_length=30):
+        log.debug(f"sentence_segmenter input:{text}")
+        if len(text) < max_length:
+            return [text]
         import re
         # 使用正则表达式根据中英文标点进行分割
         sentence_endings = r'(?<=[。！？.!?])\s*'
@@ -346,7 +352,7 @@ class TextToSpeech(CustomerLLM):
                 # 添加剩余的部分
                 if sentence:
                     result.append(sentence)
-        
+        log.debug(f"sentence_segmenter out:{result}")
         return result
     
     def send_pcm(self,tenant_id: str,pcm_np: np.ndarray,chunk_size: int = 1024):
