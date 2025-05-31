@@ -58,7 +58,7 @@ class TextToSpeech(CustomerLLM):
         if tenant_id not in cls._queues:
             with cls._lock:  # 确保线程安全
                 if tenant_id not in cls._queues:
-                    cls._queues[tenant_id] = Queue(maxsize=100)
+                    cls._queues[tenant_id] = Queue(maxsize=1000)
         return cls._queues[tenant_id]
        
     def _load_model(self):
@@ -95,18 +95,17 @@ class TextToSpeech(CustomerLLM):
 
     def invoke(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
         """Generate speech audio from input text."""
-        log.debug("tts invoke ---------------")
-
+       
         self._load_model()
 
         user_id = config.get("configurable").get("user_id")
-
         input_str = None
         if isinstance(input,str):
             input_str = input
         else:
             _,input_str = parse_input_messages(input)
-        
+            
+        log.info(f"tts input: {input_str}")
         final_np_pcm = np.array([], dtype=np.int16)
         file_path = None
 
@@ -133,6 +132,7 @@ class TextToSpeech(CustomerLLM):
                 {"type": "audio", "audio": f'<audio src="{audio_source}" {audio_style} controls></audio>\n',"file_path":file_path,"text":input_str}
             ])
         
+        log.info(f"tts output: {audio_source}")
         return AIMessage(content=[
             {"type": "audio", "audio": audio_source,"text":input_str}
         ])
@@ -149,7 +149,7 @@ class TextToSpeech(CustomerLLM):
                 if "cosyvoice" in model_root:
                     for c_idx, data in enumerate(self.tts.inference_cross_lingual(self.sentence_segmenter(text), self.speaker_wav, stream=True)):
                         tensor_data = data['tts_speech']
-                        print("************",tensor_data.shape)
+                        print("************",self.tts.sample_rate,tensor_data)
                         yield tensor_data
                 else:
                     for sentence in self.sentence_segmenter(text):
@@ -245,7 +245,7 @@ class TextToSpeech(CustomerLLM):
         
         # 如果是浮动类型（如 float32），先缩放到 [-32768, 32767] 范围
         if np.issubdtype(audio_array.dtype, np.floating):
-            print("检测到浮动类型音频数据，正在进行归一化并转换为 int16。")
+            # print("检测到浮动类型音频数据，正在进行归一化并转换为 int16。")
             # 将浮动数值缩放到 int16 范围
             audio_array = np.clip(audio_array, -1.0, 1.0)  # 防止溢出
             audio_array = np.int16(audio_array * 32767)  # 缩放到 int16 范围
@@ -268,9 +268,8 @@ class TextToSpeech(CustomerLLM):
             return audio_array
     # 句子分割
     def sentence_segmenter(self,text, min_length=20, max_length=50):
-        log.debug(f"sentence_segmenter input:{text}")
         if len(text) < max_length:
-            log.debug(f"sentence_segmenter:{text}")
+            log.info(f"sentence_segmenter:{text}")
             yield text
 
         import re
@@ -295,7 +294,7 @@ class TextToSpeech(CustomerLLM):
         for sentence in sentences:
             if len(sentence) <= max_length:
                 # result.append(sentence)  # 如果句子长度小于或等于 max_length，直接添加
-                log.debug(f"sentence_segmenter:{sentence}")
+                log.info(f"sentence_segmenter:{sentence}")
                 yield sentence
             
             else:
@@ -312,33 +311,48 @@ class TextToSpeech(CustomerLLM):
                     
                     # 分割句子
                     # result.append(sentence[:split_point + 1].strip())
-                    log.debug(f"sentence_segmenter:{sentence[:split_point + 1].strip()}")
+                    log.info(f"sentence_segmenter:{sentence[:split_point + 1].strip()}")
                     yield sentence[:split_point + 1].strip()
                     sentence = sentence[split_point + 1:].strip()
                 
                 # 添加剩余的部分
                 if sentence:
                     # result.append(sentence)
-                    log.debug(f"sentence_segmenter:{sentence}")
+                    log.info(f"sentence_segmenter:{sentence}")
                     yield sentence
         # log.debug(f"sentence_segmenter out:{result}")
         # return result
     
-    def send_pcm(self,tenant_id: str,pcm_np: np.ndarray,chunk_size: int = 1024):
+    def send_pcm(self, tenant_id: str, pcm_np: np.ndarray, chunk_size: int = 1024):
         queue = self.get_queue(tenant_id)
-        total_len = len(pcm_np)
+        buffer = np.array([], dtype=np.int16)  # int16 数据类型匹配
+
         offset = 0
+        total_len = len(pcm_np)
 
         while offset < total_len:
             end = min(offset + chunk_size, total_len)
             chunk = pcm_np[offset:end]
-
-            # 补齐小于 chunk_size 的分片
-            if len(chunk) < chunk_size:
-                padding = np.zeros(chunk_size - len(chunk), dtype=pcm_np.dtype)
-                chunk = np.concatenate([chunk, padding])
-            log.debug(f"send_pcm:{len(chunk.tobytes())}")
-            queue.put(chunk.tobytes())
+            buffer = np.concatenate([buffer, chunk])
             offset += chunk_size
+
+            while len(buffer) >= chunk_size:
+                to_send = buffer[:chunk_size]
+                try:
+                    queue.put(to_send.tobytes(), block=False)
+                    log.debug(f"send_pcm: {len(to_send)} samples, {len(to_send.tobytes())} bytes")
+                except queue.Full:
+                    log.warning("Queue full, dropping PCM chunk.")
+                buffer = buffer[chunk_size:]
+
+        # 最后剩余不足chunk_size的部分，进行补零填充
+        if len(buffer) > 0:
+            padding = np.zeros(chunk_size - len(buffer), dtype=np.int16)
+            final_chunk = np.concatenate([buffer, padding])
+            try:
+                queue.put(final_chunk.tobytes(), block=False)
+                log.debug(f"send_pcm (final): {len(final_chunk)} samples, {len(final_chunk.tobytes())} bytes")
+            except queue.Full:
+                log.warning("Queue full, dropping final PCM chunk.")
 
 

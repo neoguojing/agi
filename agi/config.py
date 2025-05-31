@@ -94,6 +94,7 @@ def init_langchain_debug():
     os.environ["LANGSMITH_API_KEY"] = os.getenv("LANGSMITH_API_KEY", "")
     os.environ["LANGSMITH_PROJECT"] = os.getenv("LANGSMITH_PROJECT", "agi")
 
+logging.getLogger("cosyvoice_tts").setLevel(logging.ERROR)
 AGI_DEBUG = get_env_bool("AGI_DEBUG")
 
 def init_logger() -> logging.Logger:
