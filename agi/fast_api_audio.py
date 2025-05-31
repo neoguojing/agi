@@ -8,10 +8,10 @@ from agi.config import log
 import numpy as np
 
 def generate_pcm(pcm_queue: Queue, wait_timeout=0.2, sample_rate=24000, chunk_size=1024):
-    frame_duration = chunk_size / sample_rate  # 每帧的播放时长（秒）
+    # frame_duration = chunk_size / sample_rate  # 每帧的播放时长（秒）
 
     while True:
-        start_time = time.time()
+        # start_time = time.time()
         try:
             # pcm_chunk = pcm_queue.get(timeout=wait_timeout)
             pcm_chunk = pcm_queue.get(block=True)
@@ -23,12 +23,12 @@ def generate_pcm(pcm_queue: Queue, wait_timeout=0.2, sample_rate=24000, chunk_si
         yield pcm_chunk
 
         # 控制频率：保证下一帧在正确时间发送
-        elapsed = time.time() - start_time
-        sleep_time = frame_duration - elapsed
-        if sleep_time > 0:
-            time.sleep(sleep_time)
-        else:
-            log.debug(f"Processing lagging behind by {-sleep_time:.4f}s")
+        # elapsed = time.time() - start_time
+        # sleep_time = frame_duration - elapsed
+        # if sleep_time > 0:
+        #     time.sleep(sleep_time)
+        # else:
+        #     log.debug(f"Processing lagging behind by {-sleep_time:.4f}s")
 
 
 router_audio = APIRouter(prefix="/v1")

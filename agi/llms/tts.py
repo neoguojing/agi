@@ -30,7 +30,7 @@ import io
 from torch.serialization import add_safe_globals
 from agi.config import log
 
-from queue import Queue
+from queue import Queue,Full
 from threading import Lock
 
 audio_style = "width: 300px; height: 50px;"  # 添加样式
@@ -71,7 +71,7 @@ class TextToSpeech(CustomerLLM):
                 model_path = model_root
                 if "cosyvoice" in model_path:
                     self.speaker_wav = load_wav(TTS_SPEAKER_WAV, 16000)
-                    self.tts = CosyVoice2(model_path, load_jit=False, load_trt=False, fp16=False,use_flow_cache=True)
+                    self.tts = CosyVoice2(model_path, load_jit=False, load_trt=False, fp16=False,use_flow_cache=False)
                     self.model = self.tts.model
                 else:
                     config_path = os.path.join(model_path, "config.json")
@@ -147,10 +147,12 @@ class TextToSpeech(CustomerLLM):
         try:
             if self.is_gpu:
                 if "cosyvoice" in model_root:
-                    for c_idx, data in enumerate(self.tts.inference_cross_lingual(self.sentence_segmenter(text), self.speaker_wav, stream=True)):
-                        tensor_data = data['tts_speech']
-                        print("************",self.tts.sample_rate,tensor_data)
-                        yield tensor_data
+                    # 流式合成，超长文本报错
+                    for sentence in self.sentence_segmenter(text):
+                        for c_idx, data in enumerate(self.tts.inference_cross_lingual(sentence, self.speaker_wav, stream=False)):
+                            tensor_data = data['tts_speech']
+                            print("************",self.tts.sample_rate,tensor_data)
+                            yield tensor_data
                 else:
                     for sentence in self.sentence_segmenter(text):
                         yield self.tts.tts(text=sentence, speaker_wav=self.speaker_wav, language=self.language)
@@ -270,7 +272,8 @@ class TextToSpeech(CustomerLLM):
     def sentence_segmenter(self,text, min_length=20, max_length=50):
         if len(text) < max_length:
             log.info(f"sentence_segmenter:{text}")
-            yield text
+            # yield text
+            return [text]
 
         import re
         # 使用正则表达式根据中英文标点进行分割
@@ -290,12 +293,12 @@ class TextToSpeech(CustomerLLM):
                 i += 1
         
         # 拆分大于 max_length 的句子
-        # result = []
+        result = []
         for sentence in sentences:
             if len(sentence) <= max_length:
-                # result.append(sentence)  # 如果句子长度小于或等于 max_length，直接添加
-                log.info(f"sentence_segmenter:{sentence}")
-                yield sentence
+                result.append(sentence)  # 如果句子长度小于或等于 max_length，直接添加
+                # log.info(f"sentence_segmenter:{sentence}")
+                # yield sentence
             
             else:
                 while len(sentence) > max_length:
@@ -310,18 +313,18 @@ class TextToSpeech(CustomerLLM):
                             split_point = max_length
                     
                     # 分割句子
-                    # result.append(sentence[:split_point + 1].strip())
-                    log.info(f"sentence_segmenter:{sentence[:split_point + 1].strip()}")
-                    yield sentence[:split_point + 1].strip()
+                    result.append(sentence[:split_point + 1].strip())
+                    # log.info(f"sentence_segmenter:{sentence[:split_point + 1].strip()}")
+                    # yield sentence[:split_point + 1].strip()
                     sentence = sentence[split_point + 1:].strip()
                 
                 # 添加剩余的部分
                 if sentence:
-                    # result.append(sentence)
-                    log.info(f"sentence_segmenter:{sentence}")
-                    yield sentence
-        # log.debug(f"sentence_segmenter out:{result}")
-        # return result
+                    result.append(sentence)
+                    # log.info(f"sentence_segmenter:{sentence}")
+                    # yield sentence
+        log.debug(f"sentence_segmenter out:{result}")
+        return result
     
     def send_pcm(self, tenant_id: str, pcm_np: np.ndarray, chunk_size: int = 1024):
         queue = self.get_queue(tenant_id)
@@ -341,7 +344,7 @@ class TextToSpeech(CustomerLLM):
                 try:
                     queue.put(to_send.tobytes(), block=False)
                     log.debug(f"send_pcm: {len(to_send)} samples, {len(to_send.tobytes())} bytes")
-                except queue.Full:
+                except Full:
                     log.warning("Queue full, dropping PCM chunk.")
                 buffer = buffer[chunk_size:]
 
@@ -352,7 +355,7 @@ class TextToSpeech(CustomerLLM):
             try:
                 queue.put(final_chunk.tobytes(), block=False)
                 log.debug(f"send_pcm (final): {len(final_chunk)} samples, {len(final_chunk.tobytes())} bytes")
-            except queue.Full:
+            except Full:
                 log.warning("Queue full, dropping final PCM chunk.")
 
 
