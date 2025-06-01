@@ -9,22 +9,14 @@ import numpy as np
 
 def generate_pcm(pcm_queue: Queue, wait_timeout=0.2, sample_rate=24000, chunk_size=1024):
     # frame_duration = chunk_size / sample_rate  # 每帧的播放时长（秒）
-    wait_empty_times = 0
     while True:
         # start_time = time.time()
         try:
-            # 空5次之后，发送END_TAG，让客户端主动结束当前
-            if wait_empty_times >= 5:
-                wait_empty_times = 0
-                log.info(f"generate_pcm: end tag send")
-                yield END_TAG
-                
-            pcm_chunk = pcm_queue.get(timeout=wait_timeout)
-            # pcm_chunk = pcm_queue.get(block=True)
+            # pcm_chunk = pcm_queue.get(timeout=wait_timeout)
+            pcm_chunk = pcm_queue.get(block=True)
             log.debug(f"generate_pcm: {len(pcm_chunk)} bytes")
         except Empty:
             pcm_chunk = b''  # 发空包保持连接
-            wait_empty_times += 1
             # pcm_chunk = b'\x00' * chunk_size * 2
 
         yield pcm_chunk
