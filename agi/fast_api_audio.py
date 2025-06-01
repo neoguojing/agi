@@ -7,7 +7,7 @@ from agi.llms.tts import TextToSpeech,END_TAG
 from agi.config import log
 import numpy as np
 
-def generate_pcm(pcm_queue: Queue, wait_timeout=0.2, sample_rate=24000, chunk_size=1024):
+def generate_pcm(pcm_queue: Queue, wait_timeout=0.2, sample_rate=24000, chunk_size=480):
     # frame_duration = chunk_size / sample_rate  # 每帧的播放时长（秒）
     while True:
         # start_time = time.time()
@@ -17,6 +17,7 @@ def generate_pcm(pcm_queue: Queue, wait_timeout=0.2, sample_rate=24000, chunk_si
             log.debug(f"generate_pcm: {len(pcm_chunk)} bytes")
         except Empty:
             pcm_chunk = b''  # 发空包保持连接
+            log.warning(f"generate_pcm: empty")
             # pcm_chunk = b'\x00' * chunk_size * 2
 
         yield pcm_chunk

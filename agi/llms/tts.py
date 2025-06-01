@@ -329,7 +329,7 @@ class TextToSpeech(CustomerLLM):
         log.debug(f"sentence_segmenter out:{result}")
         return result
     
-    def send_pcm(self, tenant_id: str, pcm_np: np.ndarray, chunk_size: int = 1024 ,end_tag=None):
+    def send_pcm(self, tenant_id: str, pcm_np: np.ndarray, chunk_size: int = 480 ,end_tag=None):
         queue = self.get_queue(tenant_id)
         # 查看是否结束
         if end_tag:
@@ -357,8 +357,9 @@ class TextToSpeech(CustomerLLM):
 
         # 最后剩余不足chunk_size的部分，进行补零填充
         if len(buffer) > 0:
-            padding = np.zeros(chunk_size - len(buffer), dtype=np.int16)
-            final_chunk = np.concatenate([buffer, padding])
+            # padding = np.zeros(chunk_size - len(buffer), dtype=np.int16)
+            # final_chunk = np.concatenate([buffer, padding])
+            final_chunk = buffer
             try:
                 queue.put(final_chunk.tobytes(), block=False)
                 log.debug(f"send_pcm (final): {len(final_chunk)} samples, {len(final_chunk.tobytes())} bytes")
