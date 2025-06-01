@@ -43,6 +43,7 @@ class TextToSpeech(CustomerLLM):
     is_gpu: bool = Field(default=TTS_GPU_ENABLE)
     language: str = Field(default="zh-cn")
     save_file: bool = Field(default=True)
+    output_rate: int = Field(default=16000)
 
      # ✅ 明确声明为类变量，避免 Pydantic 处理
     _queues: ClassVar[dict[str, Queue]] = {}
@@ -59,7 +60,7 @@ class TextToSpeech(CustomerLLM):
         if tenant_id not in cls._queues:
             with cls._lock:  # 确保线程安全
                 if tenant_id not in cls._queues:
-                    cls._queues[tenant_id] = Queue(maxsize=1000)
+                    cls._queues[tenant_id] = Queue(maxsize=3000)
         return cls._queues[tenant_id]
        
     def _load_model(self):
@@ -74,6 +75,7 @@ class TextToSpeech(CustomerLLM):
                     self.speaker_wav = load_wav(TTS_SPEAKER_WAV, 16000)
                     self.tts = CosyVoice2(model_path, load_jit=False, load_trt=False, fp16=False,use_flow_cache=False)
                     self.model = self.tts.model
+                    self.output_rate = self.tts.sample_rate
                 else:
                     config_path = os.path.join(model_path, "config.json")
                     log.info("use ts_models--multilingual--multi-dataset--xtts_v2")
@@ -126,7 +128,7 @@ class TextToSpeech(CustomerLLM):
             np.append(final_np_pcm,np_pcm)
 
         # 发送结束标记
-        self.send_pcm(user_id,None,end_tag=END_TAG)
+        # self.send_pcm(user_id,None,end_tag=END_TAG)
         # 默认返回路径
         audio_source = self.np_pcm_to_wave(final_np_pcm)
         # 是否需要编码html
@@ -272,7 +274,7 @@ class TextToSpeech(CustomerLLM):
             
             return audio_array
     # 句子分割
-    def sentence_segmenter(self,text, min_length=20, max_length=50):
+    def sentence_segmenter(self,text, min_length=20, max_length=30):
         if len(text) < max_length:
             log.info(f"sentence_segmenter:{text}")
             # yield text
@@ -331,12 +333,15 @@ class TextToSpeech(CustomerLLM):
     
     def send_pcm(self, tenant_id: str, pcm_np: np.ndarray, chunk_size: int = 480 ,end_tag=None):
         queue = self.get_queue(tenant_id)
-        # 查看是否结束
+    
         if end_tag:
-             queue.put(END_TAG)
-             return
-         
-        buffer = np.array([], dtype=np.int16)  # int16 数据类型匹配
+            queue.put(END_TAG)
+            return
+
+        if self.output_rate == 16000:
+            chunk_size = 320
+            
+        buffer = np.array([], dtype=np.int16)
         offset = 0
         total_len = len(pcm_np)
 
@@ -348,17 +353,20 @@ class TextToSpeech(CustomerLLM):
 
             while len(buffer) >= chunk_size:
                 to_send = buffer[:chunk_size]
+
                 try:
                     queue.put(to_send.tobytes(), block=False)
-                    log.debug(f"send_pcm: {len(to_send)} samples, {len(to_send.tobytes())} bytes")
+                    time.sleep(0.01)
                 except Full:
                     log.warning("Queue full, dropping PCM chunk.")
+                    # 不推进 expected_next_time
+                    buffer = buffer[chunk_size:]
+                    continue
+                
                 buffer = buffer[chunk_size:]
 
-        # 最后剩余不足chunk_size的部分，进行补零填充
+        # 发送剩余帧（不足 chunk_size）
         if len(buffer) > 0:
-            # padding = np.zeros(chunk_size - len(buffer), dtype=np.int16)
-            # final_chunk = np.concatenate([buffer, padding])
             final_chunk = buffer
             try:
                 queue.put(final_chunk.tobytes(), block=False)
