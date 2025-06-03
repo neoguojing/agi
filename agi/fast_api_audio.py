@@ -9,6 +9,7 @@ from agi.config import log,TTS_MODEL_DIR
 import numpy as np
 from typing import Generator, Optional
 import asyncio
+import json
 
 def generate_pcm(
     pcm_queue: Queue[bytes],
@@ -88,12 +89,34 @@ async def audio_stream_ws(websocket: WebSocket, tenant_id: str):
     pcm_queue = TextToSpeech.get_queue(tenant_id)
     
     try:
+        # 等待客户端初始配置请求
+        init_msg = await websocket.receive_text()
+        if init_msg.startswith("config_request"):
+            config = json.loads(init_msg)
+            # 返回服务器支持的音频配置
+            await websocket.send_text(
+                json.dumps({
+                    "type": "config",
+                    "rate": 24000 if "cosyvoice" in TTS_MODEL_DIR else 16000,
+                    "channels": 1
+                })
+            )
+
+        # 主音频流循环
         while True:
             if not pcm_queue.empty():
                 frame = await pcm_queue.get()
                 await websocket.send_bytes(frame)
             else:
-                await asyncio.sleep(0.01)  # 避免空转
+                # 检查是否有控制消息
+                try:
+                    ctrl_msg = await websocket.receive_json(timeout=0.01)
+                    if ctrl_msg.get("type") == "pause":
+                        # 处理暂停逻辑
+                        pass
+                except:
+                    await asyncio.sleep(0.01)
+                    
     except Exception as e:
         print(f"WebSocket错误: {e}")
     finally:
