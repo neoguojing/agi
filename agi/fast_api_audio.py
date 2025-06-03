@@ -6,39 +6,62 @@ from fastapi.responses import StreamingResponse
 from agi.llms.tts import TextToSpeech,END_TAG
 from agi.config import log,TTS_MODEL_DIR
 import numpy as np
+from typing import Generator, Optional
 
-def generate_pcm(pcm_queue: Queue, wait_timeout=0.5, sample_rate=24000, chunk_size=480):
-    frame_duration = chunk_size / sample_rate
-    expected_next_time = time.time()
-
-    while True:
-        try:
-            pcm_chunk = pcm_queue.get(block=False,timeout=frame_duration*2)
-            # pcm_chunk = pcm_queue.get(block=True)
-        except Empty:
-            pcm_chunk = b''
-            # log.warning("generate_pcm: TTS 未及时产出帧，发送空帧防断")
-
-        now = time.time()
+def generate_pcm(
+    pcm_queue: Queue[bytes],
+    sample_rate: int = 24000,
+    chunk_size: int = 480,
+    wait_timeout: float = 0.1
+) -> Generator[bytes, None, None]:
+    """生成PCM音频流的生成器函数
+    
+    参数:
+        pcm_queue: 输入PCM数据队列
+        sample_rate: 采样率(Hz)
+        chunk_size: 每帧采样点数
+        wait_timeout: 队列获取超时时间(s)
         
-        # 如果和节奏时间相差太久，说明被阻塞了，直接重置节奏轨
-        if abs(now - expected_next_time) > frame_duration * 2:
-            expected_next_time = now
-            # log.warning(f"[generate_pcm] 长时间阻塞，重置节奏时间轨道")
-            
-        drift = now - expected_next_time
-        if abs(drift) > 0.005:
-            log.debug(f"[generate_pcm] 节奏抖动 {drift:+.4f}s")
-
-        # 控制节奏
-        # sleep_time = expected_next_time + frame_duration - time.time()
-        # if sleep_time > 0:
-        #     time.sleep(sleep_time)
-        # else:
-        #     log.warning(f"[generate_pcm] 滞后 {-sleep_time:.4f}s")
-
-        expected_next_time += frame_duration
+    返回:
+        生成器，每次yield一个PCM数据块
+        
+    注意:
+        修改了时间控制逻辑，避免wait_timeout过长导致的节奏问题
+    """
+    frame_duration = chunk_size / sample_rate  # 每帧持续时间(秒)
+    next_frame_time = time.monotonic()  # 使用单调时钟避免时间回退
+    
+    while True:
+        # 计算最大等待时间不超过帧持续时间
+        max_wait = min(wait_timeout, frame_duration * 1.5)  # 最多等待1.5帧时间
+        
+        # 尝试获取数据（限制等待时间）
+        try:
+            pcm_chunk = pcm_queue.get(timeout=max_wait)
+        except Empty:
+            # 生成静音帧(16bit PCM)
+            pcm_chunk = bytes(chunk_size * 2)
+        
+        # 计算处理后的时间
+        current_time = time.monotonic()
+        elapsed = current_time - next_frame_time
+        
+        # 如果滞后超过3帧，重置时间基准
+        if elapsed > frame_duration * 3:
+            next_frame_time = current_time + frame_duration
+            yield pcm_chunk
+            continue
+        
+        # 正常节奏控制
         yield pcm_chunk
+        
+        # 计算下一帧时间并睡眠
+        next_frame_time += frame_duration
+        sleep_time = next_frame_time - time.monotonic()
+        
+        # 最小睡眠阈值避免过度CPU占用
+        if sleep_time > 0.001:
+            time.sleep(sleep_time)
 
 
 router_audio = APIRouter(prefix="/v1")

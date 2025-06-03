@@ -125,7 +125,7 @@ class TextToSpeech(CustomerLLM):
             list_pcm = self.uniform_model_output(sample)
             np_pcm = self.list_pcm_normalization_int16(list_pcm)
             self.send_pcm(user_id,np_pcm)
-            np.append(final_np_pcm,np_pcm)
+            final_np_pcm = np.append(final_np_pcm,np_pcm)
 
         # 发送结束标记
         # self.send_pcm(user_id,None,end_tag=END_TAG)
