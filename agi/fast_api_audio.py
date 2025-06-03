@@ -2,11 +2,13 @@ import threading
 import time
 from queue import Queue, Empty
 from fastapi import APIRouter
+from fastapi import WebSocket
 from fastapi.responses import StreamingResponse
 from agi.llms.tts import TextToSpeech,END_TAG
 from agi.config import log,TTS_MODEL_DIR
 import numpy as np
 from typing import Generator, Optional
+import asyncio
 
 def generate_pcm(
     pcm_queue: Queue[bytes],
@@ -79,3 +81,20 @@ def audio_stream(tenant_id: str):
         "Content-Type": content_type
     }
     return StreamingResponse(generate_pcm(pcm_queue), headers=headers)
+
+@router_audio.websocket("/ws/audio_stream/{tenant_id}")
+async def audio_stream_ws(websocket: WebSocket, tenant_id: str):
+    await websocket.accept()
+    pcm_queue = TextToSpeech.get_queue(tenant_id)
+    
+    try:
+        while True:
+            if not pcm_queue.empty():
+                frame = await pcm_queue.get()
+                await websocket.send_bytes(frame)
+            else:
+                await asyncio.sleep(0.01)  # 避免空转
+    except Exception as e:
+        print(f"WebSocket错误: {e}")
+    finally:
+        await websocket.close()
