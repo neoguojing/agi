@@ -37,31 +37,33 @@ def generate_pcm(
         
         # 尝试获取数据（限制等待时间）
         try:
-            pcm_chunk = pcm_queue.get(timeout=max_wait)
+            # pcm_chunk = pcm_queue.get(timeout=max_wait)
+            pcm_chunk = pcm_queue.get(block=True)
         except Empty:
             # 生成静音帧(16bit PCM)
             pcm_chunk = bytes(chunk_size * 2)
         
         # 计算处理后的时间
-        current_time = time.monotonic()
-        elapsed = current_time - next_frame_time
+        # current_time = time.monotonic()
+        # elapsed = current_time - next_frame_time
         
-        # 如果滞后超过3帧，重置时间基准
-        if elapsed > frame_duration * 3:
-            next_frame_time = current_time + frame_duration
-            yield pcm_chunk
-            continue
+        # # 如果滞后超过3帧，重置时间基准
+        # if elapsed > frame_duration * 3:
+        #     next_frame_time = current_time + frame_duration
+        #     yield pcm_chunk
+        #     continue
         
         # 正常节奏控制
         yield pcm_chunk
         
+        time.sleep(0.001)
         # 计算下一帧时间并睡眠
-        next_frame_time += frame_duration
-        sleep_time = next_frame_time - time.monotonic()
+        # next_frame_time += frame_duration
+        # sleep_time = next_frame_time - time.monotonic()
         
-        # 最小睡眠阈值避免过度CPU占用
-        if sleep_time > 0.001:
-            time.sleep(sleep_time)
+        # # 最小睡眠阈值避免过度CPU占用
+        # if sleep_time > 0.001:
+        #     time.sleep(sleep_time)
 
 
 router_audio = APIRouter(prefix="/v1")
