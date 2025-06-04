@@ -70,6 +70,7 @@ def generate_pcm(
 
 
 router_audio = APIRouter(prefix="/v1")
+
 @router_audio.get("/audio_stream/{tenant_id}")
 def audio_stream(tenant_id: str):
     pcm_queue = TextToSpeech.get_queue(tenant_id)
@@ -90,32 +91,30 @@ async def audio_stream_ws(websocket: WebSocket, tenant_id: str):
     
     try:
         # 等待客户端初始配置请求
-        init_msg = await websocket.receive_text()
-        if init_msg.startswith("config_request"):
-            config = json.loads(init_msg)
-            # 返回服务器支持的音频配置
-            await websocket.send_text(
-                json.dumps({
-                    "type": "config",
-                    "rate": 24000 if "cosyvoice" in TTS_MODEL_DIR else 16000,
-                    "channels": 1
-                })
-            )
+        init_msg = await websocket.receive_json()
+        if init_msg.get("type") == "config_request":
+            await websocket.send_json({
+                "type": "config",
+                "rate": 24000 if "cosyvoice" in TTS_MODEL_DIR else 16000,
+                "channels": 1
+            })
 
         # 主音频流循环
         while True:
-            if not pcm_queue.empty():
-                frame = await pcm_queue.get()
-                await websocket.send_bytes(frame)
-            else:
-                # 检查是否有控制消息
-                try:
-                    ctrl_msg = await websocket.receive_json(timeout=0.01)
-                    if ctrl_msg.get("type") == "pause":
-                        # 处理暂停逻辑
-                        pass
-                except:
-                    await asyncio.sleep(0.01)
+            try:
+                frame = pcm_queue.get(block=False,timeout=0.01)
+                if frame:
+                    await websocket.send_bytes(frame)
+            except asyncio.QueueEmpty:
+                # try:
+                #     ctrl_msg = await websocket.receive_json()
+                #     if ctrl_msg.get("type") == "pause":
+                #         # pause logic here
+                #         pass
+                # except asyncio.TimeoutError:
+                pass
+            finally:
+                await asyncio.sleep(0.01)
                     
     except Exception as e:
         print(f"WebSocket错误: {e}")
