@@ -28,10 +28,11 @@ async def audio_stream_ws(websocket: WebSocket, tenant_id: str):
                 if frame:
                     await websocket.send_bytes(frame)
             except Empty:  # 显式捕获空队列异常
-                await websocket.send_json({
-                    "type": "event",
-                    "data": "empty"
-                })
+                # await websocket.send_json({
+                #     "type": "event",
+                #     "data": "empty"
+                # })
+                pass
             except Exception as e:
                 log.error(f"帧处理异常: {e}")
                 break
