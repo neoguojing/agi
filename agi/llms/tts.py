@@ -34,7 +34,6 @@ from queue import Queue,Full
 from threading import Lock
 
 audio_style = "width: 300px; height: 50px;"  # 添加样式
-END_TAG = b'\x00' * 8192
 # for torch 2.6
 add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
 class TextToSpeech(CustomerLLM):
@@ -127,8 +126,6 @@ class TextToSpeech(CustomerLLM):
             self.send_pcm(user_id,np_pcm)
             final_np_pcm = np.append(final_np_pcm,np_pcm)
 
-        # 发送结束标记
-        # self.send_pcm(user_id,None,end_tag=END_TAG)
         # 默认返回路径
         audio_source = self.np_pcm_to_wave(final_np_pcm)
         # 是否需要编码html
@@ -331,12 +328,8 @@ class TextToSpeech(CustomerLLM):
         log.debug(f"sentence_segmenter out:{result}")
         return result
     
-    def send_pcm(self, tenant_id: str, pcm_np: np.ndarray, chunk_size: int = 480 ,end_tag=None):
+    def send_pcm(self, tenant_id: str, pcm_np: np.ndarray, chunk_size: int = 480):
         queue = self.get_queue(tenant_id)
-    
-        if end_tag:
-            queue.put(END_TAG)
-            return
 
         if self.output_rate == 16000:
             chunk_size = 320
