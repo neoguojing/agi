@@ -35,6 +35,9 @@ from queue import Queue,Full
 from threading import Lock
 
 audio_style = "width: 300px; height: 50px;"  # 添加样式
+cn_points = ['。', '！', '？']
+en_points = ['.', '!', '?']
+
 # for torch 2.6
 add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
 class TextToSpeech(CustomerLLM):
@@ -286,9 +289,9 @@ class TextToSpeech(CustomerLLM):
             log.info(f"sentence_segmenter:{text}")
             # yield text
             return [text]
-        
+        is_cn = self.is_chinese_text(text)
         sentence_endings = r'(?<=[.!?])\s+'
-        if self.is_chinese_text(text):
+        if is_cn:
             # 中文分割：匹配 “。”、“！”、“？” 作为断句符号
             # (?<=[。！？]) 表示在这些标点之后进行分割，\s* 可以吃掉分割符后面的空白或换行
             sentence_endings = r'(?<=[。！？])\s*'
@@ -317,7 +320,10 @@ class TextToSpeech(CustomerLLM):
             else:
                 while len(sentence) > max_length:
                     # 优先在较大的标点符号后拆分，如：句号（。）、问号（？）等
-                    split_point = max(sentence.rfind(p, 0, max_length) for p in ['。', '！', '？', '.', '!', '?'])
+                    target_points = en_points
+                    if is_cn:
+                        target_points = cn_points
+                    split_point = max(sentence.rfind(p, 0, max_length) for p in target_points)
                     
                     if split_point == -1:  # 如果找不到大的标点符号，则尝试更小的标点符号（如逗号）
                         # 在中英文逗号、分号、冒号后拆分
