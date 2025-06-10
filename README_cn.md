@@ -73,8 +73,8 @@ GPU显存： 初始：2550MB 峰值：20GB
 - 使用qwen2.5 omni3b模型替换7b DONE
 - 语言请求绕过need_speech的问题
 - rag的决策不够精确 需要更加宏大的方案 pedding
-- speech to text 过滤非法输入 test
-- 语音流式处理方案
+- speech to text 过滤非法输入 Done
+- 语音流式处理方案 Done
 - agi自动测试
 ## OPENWEBUI 修改
 - 新增: backend/open_webui/routers/agi.py

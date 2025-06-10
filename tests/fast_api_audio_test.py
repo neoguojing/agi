@@ -1,35 +1,40 @@
-
+import pytest
+import asyncio
+import json
 from fastapi.testclient import TestClient
-from agi.fastapi_agi import app
-from agi.config import log
-from agi.llms.tts import TextToSpeech 
-import numpy as np
+from websockets.connect import connect
+from starlette.websockets import WebSocketDisconnect
 
-# 创建测试客户端
+from agi.fastapi_agi import app  # 替换为你的实际 FastAPI 实例名
+
 client = TestClient(app)
 
-# 测试列出文件 API
-def test_audio_stream():
+@pytest.mark.asyncio
+async def test_audio_stream_ws(monkeypatch):
     tenant_id = "test_tenant"
 
-    dummy_pcm = np.ones(1024, dtype=np.int16)
-    TextToSpeech.get_queue(tenant_id).put(dummy_pcm.tobytes())
+    # 模拟 TTS 模块的 get_queue 方法，返回一个假的队列
+    class FakeQueue:
+        def get(self, block=False, timeout=0):
+            return b"\x00\x01\x02\x03"  # 假的 PCM 数据
 
+    from agi.llms.tts import TextToSpeech  # 替换为实际模块
+    monkeypatch.setattr(TextToSpeech, "get_queue", lambda tid: FakeQueue())
 
-    response = client.get(f"/v1/audio_stream/{tenant_id}")
-    assert response.status_code == 200
-    assert response.headers["Content-Type"] == "audio/L16; rate=24000; channels=1"
+    # 启动 FastAPI 测试服务器
+    import websockets
 
-    # 读取几块 PCM 数据
-    chunk_count = 0
-    for chunk in response.iter_content(chunk_size=2048):  # 1024 samples x 2 bytes
-        print(len(chunk))
-        print(chunk)
+    async with websockets.connect(f"ws://localhost:8000/v1/ws/audio_stream/{tenant_id}") as websocket:
+        # 发送初始配置请求
+        await websocket.send(json.dumps({"type": "config_request"}))
+        config_resp = await websocket.recv()
+        config_data = json.loads(config_resp)
+        
+        assert config_data["type"] == "config"
+        assert config_data["rate"] in (16000, 24000)
+        assert config_data["channels"] == 1
 
-        assert isinstance(chunk, bytes)
-        assert len(chunk) == 2048
-        chunk_count += 1
-        if chunk_count >= 2:
-            break
-
-    assert chunk_count >= 1
+        # 尝试接收一帧音频数据
+        audio_frame = await websocket.recv()
+        assert isinstance(audio_frame, bytes)
+        assert len(audio_frame) > 0
