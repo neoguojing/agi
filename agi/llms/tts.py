@@ -136,12 +136,12 @@ class TextToSpeech(CustomerLLM):
         if kwargs.get('html') is True:
             return AIMessage(content=[
                 {"type": "audio", "audio": f'<audio src="{audio_source}" {audio_style} controls></audio>\n',"file_path":file_path,"text":input_str}
-            ])
+            ],response_metadata={"finish_reason":"stop"})
         
         log.info(f"tts output: {audio_source}")
         return AIMessage(content=[
             {"type": "audio", "audio": audio_source,"text":input_str}
-        ])
+        ],response_metadata={"finish_reason":"stop"})
         
     async def ainvoke(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
         log.debug("tts ainvoke ---------------")

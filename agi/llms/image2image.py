@@ -103,7 +103,7 @@ class Image2Image(CustomerLLM):
             image_source += f'<p>{prompt}</p>'
 
         # Return AIMessage containing formatted image response and the image itself
-        return AIMessage(content=[{"type": "image", "image": image_source}])
+        return AIMessage(content=[{"type": "image", "image": image_source}],response_metadata={"finish_reason":"stop"})
     
     @property
     def _identifying_params(self) -> Mapping[str, Any]:

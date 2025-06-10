@@ -173,8 +173,7 @@ class AgiGraph:
             log.info(f"to tts:{state['messages'][-1]}")
             return "tts"
         
-        return END
-    
+        return END    
         
     async def invoke(self,input:State) -> State:
         config={"configurable": {"user_id": input.get("user_id","default_tenant"), "conversation_id": input.get("conversation_id",""),

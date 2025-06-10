@@ -103,7 +103,7 @@ class Text2Image(CustomerLLM):
         if html:
             image_source = f'<img src="{image_source}" {style}>\n'
             
-        result = AIMessage(content=[{"type": "image", "image": image_source}])
+        result = AIMessage(content=[{"type": "image", "image": image_source}],response_metadata={"finish_reason":"stop"})
         # log.debug("#########1",result)
         return result
 
