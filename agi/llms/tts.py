@@ -1,5 +1,6 @@
 import os
 import time
+import re
 from datetime import date
 from pathlib import Path
 import torch
@@ -270,16 +271,27 @@ class TextToSpeech(CustomerLLM):
                 audio_array = np.int16(audio_array)  # 如果数据范围很小，直接转换
             
             return audio_array
+    
+    def is_chinese_text(self,text: str) -> bool:
+        """
+        简单判断文本中是否含有中文汉字字符，
+        若含有，则认为是中文文本；否则认为非中文文本。
+        """
+        # 常用汉字范围：\u4e00-\u9fff；如果想扩大，也可包括扩展区，但通常基础范围足够
+        return bool(re.search(r'[\u4e00-\u9fff]', text))
+
     # 句子分割
     def sentence_segmenter(self,text, min_length=30, max_length=50):
         if len(text) < max_length:
             log.info(f"sentence_segmenter:{text}")
             # yield text
             return [text]
-
-        import re
-        # 使用正则表达式根据中英文标点进行分割
-        sentence_endings = r'(?<=[。！？.!?])\s*'
+        
+        sentence_endings = r'(?<=[.!?])\s+'
+        if self.is_chinese_text(text):
+            # 中文分割：匹配 “。”、“！”、“？” 作为断句符号
+            # (?<=[。！？]) 表示在这些标点之后进行分割，\s* 可以吃掉分割符后面的空白或换行
+            sentence_endings = r'(?<=[。！？])\s*'
         sentences = re.split(sentence_endings, text)
         
         # 移除空的句子
