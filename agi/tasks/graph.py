@@ -274,8 +274,8 @@ class AgiGraph:
                                     last_message.content = think_content
                                     last_message.response_metadata["finish_reason"] = None
                                     yield event
-                                    last_message.content = other_content
-                                    last_message.response_metadata["finish_reason"] = "stop"
+                                last_message.content = other_content
+                                last_message.response_metadata["finish_reason"] = "stop"
                             yield event
                     else:
                         continue

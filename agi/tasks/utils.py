@@ -27,10 +27,11 @@ import os
 from typing import Tuple,Callable
 import re
 from urllib.parse import urlparse
+from bs4 import BeautifulSoup
 
 # 处理推理模型返回
 def split_think_content(content):
-    think_content = ""
+    think_content = None
     other_content = content
     try:
         if isinstance(content,list):
@@ -42,6 +43,15 @@ def split_think_content(content):
         if match:
             think_content = match.group(1).strip()  # 保留 <think> 标签，并去掉换行
             other_content = match.group(2).strip()  # 去掉换行
+        if think_content:
+            soup = BeautifulSoup(think_content, "html.parser")
+            tag = soup.find("think")
+            if tag is None:
+                think_content = None
+            else:
+                inner = tag.get_text()
+                if inner.strip() == "":
+                    think_content = None
 
     except Exception as e:
         log.error(e)
