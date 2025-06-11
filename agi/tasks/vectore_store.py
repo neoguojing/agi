@@ -82,16 +82,16 @@ class CollectionManager:
         return [ metadata["source"]
                 for metadata in result['metadatas']]
     
+    # TODO
+    # TF-IDF：经典、简单、可解释，依赖全局语料统计，适用于有大规模语料库、需要区分度信息的场景。
+    # TextRank：基于图的无监督排序方法，仅用当前文档内部信息，适用于无大语料或需捕捉内部共现结构的场景，也常用于摘要抽取。
     # 执行全文检索
-    def search(self,texts,collection_name,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE):
+    def full_search(self,texts,collection_name:str,k=10,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE):
         collection = self.get_or_create_collection(collection_name,tenant=tenant,database=database)
 
         results = collection.query(
             query_texts=texts,
-            n_results=2,
-            where={"source": "doc2"},
-            where_document={"$contains": "牛排"},
-            include=["documents", "metadatas"]
+            n_results=k,
+            where_document={"$contains": "牛排"}
         )
-
         return results
