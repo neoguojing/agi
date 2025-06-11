@@ -169,6 +169,10 @@ rag_graph_builder.add_node("web", TaskFactory.create_task(TASK_WEB_SEARCH))
 rag_graph_builder.add_node("scrape", web_scrape_node)
 
 
+rag_graph_builder.add_node("full_search", web_scrape_node)
+rag_graph_builder.add_node("embedding_search", web_scrape_node)
+rag_graph_builder.add_node("rerank", web_scrape_node)
+
 
 rag_graph_builder.add_conditional_edges(START, route)
 

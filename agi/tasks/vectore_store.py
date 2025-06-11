@@ -2,8 +2,10 @@ import chromadb
 from chromadb import Settings
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
-
+from agi.utils.nlp import TextProcessor
 from agi.config import log
+from typing import List
+import asyncio
 
 # TODO 多租户改造
 class CollectionManager:
@@ -14,6 +16,7 @@ class CollectionManager:
         self.anonymized_telemetry = anonymized_telemetry
 
         self.embedding = embedding
+        self.text_proc = TextProcessor()
         # db_path = f"{self.data_path}/{tenant}/{database}"
         self.adminClient = chromadb.AdminClient(Settings(
             chroma_api_impl="chromadb.api.segment.SegmentAPI",
@@ -82,16 +85,48 @@ class CollectionManager:
         return [ metadata["source"]
                 for metadata in result['metadatas']]
     
-    # TODO
-    # TF-IDF：经典、简单、可解释，依赖全局语料统计，适用于有大规模语料库、需要区分度信息的场景。
-    # TextRank：基于图的无监督排序方法，仅用当前文档内部信息，适用于无大语料或需捕捉内部共现结构的场景，也常用于摘要抽取。
-    # 执行全文检索
-    def full_search(self,texts,collection_name:str,k=10,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE):
-        collection = self.get_or_create_collection(collection_name,tenant=tenant,database=database)
-
-        results = collection.query(
-            query_texts=texts,
-            n_results=k,
-            where_document={"$contains": "牛排"}
+    async def full_search(
+        self,
+        texts: List[str],
+        collection_name: str,
+        k: int = 10,
+        tenant=chromadb.DEFAULT_TENANT,
+        database=chromadb.DEFAULT_DATABASE
+    ):
+        collection = self.get_or_create_collection(
+            collection_name,
+            tenant=tenant,
+            database=database
         )
+
+        # 1. 异步批量关键词提取
+        processed_results = await self.text_proc.batch_process(texts, method="textrank")
+
+        # 2. 构建并发查询任务
+        async def query_single(item: dict):
+            keywords = [kw for kw, _ in item["keywords"]]
+            query = self.build_query(contains_list=keywords)
+            return collection.query(
+                query_texts=[item["text"]],
+                n_results=k,
+                where_document=query
+            )
+
+        tasks = [query_single(item) for item in processed_results]
+
+        # 3. 并发执行所有查询任务
+        results = await asyncio.gather(*tasks)
         return results
+
+    
+    def build_query(self,contains_list=None, not_contains_list=None):
+        query = {"$or": []}
+        if contains_list:
+            for s in contains_list:
+                query["$or"].append({"$contains": s})
+
+        if not_contains_list:
+            for s in not_contains_list:
+                query["$or"].append({"$not_contains": s})
+
+        return query
