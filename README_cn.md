@@ -76,6 +76,7 @@ GPU显存： 初始：2550MB 峰值：20GB
 - speech to text 过滤非法输入 Done
 - 语音流式处理方案 Done
 - agi自动测试
+- 支持重试请求节点
 ## OPENWEBUI 修改
 - 新增: backend/open_webui/routers/agi.py
 - 修改: backend/open_webui/utils/models.py

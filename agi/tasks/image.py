@@ -43,7 +43,7 @@ intend_understand_prompt = '''
 
         - Always respond in English.
 
-        - Return a JSON object with two fields:
+        - Return a JSON dict object with two fields,not a list:
 
             "text": the rewritten question.
 
