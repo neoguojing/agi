@@ -6,8 +6,10 @@ from agi.utils.nlp import TextProcessor
 from agi.config import log
 from typing import List
 import asyncio
+import uuid
+import math
+from tqdm import tqdm  # 可选：用于进度显示
 
-# TODO 多租户改造
 class CollectionManager:
     def __init__(self, data_path, embedding, allow_reset=True, anonymized_telemetry=False):
         self.data_path = data_path
@@ -15,7 +17,6 @@ class CollectionManager:
         self.allow_reset = allow_reset
         self.anonymized_telemetry = anonymized_telemetry
 
-        self.embedding = embedding
         self.text_proc = TextProcessor()
         # db_path = f"{self.data_path}/{tenant}/{database}"
         self.adminClient = chromadb.AdminClient(Settings(
@@ -85,11 +86,50 @@ class CollectionManager:
         return [ metadata["source"]
                 for metadata in result['metadatas']]
     
-    async def full_search(
+    async def add_documents(
+        self,
+        documents: List[Document],
+        collection_name: str,
+        batch_size: int = 10,
+        tenant=chromadb.DEFAULT_TENANT,
+        database=chromadb.DEFAULT_DATABASE,
+    ):
+        """异步批量添加 Document 对象到 Chroma Collection"""
+        collection = self.get_or_create_collection(
+            collection_name,
+            tenant=tenant,
+            database=database
+        )
+
+        texts = [doc.page_content for doc in documents]
+        metadatas = [doc.metadata for doc in documents]
+        ids = [str(uuid.uuid4()) for _ in documents]  # 每条文档生成唯一 id
+
+        # 分批添加到 Chroma Collection
+        num_batches = math.ceil(len(documents) / batch_size)
+        for i in tqdm(range(num_batches), desc="Adding document batches"):
+            start = i * batch_size
+            end = start + batch_size
+            try:
+                # 异步并发生成嵌入（嵌套列表需要解包）
+                embeddings = await asyncio.gather(*[
+                    asyncio.to_thread(self.embedding.embed_query, text)
+                    for text in texts[start:end]
+                ])
+                collection.add(
+                    documents=texts[start:end],
+                    embeddings=embeddings,
+                    metadatas=metadatas[start:end],
+                    ids=ids[start:end]
+                )
+            except Exception as e:
+                log.error(f"Failed to add batch {i + 1}: {e}")
+    
+    async def embedding_search(
         self,
         texts: List[str],
         collection_name: str,
-        k: int = 10,
+        k: int = 3,
         tenant=chromadb.DEFAULT_TENANT,
         database=chromadb.DEFAULT_DATABASE
     ):
@@ -103,20 +143,64 @@ class CollectionManager:
         processed_results = await self.text_proc.batch_process(texts, method="textrank")
 
         # 2. 构建并发查询任务
-        async def query_single(item: dict):
-            keywords = [kw for kw, _ in item["keywords"]]
+        async def query_single(text: str, keywords: list):
+            keywords = [kw[0] for kw in keywords]
             query = self.build_query(contains_list=keywords)
+            log.debug(f"text: {text} query_single：{query}")
             return collection.query(
-                query_texts=[item["text"]],
+                query_embeddings=[self.embedding.embed_query(text)],
                 n_results=k,
                 where_document=query
             )
 
-        tasks = [query_single(item) for item in processed_results]
+        tasks = [query_single(texts[i],item) for i,item in processed_results]
 
         # 3. 并发执行所有查询任务
         results = await asyncio.gather(*tasks)
-        return results
+        ret = []
+        for result in results:
+            for document, metadata,score in zip(result['documents'], result['metadatas'],result['distances']):
+                metadata['score'] = score
+                ret.append(Document(page_content=document, metadata=metadata))
+        return ret
+    
+    async def full_search(
+        self,
+        texts: List[str],
+        collection_name: str,
+        k: int = 3,
+        tenant=chromadb.DEFAULT_TENANT,
+        database=chromadb.DEFAULT_DATABASE
+    ):
+        collection = self.get_or_create_collection(
+            collection_name,
+            tenant=tenant,
+            database=database
+        )
+
+        # 1. 异步批量关键词提取
+        processed_results = await self.text_proc.batch_process(texts, method="textrank")
+
+        # 2. 构建并发查询任务
+        async def query_single(text: str, keywords: list):
+            keywords = [kw[0] for kw in keywords]
+            query = self.build_query(contains_list=keywords)
+            log.debug(f"text: {text} query_single：{query}")
+            return collection.query(
+                query_texts=[text],
+                n_results=k,
+                where_document=query
+            )
+
+        tasks = [query_single(texts[i],item) for i,item in processed_results]
+
+        # 3. 并发执行所有查询任务
+        results = await asyncio.gather(*tasks)
+        ret = []
+        for result in results:
+            for document, metadata in zip(result['documents'], result['metadatas']):
+                ret.append(Document(page_content=document, metadata=metadata))
+        return ret
 
     
     def build_query(self,contains_list=None, not_contains_list=None):
