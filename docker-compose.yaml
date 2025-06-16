@@ -5,15 +5,22 @@ services:
     volumes:
       - /data/agi:/agi/cache
       - /data/model:/agi/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
     ports:
       - 8000:8000
     environment:
       - 'BASE_URL=http://localhost:8000'
       - 'MODEL_PATH=/agi/models'
+      - 'CACHE_DIR=/agi/cache'
       - 'OLLAMA_API_BASE_URL=http://host.docker.internal:11434'
       - 'OLLAMA_DEFAULT_MODE=qwen3:14b'
       - 'OPENAI_API_KEY=xxx'
       - 'AGI_DEBUG=True'
+      - 'NVIDIA_VISIBLE_DEVICES=0'
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped
@@ -25,6 +32,7 @@ services:
     container_name: open-webui
     volumes:
       - /data/webui:/app/backend/data
+      - ${HOME}/.cache:/root/.cache
     depends_on:
       - agi
     ports:

@@ -47,7 +47,7 @@ TTS_SPEAKER_WAV = os.getenv("TTS_SPEAKER_WAV", "asset/zero_shot_prompt.wav")
 TTS_MODEL_DIR = os.getenv("TTS_MODEL_DIR", os.path.join(MODEL_PATH,"cosyvoice/CosyVoice2-0.5B"))
 TTS_GPU_ENABLE = os.getenv("TTS_GPU_ENABLE", "True").lower() == "true"
 if not TTS_GPU_ENABLE:
-    TTS_MODEL_DIR = "tts_models/zh-CN/baker/tacotron2-DDC-GST"
+    TTS_MODEL_DIR = os.getenv("TTS_MODEL_DIR", os.path.join(MODEL_PATH,"tts_models--zh-CN--baker--tacotron2-DDC-GST"))
 
 TTS_FILE_SAVE_PATH = os.getenv("TTS_FILE_SAVE_PATH",os.path.join(CACHE_DIR, "audio"))
 
