@@ -37,15 +37,18 @@ class TextProcessor:
         if method == "tfidf":
             keywords = jieba.analyse.extract_tags(text, topK=self.top_k, withWeight=True)
         elif method == "textrank":
-            keywords = jieba.analyse.textrank(text, topK=self.top_k, withWeight=True, withFlag=True)
+            keywords = jieba.analyse.textrank(text, topK=self.top_k, withWeight=True)
         else:
             raise ValueError("method must be 'tfidf' or 'textrank'")
 
         # 如果设置了词性过滤（仅 textrank 支持 withFlag）
-        if self.allowed_flags and method == "textrank":
-            return [(w.word, w.weight) for w in keywords if w.flag in self.allowed_flags]
-        else:
-            return keywords
+        if self.allowed_flags:
+            # 构造词性字典
+            pos_dict = {word.word: word.flag for word in pseg.cut(text)}
+            # 筛选
+            keywords = [(word, weight) for word, weight in keywords if pos_dict.get(word, '') in self.allowed_flags]
+        
+        return keywords
 
     async def process_text(
         self,

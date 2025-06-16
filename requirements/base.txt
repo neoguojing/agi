@@ -7,3 +7,4 @@ einops==0.8.1
 numpy==1.26.4
 uvicorn[standard]==0.30.6
 pytest
+pytest-asyncio
