@@ -1,0 +1,53 @@
+import pytest
+import asyncio
+from typing import List
+from agi.utils.nlp import TextProcessor
+
+sample_text = "小明毕业于清华大学，后来在谷歌公司担任高级工程师。"
+
+@pytest.fixture
+def processor():
+    return TextProcessor(top_k=3)
+
+def test_tokenize(processor):
+    tokens = processor.tokenize(sample_text)
+    print(tokens)
+    assert isinstance(tokens, list)
+    assert any(word in tokens for word in ["清华大学", "谷歌", "工程师"])
+
+def test_tokenize_with_pos(processor):
+    tokens = processor.tokenize_with_pos(sample_text)
+    print(tokens)
+    assert isinstance(tokens, list)
+    assert all(isinstance(t, tuple) and len(t) == 2 for t in tokens)
+    assert any(word == "清华大学" and flag.startswith("n") for word, flag in tokens)
+
+def test_extract_keywords_textrank(processor):
+    keywords = processor.extract_keywords(sample_text, method="textrank")
+    print(keywords)
+    assert isinstance(keywords, list)
+    assert all(isinstance(k, tuple) and isinstance(k[0], str) and isinstance(k[1], float) for k in keywords)
+    assert len(keywords) <= processor.top_k
+
+def test_extract_keywords_tfidf(processor):
+    keywords = processor.extract_keywords(sample_text, method="tfidf")
+    print(keywords)
+    assert isinstance(keywords, list)
+    assert len(keywords) <= processor.top_k
+
+@pytest.mark.asyncio
+async def test_process_text(processor):
+    result = await processor.process_text(sample_text, method="textrank")
+    print(result)
+
+    assert isinstance(result, list)
+    assert all(isinstance(item, tuple) for item in result)
+
+@pytest.mark.asyncio
+async def test_batch_process(processor):
+    texts = [sample_text, "他在北京大学获得硕士学位。"]
+    results = await processor.batch_process(texts, method="textrank")
+    print(results)
+    assert isinstance(results, list)
+    assert len(results) == len(texts)
+    assert all(isinstance(r, list) for r in results)

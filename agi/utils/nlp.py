@@ -62,20 +62,3 @@ class TextProcessor:
     ) -> List[dict]:
         tasks = [self.process_text(t, method) for t in texts]
         return await asyncio.gather(*tasks)
-
-
-# async def test():
-#     texts = [
-#         "苹果公司推出了新款iPhone，引发了市场热议。",
-#         "人工智能的发展正在改变世界。"
-#     ]
-#     processor = TextProcessor(top_k=5)
-#     results = await processor.batch_process(texts, method="textrank")
-
-#     for item in results:
-#         print(f"\n原文: {item['text']}")
-#         print("关键词:")
-#         for kw, weight in item["keywords"]:
-#             print(f"  - {kw}: {weight:.4f}")
-
-# asyncio.run(test())
