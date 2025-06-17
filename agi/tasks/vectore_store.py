@@ -9,6 +9,7 @@ import asyncio
 import uuid
 import math
 from tqdm import tqdm  # 可选：用于进度显示
+from threading import Lock
 
 class CollectionManager:
     def __init__(self, data_path, embedding, allow_reset=True, anonymized_telemetry=False):
@@ -18,33 +19,51 @@ class CollectionManager:
         self.anonymized_telemetry = anonymized_telemetry
 
         self.text_proc = TextProcessor()
-        # db_path = f"{self.data_path}/{tenant}/{database}"
-        self.adminClient = chromadb.AdminClient(Settings(
+
+        self.settings = Settings(
             chroma_api_impl="chromadb.api.segment.SegmentAPI",
             is_persistent=True,
             persist_directory=self.data_path,
-        ))
+            allow_reset=self.allow_reset,
+            anonymized_telemetry=self.anonymized_telemetry,
+        )
+
+        self.admin_client = chromadb.AdminClient(self.settings)
+
+        self._client_lock = Lock()
+        self._persistent_client = None
         
     def get_or_create_tenant_for_user(self,tenant, database=chromadb.DEFAULT_DATABASE):
         try:
-            self.adminClient.get_tenant(tenant)
+            self.admin_client.get_tenant(tenant)
         except Exception as e:
-            self.adminClient.create_tenant(tenant)
-            self.adminClient.create_database(database, tenant)
+            self.admin_client.create_tenant(tenant)
+            self.admin_client.create_database(database, tenant)
         return tenant, database
+    
+    def _get_persistent_client(self, tenant, database):
+        with self._client_lock:
+            if self._persistent_client is None:
+                self._persistent_client = chromadb.PersistentClient(
+                    path=self.data_path,
+                    settings=self.settings,
+                    tenant=tenant,
+                    database=database,
+                )
+            else:
+                # 仅切换 tenant/database 无需新建 client 实例
+                # 因为 SharedSystemClient 会缓存，不允许不同设置
+                self._persistent_client.set_tenant(tenant)
+                self._persistent_client.set_database(database)
+            return self._persistent_client
 
     def client(self,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE):
         if tenant is None:
             tenant = chromadb.DEFAULT_TENANT
         else:
-            _,database = self.get_or_create_tenant_for_user(tenant)
-        # db_path = f"{self.data_path}/{tenant}/{database}"
-        return chromadb.PersistentClient(
-            path=self.data_path,
-            # settings=Settings(allow_reset=self.allow_reset, anonymized_telemetry=self.anonymized_telemetry),
-            database=database,
-            tenant=tenant
-        )
+            _,database = self.get_or_create_tenant_for_user(tenant,database)
+        return self._get_persistent_client(tenant, database)
+    
     def get_or_create_collection(self, collection_name,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE):
         """Get or create a collection by name."""
         return self.client(tenant,database).get_or_create_collection(name=collection_name)
