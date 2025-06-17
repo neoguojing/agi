@@ -14,7 +14,7 @@ from TTS.config.shared_configs import BaseDatasetConfig
 from cosyvoice.cli.cosyvoice import CosyVoice2
 from cosyvoice.utils.file_utils import load_wav
 from collections import defaultdict
-from agi.config import TTS_MODEL_DIR as model_root, CACHE_DIR, TTS_SPEAKER_WAV,TTS_GPU_ENABLE,TTS_FILE_SAVE_PATH
+from agi.config import TTS_MODEL_DIR as model_root, CACHE_DIR, TTS_SPEAKER_WAV,TTS_GPU_ENABLE,TTS_FILE_SAVE_PATH,COMPUTE_TYPE
 from agi.llms.base import CustomerLLM,parse_input_messages,path_to_preview_url
 from langchain_core.runnables import RunnableConfig,run_in_executor
 from typing import Any, Optional,Union,ClassVar
@@ -76,7 +76,8 @@ class TextToSpeech(CustomerLLM):
                 model_path = model_root
                 if "cosyvoice" in model_path:
                     self.speaker_wav = load_wav(TTS_SPEAKER_WAV, 16000)
-                    self.tts = CosyVoice2(model_path, load_jit=False, load_trt=False, fp16=False,use_flow_cache=False)
+                    is_float16 = COMPUTE_TYPE == "float16"
+                    self.tts = CosyVoice2(model_path, load_jit=False, load_trt=False, fp16=is_float16,use_flow_cache=False)
                     self.model = self.tts.model
                     self.output_rate = self.tts.sample_rate
                 else:

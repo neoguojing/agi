@@ -5,7 +5,6 @@ import logging
 
 
 load_dotenv(override=True)  # 加载 .env 文件中的环境变量
-
 #服务相关
 BASE_URL = os.environ.get("BASE_URL","http://localhost:8000")
 
@@ -34,6 +33,7 @@ LLM_WITH_NO_THINKING = os.environ.get("LLM_WITH_NO_THINKING", "/no_think")
 ## embedding
 RAG_EMBEDDING_MODEL = os.environ.get("RAG_EMBEDDING_MODEL", "bge-m3:latest")
 
+COMPUTE_TYPE = os.getenv("COMPUTE_TYPE", "float16")
 ## speech to text 
 WHISPER_GPU_ENABLE = os.getenv("WHISPER_GPU_ENABLE", True)
 WHISPER_MODEL_DIR = os.getenv("WHISPER_MODEL_DIR", os.path.join(MODEL_PATH,"wisper-v3-turbo-c2"))

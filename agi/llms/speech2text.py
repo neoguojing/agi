@@ -2,7 +2,8 @@ from faster_whisper import WhisperModel
 import os
 from agi.config import (
     WHISPER_MODEL_DIR as model_root,
-    WHISPER_GPU_ENABLE
+    WHISPER_GPU_ENABLE,
+    COMPUTE_TYPE
 )
 from typing import Any, List, Mapping, Optional,Union
 from agi.llms.base import CustomerLLM,parse_input_messages
@@ -19,7 +20,7 @@ class Speech2Text(CustomerLLM):
     compute_type: str = Field(default="default")
     model_size: str = Field(default="base")
     local_files_only: bool = Field(default=True)
-    def __init__(self,device: str = "cuda", compute_type: str = "float16",**kwargs):
+    def __init__(self,device: str = "cuda", compute_type: str = COMPUTE_TYPE,**kwargs):
         super().__init__(**kwargs)
         
         self.compute_type = compute_type
