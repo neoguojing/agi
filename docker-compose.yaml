@@ -1,6 +1,6 @@
 services:
   agi:
-    image: ghcr.io/neoguojing/agi:dev-cc0e389
+    image: ghcr.io/neoguojing/agi:dev-e70f6dd
     container_name: agi
     volumes:
       - /data/agi:/agi/cache
