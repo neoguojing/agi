@@ -133,7 +133,7 @@ class KnowledgeManager:
                         content_type = kwargs.get('content_type')
                         if file_name is None:
                             raise ValueError("File name is required for file storage.")
-                        loader, known_type = self.get_loader(file_name, source, content_type)
+                        loader, known_type = self.get_file_loader(file_name, source, content_type)
 
                     # If we have a loader, use it to load documents asynchronously
                     if loader:
@@ -338,7 +338,7 @@ class KnowledgeManager:
             )
         return loader
 
-    def get_loader(self,filename: str, file_path: str, file_content_type: str=None):
+    def get_file_loader(self,filename: str, file_path: str, file_content_type: str=None):
         loader = None
         file_ext = filename.split(".")[-1].lower()
         known_type = True
