@@ -84,7 +84,7 @@ async def doc_chat_node(state: State,config: RunnableConfig,writer: StreamWriter
     log.info(f"doc_chat_node:{len(state['docs'])}")
     return await chain.ainvoke(state,config=config)
 
-async def doc_compress_node(state: State,config: RunnableConfig):
+async def doc_rerank_node(state: State,config: RunnableConfig):
     km = TaskFactory.get_knowledge_manager()
     retriever = km.get_compress_retriever(FilterType.LLM_EXTRACT)
     question = get_last_message_text(state)
@@ -93,7 +93,7 @@ async def doc_compress_node(state: State,config: RunnableConfig):
     if docs:
         docs = [d for d in docs if d.page_content and not d.page_content.strip().startswith("NO")]
     state["docs"] = docs
-    log.info(f"doc_compress_node:{len(docs)}")
+    log.info(f"doc_rerank_node:{len(docs)}")
     return state 
 
 # 列举collection前面部分的文本页,用于总结文章
@@ -124,7 +124,7 @@ async def web_scrape_node(state: State,config: RunnableConfig):
 async def context_control(state: State):
     docs = state.get("docs")
     if docs:
-        return "compress"
+        return "rerank"
     return "llm_with_history"
 
 # 分析用户意图，自主决策
@@ -161,17 +161,12 @@ checkpointer = MemorySaver()
 rag_graph_builder = StateGraph(State)
 
 rag_graph_builder.add_node("doc_chat", doc_chat_node)
-rag_graph_builder.add_node("compress", doc_compress_node)
+rag_graph_builder.add_node("rerank", doc_rerank_node)
 rag_graph_builder.add_node("rag", TaskFactory.create_task(TASK_RAG))
 rag_graph_builder.add_node("summary", doc_list_node)
 rag_graph_builder.add_node("llm_with_history", TaskFactory.create_task(TASK_LLM_WITH_HISTORY))
 rag_graph_builder.add_node("web", TaskFactory.create_task(TASK_WEB_SEARCH))
 rag_graph_builder.add_node("scrape", web_scrape_node)
-
-
-rag_graph_builder.add_node("full_search", web_scrape_node)
-rag_graph_builder.add_node("embedding_search", web_scrape_node)
-rag_graph_builder.add_node("rerank", web_scrape_node)
 
 
 rag_graph_builder.add_conditional_edges(START, route)
@@ -181,10 +176,9 @@ rag_graph_builder.add_conditional_edges("scrape", context_control)
 
 rag_graph_builder.add_conditional_edges("rag", context_control)
 rag_graph_builder.add_edge("summary", "doc_chat")
+rag_graph_builder.add_edge("rerank", "doc_chat")
 
 rag_graph_builder.add_edge("llm_with_history", END)
-
-rag_graph_builder.add_edge("compress", "doc_chat")
 rag_graph_builder.add_edge("doc_chat", END)
 
 rag_graph = rag_graph_builder.compile(checkpointer=checkpointer,name="rag")
