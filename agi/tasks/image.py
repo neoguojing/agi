@@ -18,7 +18,7 @@ from langchain_core.runnables import (
 )
 from langchain_core.messages import SystemMessage,HumanMessage
 from langchain.prompts import ChatPromptTemplate
-
+from langgraph.pregel import RetryPolicy
 from langgraph.graph import END, StateGraph, START
 from langgraph.checkpoint.memory import MemorySaver
 from agi.tasks.define import State,Feature,InputType
@@ -128,20 +128,21 @@ async def intend_understand_node(state: State,config: RunnableConfig):
                 if image.startswith(BASE_URL):
                     image = os.path.join(IMAGE_FILE_SAVE_PATH,os.path.basename(image))
                 last_message.content.append({"type":"image","image":image})     
+        else:
+            raise ValueError("text or last_message is missing")
         log.info(f"user_understand end:{state}")
         return state
     except Exception as e:
         log.error(f"Error during user_understand output_parser: {e}")
         print(traceback.format_exc())
-        # 失败的情况下：跳转到父节点
-        return Command(graph=Command.PARENT,goto="llm_with_history")
-
+        raise
+  
 # graph
 checkpointer = MemorySaver()
 
 image_graph_builder = StateGraph(State)
 
-image_graph_builder.add_node("intend", intend_understand_node)
+image_graph_builder.add_node("intend", intend_understand_node,retry=RetryPolicy(retry_on=[json.JSONDecodeError, TypeError,ValueError]))
 image_graph_builder.add_node("image_gen", TaskFactory.create_task(TASK_IMAGE_GEN))
 
 image_graph_builder.add_edge(START, "intend")
