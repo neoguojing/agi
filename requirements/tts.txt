@@ -4,6 +4,6 @@
 librosa==0.10.1
 pydub==0.25.1
 git+https://github.com/neoguojing/TTS.git
-faster-whisper==1.0.3
+faster-whisper==1.1.1
 sentencepiece==0.2.0
 ctranslate2==4.4.0
