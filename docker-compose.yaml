@@ -21,6 +21,7 @@ services:
       - 'OPENAI_API_KEY=xxx'
       - 'AGI_DEBUG=True'
       - 'NVIDIA_VISIBLE_DEVICES=0'
+      - 'COMPUTE_TYPE=int8_float16'
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped

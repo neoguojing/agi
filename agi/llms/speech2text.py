@@ -10,7 +10,7 @@ from agi.llms.base import CustomerLLM,parse_input_messages
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
 from langchain_core.messages import AIMessage, HumanMessage
-
+from dataclasses import asdict
 from agi.config import log
 
 # GPU 2600MB
@@ -72,7 +72,7 @@ class Speech2Text(CustomerLLM):
     def _format_transcription(self, segments, info) -> str:
         """Format the transcription into a readable string."""
         content = "".join(segment.text for segment in segments)
-        return content, info._asdict()
+        return content, asdict(info)
     
     def print(self, segments, info):
         log.debug("Detected language '%s' with probability %f" % (info.language, info.language_probability))
