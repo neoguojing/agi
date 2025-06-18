@@ -35,8 +35,6 @@ class Speech2Text(CustomerLLM):
             self.device = "cpu"
             self.model_size = model_root
             log.info(model_root)
-            self.compute_type = "default"
-
         
     
     def _load_model(self):
