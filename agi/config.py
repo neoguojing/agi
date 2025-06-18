@@ -35,10 +35,10 @@ RAG_EMBEDDING_MODEL = os.environ.get("RAG_EMBEDDING_MODEL", "bge-m3:latest")
 
 COMPUTE_TYPE = os.getenv("COMPUTE_TYPE", "float16")
 ## speech to text 
-WHISPER_GPU_ENABLE = os.getenv("WHISPER_GPU_ENABLE", True)
+WHISPER_GPU_ENABLE =os.getenv("WHISPER_GPU_ENABLE", "true").lower() in ("1", "true", "yes")
 WHISPER_MODEL_DIR = os.getenv("WHISPER_MODEL_DIR", os.path.join(MODEL_PATH,"wisper-v3-turbo-c2"))
 if not WHISPER_GPU_ENABLE:
-    WHISPER_MODEL_DIR = "base"
+    WHISPER_MODEL_DIR = os.getenv("WHISPER_MODEL_DIR", os.path.join(MODEL_PATH,"models--Systran--faster-whisper-base"))
 
 ## tts 
 # TTS_SPEAKER_WAV = os.getenv("TTS_SPEAKER_WAV", os.path.join(MODEL_PATH,"XTTS-v2","samples/zh-cn-sample.wav"))
