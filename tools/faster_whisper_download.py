@@ -1,4 +1,4 @@
-from tools.faster_whisper_download import WhisperModel
+from faster_whisper_download import WhisperModel
 
 # CPU: 优化 8-bit
 model_cpu = WhisperModel("base", device="cpu", compute_type="int8",download_root="./")
