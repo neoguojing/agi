@@ -6,6 +6,7 @@ from agi.utils.weather import get_weather_info
 from agi.utils.search_engine import SearchEngineSelector
 from agi.utils.stock_market import get_stock
 from agi.utils.scrape import WebScraper
+from agi.tasks.task_factory import TaskFactory,TASK_IMAGE_GEN,TASK_MULTI_MODEL
 from agi.config import log
 from pydantic import BaseModel,Field
 from langchain_community.tools.yahoo_finance_news import YahooFinanceNewsTool
@@ -58,6 +59,20 @@ class AskHuman(BaseModel):
         description="A question the system wants to ask the human for clarification, confirmation, or additional input"
     )
 
+image_gen_tool = TaskFactory.create_task(TASK_IMAGE_GEN).as_tool(
+    name = "",
+    description=""
+)
+image_gen_tool.return_direct = True
+print(image_gen_tool.args_schema.model_json_schema())
+
+image_recog_tool = TaskFactory.create_task(TASK_MULTI_MODEL).as_tool(
+    name = "",
+    description=""
+)
+image_recog_tool.return_direct = True
+print(image_recog_tool.args_schema.model_json_schema())
+
 tools = [
     AskHuman,
     Tool(
@@ -76,5 +91,8 @@ tools = [
     # wikidata(),
     pythonREPL(),
     get_weather_info,
-    get_stock
+    get_stock,
+
+    image_gen_tool,
+    image_recog_tool
 ]
