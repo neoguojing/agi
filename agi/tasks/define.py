@@ -5,11 +5,12 @@ from typing import (
     Optional,
     Sequence,
     Type,
-    TypedDict,
+    # TypedDict,  #for 3.12 and above
     TypeVar,
     Union,
 )
 
+from typing_extensions import TypedDict
 from pydantic import BaseModel,Field
 from langchain_core.messages import (
     AIMessage,
