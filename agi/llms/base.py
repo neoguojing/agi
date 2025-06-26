@@ -221,7 +221,7 @@ class CustomerLLM(RunnableSerializable[HumanMessage, AIMessage]):
         if self.model is not None:
             del self.model
             torch.cuda.empty_cache()
-            log.info(f"Model {self.model_name} destroyed successfully")
+        log.info(f"Model {self.model_name} destroyed successfully")
 
     def encode(self, input):
         if self.tokenizer is not None:

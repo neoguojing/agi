@@ -36,6 +36,9 @@ class Speech2Text(CustomerLLM):
             self.model_size = model_root
             log.info(model_root)
         
+    @property
+    def model_name(self) -> str:
+        return "Speech2Text"
     
     def _load_model(self):
         if self.model is None:

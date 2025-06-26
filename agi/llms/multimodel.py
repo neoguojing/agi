@@ -37,7 +37,11 @@ class MultiModel(CustomerLLM):
         self.save_file = save_file
         self.model = None
         self.processor = None
-       
+    
+    @property
+    def model_name(self) -> str:
+        return "MultiModel"
+    
     def _load_model(self):
         """Initialize the TTS model based on the available hardware."""
         if self.model is not None and self.processor is not None:

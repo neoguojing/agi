@@ -58,6 +58,10 @@ class TextToSpeech(CustomerLLM):
         self.save_file = save_file
         self.model = None
 
+    @property
+    def model_name(self) -> str:
+        return "tts"
+    
     @classmethod
     def get_queue(cls, tenant_id: str="default") -> Queue:
         if tenant_id not in cls._queues:
@@ -68,7 +72,7 @@ class TextToSpeech(CustomerLLM):
        
     def _load_model(self):
         """Initialize the TTS model based on the available hardware."""
-        if self.tts is None:
+        if self.tts is None or self.model is None:
             if self.is_gpu:
                 # GPU：2739MB
                 log.info("loading TextToSpeech model(GPU)...")

@@ -25,26 +25,28 @@ class ModelFactory:
     max_models = 1
     
     @staticmethod
-    def get_model(model_type: str, model_name: str = "") -> CustomerLLM:
+    def get_model(model_type: str) -> CustomerLLM:
         """Retrieve and cache the model instance."""
         with ModelFactory._lock:
             if model_type not in ModelFactory._instances or ModelFactory._instances[model_type] is None:
-                ModelFactory._instances[model_type] = ModelFactory._load_model(model_type, model_name)
-                if len(ModelFactory._instances) > ModelFactory.max_models:
-                    # 如果超出了最大运行模型数，移除最久未使用的模型
-                    removed_model = ModelFactory._instances.popitem(last=False)
-                    log.info(f"try to unload model {removed_model[0]} {removed_model[1].model}")
-                    if isinstance(removed_model[1],CustomerLLM):
-                        removed_model[1].destroy()
+                ModelFactory._instances[model_type] = ModelFactory._load_model(model_type)
+                # 超出容量：弹出最久未使用
+                while len(ModelFactory._instances) > ModelFactory.max_models:
+                    old_key, old_inst = ModelFactory._instances.popitem(last=False)
+                    log.info(f"Unloading model {old_key}: {old_inst}")
+                    try:
+                        old_inst.destroy()
+                    except Exception as e:
+                        log.warning(f"Error destroying model {old_key}: {e}")
             else:
                 ModelFactory._instances.move_to_end(model_type)
                 
             return ModelFactory._instances[model_type]
 
     @staticmethod
-    def _load_model(model_type: str, model_name: str = "") -> Union[CustomerLLM,Runnable]:
+    def _load_model(model_type: str) -> Union[CustomerLLM,Runnable]:
         """Load the model based on the model type."""
-        log.info(f"Loading the model: {model_type}...")
+        log.info(f"createt the: {model_type}...")
         model = None
         
         if model_type == "text2image":
