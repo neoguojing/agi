@@ -28,7 +28,6 @@ import traceback
 from agi.config import (
     log
 )
-from agi.tasks.tools import AskHuman
 
 # TODO
 # 1. 语音：需要支持直接转换为文本和转文本之后问答 done

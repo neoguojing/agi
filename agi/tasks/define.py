@@ -9,6 +9,8 @@ from typing import (
     TypeVar,
     Union,
 )
+
+from pydantic import BaseModel,Field
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
@@ -75,3 +77,23 @@ class State(AgentState):
     step: list[str] #用于保存执行的步骤,按顺序排列
     
     user_feedback: str
+
+
+# 一个tool的定义,和模型绑定,让模型决定是否调用该工具
+# 不会实际实现该函数
+class AskHuman(BaseModel):
+    """
+    This model is used when an automated system or agent determines that 
+    human intervention is required. It represents a question that the agent 
+    wants to ask the human to proceed with a task, resolve ambiguity, or 
+    make a decision that requires human judgment.
+
+    Typical use cases include:
+    - Uncertain model predictions or low-confidence outcomes
+    - Missing information that requires user input
+    - Safety-critical or policy-sensitive decisions
+    """
+
+    question: str = Field(
+        description="A question the system wants to ask the human for clarification, confirmation, or additional input"
+    )

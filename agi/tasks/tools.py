@@ -8,7 +8,7 @@ from agi.utils.stock_market import get_stock
 from agi.utils.scrape import WebScraper
 from agi.tasks.task_factory import TaskFactory,TASK_IMAGE_GEN,TASK_MULTI_MODEL
 from agi.config import log
-from pydantic import BaseModel,Field
+from agi.tasks.define import AskHuman
 from langchain_community.tools.yahoo_finance_news import YahooFinanceNewsTool
 from langchain_community.tools import YouTubeSearchTool
 
@@ -39,25 +39,6 @@ def pythonREPL():
         func=python_repl.run,
     )
     return repl_tool
-
-# 一个tool的定义,和模型绑定,让模型决定是否调用该工具
-# 不会实际实现该函数
-class AskHuman(BaseModel):
-    """
-    This model is used when an automated system or agent determines that 
-    human intervention is required. It represents a question that the agent 
-    wants to ask the human to proceed with a task, resolve ambiguity, or 
-    make a decision that requires human judgment.
-
-    Typical use cases include:
-    - Uncertain model predictions or low-confidence outcomes
-    - Missing information that requires user input
-    - Safety-critical or policy-sensitive decisions
-    """
-
-    question: str = Field(
-        description="A question the system wants to ask the human for clarification, confirmation, or additional input"
-    )
 
 image_gen_tool = TaskFactory.create_task(TASK_IMAGE_GEN).as_tool(
     name = "",

@@ -1,4 +1,4 @@
-from agi.tasks.tools import tools,AskHuman
+from agi.tasks.define import AskHuman
 from agi.config import log
 from agi.tasks.utils import split_think_content
 from langgraph.checkpoint.memory import MemorySaver
@@ -650,6 +650,7 @@ def pre_model_hook(state):
 
 memory = MemorySaver()
 def create_react_agent_task(llm):
+    from agi.tasks.tools import tools
     langgraph_agent_executor = create_react_agent(llm, 
                                                   tools,state_modifier=modify_state_messages,
                                                   checkpointer=memory,
@@ -663,6 +664,7 @@ def create_react_agent_task(llm):
     return langgraph_agent_executor
 
 def create_react_agent_as_subgraph(llm):
+    from agi.tasks.tools import tools
     langgraph_agent_executor = create_react_agent(llm, 
                                                   tools,state_modifier=modify_state_messages,
                                                   debug=True,
