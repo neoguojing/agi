@@ -8,6 +8,7 @@ TEST_LLMS = tests/llms
 TEST_TASKS = tests/tasks
 APP_DIR = agi
 TARGET = agi.fastapi_agi:app
+IMAGE_GEN = agi.apps.image.fast_api_image:app
 
 # 默认目标
 .PHONY: all
@@ -69,5 +70,8 @@ models:
 	    echo "Creating model: $$model_name from $$file"; \
 	    ollama create $$model_name -f $$file; \
 	done
+
+run_image:
+	$(PYTHON) -m uvicorn $(IMAGE_GEN) --host 0.0.0.0 --port 8001 --reload
 
 

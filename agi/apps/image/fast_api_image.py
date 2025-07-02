@@ -1,6 +1,5 @@
 import io
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, List, Union
 from PIL import Image
