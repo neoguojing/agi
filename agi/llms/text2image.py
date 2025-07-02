@@ -1,22 +1,14 @@
-
-import os
 import base64
 import io
 import time
-from datetime import date
 from pathlib import Path
 from diffusers import  AutoPipelineForText2Image
 # from diffusers import StableDiffusion3Pipeline
 import torch
-from langchain.llms.base import LLM
 from typing import Any, List, Mapping, Optional,Union
-from langchain.callbacks.manager import (
-    CallbackManagerForLLMRun
-)
 from pydantic import  Field
 from agi.llms.base import CustomerLLM,parse_input_messages,path_to_preview_url
 from agi.config import TEXT_TO_IMAGE_MODEL_PATH as model_root,IMAGE_FILE_SAVE_PATH
-import hashlib
 from langchain_core.runnables import RunnableConfig
 from langchain_core.messages import AIMessage, HumanMessage
 
@@ -39,8 +31,6 @@ class Text2Image(CustomerLLM):
         super().__init__(**kwargs)
         self.model_path = model_path
         
-           
-
     def _load_model(self):
         if self.model is None:
             log.info("loading Text2Image model...")

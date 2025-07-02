@@ -21,7 +21,6 @@ from agi.config import log
 # GPU : 942MB
 class Image2Image(CustomerLLM):
     model_path: str = Field(default=model_root, alias='model_path')
-    refiner: Optional[Any] = None
     n_steps: int = 2
     high_noise_frac: float = 0.8
     guidance_scale: float = 0.0
