@@ -1,18 +1,12 @@
 # 使用官方 Python 3.11 slim 作为基础镜像
 # FROM python:3.11-slim
 # FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel
-FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime
+FROM guojingneo/agi-fastapi-tts:base
 
 # 设置工作目录
 WORKDIR /agi
 
 COPY requirements/ ./requirements/
-COPY depend/ ./depend/
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    # ffmpeg \
-    build-essential git \
-    && rm -rf /var/lib/apt/lists/*
     
 RUN pip install --upgrade pip && pip install packaging && pip install -r ./requirements/common.txt && pip install -r ./requirements/tts.txt && rm -rf /root/.cache
 
@@ -20,7 +14,7 @@ RUN pip install --upgrade pip && pip install packaging && pip install -r ./requi
 COPY . .
 
 # 暴露应用运行的端口（默认 FastAPI 使用 8000）
-EXPOSE 8000
+EXPOSE 8002
 
 # 启动命令（假设你的 FastAPI 应用在 main.py 中，并且实例名称为 app）
 CMD ["uvicorn", "agi.apps.image.fast_api_audio:app", "--host", "0.0.0.0", "--port", "8002"]

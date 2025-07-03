@@ -90,3 +90,9 @@ image_tts:
 	--build-arg COMMIT_HASH=$$(git rev-parse HEAD) \
 	--build-arg BRANCH_NAME=$$(git rev-parse --abbrev-ref HEAD) \
 	-t guojingneo/agi-fastapi-tts:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
+
+.PHONY: image_tts_base
+image_tts_base:
+	docker build \
+	-f ./Dockerfile.tts.base \
+	-t guojingneo/agi-fastapi-tts:base .

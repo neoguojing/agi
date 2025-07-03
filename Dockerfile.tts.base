@@ -1,0 +1,17 @@
+# 使用官方 Python 3.11 slim 作为基础镜像
+# FROM python:3.11-slim
+# FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel
+FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime
+
+# 设置工作目录
+WORKDIR /agi
+
+COPY requirements/ ./requirements/
+COPY depend/ ./depend/
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # ffmpeg \
+    build-essential git \
+    && rm -rf /var/lib/apt/lists/*
+    
+RUN pip install --upgrade pip && pip install packaging && pip install -r ./requirements/tts_base.txt && rm -rf /root/.cache
