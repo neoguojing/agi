@@ -3,8 +3,8 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, List, Union
 from PIL import Image
-from text2image import Text2Image
-from image2image import Image2Image
+from agi.apps.image.text2image import Text2Image
+from agi.apps.image.image2image import Image2Image
 from datetime import datetime
 
 app = FastAPI()

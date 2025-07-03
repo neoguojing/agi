@@ -18,4 +18,4 @@ COPY . .
 EXPOSE 8000
 
 # 启动命令（假设你的 FastAPI 应用在 main.py 中，并且实例名称为 app）
-CMD ["uvicorn", "agi.apps.image.fast_api_image:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "agi.apps.image.fast_api_image:app", "--host", "0.0.0.0", "--port", "8001"]
