@@ -9,6 +9,11 @@ WORKDIR /agi
 COPY requirements/ ./requirements/
 COPY depend/ ./depend/
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # ffmpeg \
+    build-essential git \
+    && rm -rf /var/lib/apt/lists/*
+    
 RUN pip install --upgrade pip && pip install packaging && pip install -r ./requirements/common.txt && pip install -r ./requirements/tts.txt && rm -rf /root/.cache
 
 # 将应用代码拷贝到容器中
