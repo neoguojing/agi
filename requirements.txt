@@ -4,3 +4,5 @@
 --requirement requirements/vision.txt
 --requirement requirements/langchain.txt
 --requirement requirements/extra.txt
+--requirement requirements/common.txt
+--requirement requirements/whisper.txt

@@ -1,13 +1,20 @@
 import io
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException,Depends
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, List, Union
 from PIL import Image
 from agi.apps.image.text2image import Text2Image
 from agi.apps.image.image2image import Image2Image
+from agi.apps.common import verify_api_key
 from datetime import datetime
 
-app = FastAPI()
+app = FastAPI(
+    title="AGI IMAGE GEN API",
+    description="兼容 OpenAI API 的 AGI 接口",
+    version="1.0.0",
+    # lifespan=lifespan
+)
+
 text2img = Text2Image()
 image2img = Image2Image()
 
@@ -31,7 +38,7 @@ class ImageGenResponse(BaseModel):
     data: List[Union[UrlData, B64Data]]
 
 @app.post("/v1/images/generations")
-async def generate(req: ImageGenRequest):
+async def generate(req: ImageGenRequest,api_key: str = Depends(verify_api_key)):
     try:
         image = text2img.invoke(req.prompt,resp_format=req.response_format)
             
@@ -50,7 +57,7 @@ async def generate(req: ImageGenRequest):
     )
 
 @app.post("/v1/images/edits")
-async def edit(prompt: str, image: UploadFile = File(...)):
+async def edit(prompt: str, image: UploadFile = File(...),api_key: str = Depends(verify_api_key)):
     input_img = Image.open(io.BytesIO(await image.read())).convert("RGB")
     try:
         output = image2img.invoke(input=prompt, input_image=input_img)

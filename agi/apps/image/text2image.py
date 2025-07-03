@@ -9,7 +9,7 @@ import urllib.parse
 import torch
 from agi.config import TEXT_TO_IMAGE_VERSION,BASE_URL,CACHE_DIR
 from agi.config import TEXT_TO_IMAGE_MODEL_PATH as model_root,IMAGE_FILE_SAVE_PATH
-
+from agi.apps.common import path_to_preview_url
 
 style = 'style="width: 100%; max-height: 100vh;"'
 
@@ -77,7 +77,7 @@ class Text2Image:
     def handle_output(self, image: Any,html:bool=False) -> str:
         """Handle the image output (save or return base64)."""
         image_source = self._save_or_resize_image(image)
-        image_source = self.path_to_preview_url(image_source)
+        image_source = path_to_preview_url(image_source)
         # Format the result as HTML with embedded image and prompt
         if html:
             image_source = f'<img src="{image_source}" {style}>\n'
@@ -110,31 +110,6 @@ class Text2Image:
         buffered.seek(0)
         image_bytes = buffered.getvalue()
         return f"data:image/jpeg;base64,{base64.b64encode(image_bytes).decode()}"
-    
-    def path_to_preview_url(self,file_path: str, base_url: str = BASE_URL) -> str:
-        """
-        将文件路径转换为图片预览 URL。
-        
-        Args:
-            file_path (str): 服务器上的文件路径，例如 "uploads/picture.jpg"
-            base_url (str): 服务器基地址，默认 "http://localhost:8000"
-        
-        Returns:
-            str: 可用于预览的 URL，例如 "http://localhost:8000/files/picture.jpg"
-        
-        Raises:
-            ValueError: 如果文件路径不在上传目录内
-        """
-        # 确保文件路径在 CACHE_DIR 内，防止目录遍历
-        if not os.path.realpath(file_path).startswith(os.path.realpath(CACHE_DIR)):
-            raise ValueError("File path is outside the upload directory")
-        
-        # 获取相对于 UPLOAD_DIR 的文件名
-        file_name = os.path.basename(file_path)
-        
-        # 构建预览 URL
-        preview_url = f"{base_url}/v1/files/{urllib.parse.quote(file_name)}"
-        return preview_url
 
     def _unload(self):
         print(f"[Model] Unloading model from {self.model_path}")

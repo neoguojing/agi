@@ -3,7 +3,6 @@
 ./depend/cosyvoice_tts-0.0.1.0-py3-none-any.whl
 librosa==0.10.1
 pydub==0.25.1
+torchaudio==2.6.0
 git+https://github.com/neoguojing/TTS.git
-faster-whisper==1.1.1
-sentencepiece==0.2.0
-ctranslate2==4.6.0
+numpy==1.26.4

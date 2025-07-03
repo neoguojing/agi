@@ -7,7 +7,7 @@ import logging
 load_dotenv(override=True)  # 加载 .env 文件中的环境变量
 #服务相关
 BASE_URL = os.environ.get("BASE_URL","http://localhost:8000")
-
+API_KEY =os.environ.get("API_KEY", "123")  # 请替换为实际的 API 密钥
 # 存储相关
 CACHE_DIR = os.path.abspath(os.environ.get("CACHE_DIR","./cache"))
 

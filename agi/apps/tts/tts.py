@@ -1,63 +1,49 @@
-import os
+import threading
 import time
+import os
 import re
-from datetime import date
-from pathlib import Path
-import torch
 import numpy as np
-import torchaudio
-from TTS.api import TTS
-from TTS.utils.radam import RAdam 
-from TTS.tts.configs.xtts_config import XttsConfig 
-from TTS.tts.models.xtts import XttsAudioConfig,XttsArgs
-from TTS.config.shared_configs import BaseDatasetConfig
-from cosyvoice.cli.cosyvoice import CosyVoice2
-from cosyvoice.utils.file_utils import load_wav
-from collections import defaultdict
-from agi.config import TTS_MODEL_DIR as model_root, CACHE_DIR, TTS_SPEAKER_WAV,TTS_GPU_ENABLE,TTS_FILE_SAVE_PATH,COMPUTE_TYPE
-from agi.llms.base import CustomerLLM,parse_input_messages,path_to_preview_url
-from langchain_core.runnables import RunnableConfig,run_in_executor
-from typing import Any, Optional,Union,ClassVar
-from pydantic import BaseModel, Field
-from langchain_core.messages import AIMessage, HumanMessage,AIMessageChunk
 import base64
-import numpy as np
-from pydub import AudioSegment
 import io
-from torch.serialization import add_safe_globals
-from agi.config import log
-
+from pathlib import Path
+from typing import Any
+from collections import defaultdict
+import torch
+import torchaudio
 from queue import Queue,Full
+from pydub import AudioSegment
 from threading import Lock
-
-audio_style = "width: 300px; height: 50px;"  # 添加样式
+from agi.apps.common import path_to_preview_url
+from agi.config import TTS_SPEAKER_WAV,TTS_GPU_ENABLE,log,COMPUTE_TYPE
+from agi.config import TEXT_TO_IMAGE_MODEL_PATH as model_root,TTS_FILE_SAVE_PATH
 cn_points = ['。', '！', '？']
 en_points = ['.', '!', '?']
 
-# for torch 2.6
-add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
-class TextToSpeech(CustomerLLM):
-    tts: Optional[Any] = Field(default=None)
-    speaker_wav: Any = Field(default=TTS_SPEAKER_WAV)
-    is_gpu: bool = Field(default=TTS_GPU_ENABLE)
-    language: str = Field(default="zh-cn")
-    save_file: bool = Field(default=True)
-    output_rate: int = Field(default=16000)
+SENTINEL = b"byte!?!"
 
-     # ✅ 明确声明为类变量，避免 Pydantic 处理
-    _queues: ClassVar[dict[str, Queue]] = {}
-    _lock: ClassVar[Lock] = Lock()
-    
-    def __init__(self,save_file: bool = False,**kwargs):
-        super().__init__(**kwargs)
+class TTS:
+    speaker_wav: Any = TTS_SPEAKER_WAV
+    is_gpu: bool = TTS_GPU_ENABLE
+    language: str = "zh-cn"
+    save_file: bool = False
+    output_rate: int = 16000
 
-        self.save_file = save_file
+    _queues: dict[str, Queue] = {}
+    _lock: Lock = Lock()
+    def __init__(self, model_path: str=model_root, timeout: int = 300):
+        """
+        model_path: 模型本地路径或 huggingface 名称
+        timeout: 超过多少秒未使用就自动卸载（默认10分钟）
+        """
+        self.model_path = model_path
+        self.timeout = timeout
         self.model = None
+        self.tts = None
+        self.last_used = 0
+        self.lock = threading.Lock()
+        self.monitor_thread = threading.Thread(target=self._monitor, daemon=True)
+        self.monitor_thread.start()
 
-    @property
-    def model_name(self) -> str:
-        return "tts"
-    
     @classmethod
     def get_queue(cls, tenant_id: str="default") -> Queue:
         if tenant_id not in cls._queues:
@@ -65,63 +51,67 @@ class TextToSpeech(CustomerLLM):
                 if tenant_id not in cls._queues:
                     cls._queues[tenant_id] = Queue(maxsize=3000)
         return cls._queues[tenant_id]
-       
-    def _load_model(self):
-        """Initialize the TTS model based on the available hardware."""
+    
+    def get_model(self):
+        """访问模型，如果未加载则自动加载"""
+        with self.lock:
+            self.last_used = time.time()
+            if self.model is None:
+                self._load()
+            return self.model
+
+    def _load(self):
         if self.tts is None or self.model is None:
             if self.is_gpu:
                 # GPU：2739MB
                 log.info("loading TextToSpeech model(GPU)...")
-                # model_path = os.path.join(model_root, "tts_models--multilingual--multi-dataset--xtts_v2")
                 model_path = model_root
                 if "cosyvoice" in model_path:
+                    from cosyvoice.cli.cosyvoice import CosyVoice2
+                    from cosyvoice.utils.file_utils import load_wav
                     self.speaker_wav = load_wav(TTS_SPEAKER_WAV, 16000)
                     is_float16 = COMPUTE_TYPE == "float16"
                     self.tts = CosyVoice2(model_path, load_jit=False, load_trt=False, fp16=is_float16,use_flow_cache=False)
                     self.model = self.tts.model
                     self.output_rate = self.tts.sample_rate
                 else:
+                    from torch.serialization import add_safe_globals
+                    from TTS.utils.radam import RAdam 
+                    from TTS.tts.configs.xtts_config import XttsConfig 
+                    from TTS.tts.models.xtts import XttsAudioConfig,XttsArgs
+                    from TTS.config.shared_configs import BaseDatasetConfig
+                    # for torch 2.6
+                    add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
+                    from TTS.api import TTS
                     config_path = os.path.join(model_path, "config.json")
                     log.info("use ts_models--multilingual--multi-dataset--xtts_v2")
                     self.tts = TTS(model_path=model_path, config_path=config_path).to(torch.device("cuda"))
                     self.model = self.tts.synthesizer
             else:
+                from torch.serialization import add_safe_globals
+                from TTS.utils.radam import RAdam 
+                from TTS.tts.configs.xtts_config import XttsConfig 
+                from TTS.tts.models.xtts import XttsAudioConfig,XttsArgs
+                from TTS.config.shared_configs import BaseDatasetConfig
+                # for torch 2.6
+                add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
+                from TTS.api import TTS
                 log.info("loading TextToSpeech model(CPU)...")
-                # self.tts = TTS(model_name="tts_models/zh-CN/baker/tacotron2-DDC-GST").to(torch.device("cpu"))
                 self.tts = TTS(model_name=model_root).to(torch.device("cpu"))
-                # model_dir = os.path.join(model_root, "tts_models--zh-CN--baker--tacotron2-DDC-GST")
-                # model_path = os.path.join(model_dir, "model_file.pth")
-                # config_path = os.path.join(model_dir, "config.json")
-                # return TTS(model_path=model_path, config_path=config_path)
                 self.model = self.tts.synthesizer
 
-    def list_available_models(self):
-        """Return a list of available TTS models."""
-        self._load_model()
-        return self.tts.list_models()
+    def invoke(self, input_str: str,user_id="default",save_file=False):
+        """Generate an image from the input text."""
+        self.get_model()
 
-    def invoke(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
-        """Generate speech audio from input text."""
-       
-        self._load_model()
-
-        user_id = config.get("configurable").get("user_id")
-        input_str = None
-        if isinstance(input,str):
-            input_str = input
-        else:
-            _,input_str = parse_input_messages(input)
-            
         log.info(f"tts input: {input_str}")
         final_np_pcm = np.array([], dtype=np.int16)
         file_path = None
-
+        self.save_file = save_file
         if self.save_file:
             file_path = self.save_audio_to_file(text=input_str)
             audio_source = path_to_preview_url(file_path)
-            return AIMessage(content=[
-                {"type": "audio", "audio": audio_source,"file_path":file_path,"text":input_str}
-            ])
+            return audio_source,file_path
         
         # Generate audio samples and return as ByteIO
         # 原始音频需要编码，不方便使用
@@ -132,23 +122,11 @@ class TextToSpeech(CustomerLLM):
             final_np_pcm = np.append(final_np_pcm,np_pcm)
 
         # 默认返回路径
-        audio_source = self.np_pcm_to_wave(final_np_pcm)
-        # 是否需要编码html
-        if kwargs.get('html') is True:
-            return AIMessage(content=[
-                {"type": "audio", "audio": f'<audio src="{audio_source}" {audio_style} controls></audio>\n',"file_path":file_path,"text":input_str}
-            ],response_metadata={"finish_reason":"stop"})
-        
-        log.info(f"tts output: {audio_source}")
-        return AIMessage(content=[
-            {"type": "audio", "audio": audio_source,"text":input_str}
-        ],response_metadata={"finish_reason":"stop"})
-        
-    async def ainvoke(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
-        log.debug("tts ainvoke ---------------")
-        # return self.invoke(input, config=config, **kwargs)
-        return await run_in_executor(config, self.invoke, input, config, **kwargs)
-        
+        audio_source,file_path = self.np_pcm_to_wave(final_np_pcm)
+
+        return audio_source,file_path
+    
+    # 流式返回生成数据
     def generate_audio_samples(self, text: str):
         """Generate audio samples from the input text."""
         try:
@@ -166,10 +144,12 @@ class TextToSpeech(CustomerLLM):
             else:
                 for sentence in self.sentence_segmenter(text):
                     yield self.tts.tts(text=sentence, speaker_wav=self.speaker_wav)
+            yield SENTINEL
         except Exception as e:
             log.error(f"Error generating audio samples: {e}")
             raise RuntimeError("Failed to generate audio samples.")
 
+    # 将数据保存到文件,返回文件的链接
     def save_audio_to_file(self, text: str, file_path: str = "") -> str:
         """Save the generated audio to a file and return the file path."""
         if not file_path:
@@ -218,6 +198,7 @@ class TextToSpeech(CustomerLLM):
         )
 
         audio_source = None
+        file_path = None
         if to_base64:
             # 写入内存中的 BytesIO
             mp3_io = io.BytesIO()
@@ -228,12 +209,13 @@ class TextToSpeech(CustomerLLM):
             mp3_base64 = base64.b64encode(mp3_io.read()).decode("utf-8")
             audio_source = f"data:audio/wav;base64,{mp3_base64}"
         else:
-            audio_source = f'{TTS_FILE_SAVE_PATH}/{int(time.time())}.wav'
-            audio_segment.export(audio_source, format="wav")
+            file_path = f'{TTS_FILE_SAVE_PATH}/{int(time.time())}.wav'
+            audio_segment.export(file_path, format="wav")
 
-        audio_source = path_to_preview_url(audio_source)
+        if file_path:
+            audio_source = path_to_preview_url(audio_source)
 
-        return audio_source
+        return audio_source,file_path
     
     # 列表格式的pcm数据归一化，转换为int16
     # 输出： np.array
@@ -276,6 +258,7 @@ class TextToSpeech(CustomerLLM):
             
             return audio_array
     
+    # 中文判断
     def is_chinese_text(self,text: str) -> bool:
         """
         简单判断文本中是否含有中文汉字字符，
@@ -386,4 +369,17 @@ class TextToSpeech(CustomerLLM):
             except Full:
                 log.warning("Queue full, dropping final PCM chunk.")
 
+    def _unload(self):
+        print(f"[Model] Unloading model from {self.model_path}")
+        del self.model
+        self.model = None
+        self.tts = None
+        torch.cuda.empty_cache()
 
+    def _monitor(self):
+        """后台线程定期检查是否应卸载模型"""
+        while True:
+            time.sleep(30)
+            with self.lock:
+                if self.model and (time.time() - self.last_used > self.timeout):
+                    self._unload()

@@ -1,12 +1,10 @@
 import uuid
 import base64
 from fastapi import FastAPI, Depends, HTTPException, Request,Query,UploadFile,File
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import StreamingResponse,FileResponse
 from typing import AsyncGenerator
 from typing import List, Union, Dict, Any,Optional
 from pydantic import BaseModel, Field
-import openai
 import json
 import time
 import os
@@ -16,14 +14,11 @@ from fastapi.middleware.cors import CORSMiddleware
 # 假设的 AgiGraph 模块（需要根据实际情况调整）
 from agi.tasks.graph import AgiGraph, State
 from agi.fast_api_file import router_file
-from agi.fast_api_audio import router_audio
-from agi.config import FILE_UPLOAD_PATH,log,IMAGE_FILE_SAVE_PATH,TTS_FILE_SAVE_PATH,LLM_WITH_NO_THINKING
+from agi.config import FILE_UPLOAD_PATH,log,IMAGE_FILE_SAVE_PATH,TTS_FILE_SAVE_PATH,LLM_WITH_NO_THINKING,API_KEY
 from pydub import AudioSegment
 import traceback
-import threading
-from contextlib import asynccontextmanager
 from agi.tasks.utils import identify_input_type,save_media_content
-    
+from agi.apps.common import verify_api_key
 # 初始化 FastAPI 应用
 app = FastAPI(
     title="AGI API",
@@ -33,8 +28,6 @@ app = FastAPI(
 )
 
 app.include_router(router_file)
-app.include_router(router_audio)
-
 
 app.add_middleware(
     CORSMiddleware,
@@ -43,20 +36,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-
 # 实例化 AgiGraph（假设的外部模块）
 graph = AgiGraph()
-
-# 认证配置
-security = HTTPBearer()
-API_KEY = "123"  # 请替换为实际的 API 密钥
-
-# 认证函数
-async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    if credentials.credentials != API_KEY:
-        raise HTTPException(status_code=403, detail="Invalid API Key")
-    return credentials.credentials
 
 # 兼容 OpenAI 的消息格式
 class ChatMessage(BaseModel):
@@ -465,49 +446,6 @@ async def create_transcription(file: UploadFile, api_key: str = Depends(verify_a
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-class SpeechRequest(BaseModel):
-    model: Optional[str] = "whisper-1"
-    input: Optional[str] = None
-    voice: Optional[str] = None
-    response_format: Optional[str] = "wav"
-    speed: Optional[float] = 0.0
-    
-@app.post("/v1/audio/speech",summary="文本转语音")
-async def generate_speech(request: SpeechRequest, api_key: str = Depends(verify_api_key)):
-    """
-    接收文本并生成语音文件。
-    """
-    try:
-        internal_messages: List[Union[HumanMessage, Dict[str, Union[str, List[Dict[str, str]]]]]] = []
-        input_type = "text"  # 默认输入类型
-        internal_messages.append(HumanMessage(content=request.input))
-
-            
-        state_data = State(
-            messages=internal_messages,
-            input_type=input_type,
-            need_speech=True,
-            user_id="speech",
-            conversation_id="",
-            feature="tts"
-        )
-
-        resp = await graph.invoke(state_data)
-        
-        last_message = resp.get("messages")
-        file_path = ""
-        if last_message is not None:
-            last_message = last_message[-1]
-            if isinstance(last_message.content[0],dict):
-                file_path = last_message.content[0].get("file_path","")
-        if not file_path or not os.path.exists(file_path):
-            raise HTTPException(status_code=404, detail="File not found")
-        
-        return FileResponse(file_path, media_type=f"audio/{request.response_format}", filename=file_path)
-    
-    except Exception as e:
-        log.error(e)
-        raise HTTPException(status_code=500, detail=str(e))
 
 # 定义请求体模型
 class EmbeddingRequest(BaseModel):
