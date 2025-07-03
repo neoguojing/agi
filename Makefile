@@ -75,3 +75,10 @@ run_image:
 	$(PYTHON) -m uvicorn $(IMAGE_GEN) --host 0.0.0.0 --port 8001 --reload
 
 
+.PHONY: image_image_gen
+image_image_gen:
+	docker build \
+	-f ./Dockerfile.image \
+	--build-arg COMMIT_HASH=$$(git rev-parse HEAD) \
+	--build-arg BRANCH_NAME=$$(git rev-parse --abbrev-ref HEAD) \
+	-t guojingneo/agi-fastapi-image:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
