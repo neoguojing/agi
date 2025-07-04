@@ -8,8 +8,10 @@ WORKDIR /agi
 
 COPY requirements/ ./requirements/
     
-RUN pip install --upgrade pip && pip install packaging && pip install -r ./requirements/common.txt && pip install -r ./requirements/tts.txt && rm -rf /root/.cache
-
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r ./requirements/common.txt && \
+    pip install --no-cache-dir -r ./requirements/tts.txt && \
+    rm -rf /root/.cache /tmp/*
 # 将应用代码拷贝到容器中
 COPY . .
 
@@ -17,4 +19,4 @@ COPY . .
 EXPOSE 8002
 
 # 启动命令（假设你的 FastAPI 应用在 main.py 中，并且实例名称为 app）
-CMD ["uvicorn", "agi.apps.image.fast_api_audio:app", "--host", "0.0.0.0", "--port", "8002"]
+CMD ["uvicorn", "agi.apps.tts.fast_api_audio:app", "--host", "0.0.0.0", "--port", "8002"]
