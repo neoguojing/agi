@@ -1,8 +1,10 @@
 # requirements.txt
 --requirement requirements/base.txt
 --requirement requirements/tts.txt
+--requirement requirements/tts_base.txt
 --requirement requirements/vision.txt
 --requirement requirements/langchain.txt
 --requirement requirements/extra.txt
 --requirement requirements/common.txt
 --requirement requirements/whisper.txt
+--requirement requirements/hugface.txt
