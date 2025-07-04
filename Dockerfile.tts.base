@@ -6,12 +6,17 @@ FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime
 # 设置工作目录
 WORKDIR /agi
 
+# 拷贝 requirements 和依赖
 COPY requirements/ ./requirements/
 COPY depend/ ./depend/
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    # ffmpeg \
-    build-essential git \
-    && rm -rf /var/lib/apt/lists/*
-    
-RUN pip install --upgrade pip && pip install packaging && pip install -r ./requirements/tts_base.txt && rm -rf /root/.cache
+# 安装依赖 + Python 包
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        git \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --upgrade pip \
+    && pip install --no-cache-dir packaging \
+    && pip install --no-cache-dir -r ./requirements/tts_base.txt \
+    && rm -rf /root/.cache /tmp/* ~/.cache/pip

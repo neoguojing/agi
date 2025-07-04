@@ -9,8 +9,12 @@ WORKDIR /agi
 # 将 requirements.txt 拷贝到容器中，并安装 Python 依赖
 COPY requirements/ ./requirements/
 
-RUN pip install --upgrade pip && pip install packaging && pip install -r ./requirements/common.txt && pip install -r ./requirements/vision.txt && rm -rf /root/.cache
-
+# 安装 Python 依赖并清理缓存
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir packaging && \
+    pip install --no-cache-dir -r ./requirements/common.txt && \
+    pip install --no-cache-dir -r ./requirements/vision.txt && \
+    rm -rf /root/.cache /tmp/* /var/tmp/*
 # 将应用代码拷贝到容器中
 COPY . .
 
