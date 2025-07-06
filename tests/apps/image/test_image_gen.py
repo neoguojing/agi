@@ -44,7 +44,7 @@ async def test_edit_image():
         "image": ("cat.jpg", img_bytes, "image/jpeg")
     }
     data = {
-        "prompt": "Add a hat on the top center"
+        "prompt": "Add a hat on the top of cat"
     }
 
     async with AsyncClient(app=app, base_url="http://test") as ac:
