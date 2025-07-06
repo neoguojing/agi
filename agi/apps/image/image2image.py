@@ -59,7 +59,7 @@ class Image2Image:
             return ""  # No valid image found in input
 
         # Resize image to fit model input requirements
-        input_image = input_image.data.resize((512, 512))
+        input_image = input_image.resize((512, 512))
         
         # Generate the image using the model
         generated_image = self.model(input, image=input_image, num_inference_steps=self.n_steps, strength=0.5, guidance_scale=self.guidance_scale).images[0]

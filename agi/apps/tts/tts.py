@@ -15,7 +15,7 @@ from pydub import AudioSegment
 from threading import Lock
 from agi.apps.common import path_to_preview_url
 from agi.config import TTS_SPEAKER_WAV,TTS_GPU_ENABLE,log,COMPUTE_TYPE
-from agi.config import TEXT_TO_IMAGE_MODEL_PATH as model_root,TTS_FILE_SAVE_PATH
+from agi.config import TTS_MODEL_DIR as model_root,TTS_FILE_SAVE_PATH
 cn_points = ['。', '！', '？']
 en_points = ['.', '!', '?']
 

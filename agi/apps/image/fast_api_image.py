@@ -1,5 +1,5 @@
 import io
-from fastapi import FastAPI, UploadFile, File, HTTPException,Depends
+from fastapi import FastAPI, UploadFile, File, HTTPException,Depends,Form
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, List, Union
 from PIL import Image
@@ -7,6 +7,7 @@ from agi.apps.image.text2image import Text2Image
 from agi.apps.image.image2image import Image2Image
 from agi.apps.common import verify_api_key
 from datetime import datetime
+from agi.config import log
 
 app = FastAPI(
     title="AGI IMAGE GEN API",
@@ -43,6 +44,7 @@ async def generate(req: ImageGenRequest,api_key: str = Depends(verify_api_key)):
         image = text2img.invoke(req.prompt,resp_format=req.response_format)
             
     except Exception as e:
+        log.error(e)
         raise HTTPException(status_code=500, detail=str(e))
 
     resp_data = []
@@ -57,11 +59,13 @@ async def generate(req: ImageGenRequest,api_key: str = Depends(verify_api_key)):
     )
 
 @app.post("/v1/images/edits")
-async def edit(prompt: str, image: UploadFile = File(...),api_key: str = Depends(verify_api_key)):
-    input_img = Image.open(io.BytesIO(await image.read())).convert("RGB")
+async def edit(prompt: str = Form(...), image: UploadFile = File(...),api_key: str = Depends(verify_api_key)):
+    
     try:
+        input_img = Image.open(io.BytesIO(await image.read())).convert("RGB")
         output = image2img.invoke(input=prompt, input_image=input_img)
     except Exception as e:
+        log.error(e)
         raise HTTPException(status_code=500, detail=str(e))
 
     return ImageGenResponse(

@@ -1,4 +1,5 @@
 from agi.apps.tts.fast_api_audio import app
+from agi.apps.tts.tts import SENTINEL
 from fastapi.testclient import TestClient
 import pytest
 import httpx
@@ -9,7 +10,9 @@ api_key = "123"
 def test_generate_speech():
     response = client.post(
         "/v1/audio/speech",
-        headers={"api-key": api_key},
+        headers={
+            "Authorization": f"Bearer {api_key}"
+        },
         json={
             "input": "你好，这是一个测试。",
             "voice": "test_voice",
@@ -26,7 +29,9 @@ async def test_generate_speech_streaming():
     async with httpx.AsyncClient(base_url="http://test", app=app) as client:
         response = await client.post(
             "/v1/audio/speech/streaming",
-            headers={"api-key": api_key},
+            headers={
+                "Authorization": f"Bearer {api_key}"
+            },
             json={"input": "测试流式语音", "response_format": "pcm"}
         )
 
@@ -39,5 +44,8 @@ async def test_generate_speech_streaming():
             data += chunk
             if len(data) > 1024:
                 break  # 足够判断是否有效流式数据
+            print(len(data))
+            if data == SENTINEL:
+                print(str(data))
 
         assert len(data) > 0
