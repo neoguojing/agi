@@ -37,15 +37,13 @@ async def test_generate_speech_streaming():
 
         assert response.status_code == 200
         assert response.headers["content-type"] == "audio/pcm"
-
+        import pdb; pdb.set_trace()
         # 读取流
         data = b""
         async for chunk in response.aiter_bytes():
+            print(len(chunk))
             data += chunk
             if len(data) > 1024:
-                break  # 足够判断是否有效流式数据
-            print(len(data))
-            if data == SENTINEL:
-                print(str(data))
+                continue
 
         assert len(data) > 0

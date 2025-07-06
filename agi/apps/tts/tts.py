@@ -103,7 +103,6 @@ class TTS:
     def invoke(self, input_str: str,user_id="default",save_file=False):
         """Generate an image from the input text."""
         self.get_model()
-        import pdb; pdb.set_trace()
         log.info(f"tts input: {input_str}")
         final_np_pcm = np.array([], dtype=np.int16)
         file_path = None
