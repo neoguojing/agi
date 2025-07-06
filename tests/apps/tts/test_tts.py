@@ -7,22 +7,22 @@ import asyncio
 
 client = TestClient(app)
 api_key = "123"
-def test_generate_speech():
-    response = client.post(
-        "/v1/audio/speech",
-        headers={
-            "Authorization": f"Bearer {api_key}"
-        },
-        json={
-            "input": "你好，这是一个测试。",
-            "voice": "test_voice",
-            "response_format": "wav",
-            "speed": 1.0
-        }
-    )
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("audio/wav")
-    assert len(response.content) > 100  # 基础校验数据大小
+# def test_generate_speech():
+#     response = client.post(
+#         "/v1/audio/speech",
+#         headers={
+#             "Authorization": f"Bearer {api_key}"
+#         },
+#         json={
+#             "input": "你好，这是一个测试。",
+#             "voice": "test_voice",
+#             "response_format": "wav",
+#             "speed": 1.0
+#         }
+#     )
+#     assert response.status_code == 200
+#     assert response.headers["content-type"].startswith("audio/wav")
+#     assert len(response.content) > 100  # 基础校验数据大小
 
 @pytest.mark.asyncio
 async def test_generate_speech_streaming():

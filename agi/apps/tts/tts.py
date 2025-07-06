@@ -103,7 +103,7 @@ class TTS:
     def invoke(self, input_str: str,user_id="default",save_file=False):
         """Generate an image from the input text."""
         self.get_model()
-
+        import pdb; pdb.set_trace()
         log.info(f"tts input: {input_str}")
         final_np_pcm = np.array([], dtype=np.int16)
         file_path = None
@@ -116,10 +116,13 @@ class TTS:
         # Generate audio samples and return as ByteIO
         # 原始音频需要编码，不方便使用
         for sample in self.generate_audio_samples(input_str):
-            list_pcm = self.uniform_model_output(sample)
-            np_pcm = self.list_pcm_normalization_int16(list_pcm)
-            self.send_pcm(user_id,np_pcm)
-            final_np_pcm = np.append(final_np_pcm,np_pcm)
+            if sample is SENTINEL:
+                self.send_pcm(user_id,sample)
+            else:
+                list_pcm = self.uniform_model_output(sample)
+                np_pcm = self.list_pcm_normalization_int16(list_pcm)
+                self.send_pcm(user_id,np_pcm)
+                final_np_pcm = np.append(final_np_pcm,np_pcm)
 
         # 默认返回路径
         audio_source,file_path = self.np_pcm_to_wave(final_np_pcm)
@@ -332,7 +335,11 @@ class TTS:
     
     def send_pcm(self, tenant_id: str, pcm_np: np.ndarray, chunk_size: int = 480):
         queue = self.get_queue(tenant_id)
-
+        
+        if pcm_np is SENTINEL:
+            queue.put(pcm_np, block=False)
+            return
+        
         if self.output_rate == 16000:
             chunk_size = 320
             
