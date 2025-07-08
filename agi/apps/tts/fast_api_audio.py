@@ -69,8 +69,11 @@ async def generate_speech(request: SpeechRequest, api_key: str = Depends(verify_
     接收文本并生成语音文件。
     """
     try:
-        _ ,file_path = tts.invoke(request.input,save_file=True)
-        return FileResponse(file_path, media_type=f"audio/{request.response_format}", filename=file_path)
+        if request.stream:
+            return generate_speech_streaming(request,api_key=api_key)
+        else:
+            _ ,file_path = tts.invoke(request.input,user_id=request.user,save_file=True)
+            return FileResponse(file_path, media_type=f"audio/{request.response_format}", filename=file_path)
     
     except Exception as e:
         log.error(e)
@@ -82,9 +85,8 @@ async def generate_speech_streaming(request: SpeechRequest, api_key: str = Depen
     接收文本并生成语音文件。
     """
     try:
-        # tts.invoke(request.input,save_file=False)
         # 非阻塞线程池执行
-        asyncio.create_task(run_in_threadpool(tts.invoke, request.input))
+        asyncio.create_task(run_in_threadpool(tts.invoke, input_str=request.input,user_id=request.user))
         return StreamingResponse(
             audio_generator(),
             media_type="audio/pcm"

@@ -49,6 +49,8 @@ class SpeechRequest(BaseModel):
     response_format: Optional[str] = "wav"
     speed: Optional[float] = 0.0
     user: str = Field(default="", description="用户名" , optional=True)
+    stream: bool = Field(default=False, description="是否使用流式响应" , optional=True)
+
 
 
 class ImageURL(BaseModel):

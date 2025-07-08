@@ -7,6 +7,8 @@ from langchain_core.messages import AIMessage, HumanMessage,AIMessageChunk
 from agi.config import log
 from openai import OpenAI
 from pydantic import  Field
+import tempfile
+
 
 class TextToSpeech(CustomerLLM):
     client: OpenAI = Field(None, alias='client')
@@ -40,16 +42,40 @@ class TextToSpeech(CustomerLLM):
         )
 
         # 保存为文件
-        with open("output.mp3", "wb") as f:
-            f.write(response.content)
+        tmp_path = ""
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            tmp.write(response.content)
+            tmp_path = tmp.name
 
         return AIMessage(content=[
-            {"type": "audio", "audio": audio_source,"text":input_str}
+            {"type": "audio", "audio": tmp_path,"text":input_str}
         ],response_metadata={"finish_reason":"stop"})
         
-    async def ainvoke(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
-        log.debug("tts ainvoke ---------------")
-        # return self.invoke(input, config=config, **kwargs)
-        return await run_in_executor(config, self.invoke, input, config, **kwargs)
+    def stream(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any):
+        
+        user_id = config.get("configurable").get("user_id")
+        input_str = None
+        if isinstance(input,str):
+            input_str = input
+        else:
+            _,input_str = parse_input_messages(input)
+            
+        log.info(f"tts input: {input_str}")
+        response = self.client.audio.speech.create(
+            model="tts-1",                     # 或 "tts-1-hd"
+            voice="alloy",                    # 支持 alloy, echo, fable, onyx, nova, shimmer
+            input=input_str,
+            response_format="wav",           # 可选 "mp3", "opus", "aac", "flac"
+            extra_body={"user": user_id,"stream":True},
+        )
 
+        # 保存为文件
+        for chunk in response.iter_bytes():
+            yield AIMessage(content=[
+                {"type": "audio", "audio": chunk}
+            ])
+
+        yield AIMessage(content=[
+                {"type": "audio", "audio": None}
+            ],response_metadata={"finish_reason":"stop"})
 
