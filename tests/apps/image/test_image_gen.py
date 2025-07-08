@@ -1,9 +1,7 @@
 import pytest
 from httpx import AsyncClient
 from agi.apps.image.fast_api_image import app  # 替换为你的实际模块路径
-from fastapi.testclient import TestClient
-from PIL import Image
-import io
+import base64
 
 api_key = "123"
 headers={
@@ -32,26 +30,34 @@ async def test_generate_image():
     assert isinstance(json_data["data"], list)
     assert "url" in json_data["data"][0]
 
+
+# 工具函数：读取本地图片并编码为 base64
+def encode_image_base64(path):
+    with open(path, "rb") as f:
+        return "data:image/jpg;base64," + base64.b64encode(f.read()).decode("utf-8")
+
 @pytest.mark.asyncio
-async def test_edit_image():
-    # 构造一张临时图片（RGB 白底）
-    img = Image.open("tests/cat.jpg")
-    img_bytes = io.BytesIO()
-    img.save(img_bytes, format="JPEG")
-    img_bytes.seek(0)
+async def test_image_edit_with_base64_input():
+    # 模拟请求体（image_url 是 base64 编码）
+    base64_image = encode_image_base64("tests/cat.jpg")
 
-    files = {
-        "image": ("cat.jpg", img_bytes, "image/jpeg")
+    request_body = {
+        "model": "test-model",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    { "type": "text", "text": "把这张图片变成黑白的" },
+                    { "type": "image_url", "image_url": { "url": base64_image } }
+                ]
+            }
+        ]
     }
-    data = {
-        "prompt": "Add a hat on the top of cat"
-    }
-
     async with AsyncClient(app=app, base_url="http://test") as ac:
-        response = await ac.post("/v1/images/edits", data=data, files=files,headers=headers)
+        resp = await ac.post("/v1/chat/completions", json=request_body,headers=headers)
 
-    assert response.status_code == 200
-    json_data = response.json()
-    assert "created" in json_data
-    assert isinstance(json_data["data"], list)
-    assert "url" in json_data["data"][0]
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["object"] == "chat.completion"
+        assert data["choices"][0]["message"]["content"] == "http://fake.com/edited.png"
+

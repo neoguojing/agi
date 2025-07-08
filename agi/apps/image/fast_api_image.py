@@ -5,9 +5,11 @@ from typing import Literal, Optional, List, Union
 from PIL import Image
 from agi.apps.image.text2image import Text2Image
 from agi.apps.image.image2image import Image2Image
-from agi.apps.common import verify_api_key
+from agi.apps.common import verify_api_key,ChatRequest
+from agi.utils.common import Media
 from datetime import datetime
 from agi.config import log
+import uuid
 
 app = FastAPI(
     title="AGI IMAGE GEN API",
@@ -58,17 +60,46 @@ async def generate(req: ImageGenRequest,api_key: str = Depends(verify_api_key)):
         data = resp_data
     )
 
-@app.post("/v1/images/edits")
-async def edit(prompt: str = Form(...), image: UploadFile = File(...),api_key: str = Depends(verify_api_key)):
-    
-    try:
-        input_img = Image.open(io.BytesIO(await image.read())).convert("RGB")
-        output = image2img.invoke(input=prompt, input_image=input_img)
-    except Exception as e:
-        log.error(e)
-        raise HTTPException(status_code=500, detail=str(e))
+# 用于修改图片
+@app.post("/v1/chat/completions")
+async def chat_completion(
+    request: ChatRequest,
+    api_key: str = Depends(verify_api_key)
+):
+    if not request.messages:
+        raise HTTPException(status_code=400, detail="No messages provided")
 
-    return ImageGenResponse(
-        created=int(datetime.utcnow().timestamp()),
-        data = [UrlData(url=output)]
-    )
+    msg = request.messages[-1]  # 只取最新的 user message
+    text = ""
+    input_image = None
+
+    # 解析文本 + 图像URL
+    for item in msg.content:
+        if item.type == "text" and item.text:
+            text = item.text
+        elif item.type == "image_url" and item.image_url:
+            input_image = item.image_url.url
+
+    if not input_image or not text:
+        raise HTTPException(status_code=400, detail="No image or text provided")
+
+    resp_image = None
+    try:
+        image_data = Media.from_data(input_image)
+        resp_image = image2img.invoke(text, input_image=image_data.data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Model invocation error: {str(e)}")
+
+    return {
+        "id": f"chatcmpl-{uuid.uuid4().hex}",
+        "object": "chat.completion",
+        "created": int(datetime.utcnow().timestamp()),
+        "choices": [{
+            "index": 0,
+            "message": {
+                "role": "assistant",
+                "content": resp_image
+            },
+            "finish_reason": "stop"
+        }]
+    }

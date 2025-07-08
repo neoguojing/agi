@@ -30,16 +30,16 @@ class ModelFactory:
         with ModelFactory._lock:
             if model_type not in ModelFactory._instances or ModelFactory._instances[model_type] is None:
                 ModelFactory._instances[model_type] = ModelFactory._load_model(model_type)
-                # 超出容量：弹出最久未使用
-                while len(ModelFactory._instances) > ModelFactory.max_models:
-                    old_key, old_inst = ModelFactory._instances.popitem(last=False)
-                    log.info(f"Unloading model {old_key}: {old_inst}")
-                    try:
-                        old_inst.destroy()
-                    except Exception as e:
-                        log.warning(f"Error destroying model {old_key}: {e}")
-            else:
-                ModelFactory._instances.move_to_end(model_type)
+            #     # 超出容量：弹出最久未使用
+            #     while len(ModelFactory._instances) > ModelFactory.max_models:
+            #         old_key, old_inst = ModelFactory._instances.popitem(last=False)
+            #         log.info(f"Unloading model {old_key}: {old_inst}")
+            #         try:
+            #             old_inst.destroy()
+            #         except Exception as e:
+            #             log.warning(f"Error destroying model {old_key}: {e}")
+            # else:
+            #     ModelFactory._instances.move_to_end(model_type)
                 
             return ModelFactory._instances[model_type]
 

@@ -4,6 +4,11 @@ from unittest.mock import AsyncMock, patch
 from agi.apps.multimodal.fast_api_multimodal import app  # 导入你的 FastAPI 应用
 import base64
 
+api_key = "123"
+headers={
+    "Authorization": f"Bearer {api_key}"
+}
+
 def load_base64_image(path: str) -> str:
     with open(path, "rb") as f:
         encoded = base64.b64encode(f.read()).decode("utf-8")
@@ -30,7 +35,7 @@ async def test_chat_completion_with_image():
         response = await ac.post(
             "/v1/chat/completions",
             json=request_body,
-            headers={"Authorization": "Bearer test-key"}  # mock verify_api_key
+            headers=headers
         )
         assert response.status_code == 200
         data = response.json()

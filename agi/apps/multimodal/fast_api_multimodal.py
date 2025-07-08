@@ -1,7 +1,5 @@
 from fastapi import FastAPI, Request,Depends,HTTPException
-from pydantic import BaseModel
-from typing import List, Union, Literal, Optional
-from agi.apps.common import verify_api_key
+from agi.apps.common import verify_api_key,ChatRequest
 from agi.apps.multimodal.multi_modal import MultiModel
 from agi.utils.common import detect_input_and_save
 from agi.config import FILE_UPLOAD_PATH
@@ -12,31 +10,6 @@ app = FastAPI()
 client = MultiModel()
 # ======== 定义 OpenAI Chat API 输入格式 ========
 
-class ImageURL(BaseModel):
-    url: str
-    detail: Optional[Literal["low", "auto", "high"]] = "auto"
-
-class MessageContent(BaseModel):
-    type: Literal["text", "image_url"]
-    text: Optional[str] = None
-    image_url: Optional[ImageURL] = None
-
-class Message(BaseModel):
-    role: Literal["user", "assistant", "system"]
-    content: List[MessageContent]
-
-class ChatRequest(BaseModel):
-    model: str
-    messages: List[Message]
-    max_tokens: Optional[int] = 512
-
-# ======== 响应格式 ========
-
-class ChatResponse(BaseModel):
-    id: str
-    object: str = "chat.completion"
-    created: int
-    choices: List[dict]
 
 # ======== 模拟处理图像 + 文本内容的逻辑 ========
 @app.post("/v1/chat/completions")

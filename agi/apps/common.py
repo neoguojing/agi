@@ -4,7 +4,8 @@ import urllib.parse
 from agi.config import API_KEY,BASE_URL,CACHE_DIR
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi import Depends, HTTPException
-
+from pydantic import BaseModel
+from typing import List, Union, Literal, Optional
 # 认证配置
 security = HTTPBearer()
 
@@ -39,3 +40,30 @@ def path_to_preview_url(file_path: str, base_url: str = BASE_URL) -> str:
         # 构建预览 URL
         preview_url = f"{base_url}/v1/files/{urllib.parse.quote(file_name)}"
         return preview_url
+
+
+class ImageURL(BaseModel):
+    url: str
+    detail: Optional[Literal["low", "auto", "high"]] = "auto"
+
+class MessageContent(BaseModel):
+    type: Literal["text", "image_url"]
+    text: Optional[str] = None
+    image_url: Optional[ImageURL] = None
+
+class Message(BaseModel):
+    role: Literal["user", "assistant", "system"]
+    content: List[MessageContent]
+
+class ChatRequest(BaseModel):
+    model: str
+    messages: List[Message]
+    max_tokens: Optional[int] = 512
+
+# ======== 响应格式 ========
+
+class ChatResponse(BaseModel):
+    id: str
+    object: str = "chat.completion"
+    created: int
+    choices: List[dict]

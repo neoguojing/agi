@@ -1,4 +1,3 @@
-import torch
 from pydantic import Field
 from typing import Any, Union, Literal, List, Dict
 from langchain_core.runnables import Runnable, RunnableSerializable, RunnableConfig
@@ -204,20 +203,19 @@ def parse_input_messages(input: Union[HumanMessage,list[HumanMessage]]):
 
 # Custom LLM class for integration with runnable modules
 class CustomerLLM(RunnableSerializable[HumanMessage, AIMessage]):
-    device: str = Field(default_factory=lambda: str(torch.device('cpu')))
+    device: str = Field(default_factory=None)
     model: Any = None
     tokenizer: Any = None
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device('cpu')
+        self.device = None
         self.model = None
     
 
     def destroy(self):
         if self.model is not None:
             del self.model
-            torch.cuda.empty_cache()
         log.info(f"Model {self.model_name} destroyed successfully")
 
     def encode(self, input):
