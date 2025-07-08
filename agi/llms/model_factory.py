@@ -69,12 +69,3 @@ class ModelFactory:
 
         return model
 
-    @staticmethod
-    def _safe_destroy(instance: CustomerLLM) -> None:
-        """Safely destroy the model instance if it is no longer referenced."""
-        refcount = len(gc.get_referrers(instance))
-        if refcount <= 2:  # Safe to delete when there are no external references
-            if isinstance(instance, CustomerLLM):
-                instance.destroy()
-            del instance
-            gc.collect()
