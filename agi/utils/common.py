@@ -11,6 +11,12 @@ import numpy as np
 import os
 import re
 from scipy.io.wavfile import write
+import mimetypes
+import uuid
+from urllib.parse import urlparse
+from tempfile import gettempdir
+
+import magic  # pip install python-magic
 
 class Timer:
     def __enter__(self):
@@ -173,3 +179,78 @@ class Media(BaseModel):
                 file.write(self.data.getvalue())
         else:
             raise TypeError("Unsupported media format for saving.")
+        
+
+def is_url(input_str):
+    return re.match(r'^https?://', input_str)
+
+def is_base64(input_str):
+    try:
+        base64.b64decode(input_str, validate=True)
+        return True
+    except Exception:
+        return False
+
+def download_file(url,target_path: str):
+    resp = requests.get(url, stream=True)
+    if not resp.ok:
+        raise ValueError("Failed to download file from URL")
+
+    ext = guess_extension(resp.headers.get("Content-Type", "application/octet-stream"))
+    file_path = os.path.join(target_path, f"url_{uuid.uuid4().hex}{ext}")
+    with open(file_path, "wb") as f:
+        for chunk in resp.iter_content(1024):
+            f.write(chunk)
+    return file_path
+
+def save_base64_to_file(b64_data,target_path:str):
+    try:
+        binary = base64.b64decode(b64_data)
+        # guess mime
+        mime = magic.from_buffer(binary, mime=True)
+        ext = guess_extension(mime)
+        file_path = os.path.join(target_path, f"b64_{uuid.uuid4().hex}{ext}")
+        with open(file_path, "wb") as f:
+            f.write(binary)
+        return file_path
+    except Exception as e:
+        raise ValueError("Invalid base64 data") from e
+
+def guess_extension(mime_type):
+    ext = mimetypes.guess_extension(mime_type)
+    return ext or ".bin"
+
+def guess_type(filepath):
+    return magic.from_file(filepath, mime=True)
+
+def classify_mime(mime_type):
+    if mime_type.startswith("image/"):
+        return "image"
+    elif mime_type.startswith("audio/"):
+        return "audio"
+    elif mime_type.startswith("video/"):
+        return "video"
+    else:
+        return "unknown"
+
+def detect_input_and_save(input_data: str,target_path: str):
+    """
+    判断输入类型，并保存为文件（若需要），返回：
+    - 文件路径
+    - 类型（image/audio/video/unknown）
+    """
+    file_path = None
+
+    if is_url(input_data):
+        file_path = download_file(input_data,target_path)
+    elif is_base64(input_data):
+        file_path = save_base64_to_file(input_data,target_path)
+    elif os.path.isfile(input_data):
+        file_path = input_data
+    else:
+        raise ValueError("输入不是合法的 URL、base64 或本地文件路径")
+
+    mime = guess_type(file_path)
+    category = classify_mime(mime)
+
+    return file_path, category
