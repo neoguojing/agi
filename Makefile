@@ -96,3 +96,19 @@ image_tts_base:
 	docker build \
 	-f ./Dockerfile.tts.base \
 	-t guojingneo/agi-fastapi-tts:base .
+
+.PHONY: image_whisper
+image_whisper:
+	docker build \
+	-f ./Dockerfile.whisper \
+	--build-arg COMMIT_HASH=$$(git rev-parse HEAD) \
+	--build-arg BRANCH_NAME=$$(git rev-parse --abbrev-ref HEAD) \
+	-t guojingneo/agi-fastapi-whisper:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
+
+.PHONY: image_hf
+image_hf:
+	docker build \
+	-f ./Dockerfile.hf \
+	--build-arg COMMIT_HASH=$$(git rev-parse HEAD) \
+	--build-arg BRANCH_NAME=$$(git rev-parse --abbrev-ref HEAD) \
+	-t guojingneo/agi-fastapi-hf:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
