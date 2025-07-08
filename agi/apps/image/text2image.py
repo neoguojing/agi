@@ -5,7 +5,7 @@ import base64
 import io
 from pathlib import Path
 from typing import Any
-import soundfile as sf
+import urllib.parse
 import torch
 from agi.config import TEXT_TO_IMAGE_VERSION,BASE_URL,CACHE_DIR
 from agi.config import TEXT_TO_IMAGE_MODEL_PATH as model_root,IMAGE_FILE_SAVE_PATH

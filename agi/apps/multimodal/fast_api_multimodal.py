@@ -1,7 +1,6 @@
 from fastapi import FastAPI, Request,Depends,HTTPException
 from pydantic import BaseModel
 from typing import List, Union, Literal, Optional
-import random
 from agi.apps.common import verify_api_key
 from agi.apps.multimodal.multi_modal import MultiModel
 from agi.utils.common import detect_input_and_save
