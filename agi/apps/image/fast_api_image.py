@@ -5,7 +5,7 @@ from typing import Literal, Optional, List, Union
 from PIL import Image
 from agi.apps.image.text2image import Text2Image
 from agi.apps.image.image2image import Image2Image
-from agi.apps.common import verify_api_key,ChatRequest
+from agi.apps.common import verify_api_key,ChatCompletionRequest
 from agi.utils.common import Media
 from datetime import datetime
 from agi.config import log
@@ -63,7 +63,7 @@ async def generate(req: ImageGenRequest,api_key: str = Depends(verify_api_key)):
 # 用于修改图片
 @app.post("/v1/chat/completions")
 async def chat_completion(
-    request: ChatRequest,
+    request: ChatCompletionRequest,
     api_key: str = Depends(verify_api_key)
 ):
     if not request.messages:

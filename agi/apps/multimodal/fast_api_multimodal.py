@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request,Depends,HTTPException
-from agi.apps.common import verify_api_key,ChatRequest
+from agi.apps.common import verify_api_key,ChatCompletionRequest
 from agi.apps.multimodal.multi_modal import MultiModel
 from agi.utils.common import detect_input_and_save
 from agi.config import FILE_UPLOAD_PATH
@@ -14,7 +14,7 @@ client = MultiModel()
 # ======== 模拟处理图像 + 文本内容的逻辑 ========
 @app.post("/v1/chat/completions")
 async def chat_completion(
-    request: ChatRequest,
+    request: ChatCompletionRequest,
     api_key: str = Depends(verify_api_key)
 ):
     if not request.messages:
@@ -22,35 +22,21 @@ async def chat_completion(
 
     msg = request.messages[-1]  # 只取最新的 user message
     text = ""
-    media = None
-    input_type = ""
+    audio = image = video = None
 
     # 解析文本 + 图像URL
     for item in msg.content:
         if item.type == "text" and item.text:
             text = item.text
-        elif item.type == "image_url" and item.image_url:
-            media = item.image_url.url
+        elif item.type == "audio" and item.audio:
+            audio = item.audio
+        elif item.type == "image" and item.image:
+            image = item.image
+        elif item.type == "video" and item.video:
+            video = item.video
 
-    # 检测多模态资源类型
-    audio = image = video = None
-    if media:
-        try:
-            saved_path, input_type = detect_input_and_save(media, target_path=FILE_UPLOAD_PATH)
-            if input_type == "audio":
-                audio = saved_path
-            elif input_type == "image":
-                image = saved_path
-            elif input_type == "video":
-                video = saved_path
-            else:
-                raise ValueError(f"Unsupported media type: {input_type}")
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Media load error: {str(e)}")
-
-    # 调用自定义 client.invoke(text, audio=..., image=..., video=...)
     try:
-        response_text, _, response_audio = client.invoke(text, audio=audio, image=image, video=video)
+        response_text, _, response_audio = client.invoke(text, audio=audio, image=image, video=video,return_audio=request.need_speech)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Model invocation error: {str(e)}")
 

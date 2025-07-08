@@ -1,5 +1,5 @@
 import unittest
-from agi.llms.base import Media
+from agi.utils.common import Media
 from agi.llms.image2image import Image2Image
 from langchain_core.messages import AIMessage,HumanMessage
 from PIL import Image as PIL_Image

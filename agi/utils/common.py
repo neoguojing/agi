@@ -47,7 +47,10 @@ def remove_data_uri_prefix(data_uri):
 class Media(BaseModel):
     data: Optional[Union[BytesIO, PILImage.Image]] = None
     model_config = ConfigDict(arbitrary_types_allowed=True)
-
+    file_path: Optional[str] = None
+    file_url: Optional[str] = None
+    file_base64 :Optional[str] = None
+    
     @classmethod
     def from_data(cls, input_data: Union[str,PILImage.Image,BytesIO, np.ndarray], media_type: str = "image") -> 'Media':
         """

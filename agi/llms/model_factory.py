@@ -6,14 +6,7 @@ from agi.llms.text2image import Text2Image
 from agi.llms.tts import TextToSpeech
 from agi.llms.speech2text import Speech2Text
 from agi.llms.multimodel import MultiModel
-from agi.config import MODEL_PATH as model_root
 from agi.llms.base import CustomerLLM
-from agi.config import (
-    OLLAMA_API_BASE_URL,
-    OPENAI_API_KEY,
-    RAG_EMBEDDING_MODEL,
-    OLLAMA_DEFAULT_MODE
-)
 from collections import OrderedDict
 from langchain_core.runnables import Runnable
 

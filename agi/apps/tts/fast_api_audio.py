@@ -5,7 +5,7 @@ from agi.config import log,TTS_MODEL_DIR
 from agi.apps.tts.tts import TTS,SENTINEL
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, List, Union
-from agi.apps.common import verify_api_key
+from agi.apps.common import verify_api_key,SpeechRequest
 from fastapi import Depends, HTTPException,FastAPI
 from fastapi.responses import StreamingResponse,FileResponse
 from typing import AsyncGenerator,Generator
@@ -62,12 +62,6 @@ async def audio_stream_ws(websocket: WebSocket, tenant_id: str):
     finally:
         await websocket.close()
 
-class SpeechRequest(BaseModel):
-    model: Optional[str] = "tts"
-    input: Optional[str] = None
-    voice: Optional[str] = None
-    response_format: Optional[str] = "wav"
-    speed: Optional[float] = 0.0
 
 @app.post("/v1/audio/speech",summary="文本转语音")
 async def generate_speech(request: SpeechRequest, api_key: str = Depends(verify_api_key)):

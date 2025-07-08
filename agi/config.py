@@ -39,7 +39,7 @@ WHISPER_GPU_ENABLE =os.getenv("WHISPER_GPU_ENABLE", "true").lower() in ("1", "tr
 WHISPER_MODEL_DIR = os.getenv("WHISPER_MODEL_DIR", os.path.join(MODEL_PATH,"wisper-v3-turbo-c2"))
 if not WHISPER_GPU_ENABLE:
     WHISPER_MODEL_DIR = os.getenv("WHISPER_MODEL_DIR", os.path.join(MODEL_PATH,"models--Systran--faster-whisper-base"))
-
+WHISPER_BASE_URL = os.getenv("WHISPER_BASE_URL", "http://localhost:8003/v1/")
 ## tts 
 # TTS_SPEAKER_WAV = os.getenv("TTS_SPEAKER_WAV", os.path.join(MODEL_PATH,"XTTS-v2","samples/zh-cn-sample.wav"))
 TTS_SPEAKER_WAV = os.getenv("TTS_SPEAKER_WAV", "asset/zero_shot_prompt.wav")
@@ -50,6 +50,8 @@ if not TTS_GPU_ENABLE:
     TTS_MODEL_DIR = os.getenv("TTS_MODEL_DIR", os.path.join(MODEL_PATH,"tts_models--zh-CN--baker--tacotron2-DDC-GST"))
 
 TTS_FILE_SAVE_PATH = os.getenv("TTS_FILE_SAVE_PATH",os.path.join(CACHE_DIR, "audio"))
+TTS_BASE_URL = os.getenv("TTS_BASE_URL", "http://localhost:8002/v1/")
+
 
 ## image 
 IMAGE_TO_IMAGE_MODEL_PATH = os.getenv("IMAGE_TO_IMAGE_MODEL_PATH",os.path.join(MODEL_PATH, "sdxl-turbo"))
@@ -57,14 +59,14 @@ IMAGE_TO_IMAGE_MODEL_PATH = os.getenv("IMAGE_TO_IMAGE_MODEL_PATH",os.path.join(M
 TEXT_TO_IMAGE_MODEL_PATH = os.getenv("TEXT_TO_IMAGE_MODEL_PATH",os.path.join(MODEL_PATH, "sdxl-turbo"))
 TEXT_TO_IMAGE_VERSION = os.getenv("TEXT_TO_IMAGE_VERSION","sdxl-turbo") #3.5-medium
 IMAGE_FILE_SAVE_PATH = os.getenv("IMAGE_FILE_SAVE_PATH",os.path.join(CACHE_DIR, "image"))
-
+IMAGE_GEN_BASE_URL = os.getenv("IMAGE_GEN_BASE_URL","http://localhost:8001/v1/")
 
 ## rag
 FILE_UPLOAD_PATH = os.getenv("FILE_UPLOAD_PATH",os.path.join(CACHE_DIR,"upload"))
 
 ## multi model
 MULTI_MODEL_PATH = os.getenv("MULTI_MODEL_PATH",os.path.join(MODEL_PATH, "Qwen2.5-Omni-3B"))
-
+MULTI_MODEL_BASE_URL = os.getenv("MULTI_MODEL_BASE_URL","http://localhost:8005/v1/")
 ## web
 EXA_API_KEY = os.getenv("EXA_API_KEY","")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY","")

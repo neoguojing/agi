@@ -18,7 +18,7 @@ from agi.config import FILE_UPLOAD_PATH,log,IMAGE_FILE_SAVE_PATH,TTS_FILE_SAVE_P
 from pydub import AudioSegment
 import traceback
 from agi.tasks.utils import identify_input_type,save_media_content
-from agi.apps.common import verify_api_key
+from agi.apps.common import verify_api_key,ChatCompletionRequest
 # 初始化 FastAPI 应用
 app = FastAPI(
     title="AGI API",
@@ -38,23 +38,6 @@ app.add_middleware(
 
 # 实例化 AgiGraph（假设的外部模块）
 graph = AgiGraph()
-
-# 兼容 OpenAI 的消息格式
-class ChatMessage(BaseModel):
-    role: str = Field(description="消息角色，例如 'user' 或 'assistant'")
-    content: Union[str, List[Dict[str, Any]]] = Field(description="消息内容，可以是文本或多模态数据")
-
-# 兼容 OpenAI 的请求格式
-class ChatCompletionRequest(BaseModel):
-    model: str = Field(default="agi", description="模型名称" , optional=True)
-    messages: List[ChatMessage] = Field(description="对话历史")
-    stream: bool = Field(default=False, description="是否使用流式响应" , optional=True)
-    max_tokens: int = Field(default=1024, ge=1, description="最大生成 token 数", optional=True)
-    user: str = Field(default="", description="用户名" , optional=True)
-    db_ids: List[str] = Field(default=None, description="知识库列表", optional=True)
-    need_speech: bool = Field(default=False, description="是否需要语音输出", optional=True)
-    feature: str = Field(default="", description="支持的特性：agent,web,rag", optional=True)
-    conversation_id: str = Field(default="", description="会话id" , optional=True)
 
 
 @app.post("/v1/chat/completions", summary="兼容 OpenAI 的聊天完成接口")
@@ -474,8 +457,3 @@ async def get_embedding(request: EmbeddingRequest):
             "total_tokens": 0
         }
     }
-
-# 启动服务
-# if __name__ == "__main__":
-#     import uvicorn
-#     uvicorn.run(app, host="0.0.0.0", port=8000)
