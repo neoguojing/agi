@@ -13,6 +13,7 @@ import torchaudio
 from queue import Queue,Full
 from pydub import AudioSegment
 from threading import Lock
+import traceback
 from agi.apps.common import path_to_preview_url
 from agi.config import TTS_SPEAKER_WAV,TTS_GPU_ENABLE,log,COMPUTE_TYPE
 from agi.config import TTS_MODEL_DIR as model_root,TTS_FILE_SAVE_PATH
@@ -102,32 +103,38 @@ class TTS:
 
     def invoke(self, input_str: str,user_id="default",save_file=False):
         """Generate an image from the input text."""
-        self.get_model()
-        log.info(f"tts input: {input_str}")
-        import pdb;pdb.set_trace()
-        final_np_pcm = np.array([], dtype=np.int16)
-        file_path = None
-        self.save_file = save_file
-        if self.save_file:
-            file_path = self.save_audio_to_file(text=input_str)
-            audio_source = path_to_preview_url(file_path)
+        try:
+            self.get_model()
+            log.info(f"tts input: {input_str}")
+            import pdb;pdb.set_trace()
+            final_np_pcm = np.array([], dtype=np.int16)
+            file_path = None
+            self.save_file = save_file
+            if self.save_file:
+                file_path = self.save_audio_to_file(text=input_str)
+                audio_source = path_to_preview_url(file_path)
+                return audio_source,file_path
+            
+            # Generate audio samples and return as ByteIO
+            # 原始音频需要编码，不方便使用
+            for sample in self.generate_audio_samples(input_str):
+                if sample is SENTINEL:
+                    self.send_pcm(user_id,sample)
+                else:
+                    list_pcm = self.uniform_model_output(sample)
+                    np_pcm = self.list_pcm_normalization_int16(list_pcm)
+                    self.send_pcm(user_id,np_pcm)
+                    final_np_pcm = np.append(final_np_pcm,np_pcm)
+
+            # 默认返回路径
+            audio_source,file_path = self.np_pcm_to_wave(final_np_pcm)
             return audio_source,file_path
-        
-        # Generate audio samples and return as ByteIO
-        # 原始音频需要编码，不方便使用
-        for sample in self.generate_audio_samples(input_str):
-            if sample is SENTINEL:
-                self.send_pcm(user_id,sample)
-            else:
-                list_pcm = self.uniform_model_output(sample)
-                np_pcm = self.list_pcm_normalization_int16(list_pcm)
-                self.send_pcm(user_id,np_pcm)
-                final_np_pcm = np.append(final_np_pcm,np_pcm)
 
-        # 默认返回路径
-        audio_source,file_path = self.np_pcm_to_wave(final_np_pcm)
+        except Exception as e:
+            log.error(f"TTS invoke error:{e}")
+            print(traceback.format_exc())
 
-        return audio_source,file_path
+
     
     # 流式返回生成数据
     def generate_audio_samples(self, text: str):
