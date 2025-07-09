@@ -75,13 +75,13 @@ class ChatMessage(BaseModel):
 class ChatCompletionRequest(BaseModel):
     model: str = Field(default="agi", description="模型名称" , optional=True)
     messages: List[ChatMessage] = Field(description="对话历史")
-    stream: bool = Field(default=False, description="是否使用流式响应" , optional=True)
-    max_tokens: int = Field(default=1024, ge=1, description="最大生成 token 数", optional=True)
-    user: str = Field(default="", description="用户名" , optional=True)
-    db_ids: List[str] = Field(default=None, description="知识库列表", optional=True)
-    need_speech: bool = Field(default=False, description="是否需要语音输出", optional=True)
-    feature: str = Field(default="", description="支持的特性：agent,web,rag", optional=True)
-    conversation_id: str = Field(default="", description="会话id" , optional=True)
+    stream: Optional[bool] = Field(default=False, description="是否使用流式响应" , optional=True)
+    max_tokens: Optional[int] = Field(default=1024, ge=1, description="最大生成 token 数", optional=True)
+    user: Optional[str] = Field(default="", description="用户名" , optional=True)
+    db_ids: Optional[List[str]] = Field(default=None, description="知识库列表", optional=True)
+    need_speech: Optional[bool] = Field(default=False, description="是否需要语音输出", optional=True)
+    feature: Optional[str] = Field(default="", description="支持的特性：agent,web,rag", optional=True)
+    conversation_id: Optional[str] = Field(default="", description="会话id" , optional=True)
 
 # ======== 响应格式 ========
 
