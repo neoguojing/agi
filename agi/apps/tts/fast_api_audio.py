@@ -88,7 +88,7 @@ async def generate_speech_streaming(request: SpeechRequest, api_key: str = Depen
         # 非阻塞线程池执行
         asyncio.create_task(run_in_threadpool(tts.invoke, input_str=request.input,user_id=request.user))
         return StreamingResponse(
-            audio_generator(),
+            audio_generator(request.user),
             media_type="audio/pcm"
         )
     
