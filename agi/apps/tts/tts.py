@@ -223,7 +223,7 @@ class TTS:
             audio_segment.export(file_path, format="wav")
 
         if file_path:
-            audio_source = path_to_preview_url(audio_source)
+            audio_source = path_to_preview_url(file_path)
 
         return audio_source,file_path
     
