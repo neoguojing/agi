@@ -24,5 +24,6 @@ async def test_transcribe_audio():
             response = await ac.post("/v1/audio/transcriptions", data=data, files=files,headers=headers)
             assert response.status_code == 200
             res = response.json()
+            print(res)
             assert "text" in res
             assert "测试" in res["text"]
