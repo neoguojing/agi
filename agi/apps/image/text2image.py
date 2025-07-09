@@ -52,8 +52,8 @@ class Text2Image:
             from diffusers import StableDiffusion3Pipeline
             self.n_steps = 20
             self.guidance_scale = 7.0
-            # self.model = StableDiffusion3Pipeline.from_pretrained(self.model_path, torch_dtype=torch.bfloat16)
-            self.model = StableDiffusion3Pipeline.from_pretrained(self.model_path, torch_dtype=torch.bfloat16,low_cpu_mem_usage=False,ignore_mismatched_sizes=True)
+            self.model = StableDiffusion3Pipeline.from_pretrained(self.model_path, torch_dtype=torch.bfloat16)
+            # self.model = StableDiffusion3Pipeline.from_pretrained(self.model_path, torch_dtype=torch.bfloat16,low_cpu_mem_usage=False,ignore_mismatched_sizes=True)
             self.model = self.model.to("cuda")
             
         self.model.enable_model_cpu_offload()
