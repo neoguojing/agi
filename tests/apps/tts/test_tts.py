@@ -17,7 +17,8 @@ def test_generate_speech():
             "input": "你好，这是一个测试。",
             "voice": "test_voice",
             "response_format": "wav",
-            "speed": 1.0
+            "speed": 1.0,
+            "user": "test"
         }
     )
     assert response.status_code == 200
@@ -32,7 +33,7 @@ async def test_generate_speech_streaming():
             headers={
                 "Authorization": f"Bearer {api_key}"
             },
-            json={"input": "测试流式语音", "response_format": "pcm"}
+            json={"input": "测试流式语音", "response_format": "pcm", "user": "test_stream"}
         )
 
         assert response.status_code == 200
