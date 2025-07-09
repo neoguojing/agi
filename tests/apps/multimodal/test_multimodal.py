@@ -25,7 +25,7 @@ async def test_chat_completion_with_image():
                 "role": "user",
                 "content": [
                     {"type": "text", "text": "请描述这张图片"},
-                    {"type": "image", "image": {"url": load_base64_image("tests/cat.jpg")}}
+                    {"type": "image", "image": load_base64_image("tests/cat.jpg")}
                 ]
             }
         ]

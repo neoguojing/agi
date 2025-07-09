@@ -17,28 +17,28 @@ async def chat_completion(
     request: ChatCompletionRequest,
     api_key: str = Depends(verify_api_key)
 ):
-    if not request.messages:
-        raise HTTPException(status_code=400, detail="No messages provided")
-
-    msg = request.messages[-1]  # 只取最新的 user message
-    text = ""
-    audio = image = video = None
-
-    # 解析文本 + 图像URL
-    for item in msg.content:
-        if item.type == "text" and item.text:
-            text = item.text
-        elif item.type == "audio" and item.audio:
-            audio = item.audio
-        elif item.type == "image" and item.image:
-            image = item.image
-        elif item.type == "video" and item.video:
-            video = item.video
-
     try:
-        response_text, _, response_audio = client.invoke(text, audio=audio, image=image, video=video,return_audio=request.need_speech)
+        if not request.messages:
+            raise HTTPException(status_code=400, detail="No messages provided")
+
+        msg = request.messages[-1]  # 只取最新的 user message
+        text = ""
+        audio = image = video = None
+
+        # 解析文本 + 图像URL
+        for item in msg.content:
+            if item.type == "text" and item.text:
+                text = item.text
+            elif item.type == "audio" and item.audio:
+                audio = item.audio
+            elif item.type == "image" and item.image:
+                image = item.image
+            elif item.type == "video" and item.video:
+                video = item.video
+
+            response_text, _, response_audio = client.invoke(text, audio=audio, image=image, video=video,return_audio=request.need_speech)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Model invocation error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"multimodal error: {str(e)}")
 
     # 组装结果（文字优先，音频路径作为补充）
     final_response = response_audio or response_text or "无内容返回"
