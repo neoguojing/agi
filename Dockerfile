@@ -32,14 +32,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libatspi2.0-0 \
     libmagic1 \
     && rm -rf /var/lib/apt/lists/* 
-    
-RUN pip install --upgrade pip \
- && pip install packaging \
- && pip install --no-cache-dir -r ./requirements/common.txt \
- && pip install --no-cache-dir -r ./requirements/extra.txt \
- && pip install --no-cache-dir -r ./requirements/langchain.txt \
- && rm -rf /root/.cache /tmp/* /var/tmp/* \
+
+RUN mkdir -p /root/.pip \
+ && echo "[global]\nindex-url = https://mirrors.aliyun.com/pypi/simple" > /root/.pip/pip.conf \
+ && pip install --upgrade pip \
  && python -m playwright install chromium 
+
+RUN pip install --no-cache-dir -r ./requirements/langchain.txt 
+RUN pip install --no-cache-dir -r ./requirements/common.txt 
+RUN pip install --no-cache-dir -r ./requirements/extra.txt 
+RUN rm -rf /root/.cache /tmp/* /var/tmp/*
+
 
 
 

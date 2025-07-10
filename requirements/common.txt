@@ -4,3 +4,4 @@ python-multipart==0.0.20
 numpy==1.26.4
 python-magic
 Pillow==11.1.0
+jieba==0.42.1
