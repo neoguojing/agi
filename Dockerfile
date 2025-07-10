@@ -1,19 +1,17 @@
 # 使用官方 Python 3.11 slim 作为基础镜像
-# FROM python:3.11-slim
+FROM python:3.11-slim
 # FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel
-FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime
+# FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime
 
 # 设置工作目录
 WORKDIR /agi
 
 # 将 requirements.txt 拷贝到容器中，并安装 Python 依赖
-COPY requirements.txt .
 COPY requirements/ ./requirements/
-COPY depend/ ./depend/
 
 # 更新 apt-get 并安装必要的系统依赖（可根据需要调整）
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # ffmpeg \
+    ffmpeg \
     build-essential git \
     libglib2.0-0 \
     libnss3 \
@@ -36,9 +34,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     libatspi2.0-0 \
     libmagic1 \
-    && rm -rf /var/lib/apt/lists/*
-RUN pip install --upgrade pip && pip install packaging && pip install -r requirements.txt && rm -rf /root/.cache
-RUN python -m playwright install chromium
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --upgrade pip \
+    && pip install packaging \
+    && pip install --no-cache-dir -r ./requirements/common.txt && \
+    && pip install --no-cache-dir -r ./requirements/extra.txt && \   
+    && pip install --no-cache-dir -r ./requirements/langchain.txt && \   
+    && python -m playwright install chromium \
+    && rm -rf /root/.cache \
 
 # 将应用代码拷贝到容器中
 COPY . .

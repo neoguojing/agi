@@ -1,0 +1,2 @@
+decord==0.6.0
+diffusers==0.32.2  # 可选
