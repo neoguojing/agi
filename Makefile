@@ -51,8 +51,14 @@ run:
 clean:
 	rm -rf dist/ build/ *.egg-info
 
+.PHONY: image_base
+image_base:
+	docker build \
+	-f ./Dockerfile.base \
+	-t guojingneo/agi-fastapi-app:base .
+
 .PHONY: image
-image:
+image: image_base
 	docker build \
 	-f ./Dockerfile \
 	--build-arg COMMIT_HASH=$$(git rev-parse HEAD) \
