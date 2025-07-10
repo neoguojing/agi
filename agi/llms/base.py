@@ -39,13 +39,11 @@ def parse_input_messages(input: Union[HumanMessage,list[HumanMessage]]):
 
 # Custom LLM class for integration with runnable modules
 class CustomerLLM(RunnableSerializable[HumanMessage, AIMessage]):
-    device: str = Field(default_factory=None)
     model: Any = None
     tokenizer: Any = None
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.device = None
         self.model = None
     
 
