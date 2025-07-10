@@ -41,8 +41,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && pip install --no-cache-dir -r ./requirements/common.txt \
  && pip install --no-cache-dir -r ./requirements/extra.txt \
  && pip install --no-cache-dir -r ./requirements/langchain.txt \
- && python -m playwright install chromium \
- && rm -rf /root/.cache /tmp/* /var/tmp/*
+ && rm -rf /root/.cache /tmp/* /var/tmp/* \
+ && python -m playwright install chromium 
+
 
 
 # 将应用代码拷贝到容器中
