@@ -33,6 +33,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libmagic1 \
     && rm -rf /var/lib/apt/lists/* 
 
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
 RUN mkdir -p /root/.pip \
  && echo "[global]\nindex-url = https://mirrors.aliyun.com/pypi/simple" > /root/.pip/pip.conf \
  && pip install --upgrade pip \
