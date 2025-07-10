@@ -1,5 +1,5 @@
 # 使用官方 Python 3.11 slim 作为基础镜像
-FROM agi-fastapi-app:base
+FROM guojingneo/agi-fastapi-app:base
 
 # 设置工作目录
 WORKDIR /agi
