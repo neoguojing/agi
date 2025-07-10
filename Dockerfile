@@ -12,7 +12,8 @@ COPY requirements/ ./requirements/
 # 更新 apt-get 并安装必要的系统依赖（可根据需要调整）
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    build-essential git \
+    build-essential \
+    git \
     libglib2.0-0 \
     libnss3 \
     libnspr4 \
@@ -34,14 +35,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     libatspi2.0-0 \
     libmagic1 \
-    && rm -rf /var/lib/apt/lists/* \
-    && pip install --upgrade pip \
-    && pip install packaging \
-    && pip install --no-cache-dir -r ./requirements/common.txt && \
-    && pip install --no-cache-dir -r ./requirements/extra.txt && \   
-    && pip install --no-cache-dir -r ./requirements/langchain.txt && \   
-    && python -m playwright install chromium \
-    && rm -rf /root/.cache \
+ && rm -rf /var/lib/apt/lists/* \
+ && pip install --upgrade pip \
+ && pip install packaging \
+ && pip install --no-cache-dir -r ./requirements/common.txt \
+ && pip install --no-cache-dir -r ./requirements/extra.txt \
+ && pip install --no-cache-dir -r ./requirements/langchain.txt \
+ && python -m playwright install chromium \
+ && rm -rf /root/.cache /tmp/* /var/tmp/*
+
 
 # 将应用代码拷贝到容器中
 COPY . .
