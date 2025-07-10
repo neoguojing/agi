@@ -12,8 +12,6 @@ COPY requirements/ ./requirements/
 # 更新 apt-get 并安装必要的系统依赖（可根据需要调整）
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    build-essential \
-    git \
     libglib2.0-0 \
     libnss3 \
     libnspr4 \

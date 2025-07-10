@@ -54,6 +54,7 @@ clean:
 .PHONY: image
 image:
 	docker build \
+	-f ./Dockerfile \
 	--build-arg COMMIT_HASH=$$(git rev-parse HEAD) \
 	--build-arg BRANCH_NAME=$$(git rev-parse --abbrev-ref HEAD) \
 	-t guojingneo/agi-fastapi-app:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
