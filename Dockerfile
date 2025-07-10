@@ -36,6 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN mkdir -p /root/.pip \
  && echo "[global]\nindex-url = https://mirrors.aliyun.com/pypi/simple" > /root/.pip/pip.conf \
  && pip install --upgrade pip \
+ && pip install --no-cache-dir playwright==1.51.0 \
  && python -m playwright install chromium 
 
 RUN pip install --no-cache-dir -r ./requirements/langchain.txt 
