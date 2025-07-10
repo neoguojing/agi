@@ -18,7 +18,7 @@ RUN apt-get update && \
     && pip install --no-cache-dir -r ./requirements/hugface.txt \
     && rm -rf /root/.cache /tmp/* ~/.cache/pip
 # 将应用代码拷贝到容器中
-COPY . .
+COPY agi/ /agi/agi/
 
 EXPOSE 8005
 

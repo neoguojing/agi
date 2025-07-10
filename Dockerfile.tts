@@ -13,7 +13,8 @@ RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r ./requirements/tts.txt && \
     rm -rf /root/.cache /tmp/*
 # 将应用代码拷贝到容器中
-COPY . .
+COPY agi/ /agi/agi/
+COPY asset/ /agi/asset/
 
 # 暴露应用运行的端口（默认 FastAPI 使用 8000）
 EXPOSE 8002
