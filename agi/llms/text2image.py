@@ -1,5 +1,5 @@
 from typing import Any, List, Mapping, Optional,Union
-from pydantic import  Field
+from pydantic import  Field,ConfigDict
 from agi.llms.base import CustomerLLM,parse_input_messages
 from agi.config import API_KEY,IMAGE_GEN_BASE_URL
 from langchain_core.runnables import RunnableConfig
@@ -8,9 +8,9 @@ from openai import OpenAI
 from agi.config import log
 
 
-style = 'style="width: 100%; max-height: 100vh;"'
 class Text2Image(CustomerLLM):
     client: OpenAI = Field(None, alias='client')
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
     def __init__(self, **kwargs):

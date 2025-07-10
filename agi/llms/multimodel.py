@@ -2,7 +2,7 @@ from agi.config import API_KEY,MULTI_MODEL_BASE_URL
 from agi.llms.base import CustomerLLM
 from langchain_core.runnables import RunnableConfig
 from typing import Any, Optional,Union
-from pydantic import BaseModel, Field
+from pydantic import ConfigDict, Field
 
 from langchain_core.messages import AIMessage, HumanMessage
 import traceback
@@ -12,6 +12,8 @@ from openai import OpenAI
 # GPU: 3B 13GB
 class MultiModel(CustomerLLM):
     client: OpenAI = Field(None, alias='client')
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     def __init__(self,**kwargs):
         super().__init__(**kwargs)
         self.client = OpenAI(api_key=API_KEY,base_url=MULTI_MODEL_BASE_URL)

@@ -5,15 +5,15 @@ from agi.config import (
 from typing import Any, List, Mapping, Optional,Union
 from agi.llms.base import CustomerLLM,parse_input_messages
 from langchain_core.runnables import RunnableConfig
-from pydantic import BaseModel, Field
+from pydantic import ConfigDict, Field
 from langchain_core.messages import AIMessage, HumanMessage
-from dataclasses import asdict
 from agi.config import log
 from openai import OpenAI
 
 # GPU 2600MB
 class Speech2Text(CustomerLLM):
     client: OpenAI = Field(None, alias='client')
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def __init__(self,**kwargs):
         super().__init__(**kwargs)

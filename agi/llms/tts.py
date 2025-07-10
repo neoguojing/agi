@@ -6,12 +6,13 @@ from typing import Any, Optional,Union,ClassVar
 from langchain_core.messages import AIMessage, HumanMessage,AIMessageChunk
 from agi.config import log
 from openai import OpenAI
-from pydantic import  Field
+from pydantic import  Field,ConfigDict
 import tempfile
 
 
 class TextToSpeech(CustomerLLM):
     client: OpenAI = Field(None, alias='client')
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def __init__(self,**kwargs):
         super().__init__(**kwargs)
