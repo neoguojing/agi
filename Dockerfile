@@ -31,8 +31,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     libatspi2.0-0 \
     libmagic1 \
- && rm -rf /var/lib/apt/lists/* \
- && pip install --upgrade pip \
+    && rm -rf /var/lib/apt/lists/* 
+    
+RUN pip install --upgrade pip \
  && pip install packaging \
  && pip install --no-cache-dir -r ./requirements/common.txt \
  && pip install --no-cache-dir -r ./requirements/extra.txt \
