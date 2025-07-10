@@ -1,5 +1,4 @@
 import uuid
-import base64
 from fastapi import FastAPI, Depends, HTTPException, Request,Query,UploadFile,File
 from fastapi.responses import StreamingResponse,FileResponse
 from typing import AsyncGenerator
@@ -7,7 +6,6 @@ from typing import List, Union, Dict, Any,Optional
 from pydantic import BaseModel, Field
 import json
 import time
-import os
 from langchain_core.messages import HumanMessage,BaseMessage
 from agi.tasks.task_factory import TaskFactory
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,7 +13,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from agi.tasks.graph import AgiGraph, State
 from agi.fast_api_file import router_file
 from agi.config import FILE_UPLOAD_PATH,log,IMAGE_FILE_SAVE_PATH,TTS_FILE_SAVE_PATH,LLM_WITH_NO_THINKING,API_KEY
-from pydub import AudioSegment
 import traceback
 from agi.tasks.utils import identify_input_type,save_media_content
 from agi.apps.common import verify_api_key,ChatCompletionRequest
@@ -332,103 +329,6 @@ async def list_models(api_key: str = Depends(verify_api_key)):
         object="list",
         data=fixed_models
     )
-
-class TranscriptionResponse(BaseModel):
-    text: str
-   
-
-async def convert_to_base64(file: UploadFile = File(...)):
-    try:
-        # 异步读取文件内容为字节数据
-        audio_bytes = await file.read()
-        
-        # 将字节数据编码为 Base64
-        base64_encoded = base64.b64encode(audio_bytes)
-        
-        # 将 Base64 字节转换为字符串（UTF-8 解码）
-        base64_string = base64_encoded.decode("utf-8")
-        
-        # 返回 Base64 编码结果
-        return base64_string
-    except Exception as e:
-        log.error(e)
-        return ""
-
-MAX_FILE_SIZE_MB = 25
-MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024
-def compress_audio(file_path):
-    if os.path.getsize(file_path) > MAX_FILE_SIZE:
-        file_dir = os.path.dirname(file_path)
-        audio = AudioSegment.from_file(file_path)
-        audio = audio.set_frame_rate(16000).set_channels(1)  # Compress audio
-        compressed_path = f"{file_dir}/{id}_compressed.opus"
-        audio.export(compressed_path, format="opus", bitrate="32k")
-        log.debug(f"Compressed audio to {compressed_path}")
-
-        if (
-            os.path.getsize(compressed_path) > MAX_FILE_SIZE
-        ):  # Still larger than MAX_FILE_SIZE after compression
-            raise Exception(f"file size greater than {MAX_FILE_SIZE_MB}MB")
-        return compressed_path
-    else:
-        return file_path
-    
-@app.post("/v1/audio/transcriptions", summary="语音转文本")
-async def create_transcription(file: UploadFile, api_key: str = Depends(verify_api_key)):
-    ext = file.filename.split(".")[-1]
-    id = uuid.uuid4()
-
-    filename = f"{id}.{ext}"
-    contents = file.file.read()
-
-    file_dir = f"{FILE_UPLOAD_PATH}/audio"
-    os.makedirs(file_dir, exist_ok=True)
-    file_path = f"{file_dir}/{filename}"
-
-    with open(file_path, "wb") as f:
-        f.write(contents)
-
-    
-    try:
-        file_path = compress_audio(file_path)
-    except Exception as e:
-        log.exception(e)
-
-        raise HTTPException(
-            status_code=400,
-            detail=str(e),
-        )
-
-    try:
-        internal_messages: List[Union[HumanMessage, Dict[str, Union[str, List[Dict[str, str]]]]]] = []
-        input_type = "audio"  # 默认输入类型
-        content: List[Dict[str, str]] = []
-        # base64_audio = await convert_to_base64(file)
-        # content.append({"type": "audio", "audio": base64_audio})
-        content.append({"type": "audio", "audio": file_path})
-        internal_messages.append(HumanMessage(content=content))
-
-            
-        state_data = State(
-            messages=internal_messages,
-            input_type=input_type,
-            need_speech=False,
-            user_id="transcriptions",
-            conversation_id="",
-            feature="speech"
-        )
-
-        resp = await graph.invoke(state_data)
-        last_message = resp.get("messages")
-        assistant_content = ""
-        if last_message is not None:
-            last_message = resp["messages"][-1]
-            assistant_content = last_message.content
-        return {"text": assistant_content}
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 
 # 定义请求体模型
 class EmbeddingRequest(BaseModel):

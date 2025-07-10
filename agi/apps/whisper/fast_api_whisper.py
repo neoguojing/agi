@@ -2,7 +2,9 @@ from fastapi import FastAPI, File, UploadFile, Form, HTTPException,Depends
 import os
 from agi.apps.common import verify_api_key
 from agi.apps.whisper.speech2text import Speech2Text
-from agi.config import FILE_UPLOAD_PATH
+from agi.config import FILE_UPLOAD_PATH,log
+from pydub import AudioSegment
+import uuid
 
 app = FastAPI(title="Custom Whisper API")
 
@@ -21,26 +23,60 @@ async def transcribe_audio(
 ):
     if not file.filename.endswith((".mp3", ".wav", ".m4a", ".ogg", ".webm")):
         raise HTTPException(status_code=400, detail="Unsupported audio format.")
+    try:
+        ext = file.filename.split(".")[-1]
+        id = uuid.uuid4()
 
-    # 保存音频到临时文件
-    file_path = os.path.join(FILE_UPLOAD_PATH,file.filename)
+        filename = f"{id}.{ext}"
+        contents = file.file.read()
 
-    with open(file_path, "wb") as f:
-        f.write(await file.read())
+        file_dir = f"{FILE_UPLOAD_PATH}/audio"
+        os.makedirs(file_dir, exist_ok=True)
+        file_path = f"{file_dir}/{filename}"
 
-    # 转录
-    text, info = model.invoke(file_path)
+        with open(file_path, "wb") as f:
+            f.write(contents)
 
+        file_path = compress_audio(file_path)
+        # 转录
+        text, info = model.invoke(file_path)
 
-    # 返回响应
-    if response_format == "json":
-        return {"text": text}
-    elif response_format == "text":
-        return text
-    elif response_format == "verbose_json":
-        return {
-            "text": text,
-            "language": info.language
-        }
+        # 返回响应
+        if response_format == "json":
+            return {"text": text}
+        elif response_format == "text":
+            return text
+        elif response_format == "verbose_json":
+            return {
+                "text": text,
+                "language": info.language
+            }
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported response_format.")
+    
+    except Exception as e:
+        log.exception(e)
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
+
+MAX_FILE_SIZE_MB = 25
+MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024
+def compress_audio(file_path):
+    if os.path.getsize(file_path) > MAX_FILE_SIZE:
+        file_dir = os.path.dirname(file_path)
+        audio = AudioSegment.from_file(file_path)
+        audio = audio.set_frame_rate(16000).set_channels(1)  # Compress audio
+        compressed_path = f"{file_dir}/{id}_compressed.opus"
+        audio.export(compressed_path, format="opus", bitrate="32k")
+        log.debug(f"Compressed audio to {compressed_path}")
+
+        if (
+            os.path.getsize(compressed_path) > MAX_FILE_SIZE
+        ):  # Still larger than MAX_FILE_SIZE after compression
+            raise Exception(f"file size greater than {MAX_FILE_SIZE_MB}MB")
+        return compressed_path
     else:
-        raise HTTPException(status_code=400, detail="Unsupported response_format.")
+        return file_path
