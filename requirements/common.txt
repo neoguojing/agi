@@ -5,3 +5,4 @@ numpy==1.26.4
 python-magic
 Pillow==11.1.0
 jieba==0.42.1
+spacy==3.8.2

@@ -14,11 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # 安装 Python 依赖并清理缓存
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        libmagic1 \
-    && rm -rf /var/lib/apt/lists/* && \
-    pip install --no-cache-dir --upgrade pip && \
+RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir packaging && \
     pip install --no-cache-dir -r ./requirements/common.txt && \
     pip install --no-cache-dir -r ./requirements/vision.txt && \
