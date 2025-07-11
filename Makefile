@@ -90,7 +90,7 @@ image_image_gen:
 	--build-arg BRANCH_NAME=$$(git rev-parse --abbrev-ref HEAD) \
 	-t guojingneo/agi-fastapi-image:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
 
-.PHONY: image_image_gen3.5
+.PHONY: image_image_gen3
 image_image_gen3:
 	docker build \
 	-f ./Dockerfile.image.3.5 \
