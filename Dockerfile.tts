@@ -7,7 +7,10 @@ FROM guojingneo/agi-fastapi-tts:base
 WORKDIR /agi
 
 COPY requirements/ ./requirements/
-    
+
+RUN mkdir -p /root/.pip \
+ && echo "[global]\nindex-url = https://mirrors.aliyun.com/pypi/simple" > /root/.pip/pip.conf
+
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r ./requirements/common.txt && \
     pip install --no-cache-dir -r ./requirements/tts.txt && \
