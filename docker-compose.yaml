@@ -24,17 +24,17 @@ services:
       - agi-net
       
   whisper:
-    image: guojingneo/agi-fastapi-whisper:66bcdad-dev
+    image: guojingneo/agi-fastapi-whisper:26e07ae-dev
     container_name: whisper
     volumes:
       - /data/agi:/agi/cache
       - /data/model:/agi/models
     runtime: nvidia
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - capabilities: [gpu]
     ports:
       - 8003:8003
     environment:
