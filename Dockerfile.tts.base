@@ -17,8 +17,13 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential \
         git \
-    && rm -rf /var/lib/apt/lists/* \
-    && pip install --upgrade pip \
+        ffmpeg \
+        libavcodec-dev \
+        libavformat-dev \
+        libavutil-dev \
+    && rm -rf /var/lib/apt/lists/* 
+    
+RUN pip install --upgrade pip \
     && pip install --no-cache-dir packaging \
     && pip install --no-cache-dir -r ./requirements/tts_base.txt \
     && rm -rf /root/.cache /tmp/* ~/.cache/pip
