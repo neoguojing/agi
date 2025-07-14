@@ -49,7 +49,7 @@ services:
 
   image_gen:
     # image: guojingneo/agi-fastapi-image:66bcdad-dev
-    image: guojingneo/agi-fastapi-image-3.5:70c72d5-dev
+    image: guojingneo/agi-fastapi-image-3.5:4069f73-dev
     container_name: image_gen
     volumes:
       - /data/agi:/agi/cache
@@ -67,6 +67,7 @@ services:
       - 'MODEL_PATH=/agi/models'
       - 'CACHE_DIR=/agi/cache'
       - 'AGI_DEBUG=True'
+      - 'NVIDIA_VISIBLE_DEVICES=all'
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped
