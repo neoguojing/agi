@@ -48,7 +48,8 @@ services:
       - agi-net
 
   image_gen:
-    image: guojingneo/agi-fastapi-image:66bcdad-dev
+    # image: guojingneo/agi-fastapi-image:66bcdad-dev
+    image: guojingneo/agi-fastapi-image-3.5:70c72d5-dev
     container_name: image_gen
     volumes:
       - /data/agi:/agi/cache
