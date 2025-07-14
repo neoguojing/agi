@@ -62,6 +62,7 @@ services:
     ports:
       - 8001:8001
     environment:
+      - 'TEXT_TO_IMAGE_MODEL_PATH=/agi/models/stable-diffusion-3.5-medium'
       - 'BASE_URL=http://localhost:8000'
       - 'MODEL_PATH=/agi/models'
       - 'CACHE_DIR=/agi/cache'
