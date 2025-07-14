@@ -10,7 +10,7 @@ import traceback
 app = FastAPI(title="Custom Whisper API")
 
 # 加载模型（你可以选择 tiny / base / medium / large）
-model = Speech2Text() 
+whisper = Speech2Text() 
 
 @app.post("/v1/audio/transcriptions")
 async def transcribe_audio(
@@ -40,7 +40,7 @@ async def transcribe_audio(
 
         file_path = compress_audio(file_path)
         # 转录
-        text, info = model.invoke(file_path)
+        text, info = whisper.invoke(file_path)
 
         # 返回响应
         if response_format == "json":
