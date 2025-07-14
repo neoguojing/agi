@@ -1,7 +1,7 @@
 services:
-  agi:
-    image: ghcr.io/neoguojing/agi:dev-e70f6dd
-    container_name: agi
+  huggingface:
+    image: guojingneo/agi-fastapi-hf:66bcdad-dev
+    container_name: huggingface
     volumes:
       - /data/agi:/agi/cache
       - /data/model:/agi/models
@@ -11,7 +11,104 @@ services:
           devices:
             - capabilities: [gpu]
     ports:
+      - 8005:8005
+    environment:
+      - 'BASE_URL=http://localhost:8000'
+      - 'MODEL_PATH=/agi/models'
+      - 'CACHE_DIR=/agi/cache'
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    restart: unless-stopped
+    networks:
+      - agi-net
+      
+  whisper:
+    image: guojingneo/agi-fastapi-whisper:66bcdad-dev
+    container_name: whisper
+    volumes:
+      - /data/agi:/agi/cache
+      - /data/model:/agi/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    ports:
+      - 8003:8003
+    environment:
+      - 'BASE_URL=http://localhost:8000'
+      - 'MODEL_PATH=/agi/models'
+      - 'CACHE_DIR=/agi/cache'
+      - 'AGI_DEBUG=True'
+      - 'COMPUTE_TYPE=int8'
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    restart: unless-stopped
+    networks:
+      - agi-net
+
+  image_gen:
+    image: guojingneo/agi-fastapi-image:66bcdad-dev
+    container_name: image_gen
+    volumes:
+      - /data/agi:/agi/cache
+      - /data/model:/agi/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    ports:
+      - 8001:8001
+    environment:
+      - 'BASE_URL=http://localhost:8000'
+      - 'MODEL_PATH=/agi/models'
+      - 'CACHE_DIR=/agi/cache'
+      - 'AGI_DEBUG=True'
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    restart: unless-stopped
+    networks:
+      - agi-net
+  
+  tts:
+    image: guojingneo/agi-fastapi-tts:66bcdad-dev
+    container_name: tts
+    volumes:
+      - /data/agi:/agi/cache
+      - /data/model:/agi/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    ports:
+      - 8002:8002
+    environment:
+      - 'BASE_URL=http://localhost:8000'
+      - 'MODEL_PATH=/agi/models'
+      - 'CACHE_DIR=/agi/cache'
+      - 'AGI_DEBUG=True'
+      - 'NVIDIA_VISIBLE_DEVICES=0'
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    restart: unless-stopped
+    networks:
+      - agi-net
+    
+  agi:
+    image: guojingneo/agi-fastapi-app:66bcdad-dev
+    container_name: agi
+    volumes:
+      - /data/agi:/agi/cache
+      - /data/model:/agi/models
+    ports:
       - 8000:8000
+    depends_on:
+      - tts
+      - image_gen
+      - whisper
+      - huggingface
     environment:
       - 'LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/opt/conda/lib/python3.11/site-packages/nvidia/cudnn/lib'
       - 'BASE_URL=http://localhost:8000'
@@ -21,8 +118,6 @@ services:
       - 'OLLAMA_DEFAULT_MODE=qwen3:14b'
       - 'OPENAI_API_KEY=xxx'
       - 'AGI_DEBUG=True'
-      - 'NVIDIA_VISIBLE_DEVICES=0'
-      - 'COMPUTE_TYPE=int8'
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped

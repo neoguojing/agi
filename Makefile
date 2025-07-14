@@ -9,6 +9,7 @@ TEST_TASKS = tests/tasks
 APP_DIR = agi
 TARGET = agi.fastapi_agi:app
 IMAGE_GEN = agi.apps.image.fast_api_image:app
+REGISTRY = ""
 
 # 默认目标
 .PHONY: all
@@ -55,7 +56,7 @@ clean:
 image_base:
 	docker build \
 	-f ./Dockerfile.base \
-	-t guojingneo/agi-fastapi-app:base .
+	-t $(REGISTRY)/guojingneo/agi-fastapi-app:base .
 
 .PHONY: image
 image: image_base
@@ -63,7 +64,7 @@ image: image_base
 	-f ./Dockerfile \
 	--build-arg COMMIT_HASH=$$(git rev-parse HEAD) \
 	--build-arg BRANCH_NAME=$$(git rev-parse --abbrev-ref HEAD) \
-	-t guojingneo/agi-fastapi-app:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
+	-t $(REGISTRY)/guojingneo/agi-fastapi-app:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
 
 .PHONY: runi
 runi:
@@ -88,7 +89,7 @@ image_image_gen:
 	-f ./Dockerfile.image \
 	--build-arg COMMIT_HASH=$$(git rev-parse HEAD) \
 	--build-arg BRANCH_NAME=$$(git rev-parse --abbrev-ref HEAD) \
-	-t guojingneo/agi-fastapi-image:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
+	-t $(REGISTRY)/guojingneo/agi-fastapi-image:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
 
 .PHONY: image_image_gen3
 image_image_gen3:
@@ -96,7 +97,7 @@ image_image_gen3:
 	-f ./Dockerfile.image.3.5 \
 	--build-arg COMMIT_HASH=$$(git rev-parse HEAD) \
 	--build-arg BRANCH_NAME=$$(git rev-parse --abbrev-ref HEAD) \
-	-t guojingneo/agi-fastapi-image:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
+	-t $(REGISTRY)/guojingneo/agi-fastapi-image-3.5:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
 
 .PHONY: image_tts
 image_tts:
@@ -104,13 +105,13 @@ image_tts:
 	-f ./Dockerfile.tts \
 	--build-arg COMMIT_HASH=$$(git rev-parse HEAD) \
 	--build-arg BRANCH_NAME=$$(git rev-parse --abbrev-ref HEAD) \
-	-t guojingneo/agi-fastapi-tts:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
+	-t $(REGISTRY)/guojingneo/agi-fastapi-tts:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
 
 .PHONY: image_tts_base
 image_tts_base:
 	docker build \
 	-f ./Dockerfile.tts.base \
-	-t guojingneo/agi-fastapi-tts:base .
+	-t $(REGISTRY)/guojingneo/agi-fastapi-tts:base .
 
 .PHONY: image_whisper
 image_whisper:
@@ -118,7 +119,7 @@ image_whisper:
 	-f ./Dockerfile.whisper \
 	--build-arg COMMIT_HASH=$$(git rev-parse HEAD) \
 	--build-arg BRANCH_NAME=$$(git rev-parse --abbrev-ref HEAD) \
-	-t guojingneo/agi-fastapi-whisper:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
+	-t $(REGISTRY)/guojingneo/agi-fastapi-whisper:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
 
 .PHONY: image_hf
 image_hf:
@@ -126,4 +127,4 @@ image_hf:
 	-f ./Dockerfile.hf \
 	--build-arg COMMIT_HASH=$$(git rev-parse HEAD) \
 	--build-arg BRANCH_NAME=$$(git rev-parse --abbrev-ref HEAD) \
-	-t guojingneo/agi-fastapi-hf:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
+	-t $(REGISTRY)/guojingneo/agi-fastapi-hf:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
