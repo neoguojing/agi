@@ -26,6 +26,7 @@ class Speech2Text:
         self.lock = threading.Lock()
         self.monitor_thread = threading.Thread(target=self._monitor, daemon=True)
         self.monitor_thread.start()
+        self.local_files_only = True
 
         self.beam_size = 5
         self.compute_type = compute_type
