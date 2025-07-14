@@ -26,7 +26,9 @@ class TextToSpeech(CustomerLLM):
     def invoke(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any) -> AIMessage:
         """Generate speech audio from input text."""
 
-        user_id = config.get("configurable").get("user_id")
+        user_id = "default"
+        if config:
+            user_id = config.get("configurable").get("user_id")
         input_str = None
         if isinstance(input,str):
             input_str = input
