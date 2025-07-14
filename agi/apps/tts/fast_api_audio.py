@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse,FileResponse
 from typing import AsyncGenerator,Generator
 from fastapi.concurrency import run_in_threadpool
 import asyncio
+import traceback
 
 tts = TTS()
 # 初始化 FastAPI 应用
@@ -68,6 +69,7 @@ async def generate_speech(request: SpeechRequest, api_key: str = Depends(verify_
     """
     接收文本并生成语音文件。
     """
+    log.info(request)
     try:
         if request.stream:
             return generate_speech_streaming(request,api_key=api_key)
@@ -77,6 +79,8 @@ async def generate_speech(request: SpeechRequest, api_key: str = Depends(verify_
     
     except Exception as e:
         log.error(e)
+        print(traceback.format_exc())
+
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/v1/audio/speech/streaming",summary="文本转语音")
@@ -94,6 +98,8 @@ async def generate_speech_streaming(request: SpeechRequest, api_key: str = Depen
     
     except Exception as e:
         log.error(e)
+        print(traceback.format_exc())
+
         raise HTTPException(status_code=500, detail=str(e))
 
 def audio_generator(tenant_id: str = "default") -> Generator[bytes, None, None]:

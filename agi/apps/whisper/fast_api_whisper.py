@@ -5,6 +5,7 @@ from agi.apps.whisper.speech2text import Speech2Text
 from agi.config import FILE_UPLOAD_PATH,log
 from pydub import AudioSegment
 import uuid
+import traceback
 
 app = FastAPI(title="Custom Whisper API")
 
@@ -56,6 +57,7 @@ async def transcribe_audio(
     
     except Exception as e:
         log.exception(e)
+        print(traceback.format_exc())
 
         raise HTTPException(
             status_code=400,

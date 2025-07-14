@@ -10,6 +10,7 @@ from agi.utils.common import Media
 from datetime import datetime
 from agi.config import log
 import uuid
+import traceback
 
 app = FastAPI(
     title="AGI IMAGE GEN API",
@@ -42,11 +43,13 @@ class ImageGenResponse(BaseModel):
 
 @app.post("/v1/images/generations")
 async def generate(req: ImageGenRequest,api_key: str = Depends(verify_api_key)):
+    log.info(req)
     try:
         image = text2img.invoke(req.prompt,resp_format=req.response_format)
             
     except Exception as e:
         log.error(e)
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
     resp_data = []
@@ -66,6 +69,7 @@ async def chat_completion(
     request: ChatCompletionRequest,
     api_key: str = Depends(verify_api_key)
 ):
+    log.info(request)
     if not request.messages:
         raise HTTPException(status_code=400, detail="No messages provided")
 
@@ -88,6 +92,7 @@ async def chat_completion(
         image_data = Media.from_data(input_image)
         resp_image = image2img.invoke(text, input_image=image_data.data)
     except Exception as e:
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Model invocation error: {str(e)}")
 
     return {

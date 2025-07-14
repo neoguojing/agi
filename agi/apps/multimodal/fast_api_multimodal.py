@@ -1,10 +1,10 @@
 from fastapi import FastAPI, Request,Depends,HTTPException
 from agi.apps.common import verify_api_key,ChatCompletionRequest
 from agi.apps.multimodal.multi_modal import MultiModel
-from agi.utils.common import detect_input_and_save
-from agi.config import FILE_UPLOAD_PATH
+from agi.config import FILE_UPLOAD_PATH,log
 from datetime import datetime
 import uuid
+import traceback
 
 app = FastAPI()
 client = MultiModel()
@@ -17,6 +17,7 @@ async def chat_completion(
     request: ChatCompletionRequest,
     api_key: str = Depends(verify_api_key)
 ):
+    log.info(request)
     try:
         if not request.messages:
             raise HTTPException(status_code=400, detail="No messages provided")
@@ -38,6 +39,8 @@ async def chat_completion(
 
             response_text, _, response_audio = client.invoke(text, audio=audio, image=image, video=video,return_audio=request.need_speech)
     except Exception as e:
+        print(traceback.format_exc())
+
         raise HTTPException(status_code=500, detail=f"multimodal error: {str(e)}")
 
     # 组装结果（文字优先，音频路径作为补充）
