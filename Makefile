@@ -9,7 +9,7 @@ TEST_TASKS = tests/tasks
 APP_DIR = agi
 TARGET = agi.fastapi_agi:app
 IMAGE_GEN = agi.apps.image.fast_api_image:app
-REGISTRY = ""
+REGISTRY = "docker.io"
 
 # 默认目标
 .PHONY: all
