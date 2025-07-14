@@ -84,11 +84,11 @@ services:
       - /data/agi:/agi/cache
       - /data/model:/agi/models
     runtime: nvidia
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - capabilities: [gpu]
     ports:
       - 8002:8002
     environment:
