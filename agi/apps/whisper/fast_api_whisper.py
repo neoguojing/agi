@@ -15,7 +15,7 @@ model = Speech2Text()
 @app.post("/v1/audio/transcriptions")
 async def transcribe_audio(
     file: UploadFile = File(...),
-    model_name: str = Form(...),  # 必须是 "whisper-1"，但你可以忽略它
+    model: str = Form("whisper-1"),  # 必须是 "whisper-1"，但你可以忽略它
     prompt: str = Form(None),
     language: str = Form(None),
     response_format: str = Form("json"),
