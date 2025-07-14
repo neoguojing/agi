@@ -1,2 +1,8 @@
 decord==0.6.0
 diffusers==0.29.0
+transformers==4.52.3
+accelerate==1.1.1
+sentencepiece==0.2.0
+
+
+
