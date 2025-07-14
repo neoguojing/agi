@@ -65,7 +65,7 @@ class TTS:
         if self.tts is None or self.model is None:
             if self.is_gpu:
                 # GPU：2739MB
-                log.info("loading TextToSpeech model(GPU)...")
+                log.info(f"loading TextToSpeech model(GPU) {model_root}")
                 model_path = model_root
                 if "cosyvoice" in model_path:
                     from cosyvoice.cli.cosyvoice import CosyVoice2
@@ -97,7 +97,7 @@ class TTS:
                 # for torch 2.6
                 add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
                 from TTS.api import TTS
-                log.info("loading TextToSpeech model(CPU)...")
+                log.info(f"loading TextToSpeech model(CPU) {model_root}")
                 self.tts = TTS(model_name=model_root).to(torch.device("cpu"))
                 self.model = self.tts.synthesizer
 

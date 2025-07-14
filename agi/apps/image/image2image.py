@@ -42,7 +42,7 @@ class Image2Image:
             return self.model
 
     def _load(self):
-        log.info("loading Image2Image model...")
+        log.info(f"loading Image2Image model {self.model_path}")
         from diffusers import AutoPipelineForImage2Image
         self.model = AutoPipelineForImage2Image.from_pretrained(
             self.model_path, torch_dtype=torch.float16
