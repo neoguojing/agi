@@ -8,7 +8,11 @@ TEST_LLMS = tests/llms
 TEST_TASKS = tests/tasks
 APP_DIR = agi
 TARGET = agi.fastapi_agi:app
-IMAGE_GEN = agi.apps.image.fast_api_image:app
+IMAGE_GEN_TAGET = agi.apps.image.fast_api_image:app
+TTS_TARGET = agi.apps.tts.fast_api_audio:app
+WHISPER_TARGET = agi.apps.whisper.fast_api_whisper:app
+HUGFACE_TARGET = agi.apps.multimodal.fast_api_multimodal:app
+
 REGISTRY = "docker.io"
 
 # 默认目标
@@ -42,7 +46,19 @@ test_api:
 	@$(PYTHON) -m pytest -s tests/fastapi_agi_test.py
 
 # 启动 FastAPI 服务
-.PHONY: run
+.PHONY: run run_image
+run_image:
+	$(PYTHON) -m uvicorn $(IMAGE_GEN_TAGET) --host 0.0.0.0 --port 8001 --reload
+
+run_tts:
+	$(PYTHON) -m uvicorn $(TTS_TARGET) --host 0.0.0.0 --port 8002 --reload
+
+run_whisper:
+	$(PYTHON) -m uvicorn $(WHISPER_TARGET) --host 0.0.0.0 --port 8003 --reload
+
+run_hugface:
+	$(PYTHON) -m uvicorn $(HUGFACE_TARGET) --host 0.0.0.0 --port 8005 --reload
+
 run:
 	python -m playwright install chromium
 	$(PYTHON) -m uvicorn $(TARGET) --host 0.0.0.0 --port 8000 --reload
@@ -78,9 +94,6 @@ models:
 	    echo "Creating model: $$model_name from $$file"; \
 	    ollama create $$model_name -f $$file; \
 	done
-
-run_image:
-	$(PYTHON) -m uvicorn $(IMAGE_GEN) --host 0.0.0.0 --port 8001 --reload
 
 
 .PHONY: image_image_gen
