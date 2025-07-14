@@ -106,7 +106,6 @@ class TTS:
         try:
             self.get_model()
             log.info(f"tts input: {input_str}")
-            import pdb;pdb.set_trace()
             final_np_pcm = np.array([], dtype=np.int16)
             file_path = None
             self.save_file = save_file
