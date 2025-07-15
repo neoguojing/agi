@@ -27,6 +27,9 @@ class Speech2Text(CustomerLLM):
         self, input: Union[HumanMessage,list[HumanMessage]], config: Optional[RunnableConfig] = None, **kwargs: Any
     ) -> AIMessage:
         """Process the input, transcribe audio, and return the output message."""
+        model_name = "large"
+        if config:
+            model_name = config.get("configurable",{}).get("model","large")
 
         audio_input,_ = parse_input_messages(input)
         
@@ -35,7 +38,7 @@ class Speech2Text(CustomerLLM):
         
         # Transcribe the audio input
         transcription = self.client.audio.transcriptions.create(
-                model="whisper-1",            # 模型名，必须是 "whisper-1"
+                model=model_name,            # 模型名，必须是 "whisper-1"
                 file=audio_input,
                 response_format="json",       # 可选：json | text | srt | verbose_json | vtt
                 language="zh",                # 可选：指定语言，如中文“zh”

@@ -23,8 +23,9 @@ class TestSpeech2Text(unittest.TestCase):
         print(f"test_speach2text:{output.content}")
     
     def test_speach2text_cpu(self):  
-        self.instance = Speech2Text(device="cpu")
-        output = self.instance.invoke(self.input)
+        config={"configurable": {"model": "base"}}
+        self.instance = Speech2Text()
+        output = self.instance.invoke(self.input,config=config)
         self.assertIsNotNone(output)
         self.assertIsNotNone(output.content)
         print(f"test_speach2text_cpu:{output.content}")

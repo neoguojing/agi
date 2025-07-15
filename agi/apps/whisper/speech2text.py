@@ -18,7 +18,7 @@ class Speech2Text:
         model_path: 模型本地路径或 huggingface 名称
         timeout: 超过多少秒未使用就自动卸载（默认10分钟）
         """
-        self.model_path = model_path
+        self.model_size = model_path
         self.timeout = timeout
         self.model = None
         self.whisper = None
@@ -31,7 +31,6 @@ class Speech2Text:
         self.beam_size = 5
         self.compute_type = compute_type
         if WHISPER_GPU_ENABLE:
-            self.model_size = model_root
             self.device = "cuda"
             log.info(model_root)
             if not os.path.exists(self.model_size):
@@ -39,7 +38,6 @@ class Speech2Text:
                 self.local_files_only=False
         else:
             self.device = "cpu"
-            self.model_size = model_root
             log.info(model_root)
 
     def get_model(self,device:str):
@@ -57,15 +55,16 @@ class Speech2Text:
             return self.model
 
     def _load(self):
-        print(f"[Model] Loading model from {self.model_path}")
+        print(f"[Model] Loading model from {self.model_size}")
         from faster_whisper import WhisperModel
         whisper = None
         if self.device == "cpu":
-            base_model = os.path.join(MODEL_PATH,"models--Systran--faster-whisper-base")
-            if not os.path.exists(base_model):
-                base_model = "base"
-            whisper = WhisperModel(base_model, device=self.device, compute_type="int8",local_files_only=self.local_files_only)
+            self.model_size = os.path.join(MODEL_PATH,"models--Systran--faster-whisper-base")
+            if not os.path.exists(self.model_size):
+                self.model_size = "base"
+            whisper = WhisperModel(self.model_size, device=self.device, compute_type="int8",local_files_only=self.local_files_only)
         else:
+            self.model_size = model_root
             whisper = WhisperModel(self.model_size, device=self.device, compute_type=self.compute_type,local_files_only=self.local_files_only)
 
         self.whisper = whisper
@@ -88,7 +87,7 @@ class Speech2Text:
         return content, asdict(info)
 
     def _unload(self):
-        print(f"[Model] Unloading model from {self.model_path}")
+        print(f"[Model] Unloading model from {self.model_size}")
         del self.model
         self.model = None
         self.whisper = None
