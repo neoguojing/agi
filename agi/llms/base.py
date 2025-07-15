@@ -36,7 +36,7 @@ def parse_input_messages(input: Union[HumanMessage,list[HumanMessage]]):
     
     from pathlib import Path
     def is_relative_path(path_str: str) -> bool:
-        if not any(sep in path_str for sep in (os.sep, '/', '\\')) and not path_str.startswith('.'):
+        if not os.path.isfile(path_str):
             return False
         return not Path(path_str).is_absolute()
     
