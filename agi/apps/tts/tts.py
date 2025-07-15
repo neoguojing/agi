@@ -72,7 +72,7 @@ class TTS:
                     from cosyvoice.utils.file_utils import load_wav
                     self.speaker_wav = load_wav(TTS_SPEAKER_WAV, 16000)
                     is_float16 = COMPUTE_TYPE == "float16"
-                    self.tts = CosyVoice2(model_path, load_jit=False, load_trt=False, fp16=is_float16,use_flow_cache=False)
+                    self.tts = CosyVoice2(model_path, load_jit=True, load_trt=False, fp16=is_float16,use_flow_cache=False)
                     self.model = self.tts.model
                     self.output_rate = self.tts.sample_rate
                 else:
