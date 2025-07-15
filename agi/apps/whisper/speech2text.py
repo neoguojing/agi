@@ -55,16 +55,17 @@ class Speech2Text:
             return self.model
 
     def _load(self):
-        print(f"[Model] Loading model from {self.model_size}")
         from faster_whisper import WhisperModel
         whisper = None
         if self.device == "cpu":
             self.model_size = os.path.join(MODEL_PATH,"models--Systran--faster-whisper-base")
             if not os.path.exists(self.model_size):
                 self.model_size = "base"
+            print(f"[Model] Loading model from {self.model_size}")
             whisper = WhisperModel(self.model_size, device=self.device, compute_type="int8",local_files_only=self.local_files_only)
         else:
             self.model_size = model_root
+            print(f"[Model] Loading model from {self.model_size}")
             whisper = WhisperModel(self.model_size, device=self.device, compute_type=self.compute_type,local_files_only=self.local_files_only)
 
         self.whisper = whisper
