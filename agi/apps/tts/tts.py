@@ -15,7 +15,7 @@ from pydub import AudioSegment
 from threading import Lock
 import traceback
 from agi.apps.common import path_to_preview_url
-from agi.config import TTS_SPEAKER_WAV,TTS_GPU_ENABLE,log,COMPUTE_TYPE
+from agi.config import TTS_SPEAKER_WAV,TTS_GPU_ENABLE,log,COMPUTE_TYPE,MODEL_PATH
 from agi.config import TTS_MODEL_DIR as model_root,TTS_FILE_SAVE_PATH
 cn_points = ['。', '！', '？']
 en_points = ['.', '!', '?']
@@ -53,41 +53,44 @@ class TTS:
                     cls._queues[tenant_id] = Queue(maxsize=3000)
         return cls._queues[tenant_id]
     
-    def get_model(self):
+    def get_model(self,model_name:str = "cosyvoice"):
         """访问模型，如果未加载则自动加载"""
         with self.lock:
             self.last_used = time.time()
             if self.model is None:
-                self._load()
+                self._load(model_name)
             return self.model
 
-    def _load(self):
+    def _load(self,model_name:str):
         if self.tts is None or self.model is None:
-            if self.is_gpu:
-                # GPU：2739MB
+            # GPU：2739MB
+            if "cosyvoice" == model_name and self.is_gpu:
+                from cosyvoice.cli.cosyvoice import CosyVoice2
+                from cosyvoice.utils.file_utils import load_wav
+                
+                model_root = os.path.join(MODEL_PATH,"cosyvoice/CosyVoice2-0.5B")
                 log.info(f"loading TextToSpeech model(GPU) {model_root}")
-                model_path = model_root
-                if "cosyvoice" in model_path:
-                    from cosyvoice.cli.cosyvoice import CosyVoice2
-                    from cosyvoice.utils.file_utils import load_wav
-                    self.speaker_wav = load_wav(TTS_SPEAKER_WAV, 16000)
-                    is_float16 = COMPUTE_TYPE == "float16"
-                    self.tts = CosyVoice2(model_path, load_jit=True, load_trt=False, fp16=is_float16,use_flow_cache=False)
-                    self.model = self.tts.model
-                    self.output_rate = self.tts.sample_rate
-                else:
-                    from torch.serialization import add_safe_globals
-                    from TTS.utils.radam import RAdam 
-                    from TTS.tts.configs.xtts_config import XttsConfig 
-                    from TTS.tts.models.xtts import XttsAudioConfig,XttsArgs
-                    from TTS.config.shared_configs import BaseDatasetConfig
-                    # for torch 2.6
-                    add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
-                    from TTS.api import TTS
-                    config_path = os.path.join(model_path, "config.json")
-                    log.info("use ts_models--multilingual--multi-dataset--xtts_v2")
-                    self.tts = TTS(model_path=model_path, config_path=config_path).to(torch.device("cuda"))
-                    self.model = self.tts.synthesizer
+
+                self.speaker_wav = load_wav(TTS_SPEAKER_WAV, 16000)
+                is_float16 = COMPUTE_TYPE == "float16"
+                self.tts = CosyVoice2(model_root, load_jit=True, load_trt=False, fp16=is_float16,use_flow_cache=False)
+                self.model = self.tts.model
+                self.output_rate = self.tts.sample_rate
+            elif "xtts" == model_name and self.is_gpu:
+                from torch.serialization import add_safe_globals
+                from TTS.utils.radam import RAdam 
+                from TTS.tts.configs.xtts_config import XttsConfig 
+                from TTS.tts.models.xtts import XttsAudioConfig,XttsArgs
+                from TTS.config.shared_configs import BaseDatasetConfig
+                # for torch 2.6
+                add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
+                from TTS.api import TTS
+                model_root = os.path.join(MODEL_PATH,"tts_models--multilingual--multi-dataset--xtts_v2")
+                log.info(f"loading TextToSpeech model(GPU) {model_root}")
+                config_path = os.path.join(model_root, "config.json")
+                log.info("use ts_models--multilingual--multi-dataset--xtts_v2")
+                self.tts = TTS(model_path=model_root, config_path=config_path).to(torch.device("cuda"))
+                self.model = self.tts.synthesizer
             else:
                 from torch.serialization import add_safe_globals
                 from TTS.utils.radam import RAdam 
@@ -97,14 +100,15 @@ class TTS:
                 # for torch 2.6
                 add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
                 from TTS.api import TTS
+                model_root = os.path.join(MODEL_PATH,"tts_models--zh-CN--baker--tacotron2-DDC-GST")
                 log.info(f"loading TextToSpeech model(CPU) {model_root}")
                 self.tts = TTS(model_name=model_root).to(torch.device("cpu"))
                 self.model = self.tts.synthesizer
 
-    def invoke(self, input_str: str,user_id="default",save_file=False):
+    def invoke(self, input_str: str,user_id="default",save_file=False,model_name="cosyvoice"):
         """Generate an image from the input text."""
         try:
-            self.get_model()
+            self.get_model(model_name)
             log.info(f"tts input: {input_str}")
             final_np_pcm = np.array([], dtype=np.int16)
             file_path = None

@@ -74,7 +74,7 @@ async def generate_speech(request: SpeechRequest, api_key: str = Depends(verify_
         if request.stream:
             return generate_speech_streaming(request,api_key=api_key)
         else:
-            _ ,file_path = tts.invoke(request.input,user_id=request.user,save_file=True)
+            _ ,file_path = tts.invoke(request.input,user_id=request.user,save_file=True,model_name=request.model)
             return FileResponse(file_path, media_type=f"audio/{request.response_format}", filename=file_path)
     
     except Exception as e:
@@ -91,7 +91,7 @@ async def generate_speech_streaming(request: SpeechRequest, api_key: str = Depen
     log.info(request)
     try:
         # 非阻塞线程池执行
-        asyncio.create_task(run_in_threadpool(tts.invoke, input_str=request.input,user_id=request.user))
+        asyncio.create_task(run_in_threadpool(tts.invoke, input_str=request.input,user_id=request.user,model_name=request.model))
         return StreamingResponse(
             audio_generator(request.user),
             media_type="audio/pcm"

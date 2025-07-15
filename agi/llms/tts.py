@@ -27,8 +27,11 @@ class TextToSpeech(CustomerLLM):
         """Generate speech audio from input text."""
 
         user_id = "default"
+        model_name = "cosyvoice"
         if config:
             user_id = config.get("configurable").get("user_id")
+            model_name = config.get("configurable").get("model","cosyvoice")
+
         input_str = None
         if isinstance(input,str):
             input_str = input
@@ -37,7 +40,7 @@ class TextToSpeech(CustomerLLM):
             
         log.info(f"tts input: {input_str}")
         response = self.client.audio.speech.create(
-            model="tts-1",                     # 或 "tts-1-hd"
+            model=model_name,                     # 或 "tts-1-hd"
             voice="alloy",                    # 支持 alloy, echo, fable, onyx, nova, shimmer
             input=input_str,
             response_format="wav",           # 可选 "mp3", "opus", "aac", "flac"
@@ -56,7 +59,12 @@ class TextToSpeech(CustomerLLM):
         
     def stream(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any):
         
-        user_id = config.get("configurable").get("user_id")
+        user_id = "default"
+        model_name = "cosyvoice"
+        if config:
+            user_id = config.get("configurable").get("user_id")
+            model_name = config.get("configurable").get("model","cosyvoice")
+
         input_str = None
         if isinstance(input,str):
             input_str = input
@@ -65,7 +73,7 @@ class TextToSpeech(CustomerLLM):
             
         log.info(f"tts input: {input_str}")
         response = self.client.audio.speech.create(
-            model="tts-1",                     # 或 "tts-1-hd"
+            model=model_name,                     # 或 "tts-1-hd"
             voice="alloy",                    # 支持 alloy, echo, fable, onyx, nova, shimmer
             input=input_str,
             response_format="wav",           # 可选 "mp3", "opus", "aac", "flac"
