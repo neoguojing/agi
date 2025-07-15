@@ -15,6 +15,8 @@ import mimetypes
 import uuid
 from urllib.parse import urlparse
 from tempfile import gettempdir
+from pathlib import Path
+
 
 import magic  # pip install python-magic
 
@@ -274,3 +276,9 @@ def file_to_data_uri(file_path: str) -> str:
     base64_str = base64.b64encode(file_bytes).decode("utf-8")
 
     return f"data:{mime_type};base64,{base64_str}"
+
+
+def is_relative_path(path_str: str) -> bool:
+    if not os.path.isfile(path_str):
+        return False
+    return not Path(path_str).is_absolute()

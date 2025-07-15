@@ -33,15 +33,6 @@ def parse_input_messages(input: Union[HumanMessage,list[HumanMessage]]):
                 prompt = content.get("text")
     elif isinstance(input.content, str):
         prompt = input.content
-    
-    from pathlib import Path
-    def is_relative_path(path_str: str) -> bool:
-        if not os.path.isfile(path_str):
-            return False
-        return not Path(path_str).is_absolute()
-    
-    if is_relative_path(media):
-        raise ValueError(f"路径 '{media}' 是相对路径，必须为绝对路径。")
 
     return media, prompt
 
