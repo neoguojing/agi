@@ -39,6 +39,5 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
     
 RUN pip install --upgrade pip \
-    && pip install --no-cache-dir packaging \
     && pip install --no-cache-dir -r ./requirements/tts_base.txt \
     && rm -rf /root/.cache /tmp/* ~/.cache/pip
