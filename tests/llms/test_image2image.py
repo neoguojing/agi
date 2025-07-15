@@ -1,5 +1,5 @@
 import unittest
-from agi.utils.common import Media
+from agi.utils.common import file_to_data_uri
 from agi.llms.image2image import Image2Image
 from langchain_core.messages import AIMessage,HumanMessage
 from PIL import Image as PIL_Image
@@ -14,7 +14,7 @@ class TestImage2Image(unittest.TestCase):
         
         # Prepare input image
         self.image_path = "tests/cat.jpg"  # Path to the test image
-        self.img = Media.from_data(self.image_path, media_type="image")
+        self.img = file_to_data_uri(self.image_path)
         self.assertIsNotNone(self.img, "Failed to load image.")
 
         # Prepare the multi-modal message with text and image

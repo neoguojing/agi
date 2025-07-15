@@ -257,3 +257,20 @@ def detect_input_and_save(input_data: str,target_path: str):
     category = classify_mime(mime)
 
     return file_path, category
+
+def file_to_data_uri(file_path: str) -> str:
+    """
+    读取文件并转成带 MIME 类型的 Data URI 格式 Base64 字符串
+
+    :param file_path: 文件路径
+    :return: data URI格式的字符串
+    """
+    mime_type, _ = mimetypes.guess_type(file_path)
+    if mime_type is None:
+        mime_type = "application/octet-stream"  # 默认类型
+
+    with open(file_path, "rb") as f:
+        file_bytes = f.read()
+    base64_str = base64.b64encode(file_bytes).decode("utf-8")
+
+    return f"data:{mime_type};base64,{base64_str}"

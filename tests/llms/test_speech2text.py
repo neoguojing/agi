@@ -4,12 +4,14 @@ from agi.llms.speech2text import Speech2Text
 from langchain_core.messages import AIMessage,HumanMessage
 from pathlib import Path
 from agi.config import log
+from agi.utils.common import file_to_data_uri
 
 class TestSpeech2Text(unittest.TestCase):
 
     def setUp(self):
+        audio_data = file_to_data_uri("tests/zh-cn-sample.wav")
         self.input = HumanMessage(content=[
-                {"type":"audio","audio":Path("tests/zh-cn-sample.wav")}
+                {"type":"audio","audio":audio_data}
             ]
         )
 

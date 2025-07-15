@@ -33,6 +33,7 @@ class Image2Image(CustomerLLM):
         
         if input_image is None:
             return output  # No valid image found in input
+        
         response = self.client.chat.completions.create(
             model=self.model_name,
             messages=[

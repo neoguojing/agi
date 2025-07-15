@@ -1,6 +1,6 @@
 import unittest
 from langchain_core.messages import AIMessage, HumanMessage
-
+from agi.utils.common import file_to_data_uri
 from agi.config import log
 
 class TestMultiModel(unittest.TestCase):
@@ -22,7 +22,8 @@ class TestMultiModel(unittest.TestCase):
         print(output.content)
 
     def test_audio_input(self):
-        input = HumanMessage(content=[{"type":"audio","audio":"tests/zh-cn-sample.wav"}])
+        audio_data = file_to_data_uri("tests/zh-cn-sample.wav")
+        input = HumanMessage(content=[{"type":"audio","audio":audio_data}])
         output = self.__class__.instance.invoke(input)
         self.assertIsNotNone(output)
         self.assertIsNotNone(output.content)
@@ -32,7 +33,8 @@ class TestMultiModel(unittest.TestCase):
         print(output.content)
 
     def test_image_input(self):
-        input = HumanMessage(content=[{"type":"image","image":"tests/cat.jpg"}])
+        image_data = file_to_data_uri("tests/cat.jpg")
+        input = HumanMessage(content=[{"type":"image","image":image_data}])
         output = self.__class__.instance.invoke(input)
         self.assertIsNotNone(output)
         self.assertIsNotNone(output.content)
@@ -43,7 +45,8 @@ class TestMultiModel(unittest.TestCase):
 
     def test_audio_output(self):
         config={"configurable": {"need_speech": True}}
-        input = HumanMessage(content=[{"type":"image","image":"tests/cat.jpg"}])
+        image_data = file_to_data_uri("tests/cat.jpg")
+        input = HumanMessage(content=[{"type":"image","image":image_data}])
         output = self.__class__.instance.invoke(input,config=config)
         self.assertIsNotNone(output)
         self.assertIsNotNone(output.content)
