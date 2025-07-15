@@ -3,7 +3,7 @@ import time
 import os
 from typing import Union
 import numpy as np
-from agi.config import WHISPER_GPU_ENABLE,log,COMPUTE_TYPE
+from agi.config import WHISPER_GPU_ENABLE,log,COMPUTE_TYPE,MODEL_PATH
 from agi.config import WHISPER_MODEL_DIR as model_root
 from agi.utils.common import Media
 from dataclasses import asdict
@@ -42,24 +42,38 @@ class Speech2Text:
             self.model_size = model_root
             log.info(model_root)
 
-    def get_model(self):
+    def get_model(self,device:str):
         """访问模型，如果未加载则自动加载"""
         with self.lock:
             self.last_used = time.time()
             if self.model is None:
                 self._load()
+            else:
+                if self.device != device:
+                    self._unload()
+                    self.device = device
+                    self._load()
+
             return self.model
 
     def _load(self):
         print(f"[Model] Loading model from {self.model_path}")
         from faster_whisper import WhisperModel
-        whisper = WhisperModel(self.model_size, device=self.device, compute_type=self.compute_type,local_files_only=self.local_files_only)
+        whisper = None
+        if self.device == "cpu":
+            base_model = os.path.join(MODEL_PATH,"models--Systran--faster-whisper-base")
+            if not os.path.exists(base_model):
+                base_model = "base"
+            whisper = WhisperModel(base_model, device=self.device, compute_type="int8",local_files_only=self.local_files_only)
+        else:
+            whisper = WhisperModel(self.model_size, device=self.device, compute_type=self.compute_type,local_files_only=self.local_files_only)
+
         self.whisper = whisper
         self.model = whisper.model
 
-    def invoke(self, audio_input: Union[str, np.ndarray,BytesIO]) -> str:
+    def invoke(self, audio_input: Union[str, np.ndarray,BytesIO],device="cuda") -> str:
         """Generate an image from the input text."""
-        self.get_model()
+        self.get_model(device)
 
         audio_input= Media.from_data(audio_input,media_type="audio")
         

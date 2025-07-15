@@ -15,7 +15,7 @@ whisper = Speech2Text()
 @app.post("/v1/audio/transcriptions")
 async def transcribe_audio(
     file: UploadFile = File(...),
-    model: str = Form("whisper-1"),  # 必须是 "whisper-1"，但你可以忽略它
+    model: str = Form("large"),  # 必须是 "whisper-1"，但你可以忽略它
     prompt: str = Form(None),
     language: str = Form(None),
     response_format: str = Form("json"),
@@ -39,8 +39,13 @@ async def transcribe_audio(
             f.write(contents)
 
         file_path = compress_audio(file_path)
+        text = info = None
         # 转录
-        text, info = whisper.invoke(file_path)
+        if model == "base":
+            text, info = whisper.invoke(file_path,device="cpu")
+        else:
+            text, info = whisper.invoke(file_path)
+
 
         # 返回响应
         if response_format == "json":
