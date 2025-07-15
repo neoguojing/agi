@@ -24,7 +24,7 @@ services:
       - agi-net
       
   whisper:
-    image: guojingneo/agi-fastapi-whisper:26e07ae-dev
+    image: guojingneo/agi-fastapi-whisper:cfcc7b1-dev
     container_name: whisper
     volumes:
       - /data/agi:/agi/cache
@@ -78,7 +78,7 @@ services:
       - agi-net
   
   tts:
-    image: guojingneo/agi-fastapi-tts:66bcdad-dev
+    image: guojingneo/agi-fastapi-tts:5991ccf-dev
     container_name: tts
     volumes:
       - /data/agi:/agi/cache
