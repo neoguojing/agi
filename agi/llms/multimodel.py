@@ -36,9 +36,11 @@ class MultiModel(CustomerLLM):
             elif isinstance(inputs,list):
                 inputs = inputs[-1]
                 content = inputs.content
+
             else:
                 raise TypeError(f"Invalid input type: {type(inputs)}. Expected HumanMessage or List[HumanMessage].") 
             
+
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 extra_body={"need_speech": return_audio},
@@ -51,7 +53,10 @@ class MultiModel(CustomerLLM):
             )
             
             log.info(response)
-            ret = AIMessage(content=response.choices[0].message.content)
+            content = [{"type":"text","text":response.choices[0].message.content}]
+            if response.choices[0].message.audio:
+                content.insert(0, {"type":"audio","audio":response.choices[0].message.audio.data})
+            ret = AIMessage(content=content)
             return ret
                         
         except Exception as e:

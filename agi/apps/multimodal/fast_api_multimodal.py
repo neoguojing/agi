@@ -28,7 +28,9 @@ async def chat_completion(
 
         # 解析文本 + 图像URL
         for item in msg.content:
-            if item.type == "text" and item.text:
+            if isinstance(item,str):
+                text = item
+            elif item.type == "text" and item.text:
                 text = item.text
             elif item.type == "audio" and item.audio:
                 audio = item.audio
@@ -43,9 +45,14 @@ async def chat_completion(
 
         raise HTTPException(status_code=500, detail=f"multimodal error: {str(e)}")
 
-    # 组装结果（文字优先，音频路径作为补充）
-    final_response = response_audio or response_text or "无内容返回"
-
+    if response_audio:
+        response_audio = {
+                "id": uuid.uuid4().hex,
+                "data": response_audio,
+                "expires_at": 0,
+                "transcript": response_text
+            }
+        
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex}",
         "object": "chat.completion",
@@ -54,7 +61,8 @@ async def chat_completion(
             "index": 0,
             "message": {
                 "role": "assistant",
-                "content": final_response
+                "content": response_text,
+                "audio": response_audio
             },
             "finish_reason": "stop"
         }]

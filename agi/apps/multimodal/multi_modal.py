@@ -53,7 +53,6 @@ class MultiModel:
         self.processor = Qwen2_5OmniProcessor.from_pretrained(model_root)
 
     def invoke(self, text: str="",audio: any=None,image: any = None,video: any = None,return_audio=False,return_fmt=""):
-        """Generate an image from the input text."""
         try:
             self.get_model()
 
