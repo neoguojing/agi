@@ -1,6 +1,6 @@
 services:
   huggingface:
-    image: guojingneo/agi-fastapi-hf:66bcdad-dev
+    image: guojingneo/agi-fastapi-hf:d9a4bd9-dev
     container_name: huggingface
     volumes:
       - /data/agi:/agi/cache
