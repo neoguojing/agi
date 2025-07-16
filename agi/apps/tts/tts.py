@@ -187,7 +187,7 @@ class TTS:
                 self.tts.tts_to_file(
                     text=text,
                     speaker_wav=self.speaker_wav,
-                    language=self.language if self.is_gpu else None,
+                    language=self.language if self.is_gpu and self.model_name == "xtts" else None,
                     file_path=file_path
                 )
         except Exception as e:
