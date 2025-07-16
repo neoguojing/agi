@@ -15,6 +15,8 @@ HUGFACE_TARGET = agi.apps.multimodal.fast_api_multimodal:app
 
 REGISTRY = "docker.io"
 
+TTS_TYPE ?= cosyvoice   # 可选值: tts 或 cosyvoice
+IMAGE_GEN_VERION ?= "" # 可选值3.5
 # 默认目标
 .PHONY: all
 all: install test
@@ -123,14 +125,8 @@ image_tts:
 .PHONY: image_tts_base
 image_tts_base:
 	docker build \
-	-f ./Dockerfile.tts.base \
-	-t $(REGISTRY)/guojingneo/agi-fastapi-tts:base .
-
-.PHONY: image_cosyvoice_base
-image_cosyvoice_base:
-	docker build \
-	-f ./Dockerfile.tts.cosyvoice.base \
-	-t $(REGISTRY)/guojingneo/agi-fastapi-cosyvoice:base .
+		-f ./Dockerfile.$(TTS_TYPE).base \
+		-t $(REGISTRY)/guojingneo/agi-fastapi-tts:base .
 
 .PHONY: image_whisper
 image_whisper:
