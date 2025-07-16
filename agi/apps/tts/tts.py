@@ -78,14 +78,14 @@ class TTS:
                 self.model = self.tts.model
                 self.output_rate = self.tts.sample_rate
             elif "xtts" == self.model_name and self.is_gpu:
-                from torch.serialization import add_safe_globals
                 from TTS.utils.radam import RAdam 
                 from TTS.tts.configs.xtts_config import XttsConfig 
                 from TTS.tts.models.xtts import XttsAudioConfig,XttsArgs
                 from TTS.config.shared_configs import BaseDatasetConfig
-                # for torch 2.6
-                add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
                 from TTS.api import TTS
+                # for torch 2.6
+                # from torch.serialization import add_safe_globals
+                # add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
                 model_root = os.path.join(MODEL_PATH,"tts_models--multilingual--multi-dataset--xtts_v2")
                 log.info(f"loading TextToSpeech model(GPU) {model_root}")
                 config_path = os.path.join(model_root, "config.json")
@@ -93,13 +93,13 @@ class TTS:
                 self.tts = TTS(model_path=model_root, config_path=config_path).to(torch.device("cuda"))
                 self.model = self.tts.synthesizer
             else:
-                from torch.serialization import add_safe_globals
                 from TTS.utils.radam import RAdam 
                 from TTS.tts.configs.xtts_config import XttsConfig 
                 from TTS.tts.models.xtts import XttsAudioConfig,XttsArgs
                 from TTS.config.shared_configs import BaseDatasetConfig
                 # for torch 2.6
-                add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
+                # from torch.serialization import add_safe_globals
+                # add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
                 from TTS.api import TTS
                 model_root = os.path.join(MODEL_PATH,"tts_models--zh-CN--baker--tacotron2-DDC-GST")
                 log.info(f"loading TextToSpeech model(CPU) {model_root}")
