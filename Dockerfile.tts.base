@@ -24,7 +24,7 @@ RUN apt-get update && \
         ffmpeg \
         libavcodec-dev \
         libavformat-dev \
-        libavutil-dev \
+        libavutil-dev && \
     rm -rf /var/lib/apt/lists/*
     
 RUN pip install --upgrade pip \
