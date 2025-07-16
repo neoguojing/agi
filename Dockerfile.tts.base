@@ -20,8 +20,6 @@ ENV DEBIAN_FRONTEND=noninteractive TZ=Asia/Shanghai
 # 安装依赖 + Python 包
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        build-essential \
-        git \
         ffmpeg \
         libavcodec-dev \
         libavformat-dev \
