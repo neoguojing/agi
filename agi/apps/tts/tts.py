@@ -84,8 +84,8 @@ class TTS:
                 from TTS.config.shared_configs import BaseDatasetConfig
                 from TTS.api import TTS
                 # for torch 2.6
-                # from torch.serialization import add_safe_globals
-                # add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
+                from torch.serialization import add_safe_globals
+                add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
                 model_root = os.path.join(MODEL_PATH,"tts_models--multilingual--multi-dataset--xtts_v2")
                 log.info(f"loading TextToSpeech model(GPU) {model_root}")
                 config_path = os.path.join(model_root, "config.json")
@@ -98,8 +98,8 @@ class TTS:
                 from TTS.tts.models.xtts import XttsAudioConfig,XttsArgs
                 from TTS.config.shared_configs import BaseDatasetConfig
                 # for torch 2.6
-                # from torch.serialization import add_safe_globals
-                # add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
+                from torch.serialization import add_safe_globals
+                add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
                 from TTS.api import TTS
                 model_root = os.path.join(MODEL_PATH,"tts_models--zh-CN--baker--tacotron2-DDC-GST")
                 log.info(f"loading TextToSpeech model(CPU) {model_root}")
