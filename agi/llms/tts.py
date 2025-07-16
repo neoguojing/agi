@@ -13,7 +13,7 @@ import tempfile
 class TextToSpeech(CustomerLLM):
     client: OpenAI = Field(None, alias='client')
     model_config = ConfigDict(arbitrary_types_allowed=True)
-
+    
     def __init__(self,**kwargs):
         super().__init__(**kwargs)
         self.client = OpenAI(api_key=API_KEY,base_url=TTS_BASE_URL)
