@@ -37,6 +37,7 @@ class TTS:
         timeout: 超过多少秒未使用就自动卸载（默认10分钟）
         """
         self.model_path = model_path
+        self.model_name = "cosyvoice"
         self.timeout = timeout
         self.model = None
         self.tts = None
@@ -53,18 +54,18 @@ class TTS:
                     cls._queues[tenant_id] = Queue(maxsize=3000)
         return cls._queues[tenant_id]
     
-    def get_model(self,model_name:str = "cosyvoice"):
+    def get_model(self):
         """访问模型，如果未加载则自动加载"""
         with self.lock:
             self.last_used = time.time()
             if self.model is None:
-                self._load(model_name)
+                self._load()
             return self.model
 
-    def _load(self,model_name:str):
+    def _load(self):
         if self.tts is None or self.model is None:
             # GPU：2739MB
-            if "cosyvoice" == model_name and self.is_gpu:
+            if "cosyvoice" == self.model_name and self.is_gpu:
                 from cosyvoice.cli.cosyvoice import CosyVoice2
                 from cosyvoice.utils.file_utils import load_wav
                 
@@ -76,7 +77,7 @@ class TTS:
                 self.tts = CosyVoice2(model_root, load_jit=True, load_trt=False, fp16=is_float16,use_flow_cache=False)
                 self.model = self.tts.model
                 self.output_rate = self.tts.sample_rate
-            elif "xtts" == model_name and self.is_gpu:
+            elif "xtts" == self.model_name and self.is_gpu:
                 from torch.serialization import add_safe_globals
                 from TTS.utils.radam import RAdam 
                 from TTS.tts.configs.xtts_config import XttsConfig 
@@ -108,7 +109,8 @@ class TTS:
     def invoke(self, input_str: str,user_id="default",save_file=False,model_name="cosyvoice"):
         """Generate an image from the input text."""
         try:
-            self.get_model(model_name)
+            self.model_name = model_name
+            self.get_model()
             log.info(f"tts input: {input_str}")
             final_np_pcm = np.array([], dtype=np.int16)
             file_path = None
@@ -143,17 +145,17 @@ class TTS:
     def generate_audio_samples(self, text: str):
         """Generate audio samples from the input text."""
         try:
-            if self.is_gpu:
-                if "cosyvoice" in model_root:
-                    # 流式合成，超长文本报错
-                    for sentence in self.sentence_segmenter(text):
-                        for c_idx, data in enumerate(self.tts.inference_cross_lingual(sentence, self.speaker_wav, stream=False)):
-                            tensor_data = data['tts_speech']
-                            print("************",self.tts.sample_rate,tensor_data)
-                            yield tensor_data
-                else:
-                    for sentence in self.sentence_segmenter(text):
-                        yield self.tts.tts(text=sentence, speaker_wav=self.speaker_wav, language=self.language)
+            
+            if "cosyvoice" == self.model_name and self.is_gpu:
+                # 流式合成，超长文本报错
+                for sentence in self.sentence_segmenter(text):
+                    for c_idx, data in enumerate(self.tts.inference_cross_lingual(sentence, self.speaker_wav, stream=False)):
+                        tensor_data = data['tts_speech']
+                        print("************",self.tts.sample_rate,tensor_data)
+                        yield tensor_data
+            elif "xtts" == self.model_name and self.is_gpu:
+                for sentence in self.sentence_segmenter(text):
+                    yield self.tts.tts(text=sentence, speaker_wav=self.speaker_wav, language=self.language)
             else:
                 for sentence in self.sentence_segmenter(text):
                     yield self.tts.tts(text=sentence, speaker_wav=self.speaker_wav)
@@ -171,7 +173,7 @@ class TTS:
             Path(file_path).parent.mkdir(parents=True, exist_ok=True)
         
         try:
-            if "cosyvoice" in model_root:
+            if "cosyvoice" == self.model_name:
                 for c_idx, data in enumerate(self.tts.inference_cross_lingual(text, self.speaker_wav, stream=False)):
                     torchaudio.save(file_path, data['tts_speech'], self.tts.sample_rate)
             else:

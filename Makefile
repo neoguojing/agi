@@ -126,6 +126,12 @@ image_tts_base:
 	-f ./Dockerfile.tts.base \
 	-t $(REGISTRY)/guojingneo/agi-fastapi-tts:base .
 
+.PHONY: image_cosyvoice_base
+image_cosyvoice_base:
+	docker build \
+	-f ./Dockerfile.tts.cosyvoice.base \
+	-t $(REGISTRY)/guojingneo/agi-fastapi-cosyvoice:base .
+
 .PHONY: image_whisper
 image_whisper:
 	docker build \

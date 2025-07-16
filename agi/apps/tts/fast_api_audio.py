@@ -72,7 +72,7 @@ async def generate_speech(request: SpeechRequest, api_key: str = Depends(verify_
     log.info(request)
     try:
         if request.stream:
-            return generate_speech_streaming(request,api_key=api_key)
+            return await generate_speech_streaming(request,api_key=api_key)
         else:
             _ ,file_path = tts.invoke(request.input,user_id=request.user,save_file=True,model_name=request.model)
             return FileResponse(file_path, media_type=f"audio/{request.response_format}", filename=file_path)
