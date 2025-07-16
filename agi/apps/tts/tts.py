@@ -54,12 +54,19 @@ class TTS:
                     cls._queues[tenant_id] = Queue(maxsize=3000)
         return cls._queues[tenant_id]
     
-    def get_model(self):
+    def get_model(self,model_name:str = "cosyvoice"):
         """访问模型，如果未加载则自动加载"""
         with self.lock:
             self.last_used = time.time()
             if self.model is None:
+                self.model_name = model_name
                 self._load()
+            else:
+                if self.model_name != model_name:
+                    self.model_name = model_name
+                    self._unload()
+                    self._load()
+                    
             return self.model
 
     def _load(self):
@@ -109,8 +116,7 @@ class TTS:
     def invoke(self, input_str: str,user_id="default",save_file=False,model_name="cosyvoice"):
         """Generate an image from the input text."""
         try:
-            self.model_name = model_name
-            self.get_model()
+            self.get_model(model_name)
             log.info(f"tts input: {input_str}")
             final_np_pcm = np.array([], dtype=np.int16)
             file_path = None
