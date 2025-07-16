@@ -84,6 +84,8 @@ class TextToSpeech(CustomerLLM):
         for chunk in response.iter_bytes():
             if chunk:
                 encoded_chunk = base64.b64encode(chunk).decode("utf-8")  # 转为 base64 字符串
+                log.debug(f"tts stream:chunk size:{len(chunk)},{len(encoded_chunk)}")
+
                 yield AIMessage(content=[
                     {"type": "audio", "audio": encoded_chunk}
                 ])

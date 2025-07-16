@@ -113,7 +113,9 @@ def audio_generator(tenant_id: str = "default") -> Generator[bytes, None, None]:
         frame = pcm_queue.get(block=True)
         if frame is SENTINEL:
             # 接到结束信号，退出 generator
+            log.debug("audio_generator:finished")
             break
+        log.debug(f"audio_generator:frame size:{len(frame)}")
         yield frame
 
         time.sleep(0.01)
