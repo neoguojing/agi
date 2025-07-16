@@ -5,6 +5,8 @@ from TTS.utils.radam import RAdam
 from TTS.tts.configs.xtts_config import XttsConfig 
 from TTS.tts.models.xtts import XttsAudioConfig,XttsArgs
 from TTS.config.shared_configs import BaseDatasetConfig
+from collections import defaultdict
+
 os.environ["TTS_CACHE_DIR"] = "/data/model"
 add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
 
