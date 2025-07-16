@@ -8,7 +8,7 @@ from agi.config import log
 from openai import OpenAI
 from pydantic import  Field,ConfigDict
 import tempfile
-
+import base64
 
 class TextToSpeech(CustomerLLM):
     client: OpenAI = Field(None, alias='client')
@@ -82,11 +82,15 @@ class TextToSpeech(CustomerLLM):
 
         # 保存为文件
         for chunk in response.iter_bytes():
-            yield AIMessage(content=[
-                {"type": "audio", "audio": chunk}
-            ])
+            if chunk:
+                encoded_chunk = base64.b64encode(chunk).decode("utf-8")  # 转为 base64 字符串
+                yield AIMessage(content=[
+                    {"type": "audio", "audio": encoded_chunk}
+                ])
 
-        yield AIMessage(content=[
-                {"type": "audio", "audio": None}
-            ],response_metadata={"finish_reason":"stop"})
+        yield AIMessage(
+            content=[{"type": "audio", "audio": None}],
+            response_metadata={"finish_reason": "stop"}
+        )
+
 
