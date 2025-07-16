@@ -110,7 +110,8 @@ class TTS:
                 from TTS.api import TTS
                 model_root = os.path.join(MODEL_PATH,"tts_models--zh-CN--baker--tacotron2-DDC-GST")
                 log.info(f"loading TextToSpeech model(CPU) {model_root}")
-                self.tts = TTS(model_path=model_root).to(torch.device("cpu"))
+                config_path = os.path.join(model_root, "config.json")
+                self.tts = TTS(model_path=model_root,config_path=config_path).to(torch.device("cpu"))
                 self.model = self.tts.synthesizer
 
     def invoke(self, input_str: str,user_id="default",save_file=False,model_name="cosyvoice"):
