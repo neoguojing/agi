@@ -4,6 +4,7 @@
 # FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04
 # FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
 FROM pytorch/pytorch:2.3.1-cuda12.1-cudnn8-runtime
+WORKDIR /agi
 
 COPY requirements/ ./requirements/
 COPY depend/ ./depend/
@@ -20,8 +21,6 @@ RUN apt-get update && \
         libavutil-dev \
         sox libsox-dev && \
     rm -rf /var/lib/apt/lists/*
-
-WORKDIR /agi
 
 RUN pip install --upgrade pip && \
     pip install -r -r ./requirements/cosyvoice_base.txt -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host=mirrors.aliyun.com && \
