@@ -1,2 +1,3 @@
 # git+https://github.com/neoguojing/TTS.git
 coqui-tts
+pypinyin
