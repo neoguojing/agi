@@ -108,7 +108,7 @@ class TTS:
                 from torch.serialization import add_safe_globals
                 add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
                 from TTS.api import TTS
-                model_root = os.path.join(MODEL_PATH,"tts_models--zh-CN--baker--tacotron2-DDC-GST")
+                model_root = os.path.join(MODEL_PATH,"tts_models--zh-CN--baker--tacotron2-DDC-GST/model_file.pth")
                 log.info(f"loading TextToSpeech model(CPU) {model_root}")
                 config_path = os.path.join(model_root, "config.json")
                 self.tts = TTS(model_path=model_root,config_path=config_path).to(torch.device("cpu"))
