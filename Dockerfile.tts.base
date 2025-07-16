@@ -9,7 +9,6 @@ WORKDIR /agi
 
 # 拷贝 requirements 和依赖
 COPY requirements/ ./requirements/
-COPY depend/ ./depend/
 
 RUN mkdir -p /root/.pip \
  && echo "[global]\nindex-url = https://mirrors.aliyun.com/pypi/simple" > /root/.pip/pip.conf

@@ -120,7 +120,7 @@ image_tts:
 	--build-arg BRANCH_NAME=$$(git rev-parse --abbrev-ref HEAD) \
 	-t $(REGISTRY)/guojingneo/agi-fastapi-tts:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
 
-.PHONY: image_tts_base
+.PHONY
 image_tts_base:
 	docker build \
 	-f ./Dockerfile.tts.base \
@@ -130,7 +130,7 @@ image_tts_base:
 image_cosyvoice_base:
 	docker build \
 	-f ./Dockerfile.tts.cosyvoice.base \
-	-t $(REGISTRY)/guojingneo/agi-fastapi-tts:base .
+	-t $(REGISTRY)/guojingneo/agi-fastapi-cosyvoice:base .
 
 .PHONY: image_whisper
 image_whisper:

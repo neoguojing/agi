@@ -5,13 +5,15 @@
 # FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
 FROM pytorch/pytorch:2.3.1-cuda12.1-cudnn8-runtime
 
+COPY requirements/ ./requirements/
+COPY depend/ ./depend/
+
 ENV DEBIAN_FRONTEND=noninteractive TZ=Asia/Shanghai
 
 # 安装依赖 + Python 包
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential \
-        git \
         ffmpeg \
         libavcodec-dev \
         libavformat-dev \
@@ -19,11 +21,8 @@ RUN apt-get update && \
         sox libsox-dev && \
     rm -rf /var/lib/apt/lists/*
 
-WORKDIR /workspace
-RUN git clone --recursive https://github.com/FunAudioLLM/CosyVoice.git
+WORKDIR /agi
 
-WORKDIR /workspace/CosyVoice
-RUN git submodule update --init --recursive && \
-    pip install --upgrade pip && \
-    pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host=mirrors.aliyun.com && \
+RUN pip install --upgrade pip && \
+    pip install -r -r ./requirements/cosyvoice_base.txt -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host=mirrors.aliyun.com && \
     rm -rf /root/.cache /tmp/* ~/.cache/pip
