@@ -80,7 +80,7 @@ class TextToSpeech(CustomerLLM):
             response_format="pcm",
             extra_body={"user": user_id, "stream": True}
         ) as response:
-            for chunk in response:
+            for chunk in response.iter_bytes():
                 if chunk:
                     encoded_chunk = base64.b64encode(chunk).decode("utf-8")  # 转为 base64 字符串
                     log.debug(f"tts stream:chunk size:{len(chunk)},{len(encoded_chunk)}")
