@@ -15,6 +15,15 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 langchain_db_path = os.path.join(CACHE_DIR,"langchain.db")
 LANGCHAIN_DB_PATH = os.environ.get("LANGCHAIN_DB_PATH",f"sqlite:///{langchain_db_path}")
 
+FILE_STORAGE_PATH = os.path.join(CACHE_DIR,'files')
+FILE_STORAGE_URL = os.getenv("FILE_STORAGE_URL",f"file://{FILE_STORAGE_PATH}")
+# 本地文件系统
+# FILE_STORAGE_URL = "file:///data/files/"
+# # AWS S3
+# FILE_STORAGE_URL = "s3://your-bucket-name/path/"
+# # MinIO（需额外配置环境变量或 boto3 session）
+# FILE_STORAGE_URL = "s3://minio-bucket/path/"
+
 # 模型相关
 MODEL_PATH = os.environ.get(
     "MODEL_PATH", "/data/model"
@@ -49,20 +58,14 @@ TTS_GPU_ENABLE = os.getenv("TTS_GPU_ENABLE", "True").lower() == "true"
 if not TTS_GPU_ENABLE:
     TTS_MODEL_DIR = os.getenv("TTS_MODEL_DIR", os.path.join(MODEL_PATH,"tts_models--zh-CN--baker--tacotron2-DDC-GST"))
 
-TTS_FILE_SAVE_PATH = os.getenv("TTS_FILE_SAVE_PATH",os.path.join(CACHE_DIR, "audio"))
 TTS_BASE_URL = os.getenv("TTS_BASE_URL", "http://localhost:8002/v1/")
-
 
 ## image 
 IMAGE_TO_IMAGE_MODEL_PATH = os.getenv("IMAGE_TO_IMAGE_MODEL_PATH",os.path.join(MODEL_PATH, "sdxl-turbo"))
 # TEXT_TO_IMAGE_MODEL_PATH = os.getenv("TEXT_TO_IMAGE_MODEL_PATH",os.path.join(MODEL_PATH, "stable-diffusion-3.5-medium"))
 TEXT_TO_IMAGE_MODEL_PATH = os.getenv("TEXT_TO_IMAGE_MODEL_PATH",os.path.join(MODEL_PATH, "sdxl-turbo"))
 TEXT_TO_IMAGE_VERSION = os.getenv("TEXT_TO_IMAGE_VERSION","sdxl-turbo") #3.5-medium
-IMAGE_FILE_SAVE_PATH = os.getenv("IMAGE_FILE_SAVE_PATH",os.path.join(CACHE_DIR, "image"))
 IMAGE_GEN_BASE_URL = os.getenv("IMAGE_GEN_BASE_URL","http://localhost:8001/v1/")
-
-## rag
-FILE_UPLOAD_PATH = os.getenv("FILE_UPLOAD_PATH",os.path.join(CACHE_DIR,"upload"))
 
 ## multi model
 MULTI_MODEL_PATH = os.getenv("MULTI_MODEL_PATH",os.path.join(MODEL_PATH, "Qwen2.5-Omni-3B"))

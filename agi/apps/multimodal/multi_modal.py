@@ -5,8 +5,8 @@ import base64
 from pathlib import Path
 from typing import Any
 import torch
-from agi.config import MULTI_MODEL_PATH as model_root,TTS_FILE_SAVE_PATH,log
-from agi.apps.common import path_to_preview_url
+from agi.config import MULTI_MODEL_PATH as model_root,FILE_STORAGE_PATH,log
+from agi.utils.common import path_to_preview_url
 from qwen_omni_utils import process_mm_info
 import traceback
 
@@ -104,7 +104,7 @@ class MultiModel:
             for t in text:
                 text_output = t.split("assistant\n")[-1]
                 if return_audio:
-                    file_path = f'{TTS_FILE_SAVE_PATH}/{int(time.time())}.wav'
+                    file_path = f'{FILE_STORAGE_PATH}/{int(time.time())}.wav'
                     Path(file_path).parent.mkdir(parents=True, exist_ok=True)
 
                     sf.write(

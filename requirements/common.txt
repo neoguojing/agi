@@ -6,3 +6,5 @@ python-magic
 Pillow==11.1.0
 jieba==0.42.1
 scipy==1.15.2
+fsspec
+s3fs

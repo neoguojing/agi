@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request,Depends,HTTPException
 from agi.apps.common import verify_api_key,ChatCompletionRequest
 from agi.apps.multimodal.multi_modal import MultiModel
-from agi.config import FILE_UPLOAD_PATH,log
+from agi.config import log
 from datetime import datetime
 import uuid
 import traceback

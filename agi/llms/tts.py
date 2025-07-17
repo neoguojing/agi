@@ -1,6 +1,7 @@
 
-from agi.config import API_KEY,TTS_BASE_URL,TTS_FILE_SAVE_PATH
-from agi.llms.base import CustomerLLM,parse_input_messages,path_to_preview_url
+from agi.config import API_KEY,TTS_BASE_URL
+from agi.llms.base import CustomerLLM,parse_input_messages
+from agi.utils.common import path_to_preview_url
 from langchain_core.runnables import RunnableConfig,run_in_executor
 from typing import Any, Optional,Union,ClassVar
 from langchain_core.messages import AIMessage, HumanMessage,AIMessageChunk
@@ -36,7 +37,7 @@ class TextToSpeech(CustomerLLM):
         if isinstance(input,str):
             input_str = input
         else:
-            _,input_str = parse_input_messages(input)
+            _,input_str,_ = parse_input_messages(input)
             
         log.info(f"tts input: {input_str}")
         response = self.client.audio.speech.create(
@@ -69,7 +70,7 @@ class TextToSpeech(CustomerLLM):
         if isinstance(input,str):
             input_str = input
         else:
-            _,input_str = parse_input_messages(input)
+            _,input_str,_ = parse_input_messages(input)
             
         log.info(f"tts input: {input_str}")
         response = self.client.audio.speech.create(

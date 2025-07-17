@@ -12,9 +12,11 @@ from fastapi.middleware.cors import CORSMiddleware
 # 假设的 AgiGraph 模块（需要根据实际情况调整）
 from agi.tasks.graph import AgiGraph, State
 from agi.fast_api_file import router_file
-from agi.config import FILE_UPLOAD_PATH,log,IMAGE_FILE_SAVE_PATH,TTS_FILE_SAVE_PATH,LLM_WITH_NO_THINKING,API_KEY
+from agi.config import log,FILE_STORAGE_PATH,LLM_WITH_NO_THINKING
 import traceback
-from agi.tasks.utils import identify_input_type,save_media_content
+from agi.tasks.utils import save_media_content
+from agi.utils.common import identify_input_type
+
 from agi.apps.common import verify_api_key,ChatCompletionRequest
 # 初始化 FastAPI 应用
 app = FastAPI(
@@ -62,12 +64,13 @@ async def chat_completions(
                 internal_messages.append(HumanMessage(content=msg.content))
             else:
                 content: List[Dict[str, str]] = []
+                # 媒体文件均转换为了路径
                 for item in msg.content:
                     if item["type"] == "image":
                         # 假设 item["image"] 是图像数据的某种表示（例如，文件路径或 base64 编码）
                         file_type = identify_input_type(item["image"])
                         if file_type == "base64":
-                            item["image"],_, _ = save_media_content(item["image"],IMAGE_FILE_SAVE_PATH)
+                            item["image"],_, _ = save_media_content(item["image"],FILE_STORAGE_PATH)
                         log.info(f'image save path:{item["image"]}')
                         content.append({"type": "image", "image": item["image"]})
                         input_type = "image"
@@ -75,11 +78,14 @@ async def chat_completions(
                         # 假设 item["audio"] 是音频数据的某种表示
                         file_type = identify_input_type(item["audio"])
                         if file_type == "base64":
-                            item["audio"],_, _ = save_media_content(item["audio"],TTS_FILE_SAVE_PATH)
+                            item["audio"],_, _ = save_media_content(item["audio"],FILE_STORAGE_PATH)
                         content.append({"type": "audio", "audio": item["audio"]})
                         input_type = "audio"
                     elif item["type"] == "video":
                         # 假设 item["audio"] 是音频数据的某种表示
+                        file_type = identify_input_type(item["video"])
+                        if file_type == "base64":
+                            item["video"],_, _ = save_media_content(item["video"],FILE_STORAGE_PATH)
                         content.append({"type": "video", "video": item["video"]})
                         input_type = "video"
                     elif item["type"] == "text": 

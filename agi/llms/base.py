@@ -2,8 +2,7 @@ from typing import Any, Union, Literal, List, Dict
 from langchain_core.runnables import RunnableSerializable
 from langchain_core.messages import AIMessage, HumanMessage
 import os
-from agi.config import BASE_URL,CACHE_DIR
-import urllib.parse
+from agi.utils.common import path_to_preview_url
 from agi.config import log
 
 # 从用户消息中抽取content的内容，转换为模型可处理的格式
@@ -13,6 +12,7 @@ def parse_input_messages(input: Union[HumanMessage,list[HumanMessage]]):
     """
     media = None
     prompt = None
+    input_type = "text"
     if isinstance(input, list):
         input = input[-1]
         
@@ -23,18 +23,26 @@ def parse_input_messages(input: Union[HumanMessage,list[HumanMessage]]):
                 # Create Image instance based on media type
                 media_data = content.get("image")
                 if media_data is not None and media_data != "":
+                    input_type = "image"
                     media = media_data
             if media_type == "audio":
                 # Create Image instance based on media type
                 media_data = content.get("audio")
                 if media_data is not None and media_data != "":
+                    input_type = "audio"
+                    media = media_data
+            if media_type == "video":
+                # Create Image instance based on media type
+                media_data = content.get("video")
+                if media_data is not None and media_data != "":
+                    input_type = "video"
                     media = media_data
             elif media_type == "text":
                 prompt = content.get("text")
     elif isinstance(input.content, str):
         prompt = input.content
 
-    return media, prompt
+    return media, prompt,input_type
 
 # Custom LLM class for integration with runnable modules
 class CustomerLLM(RunnableSerializable[HumanMessage, AIMessage]):
@@ -64,29 +72,3 @@ class CustomerLLM(RunnableSerializable[HumanMessage, AIMessage]):
     @property
     def model_name(self) -> str:
         return ""  # Model name placeholder (to be customized)
-
-
-def path_to_preview_url(file_path: str, base_url: str = BASE_URL) -> str:
-    """
-    将文件路径转换为图片预览 URL。
-    
-    Args:
-        file_path (str): 服务器上的文件路径，例如 "uploads/picture.jpg"
-        base_url (str): 服务器基地址，默认 "http://localhost:8000"
-    
-    Returns:
-        str: 可用于预览的 URL，例如 "http://localhost:8000/files/picture.jpg"
-    
-    Raises:
-        ValueError: 如果文件路径不在上传目录内
-    """
-    # 确保文件路径在 CACHE_DIR 内，防止目录遍历
-    if not os.path.realpath(file_path).startswith(os.path.realpath(CACHE_DIR)):
-        raise ValueError("File path is outside the upload directory")
-    
-    # 获取相对于 UPLOAD_DIR 的文件名
-    file_name = os.path.basename(file_path)
-    
-    # 构建预览 URL
-    preview_url = f"{base_url}/v1/files/{urllib.parse.quote(file_name)}"
-    return preview_url

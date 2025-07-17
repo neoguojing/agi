@@ -15,8 +15,6 @@ from agi.config import (
     OPENAI_API_KEY,
     RAG_EMBEDDING_MODEL,
     OLLAMA_DEFAULT_MODE,
-    BASE_URL,
-    IMAGE_FILE_SAVE_PATH
 )
 from langchain_openai import ChatOpenAI
 from langchain_ollama import OllamaEmbeddings,ChatOllama

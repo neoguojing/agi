@@ -10,7 +10,8 @@ from langchain_core.messages import (
 )
 from agi.tasks.define import AgentState
 from langgraph.graph.message import Messages
-from agi.config import log,AGI_DEBUG,CACHE_DIR,BASE_URL
+from agi.config import log,AGI_DEBUG,CACHE_DIR,BASE_URL,FILE_STORAGE_PATH
+from agi.utils.common import identify_input_type
 import inspect
 import json
 import traceback
@@ -228,37 +229,7 @@ def add_messages(left: Messages, right: Messages) -> Messages:
         print(traceback.format_exc())
 
 
-def identify_input_type(input_str: str) -> str:
-    """
-    判断输入字符串是文件路径、URL 还是 base64 编码。
-
-    Returns:
-        str: "path", "url", "base64", 或 "unknown"
-    """
-
-    # 判断是否为 URL
-    parsed = urlparse(input_str)
-    if parsed.scheme in ("http", "https") and parsed.netloc:
-        return "url"
-
-    # 判断是否为文件路径
-    if os.path.exists(input_str):
-        return "path"
-
-    # 判断是否为 base64（允许带 mime 头的）
-    base64_pattern = re.compile(r"^(data:\w+/\w+;base64,)?[A-Za-z0-9+/=\s]+$")
-    try:
-        # 校验是否 base64 可解码
-        content = input_str.split(",")[-1].strip()  # 支持带 data: 开头
-        if base64_pattern.match(input_str):
-            base64.b64decode(content, validate=True)
-            return "base64"
-    except Exception:
-        pass
-
-    return "unknown"
-
-def save_media_content(source: str, output_dir: str = CACHE_DIR) -> Tuple[str, str]:
+def save_media_content(source: str, output_dir: str = FILE_STORAGE_PATH) -> Tuple[str, str]:
     """
     将 base64 编码的图片或语音内容保存为文件。
 
@@ -301,7 +272,7 @@ def save_media_content(source: str, output_dir: str = CACHE_DIR) -> Tuple[str, s
 
         if not os.path.isfile(target_path):
             shutil.copy(source, target_path)
-        if target_path.startswith(CACHE_DIR):
+        if target_path.startswith(FILE_STORAGE_PATH):
             url = os.path.join(BASE_URL, "v1/files", os.path.basename(target_path))
         return target_path,url,None
 
@@ -351,7 +322,7 @@ def save_media_content(source: str, output_dir: str = CACHE_DIR) -> Tuple[str, s
             print(f"Failed to convert to JPEG: {e}")
             # 如果转换失败，继续使用原始文件
 
-    if file_path.startswith(CACHE_DIR):
+    if file_path.startswith(FILE_STORAGE_PATH):
         url = os.path.join(BASE_URL, "v1/files", os.path.basename(file_path))
     return file_path,url, content_type
 

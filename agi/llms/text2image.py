@@ -34,7 +34,7 @@ class Text2Image(CustomerLLM):
         if isinstance(input,str):
             input_str = input
         else:
-            _, input_str = parse_input_messages(input)
+            _, input_str,_ = parse_input_messages(input)
             
         if not input_str.strip():
             return AIMessage(content="No prompt provided.")

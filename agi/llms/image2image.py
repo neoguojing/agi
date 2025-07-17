@@ -2,9 +2,11 @@ from typing import Any, List, Mapping, Optional, Union
 from pydantic import Field,ConfigDict
 from agi.llms.base import CustomerLLM,parse_input_messages
 from agi.config import API_KEY,IMAGE_GEN_BASE_URL
+from agi.utils.common import path_to_preview_url
 from langchain_core.runnables import RunnableConfig
 from langchain_core.messages import AIMessage, HumanMessage
 from openai import OpenAI
+import os
 
 from agi.config import log
 
@@ -29,10 +31,14 @@ class Image2Image(CustomerLLM):
         output = AIMessage(content="")
 
         # Extract image and text prompt from input content
-        input_image, prompt = parse_input_messages(input)
+        input_image, prompt,_ = parse_input_messages(input)
         
         if input_image is None:
             return output  # No valid image found in input
+        
+        # 跨服务访问,路径需要转换为url
+        if os.path.exists(input_image):
+            input_image = path_to_preview_url(input_image)
         
         response = self.client.chat.completions.create(
             model=self.model_name,

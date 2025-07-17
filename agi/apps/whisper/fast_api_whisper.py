@@ -1,8 +1,9 @@
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException,Depends
 import os
 from agi.apps.common import verify_api_key
+from agi.utils.file_storage import default_file_service,default_storage
 from agi.apps.whisper.speech2text import Speech2Text
-from agi.config import FILE_UPLOAD_PATH,log
+from agi.config import log
 from pydub import AudioSegment
 import uuid
 import traceback
@@ -25,19 +26,8 @@ async def transcribe_audio(
     if not file.filename.endswith((".mp3", ".wav", ".m4a", ".ogg", ".webm")):
         raise HTTPException(status_code=400, detail="Unsupported audio format.")
     try:
-        ext = file.filename.split(".")[-1]
-        id = uuid.uuid4()
-
-        filename = f"{id}.{ext}"
-        contents = file.file.read()
-
-        file_dir = f"{FILE_UPLOAD_PATH}/audio"
-        os.makedirs(file_dir, exist_ok=True)
-        file_path = f"{file_dir}/{filename}"
-
-        with open(file_path, "wb") as f:
-            f.write(contents)
-
+        uniq_name = await default_file_service.save_file(file,file.filename)
+        file_path = default_storage.to_local_path(uniq_name)
         file_path = compress_audio(file_path)
         text = info = None
         # 转录

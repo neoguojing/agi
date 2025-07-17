@@ -1,5 +1,6 @@
 from agi.config import API_KEY,MULTI_MODEL_BASE_URL
-from agi.llms.base import CustomerLLM
+from agi.llms.base import CustomerLLM,parse_input_messages
+from agi.utils.common import path_to_preview_url
 from langchain_core.runnables import RunnableConfig
 from typing import Any, Optional,Union
 from pydantic import ConfigDict, Field
@@ -8,6 +9,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 import traceback
 from agi.config import log
 from openai import OpenAI
+import os
 
 # GPU: 3B 13GB
 class MultiModel(CustomerLLM):
@@ -30,24 +32,17 @@ class MultiModel(CustomerLLM):
             if config:
                 return_audio = config.get("configurable",{}).get("need_speech",False)
 
-            content = None
-            if isinstance(inputs,HumanMessage):
-                content = inputs.content
-            elif isinstance(inputs,list):
-                inputs = inputs[-1]
-                content = inputs.content
-
-            else:
-                raise TypeError(f"Invalid input type: {type(inputs)}. Expected HumanMessage or List[HumanMessage].") 
-            
-
+            media,prompt,media_type = parse_input_messages(inputs)
+            if media and os.path.exists(media):
+                media = path_to_preview_url(media)
+                
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 extra_body={"need_speech": return_audio},
                 messages=[
                     {
                         "role": "user",
-                        "content": content
+                        "content": [{"type":"text","text":prompt},{"type":media_type,media_type:media}]
                     }
                 ],
             )

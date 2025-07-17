@@ -14,9 +14,9 @@ from queue import Queue,Full
 from pydub import AudioSegment
 from threading import Lock
 import traceback
-from agi.apps.common import path_to_preview_url
+from agi.utils.common import path_to_preview_url
 from agi.config import TTS_SPEAKER_WAV,TTS_GPU_ENABLE,log,COMPUTE_TYPE,MODEL_PATH
-from agi.config import TTS_MODEL_DIR as model_root,TTS_FILE_SAVE_PATH
+from agi.config import TTS_MODEL_DIR as model_root,FILE_STORAGE_PATH
 cn_points = ['。', '！', '？']
 en_points = ['.', '!', '?']
 
@@ -176,7 +176,7 @@ class TTS:
         """Save the generated audio to a file and return the file path."""
         if not file_path:
             # file_name = f'audio/{date.today().strftime("%Y_%m_%d")}/{int(time.time())}.wav'
-            file_path = f'{TTS_FILE_SAVE_PATH}/{int(time.time())}.wav'
+            file_path = f'{FILE_STORAGE_PATH}/{int(time.time())}.wav'
             Path(file_path).parent.mkdir(parents=True, exist_ok=True)
         
         try:
@@ -231,7 +231,7 @@ class TTS:
             mp3_base64 = base64.b64encode(mp3_io.read()).decode("utf-8")
             audio_source = f"data:audio/wav;base64,{mp3_base64}"
         else:
-            file_path = f'{TTS_FILE_SAVE_PATH}/{int(time.time())}.wav'
+            file_path = f'{FILE_STORAGE_PATH}/{int(time.time())}.wav'
             audio_segment.export(file_path, format="wav")
 
         if file_path:

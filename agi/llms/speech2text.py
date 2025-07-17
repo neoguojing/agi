@@ -9,6 +9,9 @@ from pydantic import ConfigDict, Field
 from langchain_core.messages import AIMessage, HumanMessage
 from agi.config import log
 from openai import OpenAI
+import os
+from pathlib import Path
+
 
 # GPU 2600MB
 class Speech2Text(CustomerLLM):
@@ -31,11 +34,15 @@ class Speech2Text(CustomerLLM):
         if config:
             model_name = config.get("configurable",{}).get("model","large")
 
-        audio_input,_ = parse_input_messages(input)
+        audio_input,_,_ = parse_input_messages(input)
         
         if audio_input is None:
             return AIMessage(content="No valid audio input found.")
         
+        # 跨服务访问,路径需要转换Path对象，进行上传
+        if os.path.exists(audio_input):
+            audio_input = Path(audio_input)
+
         # Transcribe the audio input
         transcription = self.client.audio.transcriptions.create(
                 model=model_name,            # 模型名，必须是 "whisper-1"

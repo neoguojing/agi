@@ -16,7 +16,8 @@ import uuid
 from urllib.parse import urlparse
 from tempfile import gettempdir
 from pathlib import Path
-
+import urllib.parse
+from agi.config import BASE_URL,CACHE_DIR
 
 import magic  # pip install python-magic
 
@@ -282,3 +283,59 @@ def is_relative_path(path_str: str) -> bool:
     if not os.path.isfile(path_str):
         return False
     return not Path(path_str).is_absolute()
+
+def identify_input_type(input_str: str) -> str:
+    """
+    判断输入字符串是文件路径、URL 还是 base64 编码。
+
+    Returns:
+        str: "path", "url", "base64", 或 "unknown"
+    """
+
+    # 判断是否为 URL
+    parsed = urlparse(input_str)
+    if parsed.scheme in ("http", "https") and parsed.netloc:
+        return "url"
+
+    # 判断是否为文件路径
+    if os.path.exists(input_str):
+        return "path"
+
+    # 判断是否为 base64（允许带 mime 头的）
+    base64_pattern = re.compile(r"^(data:\w+/\w+;base64,)?[A-Za-z0-9+/=\s]+$")
+    try:
+        # 校验是否 base64 可解码
+        content = input_str.split(",")[-1].strip()  # 支持带 data: 开头
+        if base64_pattern.match(input_str):
+            base64.b64decode(content, validate=True)
+            return "base64"
+    except Exception:
+        pass
+
+    return "unknown"
+
+
+def path_to_preview_url(file_path: str, base_url: str = BASE_URL) -> str:
+    """
+    将文件路径转换为图片预览 URL。
+    
+    Args:
+        file_path (str): 服务器上的文件路径，例如 "uploads/picture.jpg"
+        base_url (str): 服务器基地址，默认 "http://localhost:8000"
+    
+    Returns:
+        str: 可用于预览的 URL，例如 "http://localhost:8000/files/picture.jpg"
+    
+    Raises:
+        ValueError: 如果文件路径不在上传目录内
+    """
+    # 确保文件路径在 CACHE_DIR 内，防止目录遍历
+    if not os.path.realpath(file_path).startswith(os.path.realpath(CACHE_DIR)):
+        raise ValueError("File path is outside the root directory")
+    
+    # 获取相对于 UPLOAD_DIR 的文件名
+    file_name = os.path.basename(file_path)
+    
+    # 构建预览 URL
+    preview_url = f"{base_url}/v1/files/{urllib.parse.quote(file_name)}"
+    return preview_url

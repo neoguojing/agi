@@ -7,9 +7,9 @@ from pathlib import Path
 from typing import Any
 import urllib.parse
 import torch
-from agi.config import TEXT_TO_IMAGE_VERSION,BASE_URL,CACHE_DIR
-from agi.config import TEXT_TO_IMAGE_MODEL_PATH as model_root,IMAGE_FILE_SAVE_PATH
-from agi.apps.common import path_to_preview_url
+from agi.config import TEXT_TO_IMAGE_VERSION
+from agi.config import TEXT_TO_IMAGE_MODEL_PATH as model_root,FILE_STORAGE_PATH
+from agi.utils.common import path_to_preview_url
 
 style = 'style="width: 100%; max-height: 100vh;"'
 
@@ -29,7 +29,7 @@ class Text2Image:
         self.monitor_thread = threading.Thread(target=self._monitor, daemon=True)
         self.monitor_thread.start()
         self.save_image = save_image
-        self.file_path = IMAGE_FILE_SAVE_PATH
+        self.file_path = FILE_STORAGE_PATH
 
     def get_model(self):
         """访问模型，如果未加载则自动加载"""

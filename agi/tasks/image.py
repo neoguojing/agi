@@ -1,7 +1,7 @@
 from agi.config import (
     log,
     BASE_URL,
-    IMAGE_FILE_SAVE_PATH
+    FILE_STORAGE_PATH
 )
 from agi.tasks.utils import split_think_content,graph_print
 from agi.tasks.define import State
@@ -126,7 +126,7 @@ async def intend_understand_node(state: State,config: RunnableConfig):
             last_message.content = [{"type":"text","text":text}]
             if image:
                 if image.startswith(BASE_URL):
-                    image = os.path.join(IMAGE_FILE_SAVE_PATH,os.path.basename(image))
+                    image = os.path.join(FILE_STORAGE_PATH,os.path.basename(image))
                 last_message.content.append({"type":"image","image":image})     
         else:
             raise ValueError("text or last_message is missing")
