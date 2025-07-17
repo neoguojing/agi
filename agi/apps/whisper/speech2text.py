@@ -32,10 +32,10 @@ class Speech2Text:
         self.compute_type = compute_type
         if WHISPER_GPU_ENABLE:
             self.device = "cuda"
-            log.info(model_root)
             if not os.path.exists(self.model_size):
-                self.model_size = "large-v3"
-                self.local_files_only=False
+                self.model_size = os.path.join(MODEL_PATH,"models--Systran--faster-whisper-large-v3")
+                # self.local_files_only=False
+            log.info(model_root)
         else:
             self.device = "cpu"
             log.info(model_root)
@@ -45,6 +45,7 @@ class Speech2Text:
         with self.lock:
             self.last_used = time.time()
             if self.model is None:
+                self.device = device
                 self._load()
             else:
                 if self.device != device:
