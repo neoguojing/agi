@@ -47,15 +47,16 @@ class TextToSpeech(CustomerLLM):
             response_format="wav",           # 可选 "mp3", "opus", "aac", "flac"
             extra_body={"user": user_id},
         )
-
-        # 保存为文件
-        tmp_path = ""
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            tmp.write(response.content)
-            tmp_path = tmp.name
+        import pdb;pdb.set_trace()
+        filename = response.headers.get("Content-Disposition")
+        if not filename:
+            # 保存为文件
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                tmp.write(response.content)
+                filename = tmp.name
 
         return AIMessage(content=[
-            {"type": "audio", "audio": tmp_path,"text":input_str}
+            {"type": "audio", "audio": filename,"text":input_str}
         ],response_metadata={"finish_reason":"stop"})
         
     def stream(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any):
