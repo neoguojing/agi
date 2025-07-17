@@ -34,7 +34,7 @@ class FSSpecStorage:
         """
         如果当前存储后端是 file://，返回本地路径；否则抛出异常。
         """
-        if self.fs.protocol != "file":
+        if "file" not in self.fs.protocol:
             raise RuntimeError("Only file:// protocol supports local path resolution")
 
         full_url = self._full_path(filename)
