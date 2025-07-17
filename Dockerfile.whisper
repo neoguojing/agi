@@ -31,4 +31,4 @@ COPY agi/ /agi/agi/
 EXPOSE 8003
 
 # 启动命令（假设你的 FastAPI 应用在 main.py 中，并且实例名称为 app）
-CMD ["uvicorn", "agi.apps.whisper.fast_api_whisper:app", "--host", "0.0.0.0", "--port", "8003"]
+CMD ["uvicorn", "agi.apps.whisper.fast_api_whisper:app", "--host", "0.0.0.0", "--port", "8003","--workers", "1"]
