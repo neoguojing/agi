@@ -35,10 +35,10 @@ class Speech2Text:
             if not os.path.exists(self.model_size):
                 self.model_size = os.path.join(MODEL_PATH,"models--Systran--faster-whisper-large-v3")
                 # self.local_files_only=False
-            log.info(model_root)
+            log.info(self.model_size)
         else:
             self.device = "cpu"
-            log.info(model_root)
+            log.info(self.model_size)
 
     def get_model(self,device:str):
         """访问模型，如果未加载则自动加载"""
@@ -65,7 +65,9 @@ class Speech2Text:
             print(f"[Model] Loading model from {self.model_size}")
             whisper = WhisperModel(self.model_size, device=self.device, compute_type="int8",local_files_only=self.local_files_only)
         else:
-            self.model_size = model_root
+            if not os.path.exists(self.model_size):
+                self.model_size = os.path.join(MODEL_PATH,"models--Systran--faster-whisper-large-v3")
+                # self.local_files_only=False
             print(f"[Model] Loading model from {self.model_size}")
             whisper = WhisperModel(self.model_size, device=self.device, compute_type=self.compute_type,local_files_only=self.local_files_only)
 
