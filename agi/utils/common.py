@@ -302,7 +302,7 @@ def identify_input_type(input_str: str) -> str:
         return "path"
 
     # 判断是否为 base64（允许带 mime 头的）
-    base64_pattern = re.compile(r"^(data:\w+/\w+;base64,)?[A-Za-z0-9+/=\s]+$")
+    base64_pattern = re.compile(r"^(data:[^;]+;base64,)?[A-Za-z0-9+/=\s]+$")
     try:
         # 校验是否 base64 可解码
         content = input_str.split(",")[-1].strip()  # 支持带 data: 开头
