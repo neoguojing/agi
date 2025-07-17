@@ -73,16 +73,16 @@ class TextToSpeech(CustomerLLM):
             _,input_str,_ = parse_input_messages(input)
             
         log.info(f"tts input: {input_str}")
-        response = self.client.audio.speech.create(
+        response = self.client.audio.speech.with_streaming_response.create(
             model=model_name,                     # 或 "tts-1-hd"
             voice="alloy",                    # 支持 alloy, echo, fable, onyx, nova, shimmer
             input=input_str,
-            response_format="wav",           # 可选 "mp3", "opus", "aac", "flac"
+            response_format="pcm",           # 可选 "mp3", "opus", "aac", "flac"
             extra_body={"user": user_id,"stream":True},
         )
-
+        # response.stream_to_file()
         # 保存为文件
-        for chunk in response.iter_bytes():
+        for chunk in response:
             if chunk:
                 encoded_chunk = base64.b64encode(chunk).decode("utf-8")  # 转为 base64 字符串
                 log.debug(f"tts stream:chunk size:{len(chunk)},{len(encoded_chunk)}")
