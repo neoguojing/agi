@@ -109,6 +109,7 @@ def audio_generator(tenant_id: str = "default") -> Generator[bytes, None, None]:
     最终触发 StreamingResponse 的 chunked 传输。
     """
     pcm_queue = TTS.get_queue(tenant_id)
+    total_sent = 0
     while True:
         frame = pcm_queue.get(block=True)
         if frame is SENTINEL:
@@ -116,7 +117,9 @@ def audio_generator(tenant_id: str = "default") -> Generator[bytes, None, None]:
             log.debug("audio_generator:finished")
             break
         log.debug(f"audio_generator:frame size:{len(frame)}")
+        total_sent += len(frame)
         yield frame
-
         time.sleep(0.01)
+    log.info(f"Total bytes sent: {total_sent}")
+
 

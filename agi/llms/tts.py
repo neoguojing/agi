@@ -73,6 +73,7 @@ class TextToSpeech(CustomerLLM):
             _,input_str,_ = parse_input_messages(input)
             
         log.info(f"tts input: {input_str}")
+        totol_receive = 0
         with self.client.audio.speech.with_streaming_response.create(
             model=model_name,
             voice="alloy",
@@ -84,11 +85,11 @@ class TextToSpeech(CustomerLLM):
                 if chunk:
                     encoded_chunk = base64.b64encode(chunk).decode("utf-8")  # 转为 base64 字符串
                     log.debug(f"tts stream:chunk size:{len(chunk)},{len(encoded_chunk)}")
-
+                    totol_receive += len(chunk)
                     yield AIMessage(content=[
                         {"type": "audio", "audio": encoded_chunk}
                     ])
-
+        log.info(f"TextToSpeech total receive byte: {totol_receive}")
         yield AIMessage(
             content=[{"type": "audio", "audio": None}],
             response_metadata={"finish_reason": "stop"}
