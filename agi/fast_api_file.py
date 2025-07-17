@@ -74,7 +74,7 @@ async def download_file(file_name: str, request: Request):
         return Response(file_bytes, media_type=mime_type, headers={
             "Content-Disposition": f"{disposition_type}; filename={file_name}"
         })
-    except FileNotFoundError:
+    except Exception:
         raise HTTPException(status_code=404, detail="File not found")
 
 @router_file.delete("/files/{file_name}")
@@ -82,7 +82,7 @@ async def delete_file(file_name: str):
     try:
         await default_storage.delete(file_name)
         return {"message": "File deleted successfully"}
-    except FileNotFoundError:
+    except Exception:
         raise HTTPException(status_code=404, detail="File not found")
 
 
