@@ -24,45 +24,7 @@ class TestFastApiAgi(unittest.TestCase):
             api_key="123", # This is the default and can be omitted
             base_url="http://localhost:8000/v1",
         )
-         # 创建一个异步函数来启动Uvicorn服务器
-        # def start_uvicorn():
-        #     config = uvicorn.Config(app, host="0.0.0.0", port=8000)
-        #     server = uvicorn.Server(config)
-        #     asyncio.run(server.serve())
         
-        # # 启动Uvicorn服务器的线程
-        # cls.server_thread = threading.Thread(target=start_uvicorn)
-        # cls.server_thread.daemon = True  # 设置为daemon线程，这样主程序结束时会自动退出
-        # cls.server_thread.start()
-
-        # # 等待服务器启动
-        # cls.wait_for_server_start()
-        
-    @classmethod
-    def wait_for_server_start(cls, timeout=60):
-        """等待Uvicorn服务器完全启动"""
-        import time
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            try:
-                # 尝试发送一个请求来检查服务器是否已启动
-                response = cls.client.chat.completions.create(
-                    model="agi-model",
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": "hello",
-                        }
-                    ],
-                )
-                if response:
-                    print("Server started successfully!")
-                    return True
-            except Exception as e:
-                # 如果发生连接错误，继续等待
-                print("Waiting for server to start...")
-                time.sleep(1)
-        raise TimeoutError("Uvicorn server did not start within the timeout period.")
     '''
     def test_text(self):
         response = self.client.chat.completions.create(

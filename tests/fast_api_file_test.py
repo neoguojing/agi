@@ -1,13 +1,8 @@
 import os
-import uuid
-import shutil
 from fastapi.testclient import TestClient
-from fastapi import HTTPException
 import pytest
 from agi.fastapi_agi import app
 from agi.config import CACHE_DIR
-from agi.fast_api_file import ALLOWED_MIME_TYPES 
-
 from agi.config import log
 
 # 测试用文件和路径
