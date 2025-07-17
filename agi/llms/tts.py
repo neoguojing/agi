@@ -10,6 +10,7 @@ from openai import OpenAI
 from pydantic import  Field,ConfigDict
 import tempfile
 import base64
+import re
 
 class TextToSpeech(CustomerLLM):
     client: OpenAI = Field(None, alias='client')
@@ -47,16 +48,21 @@ class TextToSpeech(CustomerLLM):
             response_format="wav",           # 可选 "mp3", "opus", "aac", "flac"
             extra_body={"user": user_id},
         )
-        import pdb;pdb.set_trace()
-        filename = response.headers.get("Content-Disposition")
+
+        filename = ""
+        cd = response.response.headers.get("Content-Disposition", "")
+        match = re.search(r'filename="?([^"]+)"?', cd)
+        if match:
+            filename = match.group(1)
         if not filename:
             # 保存为文件
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 tmp.write(response.content)
                 filename = tmp.name
-
+                
+        file_url = path_to_preview_url(filename)
         return AIMessage(content=[
-            {"type": "audio", "audio": filename,"text":input_str}
+            {"type": "audio", "audio": file_url,"text":input_str}
         ],response_metadata={"finish_reason":"stop"})
         
     def stream(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any):

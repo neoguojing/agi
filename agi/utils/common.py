@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 from tempfile import gettempdir
 from pathlib import Path
 import urllib.parse
-from agi.config import BASE_URL,CACHE_DIR
+from agi.config import BASE_URL,CACHE_DIR,FILE_STORAGE_PATH
 
 import magic  # pip install python-magic
 
@@ -330,7 +330,7 @@ def path_to_preview_url(file_path: str, base_url: str = BASE_URL) -> str:
         ValueError: 如果文件路径不在上传目录内
     """
     # 确保文件路径在 CACHE_DIR 内，防止目录遍历
-    if not os.path.realpath(file_path).startswith(os.path.realpath(CACHE_DIR)):
+    if not os.path.realpath(file_path).startswith(os.path.realpath(FILE_STORAGE_PATH)):
         raise ValueError("File path is outside the root directory")
     
     # 获取相对于 UPLOAD_DIR 的文件名
