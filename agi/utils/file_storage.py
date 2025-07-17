@@ -23,7 +23,7 @@ class FSSpecStorage:
     def __init__(self, base_path: str):
         self.base_path = base_path.rstrip("/") + "/"
         self.fs, self.base = fsspec.core.url_to_fs(self.base_path)
-        print(self.base_path,self.fs,self.base)
+        print(self.base_path,self.fs.protocol,self.base)
 
     def _full_path(self, filename: str) -> str:
         if not filename or ".." in filename or filename.startswith("/"):
