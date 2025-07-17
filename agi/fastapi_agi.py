@@ -66,34 +66,42 @@ async def chat_completions(
                 content: List[Dict[str, str]] = []
                 # 媒体文件均转换为了路径
                 for item in msg.content:
-                    if item["type"] == "image":
+                    if item.type == "image":
                         # 假设 item["image"] 是图像数据的某种表示（例如，文件路径或 base64 编码）
-                        file_type = identify_input_type(item["image"])
+                        file_type = identify_input_type(item.image)
                         if file_type == "base64":
-                            item["image"],_, _ = save_media_content(item["image"],FILE_STORAGE_PATH)
+                            item.image,_, _ = save_media_content(item.image,FILE_STORAGE_PATH)
                         log.info(f'image save path:{item["image"]}')
-                        content.append({"type": "image", "image": item["image"]})
+                        content.append({"type": "image", "image": item.image})
                         input_type = "image"
-                    elif item["type"] == "audio":
-                        # 假设 item["audio"] 是音频数据的某种表示
-                        file_type = identify_input_type(item["audio"])
+                    elif item.type == "image_url":
+                        # 假设 item["image"] 是图像数据的某种表示（例如，文件路径或 base64 编码）
+                        file_type = identify_input_type(item.image_url.url)
                         if file_type == "base64":
-                            item["audio"],_, _ = save_media_content(item["audio"],FILE_STORAGE_PATH)
-                        content.append({"type": "audio", "audio": item["audio"]})
+                            item.image_url.url,_, _ = save_media_content(item.image_url.url,FILE_STORAGE_PATH)
+                        log.info(f'image save path:{item.image_url.url}')
+                        content.append({"type": "image", "image": item.image_url.url})
+                        input_type = "image"
+                    elif item.type == "audio":
+                        # 假设 item["audio"] 是音频数据的某种表示
+                        file_type = identify_input_type(item.audio)
+                        if file_type == "base64":
+                            item.audio,_, _ = save_media_content(item.audio,FILE_STORAGE_PATH)
+                        content.append({"type": "audio", "audio": item.audio})
                         input_type = "audio"
-                    elif item["type"] == "video":
+                    elif item.type == "video":
                         # 假设 item["audio"] 是音频数据的某种表示
-                        file_type = identify_input_type(item["video"])
+                        file_type = identify_input_type(item.video)
                         if file_type == "base64":
-                            item["video"],_, _ = save_media_content(item["video"],FILE_STORAGE_PATH)
-                        content.append({"type": "video", "video": item["video"]})
+                            item.video,_, _ = save_media_content(item.video,FILE_STORAGE_PATH)
+                        content.append({"type": "video", "video": item.video})
                         input_type = "video"
-                    elif item["type"] == "text": 
-                        item["text"] = f"{item['text']} {LLM_WITH_NO_THINKING}"
-                        content.append({"type":"text","text":item["text"]})
+                    elif item.type == "text": 
+                        item.text = f"{item.text} {LLM_WITH_NO_THINKING}"
+                        content.append({"type":"text","text":item.text})
                     else:
                         # 处理不支持的类型
-                        raise ValueError(f"不支持的多模态类型: {item['type']}")
+                        raise ValueError(f"不支持的多模态类型: {item.type}")
                 internal_messages.append(HumanMessage(content=content))
 
         if request.user is None or request.user == "":
