@@ -331,7 +331,7 @@ def path_to_preview_url(file_path: str, base_url: str = BASE_URL) -> str:
     """
     # 确保文件路径在 CACHE_DIR 内，防止目录遍历
     if not os.path.realpath(file_path).startswith(os.path.realpath(FILE_STORAGE_PATH)):
-        raise ValueError("File path is outside the root directory")
+        raise ValueError(f"File path is outside the root directory.root ={FILE_STORAGE_PATH},file_path={file_path}")
     
     # 获取相对于 UPLOAD_DIR 的文件名
     file_name = os.path.basename(file_path)
