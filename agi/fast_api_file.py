@@ -33,7 +33,7 @@ async def list_files():
 @router_file.post("/files")
 async def save_file(
     file: UploadFile = File(...),  # 接收上传的文件
-    user_id: str = Form(...),
+    user_id: Optional[str] = Form("default"),
     collection_name: Optional[str] = Form("default")
     ):
     # 获取文件类型
