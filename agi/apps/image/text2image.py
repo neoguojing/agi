@@ -50,8 +50,8 @@ class Text2Image:
             from diffusers import StableDiffusion3Pipeline
             self.n_steps = 40
             self.guidance_scale = 4.5
-            self.model = StableDiffusion3Pipeline.from_pretrained(self.model_path, torch_dtype=torch.bfloat16)
-            # self.model = StableDiffusion3Pipeline.from_pretrained(self.model_path, torch_dtype=torch.bfloat16,low_cpu_mem_usage=False,ignore_mismatched_sizes=True)
+            # self.model = StableDiffusion3Pipeline.from_pretrained(self.model_path, torch_dtype=torch.bfloat16)
+            self.model = StableDiffusion3Pipeline.from_pretrained(self.model_path, torch_dtype=torch.bfloat16,low_cpu_mem_usage=False,ignore_mismatched_sizes=True)
             # if randomize_seed:
             #     seed = random.randint(0, MAX_SEED)
 
