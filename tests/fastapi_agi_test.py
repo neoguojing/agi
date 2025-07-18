@@ -371,9 +371,32 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertEqual(is_stoped,True)
         
     def test_rag(self):
+        import requests
+        response = None
+        url = "http://localhost:8000/v1/files"  # 替换为你的服务地址
+        # 打开 PDF 文件
+        with open("test.pdf", "rb") as f:
+            files = {
+                "file": ("test.pdf", f, "application/pdf")  # (filename, file object, MIME type)
+            }
+            data = {
+                "collection_name": "test",
+                "user_id": "rag"
+            }
+
+            response = requests.post(url, files=files, data=data)
+
+        assert response.status_code == 200
+        response_json = response.json()
+        print(response_json)
+        assert response_json["original_filename"] == "test.pdf"
+        assert "saved_filename" in response_json
+        assert response_json["file_type"] == "application/pdf"
+
         response = self.client.chat.completions.create(
             model="agi-model",
             extra_body={"db_ids":["test"],"need_speech": False,"feature": "rag"},
+            user="rag",
             messages=[
                 {
                     "role": "user",
@@ -394,6 +417,7 @@ class TestFastApiAgi(unittest.TestCase):
             model="agi-model",
             stream=True,
             extra_body={"db_ids":["test"],"need_speech": False,"feature": "rag"},
+            user="rag",
             messages=[
                 {
                     "role": "user",
