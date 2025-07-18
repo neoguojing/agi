@@ -14,8 +14,8 @@ WHISPER_TARGET = agi.apps.whisper.fast_api_whisper:app
 HUGFACE_TARGET = agi.apps.multimodal.fast_api_multimodal:app
 
 REGISTRY = "docker.io"
-
-TTS_TYPE ?= cosyvoice   # 可选值: tts 或 cosyvoice
+# 可选值: tts 或 cosyvoice
+TTS_TYPE ?= cosyvoice
 IMAGE_GEN_VERION ?= "" # 可选值3.5
 # 默认目标
 .PHONY: all
@@ -125,7 +125,7 @@ image_tts:
 .PHONY: image_tts_base
 image_tts_base:
 	docker build \
-		-f ./Dockerfile.$(TTS_TYPE).base \
+		-f ./Dockerfile.${TTS_TYPE}.base \
 		-t $(REGISTRY)/guojingneo/agi-fastapi-tts:base .
 
 .PHONY: image_whisper
