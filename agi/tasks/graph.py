@@ -169,6 +169,11 @@ class AgiGraph:
     
     async def output_control(self,state: State):
         if state["need_speech"]:
+
+            last_message = state["messages"][-1]
+            # 修复 tts之前finish_reson = stop的问题
+            if isinstance(last_message,AIMessage):
+                last_message.response_metadata["finish_reason"] = None
             log.info(f"to tts:{state['messages'][-1]}")
             return "tts"
         
