@@ -12,6 +12,8 @@ from agi.config import log
 from agi.utils.common import path_to_preview_url
 from PIL import Image as PILImage
 style = 'style="width: 100%; max-height: 100vh;"'
+MAX_SEED = np.iinfo(np.int32).max
+MAX_IMAGE_SIZE = 1440
 
 class Image2Image:
     n_steps: int = 2
@@ -61,7 +63,12 @@ class Image2Image:
         input_image = input_image.resize((512, 512))
         
         # Generate the image using the model
-        generated_image = self.model(input, image=input_image, num_inference_steps=self.n_steps, strength=0.5, guidance_scale=self.guidance_scale).images[0]
+        generated_image = self.model(input,
+                                      image=input_image, 
+                                      num_inference_steps=self.n_steps, 
+                                      strength=0.5, 
+                                      guidance_scale=self.guidance_scale
+                                ).images[0]
         
         if resp_format == "b64_json":
             self.save_image = False

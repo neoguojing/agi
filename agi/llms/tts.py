@@ -31,7 +31,7 @@ class TextToSpeech(CustomerLLM):
         model_name = TTS_MODLE_NAME
         if config:
             user_id = config.get("configurable").get("user_id")
-            model_name = config.get("configurable").get("model","cosyvoice")
+            model_name = config.get("configurable").get("model",TTS_MODLE_NAME)
 
         input_str = None
         if isinstance(input,str):

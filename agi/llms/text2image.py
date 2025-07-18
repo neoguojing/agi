@@ -41,7 +41,7 @@ class Text2Image(CustomerLLM):
         
         model_name = TEXT_TO_IMAGE_MODEL_NAME
         if config:
-            model_name = config.get("configurable").get("model","sdxl")
+            model_name = config.get("configurable").get("model",TEXT_TO_IMAGE_MODEL_NAME)
         
         response = self.client.images.generate(
             model=model_name,  # 可选 "" 或 "dall-e-3"
