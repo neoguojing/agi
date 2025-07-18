@@ -278,7 +278,11 @@ class AgiGraph:
                                     last_message.response_metadata["finish_reason"] = None
                                     yield event
                                 last_message.content = other_content
-                                last_message.response_metadata["finish_reason"] = "stop"
+                                # tts之前，finish_reason不能为stop
+                                if meta.get("need_speech") and meta.get("langgraph_node") != 'tts':
+                                    last_message.response_metadata["finish_reason"] = None
+                                else:
+                                    last_message.response_metadata["finish_reason"] = "stop"
                             yield event
                     else:
                         continue
