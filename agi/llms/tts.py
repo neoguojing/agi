@@ -1,7 +1,6 @@
 
 from agi.config import API_KEY,TTS_BASE_URL,TTS_MODLE_NAME
 from agi.llms.base import CustomerLLM,parse_input_messages
-from agi.utils.common import path_to_preview_url
 from langchain_core.runnables import RunnableConfig,run_in_executor
 from typing import Any, Optional,Union,ClassVar
 from langchain_core.messages import AIMessage, HumanMessage,AIMessageChunk
@@ -60,9 +59,8 @@ class TextToSpeech(CustomerLLM):
                 tmp.write(response.content)
                 filename = tmp.name
                 
-        file_url = path_to_preview_url(filename)
         return AIMessage(content=[
-            {"type": "audio", "audio": file_url,"text":input_str}
+            {"type": "audio", "audio": filename,"text":input_str}
         ],response_metadata={"finish_reason":"stop"})
         
     def stream(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any):

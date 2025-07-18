@@ -3,9 +3,8 @@ import time
 from fastapi import WebSocket
 from agi.config import log,TTS_MODEL_DIR
 from agi.apps.tts.tts import TTS,SENTINEL
-from pydantic import BaseModel, Field
-from typing import Literal, Optional, List, Union
 from agi.apps.common import verify_api_key,SpeechRequest
+from agi.utils.common import path_to_preview_url
 from fastapi import Depends, HTTPException,FastAPI
 from fastapi.responses import StreamingResponse,FileResponse
 from typing import AsyncGenerator,Generator
@@ -75,7 +74,8 @@ async def generate_speech(request: SpeechRequest, api_key: str = Depends(verify_
             return await generate_speech_streaming(request,api_key=api_key)
         else:
             _ ,file_path = tts.invoke(request.input,user_id=request.user,save_file=True,model_name=request.model)
-            return FileResponse(file_path, media_type=f"audio/{request.response_format}", filename=file_path)
+            file_url = path_to_preview_url(file_path)
+            return FileResponse(file_path, media_type=f"audio/{request.response_format}", filename=file_url)
     
     except Exception as e:
         log.error(e)
