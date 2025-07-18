@@ -28,7 +28,7 @@ class FSSpecStorage:
     def _full_path(self, filename: str) -> str:
         if not filename or ".." in filename or filename.startswith("/"):
             raise InvalidFilename(f"Invalid filename: {filename}")
-        return self.base + filename
+        return os.path.join(self.base,filename)
 
     def to_local_path(self, filename: str) -> str:
         """
