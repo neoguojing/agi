@@ -82,7 +82,9 @@ async def doc_chat_node(state: State,config: RunnableConfig,writer: StreamWriter
     if state.get("citations"):
         writer({"citations":state["citations"],"docs":state["docs"]})
     log.info(f"doc_chat_node:{len(state['docs'])}")
-    return await chain.ainvoke(state,config=config)
+    result = await chain.ainvoke(state,config=config)
+    result["citations"] = state["citations"]
+    return result
 
 async def doc_rerank_node(state: State,config: RunnableConfig):
     km = TaskFactory.get_knowledge_manager()
