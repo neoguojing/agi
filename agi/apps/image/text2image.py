@@ -2,14 +2,19 @@ import threading
 import time
 import base64
 import io
+import os
 from pathlib import Path
 from typing import Any
 import torch
-from agi.config import TEXT_TO_IMAGE_VERSION,log
+from agi.config import log,MODEL_PATH
 from agi.config import TEXT_TO_IMAGE_MODEL_PATH as model_root,FILE_STORAGE_PATH
 from agi.utils.common import path_to_preview_url
+import random
+import numpy as np
 
 style = 'style="width: 100%; max-height: 100vh;"'
+MAX_SEED = np.iinfo(np.int32).max
+MAX_IMAGE_SIZE = 1440
 
 class Text2Image:
     n_steps: int = 1
@@ -19,6 +24,7 @@ class Text2Image:
         model_path: 模型本地路径或 huggingface 名称
         timeout: 超过多少秒未使用就自动卸载（默认10分钟）
         """
+        self.model_name = "sdxl"
         self.model_path = model_path
         self.timeout = timeout
         self.model = None
@@ -29,56 +35,76 @@ class Text2Image:
         self.save_image = save_image
         self.file_path = FILE_STORAGE_PATH
 
-    def get_model(self):
+    def get_model(self,model:str):
         """访问模型，如果未加载则自动加载"""
         with self.lock:
             self.last_used = time.time()
             if self.model is None:
+                self.model_name = model
                 self._load()
+            else:
+                if self.model_name != model:
+                    self._unload()
+                    self.model_name = model
+                    self._load()
             return self.model
 
     def _load(self):
         print(f"[Model] Loading model from {self.model_path}")
-        if TEXT_TO_IMAGE_VERSION == "sdxl-turbo":
+        if self.model_name == "sdxl":
             from diffusers import AutoPipelineForText2Image
+            self.model_path = os.path.join(MODEL_PATH, "sdxl-turbo")
             self.model = AutoPipelineForText2Image.from_pretrained(
                     self.model_path, torch_dtype=torch.float16
             )
-        elif TEXT_TO_IMAGE_VERSION == "3.5-medium":
+        elif self.model_name == "sd3.5":
             # use 3.5 model
             # GPU 18000MB -> 900MB(off-load)
             from diffusers import StableDiffusion3Pipeline
-            self.n_steps = 40
-            self.guidance_scale = 4.5
+            self.model_path = model_root
             # self.model = StableDiffusion3Pipeline.from_pretrained(self.model_path, torch_dtype=torch.bfloat16)
             self.model = StableDiffusion3Pipeline.from_pretrained(self.model_path, torch_dtype=torch.bfloat16,low_cpu_mem_usage=False,ignore_mismatched_sizes=True)
-            # if randomize_seed:
-            #     seed = random.randint(0, MAX_SEED)
-
-            # generator = torch.Generator().manual_seed(seed)
-            # image = pipe(
-            #     prompt=prompt,
-            #     negative_prompt=negative_prompt,
-            #     guidance_scale=guidance_scale,
-            #     num_inference_steps=num_inference_steps,
-            #     width=width,
-            #     height=height,
-            #     generator=generator,
-            # ).images[0]
 
         self.model = self.model.to("cuda")
-        #self.model.enable_model_cpu_offload()
+        self.model.enable_model_cpu_offload()
 
-    def invoke(self, input: str,resp_format="url") -> str:
+    # model: sdxl sd3.5
+    def invoke(self, input: str,negative_prompt:str="",
+               model:str="sdxl",width:int=512,height:int=512,
+               resp_format="url",randomize_seed=False) -> str:
         """Generate an image from the input text."""
-        self.get_model()
+        self.get_model(model)
 
         if not input.strip():
             return "No prompt provided."
         
-        # Generate image from the provided prompt
-        log.debug(f"n_steps:{self.n_steps},guidance_scale:{self.guidance_scale}")
-        image = self.model(prompt=input, num_inference_steps=self.n_steps, guidance_scale=self.guidance_scale).images[0]
+        generator = None
+        if randomize_seed:
+            seed = random.randint(0, MAX_SEED)
+            generator = torch.Generator().manual_seed(seed)
+        
+        if model == "sdxl":
+            self.n_steps = 1
+            self.guidance_scale = 0.0
+        else:
+            self.n_steps = 20
+            self.guidance_scale = 4.5
+
+        if width > MAX_IMAGE_SIZE:
+            width = MAX_IMAGE_SIZE
+        if height > MAX_IMAGE_SIZE:
+            height = MAX_IMAGE_SIZE
+        
+        log.debug(f"n_steps:{self.n_steps},guidance_scale:{self.guidance_scale},{width}x{height}")
+        image = self.model(
+            prompt=input, 
+            negative_prompt=negative_prompt,
+            num_inference_steps=self.n_steps, 
+            guidance_scale=self.guidance_scale,
+            width=width,
+            height=height,
+            generator=generator,
+            ).images[0]
         
         if resp_format == "b64_json":
             self.save_image = False

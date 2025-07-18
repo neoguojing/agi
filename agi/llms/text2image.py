@@ -1,7 +1,7 @@
 from typing import Any, List, Mapping, Optional,Union
 from pydantic import  Field,ConfigDict
 from agi.llms.base import CustomerLLM,parse_input_messages
-from agi.config import API_KEY,IMAGE_GEN_BASE_URL
+from agi.config import API_KEY,IMAGE_GEN_BASE_URL,TEXT_TO_IMAGE_MODEL_NAME
 from langchain_core.runnables import RunnableConfig
 from langchain_core.messages import AIMessage, HumanMessage
 from openai import OpenAI
@@ -39,8 +39,12 @@ class Text2Image(CustomerLLM):
         if not input_str.strip():
             return AIMessage(content="No prompt provided.")
         
+        model_name = TEXT_TO_IMAGE_MODEL_NAME
+        if config:
+            model_name = config.get("configurable").get("model","sdxl")
+        
         response = self.client.images.generate(
-            model="dall-e-3",  # 可选 "dall-e-2" 或 "dall-e-3"
+            model=model_name,  # 可选 "" 或 "dall-e-3"
             prompt=input_str,
             size="1024x1024",  # 可选：1024x1024、512x512（dall-e-2 支持更多尺寸）
             quality="hd",      # 仅用于 DALL·E 3，可选 "standard" | "hd"

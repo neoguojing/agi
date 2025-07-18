@@ -1,6 +1,7 @@
 import pytest
 from httpx import AsyncClient
 from agi.apps.image.fast_api_image import app  # 替换为你的实际模块路径
+from agi.config import TEXT_TO_IMAGE_MODEL_NAME
 import base64
 
 api_key = "123"
@@ -11,7 +12,7 @@ headers={
 @pytest.mark.asyncio
 async def test_generate_image():
     payload = {
-        "model": "your-model-name",
+        "model": TEXT_TO_IMAGE_MODEL_NAME,
         "prompt": "a cat riding a bicycle",
         "n": 1,
         "size": "256x256",
@@ -42,7 +43,7 @@ async def test_image_edit_with_base64_input():
     base64_image = encode_image_base64("tests/cat.jpg")
 
     request_body = {
-        "model": "test-model",
+        "model": TEXT_TO_IMAGE_MODEL_NAME,
         "messages": [
             {
                 "role": "user",

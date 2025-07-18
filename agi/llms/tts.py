@@ -1,5 +1,5 @@
 
-from agi.config import API_KEY,TTS_BASE_URL
+from agi.config import API_KEY,TTS_BASE_URL,TTS_MODLE_NAME
 from agi.llms.base import CustomerLLM,parse_input_messages
 from agi.utils.common import path_to_preview_url
 from langchain_core.runnables import RunnableConfig,run_in_executor
@@ -29,7 +29,7 @@ class TextToSpeech(CustomerLLM):
         """Generate speech audio from input text."""
 
         user_id = "default"
-        model_name = "cosyvoice"
+        model_name = TTS_MODLE_NAME
         if config:
             user_id = config.get("configurable").get("user_id")
             model_name = config.get("configurable").get("model","cosyvoice")

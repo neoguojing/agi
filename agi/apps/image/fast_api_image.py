@@ -25,6 +25,7 @@ image2img = Image2Image()
 class ImageGenRequest(BaseModel):
     model: str
     prompt: str
+    negative_prompt: Optional[str] = None
     n: int = Field(1, ge=1, le=10)
     size: Literal["256x256", "512x512", "1024x1024"] = "1024x1024"
     response_format: Literal["url", "b64_json"] = "url"
@@ -44,8 +45,15 @@ class ImageGenResponse(BaseModel):
 @app.post("/v1/images/generations")
 async def generate(req: ImageGenRequest,api_key: str = Depends(verify_api_key)):
     log.info(req)
+
     try:
-        image = text2img.invoke(req.prompt,resp_format=req.response_format)
+        width, height = map(int, req.size.lower().split("x"))
+        image = text2img.invoke(req.prompt,
+                                model=req.model,
+                                width=width,
+                                height=height,
+                                negative_prompt=req.negative_prompt,
+                                resp_format=req.response_format)
             
     except Exception as e:
         log.error(e)
