@@ -57,7 +57,7 @@ TTS_MODEL_DIR = os.getenv("TTS_MODEL_DIR", os.path.join(MODEL_PATH,"cosyvoice/Co
 TTS_GPU_ENABLE = os.getenv("TTS_GPU_ENABLE", "True").lower() == "true"
 if not TTS_GPU_ENABLE:
     TTS_MODEL_DIR = os.getenv("TTS_MODEL_DIR", os.path.join(MODEL_PATH,"tts_models--zh-CN--baker--tacotron2-DDC-GST"))
-TTS_MODLE_NAME = "cosyvoice" #xtts  dag
+TTS_MODLE_NAME = os.getenv("TTS_MODLE_NAME","cosyvoice") #xtts  dag
 TTS_BASE_URL = os.getenv("TTS_BASE_URL", "http://localhost:8002/v1/")
 
 ## image 
@@ -65,7 +65,7 @@ IMAGE_TO_IMAGE_MODEL_PATH = os.getenv("IMAGE_TO_IMAGE_MODEL_PATH",os.path.join(M
 # TEXT_TO_IMAGE_MODEL_PATH = os.getenv("TEXT_TO_IMAGE_MODEL_PATH",os.path.join(MODEL_PATH, "stable-diffusion-3.5-medium"))
 TEXT_TO_IMAGE_MODEL_PATH = os.getenv("TEXT_TO_IMAGE_MODEL_PATH",os.path.join(MODEL_PATH, "sdxl-turbo"))
 IMAGE_GEN_BASE_URL = os.getenv("IMAGE_GEN_BASE_URL","http://localhost:8001/v1/")
-TEXT_TO_IMAGE_MODEL_NAME = "sdxl" # sd3.5
+TEXT_TO_IMAGE_MODEL_NAME = os.getenv("TEXT_TO_IMAGE_MODEL_NAME","sdxl") # sd3.5
 
 ## multi model
 MULTI_MODEL_PATH = os.getenv("MULTI_MODEL_PATH",os.path.join(MODEL_PATH, "Qwen2.5-Omni-3B"))
