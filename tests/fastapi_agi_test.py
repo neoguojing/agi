@@ -438,7 +438,7 @@ class TestFastApiAgi(unittest.TestCase):
     def test_transcription(self):  
         self.client_whisper = OpenAI(
             api_key="123", # This is the default and can be omitted
-            base_url="http://localhost:8002/v1",
+            base_url="http://localhost:8003/v1",
         )
         with open('tests/zh-cn-sample.wav', 'rb') as audio_file:
             response = self.client_whisper.audio.transcriptions.create(
@@ -458,7 +458,7 @@ class TestFastApiAgi(unittest.TestCase):
     def test_speech(self):  
         self.client_tts = OpenAI(
             api_key="123", # This is the default and can be omitted
-            base_url="http://localhost:8003/v1",
+            base_url="http://localhost:8002/v1",
         )
         with self.client_tts.audio.speech.with_streaming_response.create(
             model="tts-1",
