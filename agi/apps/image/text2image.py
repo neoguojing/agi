@@ -1,13 +1,11 @@
 import threading
 import time
-import os
 import base64
 import io
 from pathlib import Path
 from typing import Any
-import urllib.parse
 import torch
-from agi.config import TEXT_TO_IMAGE_VERSION
+from agi.config import TEXT_TO_IMAGE_VERSION,log
 from agi.config import TEXT_TO_IMAGE_MODEL_PATH as model_root,FILE_STORAGE_PATH
 from agi.utils.common import path_to_preview_url
 
@@ -54,6 +52,19 @@ class Text2Image:
             self.guidance_scale = 4.5
             self.model = StableDiffusion3Pipeline.from_pretrained(self.model_path, torch_dtype=torch.bfloat16)
             # self.model = StableDiffusion3Pipeline.from_pretrained(self.model_path, torch_dtype=torch.bfloat16,low_cpu_mem_usage=False,ignore_mismatched_sizes=True)
+            # if randomize_seed:
+            #     seed = random.randint(0, MAX_SEED)
+
+            # generator = torch.Generator().manual_seed(seed)
+            # image = pipe(
+            #     prompt=prompt,
+            #     negative_prompt=negative_prompt,
+            #     guidance_scale=guidance_scale,
+            #     num_inference_steps=num_inference_steps,
+            #     width=width,
+            #     height=height,
+            #     generator=generator,
+            # ).images[0]
 
         self.model = self.model.to("cuda")
         self.model.enable_model_cpu_offload()
@@ -66,6 +77,7 @@ class Text2Image:
             return "No prompt provided."
         
         # Generate image from the provided prompt
+        log.debug(f"n_steps:{self.n_steps},guidance_scale:{self.guidance_scale}")
         image = self.model(prompt=input, num_inference_steps=self.n_steps, guidance_scale=self.guidance_scale).images[0]
         
         if resp_format == "b64_json":
