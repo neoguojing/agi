@@ -2,7 +2,7 @@ import unittest
 from openai import OpenAI
 import base64
 
-from agi.config import log
+from agi.config import log,TTS_MODLE_NAME
 from agi.tasks.utils import audio_to_base64
 
 
@@ -461,7 +461,7 @@ class TestFastApiAgi(unittest.TestCase):
             base_url="http://localhost:8002/v1",
         )
         with self.client_tts.audio.speech.with_streaming_response.create(
-            model="tts-1",
+            model=TTS_MODLE_NAME,
             voice="alloy",
             input="the quick brown fox jumped over the lazy dogs",
         ) as response:
