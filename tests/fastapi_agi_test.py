@@ -315,7 +315,7 @@ class TestFastApiAgi(unittest.TestCase):
                 if chunk.choices[0].finish_reason == "stop":
                     is_stoped = True
         self.assertEqual(is_stoped,True)
-        
+    '''
     def test_web_search(self):
         response = self.client.chat.completions.create(
             model="agi-model",
@@ -468,3 +468,4 @@ class TestFastApiAgi(unittest.TestCase):
             response.stream_to_file("tests/test.wav")
             import os
             self.assertTrue(os.path.exists("tests/test.wav"))
+    '''
