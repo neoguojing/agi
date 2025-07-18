@@ -67,7 +67,7 @@ class Text2Image:
             # ).images[0]
 
         self.model = self.model.to("cuda")
-        self.model.enable_model_cpu_offload()
+        #self.model.enable_model_cpu_offload()
 
     def invoke(self, input: str,resp_format="url") -> str:
         """Generate an image from the input text."""
