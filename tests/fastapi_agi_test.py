@@ -375,7 +375,7 @@ class TestFastApiAgi(unittest.TestCase):
         response = None
         url = "http://localhost:8000/v1/files"  # 替换为你的服务地址
         # 打开 PDF 文件
-        with open("test.pdf", "rb") as f:
+        with open("tests/test.pdf", "rb") as f:
             files = {
                 "file": ("test.pdf", f, "application/pdf")  # (filename, file object, MIME type)
             }
