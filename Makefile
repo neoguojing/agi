@@ -16,7 +16,8 @@ HUGFACE_TARGET = agi.apps.multimodal.fast_api_multimodal:app
 REGISTRY = "docker.io"
 # 可选值: tts 或 cosyvoice
 TTS_TYPE ?= cosyvoice
-IMAGE_GEN_VERION ?= "" # 可选值3.5
+# 可选值sdxl
+IMAGE_GEN_VERION ?= "sd3.5"
 # 默认目标
 .PHONY: all
 all: install test
@@ -101,18 +102,10 @@ models:
 .PHONY: image_image_gen
 image_image_gen:
 	docker build \
-	-f ./Dockerfile.image \
+	-f ./Dockerfile.${IMAGE_GEN_VERION}.image \
 	--build-arg COMMIT_HASH=$$(git rev-parse HEAD) \
 	--build-arg BRANCH_NAME=$$(git rev-parse --abbrev-ref HEAD) \
 	-t $(REGISTRY)/guojingneo/agi-fastapi-image:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
-
-.PHONY: image_image_gen3
-image_image_gen3:
-	docker build \
-	-f ./Dockerfile.image.3.5 \
-	--build-arg COMMIT_HASH=$$(git rev-parse HEAD) \
-	--build-arg BRANCH_NAME=$$(git rev-parse --abbrev-ref HEAD) \
-	-t $(REGISTRY)/guojingneo/agi-fastapi-image-3.5:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
 
 .PHONY: image_tts
 image_tts:
