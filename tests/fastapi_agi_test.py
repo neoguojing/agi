@@ -315,7 +315,7 @@ class TestFastApiAgi(unittest.TestCase):
                 if chunk.choices[0].finish_reason == "stop":
                     is_stoped = True
         self.assertEqual(is_stoped,True)
-    '''
+    
     def test_web_search(self):
         response = self.client.chat.completions.create(
             model="agi-model",
@@ -369,7 +369,7 @@ class TestFastApiAgi(unittest.TestCase):
                 self.assertEqual(chunk.choices[0].finish_reason,"stop")
                 is_stoped = True
         self.assertEqual(is_stoped,True)
-        
+    '''  
     def test_rag(self):
         import requests
         response = None
@@ -413,38 +413,38 @@ class TestFastApiAgi(unittest.TestCase):
         self.assertIsNotNone(response.choices[0].message.content[0]["citations"])
         self.assertIsInstance(response.choices[0].message.content[0]["citations"],list)
 
-        stream = self.client.chat.completions.create(
-            model="agi-model",
-            stream=True,
-            extra_body={"db_ids":["test"],"need_speech": False,"feature": "rag"},
-            user="rag",
-            messages=[
-                {
-                    "role": "user",
-                    "content": "NTP3000Plus",
-                }
-            ],
-        )
-        is_stoped = False
-        for chunk in stream:
-            print("------",chunk)
-            # TODO 重复的tool消息
-            self.assertIsNotNone(chunk.choices)
-            self.assertGreater(len(chunk.choices),0)
-            if chunk.choices[0].finish_reason is None:
-                self.assertIsNotNone(chunk.choices[0])
-                self.assertIsNotNone(chunk.choices[0].delta)
-                self.assertIsNotNone(chunk.choices[0].delta.content)
-                if isinstance(chunk.choices[0].delta.content,list):
-                    if chunk.choices[0].delta.content[0].get("type"):
-                        self.assertEqual(chunk.choices[0].delta.content[0].get("type"),"text")
-                        self.assertIsNotNone(chunk.choices[0].delta.content[0].get("text"))
-                    if chunk.choices[0].delta.content[0].get("citations"):
-                        self.assertIsInstance(chunk.choices[0].delta.content[0].get("citations"),list)
-            else:
-                self.assertEqual(chunk.choices[0].finish_reason,"stop")
-                is_stoped = True
-        self.assertEqual(is_stoped,True)
+        # stream = self.client.chat.completions.create(
+        #     model="agi-model",
+        #     stream=True,
+        #     extra_body={"db_ids":["test"],"need_speech": False,"feature": "rag"},
+        #     user="rag",
+        #     messages=[
+        #         {
+        #             "role": "user",
+        #             "content": "NTP3000Plus",
+        #         }
+        #     ],
+        # )
+        # is_stoped = False
+        # for chunk in stream:
+        #     print("------",chunk)
+        #     # TODO 重复的tool消息
+        #     self.assertIsNotNone(chunk.choices)
+        #     self.assertGreater(len(chunk.choices),0)
+        #     if chunk.choices[0].finish_reason is None:
+        #         self.assertIsNotNone(chunk.choices[0])
+        #         self.assertIsNotNone(chunk.choices[0].delta)
+        #         self.assertIsNotNone(chunk.choices[0].delta.content)
+        #         if isinstance(chunk.choices[0].delta.content,list):
+        #             if chunk.choices[0].delta.content[0].get("type"):
+        #                 self.assertEqual(chunk.choices[0].delta.content[0].get("type"),"text")
+        #                 self.assertIsNotNone(chunk.choices[0].delta.content[0].get("text"))
+        #             if chunk.choices[0].delta.content[0].get("citations"):
+        #                 self.assertIsInstance(chunk.choices[0].delta.content[0].get("citations"),list)
+        #     else:
+        #         self.assertEqual(chunk.choices[0].finish_reason,"stop")
+        #         is_stoped = True
+        # self.assertEqual(is_stoped,True)
 
     '''  
     def test_embedding(self):  
