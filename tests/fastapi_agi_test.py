@@ -3,7 +3,7 @@ from openai import OpenAI
 import base64
 
 from agi.config import log
-from agi.tasks.utils import audio_to_base64,image_path_to_base64_uri
+from agi.tasks.utils import audio_to_base64
 
 
 class TestFastApiAgi(unittest.TestCase):
