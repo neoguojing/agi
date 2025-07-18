@@ -24,6 +24,7 @@ RUN apt-get update && \
         libavcodec-dev \
         libavformat-dev \
         libavutil-dev && \
+        libmagic1 \
     rm -rf /var/lib/apt/lists/*
     
 RUN pip install --upgrade pip \
