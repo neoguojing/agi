@@ -11,6 +11,7 @@ from agi.config import IMAGE_TO_IMAGE_MODEL_PATH as model_root,FILE_STORAGE_PATH
 from agi.config import log
 from agi.utils.common import path_to_preview_url
 from PIL import Image as PILImage
+import numpy as np
 style = 'style="width: 100%; max-height: 100vh;"'
 MAX_SEED = np.iinfo(np.int32).max
 MAX_IMAGE_SIZE = 1440
