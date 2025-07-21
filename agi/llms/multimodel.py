@@ -1,4 +1,4 @@
-from agi.config import API_KEY,MULTI_MODEL_BASE_URL
+from agi.config import API_KEY,MULTI_MODEL_BASE_URL,MULTI_MODEL_NAME
 from agi.llms.base import CustomerLLM,parse_input_messages
 from agi.utils.common import path_to_preview_url
 from langchain_core.runnables import RunnableConfig
@@ -37,7 +37,7 @@ class MultiModel(CustomerLLM):
                 media = path_to_preview_url(media)
                 
             response = self.client.chat.completions.create(
-                model=self.model_name,
+                model=MULTI_MODEL_NAME,
                 extra_body={"need_speech": return_audio},
                 messages=[
                     {

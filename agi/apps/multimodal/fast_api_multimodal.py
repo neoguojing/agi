@@ -39,7 +39,10 @@ async def chat_completion(
             elif item.type == "video" and item.video:
                 video = item.video
 
-            response_text, _, response_audio = client.invoke(text, audio=audio, image=image, video=video,return_audio=request.need_speech)
+            response_text, _, response_audio = client.invoke(request.model,text=text,
+                                                              audio=audio, image=image, 
+                                                              video=video,
+                                                              return_audio=request.need_speech)
     except Exception as e:
         print(traceback.format_exc())
 
@@ -67,3 +70,4 @@ async def chat_completion(
             "finish_reason": "stop"
         }]
     }
+

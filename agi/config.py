@@ -70,6 +70,7 @@ TEXT_TO_IMAGE_MODEL_NAME = os.getenv("TEXT_TO_IMAGE_MODEL_NAME","sdxl") # sd3.5
 ## multi model
 MULTI_MODEL_PATH = os.getenv("MULTI_MODEL_PATH",os.path.join(MODEL_PATH, "Qwen2.5-Omni-3B"))
 MULTI_MODEL_BASE_URL = os.getenv("MULTI_MODEL_BASE_URL","http://localhost:8005/v1/")
+MULTI_MODEL_NAME = os.getenv("MULTI_MODEL_NAME","gemma")  #qwen
 ## web
 EXA_API_KEY = os.getenv("EXA_API_KEY","")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY","")
