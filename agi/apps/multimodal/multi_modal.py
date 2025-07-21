@@ -66,9 +66,9 @@ class MultiModel:
             self.model_path = os.path.join(MODEL_PATH, "gemma-3n-E2B-it")
             from transformers import AutoProcessor, Gemma3nForConditionalGeneration
             self.model = Gemma3nForConditionalGeneration.from_pretrained(self.model_path, 
-                                                                    device="cuda", 
-                                                                    torch_dtype=torch.bfloat16,).eval()
-
+                                                                    torch_dtype=torch.bfloat16).eval()
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            self.model.to(device)
             self.processor = AutoProcessor.from_pretrained(self.model_path)
 
     def invoke(self,model:str, text: str="",audio: any=None,image: any = None,video: any = None,return_audio=False,return_fmt=""):
