@@ -51,24 +51,25 @@ class MultiModel:
 
     def _load(self):
         if self.model_name == "qwen":
+            # GPU 13GB
             self.model_path = os.path.join(MODEL_PATH, "Qwen2.5-Omni-3B")
             print(f"[Model] Loading model from {self.model_path}")
             from transformers import Qwen2_5OmniForConditionalGeneration, Qwen2_5OmniProcessor
             self.model = Qwen2_5OmniForConditionalGeneration.from_pretrained(
                 self.model_path,
-                torch_dtype=torch.float16,
+                torch_dtype="auto",
                 device_map="auto",
                 enable_audio_output=True,
                 attn_implementation="flash_attention_2"
             )
             self.processor = Qwen2_5OmniProcessor.from_pretrained(self.model_path)
         elif self.model_name == "gemma":
+            # GPU 11GB
             self.model_path = os.path.join(MODEL_PATH, "gemma-3n-E2B-it")
             from transformers import AutoProcessor, Gemma3nForConditionalGeneration
-            self.model = Gemma3nForConditionalGeneration.from_pretrained(self.model_path, 
-                                                                    torch_dtype=torch.bfloat16).eval()
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            self.model.to(device)
+            self.model = Gemma3nForConditionalGeneration.from_pretrained(self.model_path,
+                                                          torch_dtype=torch.bfloat16).to(device).eval()
             self.processor = AutoProcessor.from_pretrained(self.model_path)
 
     def invoke(self,model:str, text: str="",audio: any=None,image: any = None,video: any = None,return_audio=False,return_fmt=""):
@@ -153,12 +154,12 @@ class MultiModel:
                 ).to(self.model.device, dtype=torch.bfloat16)
 
                 input_len = inputs["input_ids"].shape[-1]
-
+                generation = None
                 with torch.inference_mode():
                     generation = self.model.generate(**inputs, do_sample=False)
                     generation = generation[0][input_len:]
 
-                    text_output = self.processor.decode(generation, skip_special_tokens=True)
+                text_output = self.processor.decode(generation, skip_special_tokens=True)
 
             return text_output,file_path,audio_source
                         
