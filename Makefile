@@ -78,7 +78,7 @@ image_base:
 	-t $(REGISTRY)/guojingneo/agi-fastapi-app:base .
 
 .PHONY: image
-image: image_base
+image:
 	docker build \
 	-f ./Dockerfile \
 	--build-arg COMMIT_HASH=$$(git rev-parse HEAD) \
