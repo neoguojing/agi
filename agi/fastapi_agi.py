@@ -71,7 +71,7 @@ async def chat_completions(
                         file_type = identify_input_type(item.image)
                         if file_type == "base64":
                             item.image,_, _ = save_media_content(item.image,FILE_STORAGE_PATH)
-                        log.info(f'image save path:{item["image"]}')
+                        log.info(f'image save path:{item.image}')
                         content.append({"type": "image", "image": item.image})
                         input_type = "image"
                     elif item.type == "image_url":
