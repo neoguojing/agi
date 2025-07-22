@@ -44,7 +44,7 @@ decider_prompt = (
     'Please follow these decision rules:'
 
     '- If the input type is "image":'
-    '    - If the question requests extracting information from the image (e.g., reading text, describing image content), output: "llm".'
+    '    - If the question requests extracting information from the image (e.g., reading text, describing image content), output: "multi_modal".'
     '    - If the question requires modifying the image, transforming its style, or generating a new image based on the input, output: "image".'
 
     '- If the input type is "text":'
