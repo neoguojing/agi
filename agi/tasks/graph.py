@@ -97,7 +97,7 @@ class AgiGraph:
                                  "thread_id": "tools"}}
         # 定义状态机chain
         decider_chain = decide_modify_state_messages_runnable | TaskFactory.get_llm() | StrOutputParser()
-        node_list = ["image","llm_with_history","agent","llm",END]
+        node_list = ["image","llm_with_history","agent","llm","multi_modal",END]
         next_step = await decider_chain.ainvoke(state,config=config)
         # 去除think标签
         _,next_step = split_think_content(next_step)
