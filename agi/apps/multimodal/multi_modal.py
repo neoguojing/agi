@@ -69,7 +69,7 @@ class MultiModel:
             from transformers import AutoProcessor, Gemma3nForConditionalGeneration
             # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             self.model = Gemma3nForConditionalGeneration.from_pretrained(self.model_path,
-                                                            torch_dtype="auto",
+                                                            torch_dtype=torch.bfloat16,
                                                             device_map="auto",
                                                           ).eval()
             self.processor = AutoProcessor.from_pretrained(self.model_path)

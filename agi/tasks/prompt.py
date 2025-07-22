@@ -53,11 +53,11 @@ decider_prompt = (
     '    - If the input is nonsensical, meaningless, or just gibberish, output: "__end__"'
     '    - Otherwise, for typical text-based inquiries that do not require external data retrieval, output: "llm_with_history".'
 
-    'Your output should be a single command chosen from: "image", "agent","llm","__end__" or "llm_with_history". Do not include any additional explanation or details.'
+    'Your output should be a single command chosen from: "image", "agent","multi_modal","__end__" or "llm_with_history". Do not include any additional explanation or details.'
 
     'Examples:'
     '1. Input Type: "image"; Question: "Can you read the text in this photo?" '
-    '-> Output: "llm"'
+    '-> Output: "multi_modal"'
 
     '2. Input Type: "image"; Question: "Please convert this image into a watercolor painting." '
     '-> Output: "image"'
