@@ -119,7 +119,7 @@ class AgiGraph:
     async def image_feature_control(self,state: State):
         feature = state.get("feature","")
         if feature == Feature.IMAGE2TEXT:    #图片转文字,涉及到使用base64，对上下文影响较大，不能进入上下文
-            return "llm"
+            return "multi_modal"
         elif feature == Feature.IMAGE2IMAGE:    #图片转图片
             return "image"
         else:
