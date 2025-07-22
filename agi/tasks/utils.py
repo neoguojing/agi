@@ -229,102 +229,111 @@ def add_messages(left: Messages, right: Messages) -> Messages:
         print(traceback.format_exc())
 
 
-def save_media_content(source: str, output_dir: str = FILE_STORAGE_PATH) -> Tuple[str, str]:
+def save_media_content(source: str, output_dir: str = FILE_STORAGE_PATH) -> Tuple[str, str, Optional[str]]:
     """
-    将 base64 编码的图片或语音内容保存为文件。
+    将 base64 编码的图片或音频内容、本地文件或远程URL保存为本地文件。
 
     Args:
-        source (str): base64 编码的字符串，支持带有 `data:*/*;base64,` 前缀。
-        output_dir (str): 存储目录，默认为 ./output
+        source (str): base64 字符串、文件路径或 URL。
+        output_dir (str): 存储目录，默认 FILE_STORAGE_PATH。
 
     Returns:
-        Tuple[str, str]: 返回文件路径和类型（image 或 audio）
+        Tuple[str, str, Optional[str]]: 文件路径、本地服务URL、类型（image/audio/None）。
 
     Raises:
-        ValueError: 当输入不是有效 base64 图片或语音内容时。
+        ValueError: 无法识别的格式或不支持的媒体类型。
     """
-
-    # 自动创建输出目录
     os.makedirs(output_dir, exist_ok=True)
-    ext = None
     content_type = None
-    encoded = None
+    file_path = ""
     url = ""
 
-    # 检测是否包含 mime 类型头
+    def generate_filename(extension: str) -> str:
+        return f"{uuid.uuid4().hex}{extension}"
+
+    def detect_content_type(path: str) -> Optional[str]:
+        mime_type, _ = mimetypes.guess_type(path)
+        if mime_type:
+            if mime_type.startswith("image/"):
+                return "image"
+            elif mime_type.startswith("audio/"):
+                return "audio"
+        # fallback: check by file extension
+        ext = os.path.splitext(path)[1].lower()
+        if ext in {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff"}:
+            return "image"
+        elif ext in {".wav", ".mp3", ".m4a", ".flac", ".ogg"}:
+            return "audio"
+        return None
+
+    # === 1. base64（含或不含 data: 前缀） ===
     if source.startswith("data:"):
         header, encoded = source.split(",", 1)
         mime_type = header.split(";")[0][5:]
-        ext = mimetypes.guess_extension(mime_type)
-        
-        if mime_type.startswith("image/"):
-            content_type = "image" 
-            if ext is None:
-                ext = "jpg"
-        if mime_type.startswith("audio/"):
-            content_type = "audio" 
-            if ext is None:
-                ext = "wav"
+        ext = mimetypes.guess_extension(mime_type) or ".bin"
+        content_type = "image" if mime_type.startswith("image/") else \
+                       "audio" if mime_type.startswith("audio/") else None
+        if content_type is None:
+            raise ValueError(f"Unsupported MIME type: {mime_type}")
+        filename = generate_filename(ext)
+        file_path = os.path.join(output_dir, filename)
+        with open(file_path, "wb") as f:
+            f.write(base64.b64decode(encoded))
+
     elif os.path.isfile(source):
-        # Load audio from local file and copy it to the target directory
+        # === 2. 本地文件路径 ===
         filename = os.path.basename(source)
-        target_path = os.path.join(output_dir, filename)
+        file_path = os.path.join(output_dir, filename)
+        if not os.path.isfile(file_path):
+            shutil.copy(source, file_path)
+        content_type = detect_content_type(file_path)
 
-        if not os.path.isfile(target_path):
-            shutil.copy(source, target_path)
-        if target_path.startswith(FILE_STORAGE_PATH):
-            url = os.path.join(BASE_URL, "v1/files", os.path.basename(target_path))
-        return target_path,url,None
-
-    elif source.startswith(('http://', 'https://')):
-        # Load audio from URL
+    elif source.startswith(("http://", "https://")):
+        # === 3. 网络URL ===
         response = requests.get(source, timeout=10)
         response.raise_for_status()
+        mime_type = response.headers.get("Content-Type", "")
+        ext = mimetypes.guess_extension(mime_type) or ".bin"
+        filename = os.path.basename(urlparse(source).path) or generate_filename(ext)
+        file_path = os.path.join(output_dir, filename)
+        with open(file_path, "wb") as f:
+            f.write(response.content)
+        content_type = detect_content_type(file_path)
 
-        # 生成文件名：使用 URL 最后的路径部分或 fallback
-        filename = os.path.basename(urlparse(source).path) or 'audio_from_url'
-        target_path = os.path.join(output_dir, filename)
-        return target_path,source,None
     else:
-        # 如果没有头部信息，则无法判断类型，默认用 .bin 保存
-        encoded = source
-        mime_type = None
-        content_type = None
-        ext = ".bin"
-
-    if content_type not in {"image", "audio"}:
-        raise ValueError("Unsupported or unknown content type")
-
-    # 生成文件名
-    filename = f"{content_type}_{int(os.times()[4] * 1000)}.{ext}"
-    file_path = os.path.join(output_dir, filename)
-
-    # 保存文件
-    with open(file_path, "wb") as f:
-        f.write(base64.b64decode(encoded))
-    
-    if ext != ".jpg" and content_type == "image":
+        # === 4. 纯 base64，无 data: 前缀 ===
         try:
-            # 转换为JPEG
-            jpeg_filename = f"{os.path.splitext(filename)[0]}.jpg"
-            jpeg_path = os.path.join(output_dir, jpeg_filename)
-            
-            with Image.open(file_path) as img:
-                # 转换为RGB模式（JPEG不支持透明通道）
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
-                img.save(jpeg_path, 'JPEG', quality=95)
-            
-            # 删除原始文件（可选）
-            os.remove(file_path)
-            file_path = jpeg_path
-        except Exception as e:
-            print(f"Failed to convert to JPEG: {e}")
-            # 如果转换失败，继续使用原始文件
+            decoded = base64.b64decode(source)
+        except Exception:
+            raise ValueError("Invalid base64 encoding.")
+        ext = ".bin"
+        filename = generate_filename(ext)
+        file_path = os.path.join(output_dir, filename)
+        with open(file_path, "wb") as f:
+            f.write(decoded)
+        content_type = detect_content_type(file_path)
 
+    # === 图像处理：可选转换为 JPEG ===
+    if content_type == "image":
+        try:
+            with Image.open(file_path) as img:
+                ext = os.path.splitext(file_path)[1].lower()
+                if ext in {".png", ".webp", ".bmp", ".tiff"}:
+                    # 转换为 JPEG
+                    jpeg_path = os.path.splitext(file_path)[0] + ".jpg"
+                    if img.mode != "RGB":
+                        img = img.convert("RGB")
+                    img.save(jpeg_path, format="JPEG", quality=95)
+                    os.remove(file_path)
+                    file_path = jpeg_path
+        except Exception as e:
+            print(f"Warning: Failed to convert image: {e}")
+
+    # === 构造 URL ===
     if file_path.startswith(FILE_STORAGE_PATH):
         url = os.path.join(BASE_URL, "v1/files", os.path.basename(file_path))
-    return file_path,url, content_type
+
+    return file_path, url, content_type
 
 def image_path_to_base64_uri(image_path: str) -> Optional[str]:
     input_type = identify_input_type(image_path)
