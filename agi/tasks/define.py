@@ -72,6 +72,7 @@ class State(AgentState):
     docs: list[Document]
     citations: list[any]
     collection_names: list[str]
+    file_path: str
 
     auto_decide_result: str
     status: str
