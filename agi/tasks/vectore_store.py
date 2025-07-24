@@ -159,7 +159,7 @@ class CollectionManager:
         )
 
         # 1. 异步批量关键词提取
-        processed_results = await self.text_proc.batch_process(texts, method="textrank")
+        processed_results = await self.text_proc.abatch_process(texts, method="textrank")
 
         # 2. 构建并发查询任务
         async def query_single(text: str, keywords: list):
@@ -198,7 +198,7 @@ class CollectionManager:
         )
 
         # 1. 异步批量关键词提取
-        processed_results = await self.text_proc.batch_process(texts, method="textrank")
+        processed_results = await self.text_proc.abatch_process(texts, method="textrank")
 
         # 2. 构建并发查询任务
         async def query_single(text: str, keywords: list):

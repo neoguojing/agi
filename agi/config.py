@@ -78,7 +78,7 @@ TAVILY_API_KEY = os.getenv("TAVILY_API_KEY","")
 ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY","")
 
 ## 系统参数
-
+STOP_WORDS_PATH = os.getenv("STOP_WORDS_PATH","./stopwords.txt")
 def get_env_bool(name: str, default=False) -> bool:
     val = os.getenv(name, str(default))
     return val.lower() in ("1", "true", "yes", "on")
