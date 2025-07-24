@@ -66,13 +66,18 @@ class State(AgentState):
     user_id: str
     conversation_id: str
     feature: str  # 支持的特性，1.agent，2.web 3.rag，4.tts，5.speech，6.image_recog 默认为agent
-    
+    # for rag search
     context: str
     urls: list[str]
     docs: list[Document]
     citations: list[any]
     collection_names: list[str]
+    # for doc store
     file_path: str
+    db_documents: list[Document]
+    filted_texts: list[str]
+    embds: list[list[float]]
+
 
     auto_decide_result: str
     status: str

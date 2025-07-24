@@ -40,16 +40,16 @@ class TextProcessor:
                 stopwords.update(line.strip() for line in f if line.strip())
         return stopwords
 
-
-    def _remove_stopwords(self, text: str) -> List[str]:
+    def remove_stopwords(self, text: str):
         """从分词结果中移除停用词"""
         words = self.tokenize(text)
-        return [w for w in words if w not in self.stopwords and w.strip()]
+        words = [w for w in words if w not in self.stopwords and w.strip()]
+        return ' '.join(words)
 
-    def remove_stopwords_batch(self, texts: List[str]) -> List[str]:
+    def remove_stopwords_batch(self, texts: List[str]):
         """批量清洗文本"""
         with ThreadPoolExecutor() as executor:
-            return list(executor.map(self._remove_stopwords, texts))
+            return list(executor.map(self.remove_stopwords, texts))
         
     def _clean_text(self, text: str) -> str:
         """文本清洗主流程：

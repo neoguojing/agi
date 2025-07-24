@@ -109,6 +109,8 @@ class CollectionManager:
         self,
         documents: List[Document],
         collection_name: str,
+        embeddings: List[List[float]] =None,
+        ids :List[str] = None,
         batch_size: int = 10,
         tenant=chromadb.DEFAULT_TENANT,
         database=chromadb.DEFAULT_DATABASE,
@@ -122,7 +124,8 @@ class CollectionManager:
 
         texts = [doc.page_content for doc in documents]
         metadatas = [doc.metadata for doc in documents]
-        ids = [str(uuid.uuid4()) for _ in documents]  # 每条文档生成唯一 id
+        if ids is None:
+            ids = [str(uuid.uuid4()) for _ in documents]  # 每条文档生成唯一 id
 
         # 分批添加到 Chroma Collection
         num_batches = math.ceil(len(documents) / batch_size)
@@ -131,10 +134,11 @@ class CollectionManager:
             end = start + batch_size
             try:
                 # 异步并发生成嵌入（嵌套列表需要解包）
-                embeddings = await asyncio.gather(*[
-                    asyncio.to_thread(self.embedding.embed_query, text)
-                    for text in texts[start:end]
-                ])
+                if embeddings is None:
+                    embeddings = await asyncio.gather(*[
+                        asyncio.to_thread(self.embedding.embed_query, text)
+                        for text in texts[start:end]
+                    ])
                 collection.add(
                     documents=texts[start:end],
                     embeddings=embeddings,
