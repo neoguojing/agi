@@ -23,7 +23,7 @@ class TextClusterer:
     def __init__(self,
                  min_cluster_size: int = 5,
                  min_samples: int = 1,
-                 use_umap: bool = True,
+                 use_umap: bool = False,
                  umap_dim: int = 5,
                  clean: bool = True,
                  parallel: bool = True,
@@ -86,6 +86,10 @@ class TextClusterer:
 
     def _reduce_dim(self, vectors: np.ndarray) -> np.ndarray:
         # 先PCA降维至50维，再UMAP降至目标维度，减少大规模时的计算压力
+        # 4. 标准化
+        scaler = StandardScaler()
+        vectors = scaler.fit_transform(vectors)
+
         pca = PCA(n_components=50, random_state=42)
         pca_result = pca.fit_transform(vectors)
         reducer = umap.UMAP(n_components=self.umap_dim, random_state=42)
@@ -104,16 +108,12 @@ class TextClusterer:
         if self.use_umap:
             embeddings = self._reduce_dim(embeddings)
 
-        # 4. 标准化
-        scaler = StandardScaler()
-        embeddings_scaled = scaler.fit_transform(embeddings)
-
         # 5. 聚类
         clusterer = hdbscan.HDBSCAN(
             min_cluster_size=self.min_cluster_size,
             min_samples=self.min_samples
         )
-        labels = clusterer.fit_predict(embeddings_scaled)
+        labels = clusterer.fit_predict(embeddings)
 
         # 6. 构建聚类结果
         clusters = {}
