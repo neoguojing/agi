@@ -111,6 +111,7 @@ class TextClusterer:
         clusters = []
         # 防止混入np.int64
         labels = labels.tolist()
+        log.info(f"got {len(labels)} clusters")
         for label in set(labels):
             if label == -1:
                 continue
