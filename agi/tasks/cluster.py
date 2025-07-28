@@ -17,13 +17,16 @@ from agi.tasks.task_factory import (
     TaskFactory
 )
 
-summary_prompt = '''
-    You are an expert summarizer. 
-    Given the input text, write a concise and factual summary. 
-    Do not include speculation, subjective language, or any words like "possible", "maybe", or "likely". 
-    Keep the summary brief and strictly based on the provided content.
-    Output only the summary text—no headings, explanations, or extra commentary.
-'''
+summary_prompt = """
+You are an expert summarizer. Given any input text in a human language, produce a concise, factual summary that covers:
+1. The main objective or purpose of the text.
+2. The key methods, structure, or arguments used.
+3. The principal findings, results, or conclusions.
+
+Keep the summary brief (no more than 5 sentences), use the same language as the input, and avoid speculation or subjective wording.  
+Output only the summary—no headings, bullet points, or extra commentary.
+"""
+
 summary_template = ChatPromptTemplate.from_messages(
     [
         (
@@ -115,8 +118,6 @@ class TextClusterer:
         clusters = []
         # 防止混入np.int64
         labels = labels.tolist()
-        log.info(f"got {len(set(labels))} clusters by KMeans")
-
         for label in set(labels):
             if label == -1:
                 continue
