@@ -40,6 +40,7 @@ async def file_loader_node(state: State, config: RunnableConfig):
 
     if loader:
         documents = loader.load()
+        log.info(f"load {len(documents)} pages")
         return {"db_documents": documents}
 
     return {}
@@ -60,6 +61,8 @@ async def doc_split_node(state: State, config: RunnableConfig):
                                                 chunk_size=3000, chunk_overlap=300,add_start_index=True)
 
     documents = await text_splitter.atransform_documents(state["db_documents"])
+    log.info(f"split {len(documents)} docs")
+
     return {"db_documents": documents}
 
 async def doc_clean_node(state: State, config: RunnableConfig):
@@ -110,6 +113,7 @@ async def doc_filter_node(state: State, config: RunnableConfig):
         return nlp.remove_stopwords(doc.page_content)
     with ThreadPoolExecutor() as executor:
         filted_texts = list(executor.map(filter_doc, state["db_documents"]))
+    log.info(f"filted {len(filted_texts)} texts")
     return {"filted_texts":filted_texts}
 
 async def doc_embding_node(state: State, config: RunnableConfig):
@@ -118,6 +122,7 @@ async def doc_embding_node(state: State, config: RunnableConfig):
         return model.embed_query(text)
     with ThreadPoolExecutor() as executor:
         embds = list(executor.map(embed_doc, state["filted_texts"]))
+    log.info(f"embding {len(embds)} embding")
     return {"embds":embds}
 
 async def doc_keywords_node(state: State, config: RunnableConfig):
@@ -125,11 +130,12 @@ async def doc_keywords_node(state: State, config: RunnableConfig):
     documents = state["db_documents"]
     for i, keywords in enumerate(keywords_of_all):
         documents[i].metadata["keywords"] = keywords
+    log.info(f"keywords {len(documents)}")
     return {"db_documents": documents}
 
 async def cluster_node(state: State, config: RunnableConfig):
     clusters = cluster.cluster(state["db_documents"],state["filted_texts"],state["embds"] )
-    state["clusters"] = clusters
+    log.info(f"cluster {len(clusters)}")
     return {"clusters":clusters}
 
 async def store_index_node(state: State, config: RunnableConfig):
@@ -162,7 +168,7 @@ async def store_node(state: State, config: RunnableConfig):
     return {}
 
 async def last_node(state: State, config: RunnableConfig):
-    print(len(state["clusters"]))
+    print(state["clusters"])
     print(len(state["db_documents"]))
     print(len(state["filted_texts"]))
     print(len(state["embds"]))
