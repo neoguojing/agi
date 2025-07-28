@@ -2,7 +2,7 @@ from agi.tasks.define import State,InputType,Feature
 from agi.tasks.task_factory import (
     TaskFactory
 )
-from agi.apps.rag.cluster import TextClusterer
+from agi.tasks.cluster import TextClusterer
 from agi.utils.nlp import TextProcessor
 from agi.tasks.vectore_store import default_collection_manager
 from langchain_core.runnables import (
@@ -10,12 +10,10 @@ from langchain_core.runnables import (
     RunnableLambda
 )
 from agi.config import log
-from agi.tasks.utils import get_last_message_text,split_think_content,graph_print
-from langchain_core.messages import SystemMessage
-from langchain.prompts import ChatPromptTemplate
+from agi.tasks.utils import graph_print
 from langgraph.graph import END, StateGraph, START
 from langgraph.checkpoint.memory import MemorySaver
-from agi.apps.rag.file_loader import get_file_loader,get_web_loader,get_youtube_loader
+from agi.tasks.file_loader import get_file_loader,get_web_loader,get_youtube_loader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 import re
@@ -209,4 +207,4 @@ doc_graph_builder.add_edge("last", END)
 
 db_graph = doc_graph_builder.compile(checkpointer=checkpointer,name="doc_db")
 doc_db_as_subgraph = doc_graph_builder.compile(name="doc_db")
-# graph_print(db_graph)
+graph_print(db_graph)
