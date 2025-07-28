@@ -5,9 +5,36 @@ import umap
 import numpy as np
 from sklearn.decomposition import PCA
 from langchain_core.documents import Document
-from agi.config import STOP_WORDS_PATH
 from collections import defaultdict
 import uuid
+import json
+
+from langchain_core.runnables import (
+    RunnableConfig,
+    RunnableLambda
+)
+
+from agi.config import log
+from agi.tasks.utils import get_last_message_text,split_think_content,graph_print
+from langchain.prompts import ChatPromptTemplate
+from agi.tasks.task_factory import (
+    TaskFactory
+)
+
+summary_prompt = '''
+    You are an expert summarizer. Given the input text below, produce a concise, 
+    well‑structured summary and **output only the summary**, 
+    without any additional commentary or headings.
+'''
+summary_template = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            summary_prompt
+        ),
+        ("human", "{text}")
+    ]
+)
 
 class TextClusterer:
     def __init__(self,
@@ -20,7 +47,16 @@ class TextClusterer:
         self.use_umap = use_umap
         self.umap_dim = umap_dim
         self.cluster_top_k_keywords = 10
+        self.llm = TaskFactory.get_llm() 
 
+
+
+    def summary(self,doc:Document):
+        summary_template.invoke({"text":doc.page_content})
+        ai = self.llm.invoke(summary_template.t)
+        _, result = split_think_content(ai.content)
+
+        return result
 
     def _reduce_dim(self, vectors: np.ndarray) -> np.ndarray:
         # 先PCA降维至50维，再UMAP降至目标维度，减少大规模时的计算压力
@@ -44,7 +80,7 @@ class TextClusterer:
         combined_keywords = [kw for kw, _ in sorted_keywords[:self.cluster_top_k_keywords]]
         return combined_keywords
 
-    def cluster(self, docs: List[Document], filtered_texts: List[str], embeddings: np.ndarray) -> Dict[str, Dict]:
+    def cluster(self, docs: List[Document], filtered_texts: List[str], embeddings: np.ndarray) -> list:
         pairs = list(zip(docs, filtered_texts))  # [(原文, 清洗后)]
 
         if self.use_umap:
@@ -56,7 +92,7 @@ class TextClusterer:
         )
         labels = clusterer.fit_predict(embeddings)
 
-        clusters = {}
+        clusters = []
 
         for label in set(labels):
             if label == -1:
@@ -68,7 +104,7 @@ class TextClusterer:
             cluster_doc.metadata["cluster_id"] = cluster_id
             cluster_doc.metadata["label"] = label
             cluster_doc.metadata["related_docs"] = []
-
+            context_texts = ""
             all_keywords = []
             for (doc, filtered), emb, l in zip(pairs, embeddings, labels):
                 if l != label:
@@ -78,16 +114,13 @@ class TextClusterer:
                 doc.metadata["doc_id"] = doc_id
                 doc.metadata["cluster_id"] = cluster_id
                 cluster_doc.metadata["related_docs"].append(doc_id)
-                cluster_doc.page_content  += "\n\n" + doc.page_content
+                context_texts  += "\n\n" + doc.page_content
 
                 keywords = doc.metadata.get("keywords", [])
                 all_keywords.extend(keywords)
 
             cluster_doc.metadata["keywords"] = self.combined_keywords(all_keywords)
-
-            clusters[cluster_id] = {
-                "doc": cluster_doc,
-                "embding": None
-            }
+            cluster_doc.page_content = self.summary(context_texts)
+            clusters.append(cluster_doc)
 
         return clusters

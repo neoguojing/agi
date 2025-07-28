@@ -3,14 +3,14 @@ from chromadb import Settings
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from agi.utils.nlp import TextProcessor
-from agi.config import log
+from agi.config import log,CACHE_DIR
+from agi.tasks.task_factory import TaskFactory
 from typing import List
 import asyncio
 import uuid
 import math
 from tqdm import tqdm  # 可选：用于进度显示
 from threading import Lock
-
 class CollectionManager:
     def __init__(self, data_path, embedding, allow_reset=True, anonymized_telemetry=False):
         self.data_path = data_path
@@ -125,8 +125,11 @@ class CollectionManager:
         texts = [doc.page_content for doc in documents]
         metadatas = [doc.metadata for doc in documents]
         if ids is None:
-            ids = [str(uuid.uuid4()) for _ in documents]  # 每条文档生成唯一 id
+            ids = [doc.metadata.get("doc_id") for doc in documents]
+            if ids is None:
+                ids = [str(uuid.uuid4()) for _ in documents]  # 每条文档生成唯一 id
 
+        log.debug(f"texts={len(texts)},metadatas={len(metadatas)},ids={len(ids)}")
         # 分批添加到 Chroma Collection
         num_batches = math.ceil(len(documents) / batch_size)
         for i in tqdm(range(num_batches), desc="Adding document batches"):
@@ -237,3 +240,5 @@ class CollectionManager:
                 query["$or"].append({"$not_contains": s})
 
         return query
+
+default_collection_manager = CollectionManager(data_path=CACHE_DIR,embedding=TaskFactory.get_embedding)

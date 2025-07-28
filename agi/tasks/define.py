@@ -77,6 +77,9 @@ class State(AgentState):
     db_documents: list[Document]
     filted_texts: list[str]
     embds: list[list[float]]
+    clusters: list[Document]
+    collection_name: str
+
 
 
     auto_decide_result: str

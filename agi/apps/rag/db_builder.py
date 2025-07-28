@@ -2,10 +2,17 @@ from agi.tasks.define import State,InputType,Feature
 from agi.tasks.task_factory import (
     TaskFactory
 )
+from agi.apps.rag.cluster import TextClusterer
 from agi.utils.nlp import TextProcessor
+from agi.tasks.vectore_store import default_collection_manager
 from langchain_core.runnables import (
-    RunnableConfig
+    RunnableConfig,
+    RunnableLambda
 )
+from agi.config import log
+from agi.tasks.utils import get_last_message_text,split_think_content,graph_print
+from langchain_core.messages import SystemMessage
+from langchain.prompts import ChatPromptTemplate
 from langgraph.graph import END, StateGraph, START
 from langgraph.checkpoint.memory import MemorySaver
 from agi.apps.rag.file_loader import get_file_loader,get_web_loader,get_youtube_loader
@@ -17,6 +24,7 @@ from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor
 
 nlp = TextProcessor()
+cluster = TextClusterer()
 
 # 🚀 统一入口：异步加载节点
 async def file_loader_node(state: State, config: RunnableConfig):
@@ -120,6 +128,49 @@ async def doc_keywords_node(state: State, config: RunnableConfig):
         state["db_documents"][i].metadata["keywords"] = keywords
     return state
 
+async def cluster_node(state: State, config: RunnableConfig):
+    clusters = cluster.cluster(state["db_documents"],state["filted_texts"],state["embds"] )
+    state["clusters"] = clusters
+    return state
+
+async def store_index_node(state: State, config: RunnableConfig):
+    user_id = state.get("user_id")
+    if not user_id and config:
+        user_id = config.get("configurable").get("user_id","default")
+
+    default_collection_manager.add_documents(
+        documents=state["clusters"],
+        collection_name="index",
+        tenant=user_id
+    )
+    return state
+
+async def store_node(state: State, config: RunnableConfig):
+    collection_name = state.get("collection_name")
+    if not collection_name and config:
+        collection_name = config.get("configurable").get("collection_name","default")
+
+    user_id = state.get("user_id")
+    if not user_id and config:
+        user_id = config.get("configurable").get("user_id","default")
+
+    default_collection_manager.add_documents(
+        documents=state["db_documents"],
+        collection_name=collection_name,
+        embeddings=state["embds"],
+        tenant=user_id
+    )
+    return state
+
+async def last_node(state: State, config: RunnableConfig):
+    state["clusters"] = []
+    state["db_documents"] = []
+    state["filted_texts"] = []
+    state["embds"] = []
+    state["file_path"] = None
+
+    return state
+
 # graph
 checkpointer = MemorySaver()
 
@@ -130,11 +181,12 @@ doc_graph_builder.add_node("split", doc_split_node)
 doc_graph_builder.add_node("clean", doc_clean_node)
 doc_graph_builder.add_node("filterd", doc_filter_node)
 doc_graph_builder.add_node("embding", doc_embding_node)
-doc_graph_builder.add_node("cluster", doc_list_node)
-doc_graph_builder.add_node("summary", TaskFactory.create_task(TASK_LLM_WITH_HISTORY))
+doc_graph_builder.add_node("cluster", cluster_node)
 doc_graph_builder.add_node("keyword", doc_keywords_node)
-doc_graph_builder.add_node("store_index", TaskFactory.create_task(TASK_WEB_SEARCH))
-doc_graph_builder.add_node("store_docs", TaskFactory.create_task(TASK_WEB_SEARCH))
+doc_graph_builder.add_node("store_index", store_index_node)
+doc_graph_builder.add_node("store_docs", store_node)
+doc_graph_builder.add_node("last", last_node)
+
 
 
 doc_graph_builder.add_edge(START, "load")
@@ -147,11 +199,13 @@ doc_graph_builder.add_edge("filterd", "embding")
 doc_graph_builder.add_edge("filterd", "keyword")
 doc_graph_builder.add_edge("embding", "cluster")
 doc_graph_builder.add_edge("keyword", "cluster")
+doc_graph_builder.add_edge("cluster", "store_index")
+doc_graph_builder.add_edge("cluster", "store_docs")
+doc_graph_builder.add_edge("store_index", "last")
+doc_graph_builder.add_edge("store_docs", "last")
 
-doc_graph_builder.add_edge("cluster", "summary")
-doc_graph_builder.add_edge("summary", "store_index")
-doc_graph_builder.add_edge("store_index", "store_docs")
-doc_graph_builder.add_edge("store_docs", END)
+doc_graph_builder.add_edge("last", END)
+
 
 db_graph = doc_graph_builder.compile(checkpointer=checkpointer,name="doc_db")
 doc_db_as_subgraph = doc_graph_builder.compile(name="doc_db")
