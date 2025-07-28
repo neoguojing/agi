@@ -18,9 +18,11 @@ from agi.tasks.task_factory import (
 )
 
 summary_prompt = '''
-    You are an expert summarizer. Given the input text below, produce a concise, 
-    well‑structured summary and **output only the summary**, 
-    without any additional commentary or headings.
+    You are an expert summarizer. 
+    Given the input text, write a concise and factual summary. 
+    Do not include speculation, subjective language, or any words like "possible", "maybe", or "likely". 
+    Keep the summary brief and strictly based on the provided content.
+    Output only the summary text—no headings, explanations, or extra commentary.
 '''
 summary_template = ChatPromptTemplate.from_messages(
     [
@@ -92,6 +94,7 @@ class TextClusterer:
                 min_samples=self.min_samples
             )
             labels = clusterer.fit_predict(embeddings)
+            log.info(f"got {len(set(labels))} clusters by hdbscan")
 
         # 2. 样本太少 -> fallback
         elif n_samples > 1:
@@ -103,6 +106,7 @@ class TextClusterer:
             else:
                 kmeans = KMeans(n_clusters=min(n_samples, 2), random_state=0)
                 labels = kmeans.fit_predict(embeddings)
+            log.info(f"got {len(set(labels))} clusters by KMeans")
 
         # 3. 只有一个样本
         else:
@@ -111,7 +115,8 @@ class TextClusterer:
         clusters = []
         # 防止混入np.int64
         labels = labels.tolist()
-        log.info(f"got {len(labels)} clusters")
+        log.info(f"got {len(set(labels))} clusters by KMeans")
+
         for label in set(labels):
             if label == -1:
                 continue
