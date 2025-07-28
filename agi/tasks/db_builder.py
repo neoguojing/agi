@@ -28,7 +28,7 @@ collection_manager = CollectionManager(data_path=CACHE_DIR,embedding=TaskFactory
 # 🚀 统一入口：异步加载节点
 async def file_loader_node(state: State, config: RunnableConfig):
     loader = None
-
+    import pdb;pdb.set_trace()
     if "url" in state:
         url = state["url"]
         if "youtube.com" in url or "youtu.be" in url:
@@ -59,6 +59,8 @@ async def doc_split_node(state: State, config: RunnableConfig):
                                                     "\u3002",  # Ideographic full stop
                                                 ],
                                                 chunk_size=3000, chunk_overlap=300,add_start_index=True)
+    import pdb;pdb.set_trace()
+
     state["db_documents"] = await text_splitter.atransform_documents(state["db_documents"])
     return state
 
@@ -100,7 +102,7 @@ async def doc_clean_node(state: State, config: RunnableConfig):
         doc.page_content = text
         # 去除首尾空格
         return doc
-    
+    import pdb;pdb.set_trace()
     with ThreadPoolExecutor() as executor:
         state["db_documents"] = list(executor.map(_clean_text, state["db_documents"]))
 
@@ -109,6 +111,7 @@ async def doc_clean_node(state: State, config: RunnableConfig):
 async def doc_filter_node(state: State, config: RunnableConfig):
     def filter_doc(doc: Document):
         return nlp.remove_stopwords(doc.page_content)
+    import pdb;pdb.set_trace()
     with ThreadPoolExecutor() as executor:
         state["filted_texts"] = list(executor.map(filter_doc, state["db_documents"]))
     return state
@@ -117,22 +120,26 @@ async def doc_embding_node(state: State, config: RunnableConfig):
     model = TaskFactory.get_embedding()
     def embed_doc(doc: Document):
         return model.embed_query(doc.page_content)
+    import pdb;pdb.set_trace()
     with ThreadPoolExecutor() as executor:
         state["embds"] = list(executor.map(embed_doc, state["filted_texts"]))
     return state
 
 async def doc_keywords_node(state: State, config: RunnableConfig):
+    import pdb;pdb.set_trace()
     keywords_of_all = nlp.batch_process(state["filted_texts"])
     for i, keywords in enumerate(keywords_of_all):
         state["db_documents"][i].metadata["keywords"] = keywords
     return state
 
 async def cluster_node(state: State, config: RunnableConfig):
+    import pdb;pdb.set_trace()
     clusters = cluster.cluster(state["db_documents"],state["filted_texts"],state["embds"] )
     state["clusters"] = clusters
     return state
 
 async def store_index_node(state: State, config: RunnableConfig):
+    import pdb;pdb.set_trace()
     user_id = state.get("user_id")
     if not user_id and config:
         user_id = config.get("configurable").get("user_id","default")
@@ -145,6 +152,7 @@ async def store_index_node(state: State, config: RunnableConfig):
     return state
 
 async def store_node(state: State, config: RunnableConfig):
+    import pdb;pdb.set_trace()
     collection_name = state.get("collection_name")
     if not collection_name and config:
         collection_name = config.get("configurable").get("collection_name","default")
@@ -162,6 +170,7 @@ async def store_node(state: State, config: RunnableConfig):
     return state
 
 async def last_node(state: State, config: RunnableConfig):
+    import pdb;pdb.set_trace()
     print(state["clusters"])
     print(state["db_documents"])
     print(state["filted_texts"])
