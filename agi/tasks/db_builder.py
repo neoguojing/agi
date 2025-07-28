@@ -162,6 +162,11 @@ async def store_node(state: State, config: RunnableConfig):
     return state
 
 async def last_node(state: State, config: RunnableConfig):
+    print(state["clusters"])
+    print(state["db_documents"])
+    print(state["filted_texts"])
+    print(len(state["embds"]))
+
     state["clusters"] = []
     state["db_documents"] = []
     state["filted_texts"] = []
