@@ -1,12 +1,14 @@
 import unittest
 from agi.tasks.db_builder import db_graph
 from agi.tasks.define import State
+import asyncio
 
+@pytest.mark.asyncio
 class TestDBGraph(unittest.TestCase):
     def setUp(self):        
         pass
 
-    def test_db_graph(self):
+    async def test_db_graph(self):
         config={"configurable": {"user_id": "dbtest", "conversation_id": "",
                                  "thread_id": "dbtest"}}
         
@@ -14,5 +16,5 @@ class TestDBGraph(unittest.TestCase):
         state['user_id'] = "dbtest"
         state['collection_name'] = "dbtest"
         state['file_path'] = "tests/test.pdf"
-        ret = db_graph.invoke(state,config=config)
+        ret = await db_graph.ainvoke(state,config=config)
         print(ret)
