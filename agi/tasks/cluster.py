@@ -38,7 +38,7 @@ summary_template = ChatPromptTemplate.from_messages(
 
 class TextClusterer:
     def __init__(self,
-                 min_cluster_size: int = 5,
+                 min_cluster_size: int = 2,
                  min_samples: int = 1,
                  use_umap: bool = False,
                  umap_dim: int = 5):
@@ -84,7 +84,6 @@ class TextClusterer:
         pairs = list(zip(docs, filtered_texts))  # [(原文, 清洗后)]
         if isinstance(embeddings,list):
             embeddings = np.array(embeddings, dtype=float)
-            
         if self.use_umap:
             embeddings = self._reduce_dim(embeddings)
 
