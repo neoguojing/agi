@@ -5,7 +5,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_db_graph():
-    config={"configurable": {"user_id": "dbtest", "conversation_id": "",
+    config={"configurable": {"conversation_id": "",
                                 "thread_id": "dbtest"}}
     
     state = State()
