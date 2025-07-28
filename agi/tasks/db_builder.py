@@ -40,7 +40,7 @@ async def file_loader_node(state: State, config: RunnableConfig):
         loader = get_file_loader(file_path)
 
     if loader:
-        documents = loader.lazy_load()
+        documents = loader.load()
         state["db_documents"] = documents
 
     return state
