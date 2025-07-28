@@ -82,7 +82,9 @@ class TextClusterer:
 
     def cluster(self, docs: List[Document], filtered_texts: List[str], embeddings: np.ndarray) -> list:
         pairs = list(zip(docs, filtered_texts))  # [(原文, 清洗后)]
-
+        if isinstance(embeddings,list):
+            embeddings = np.array(embeddings, dtype=float)
+            
         if self.use_umap:
             embeddings = self._reduce_dim(embeddings)
 
