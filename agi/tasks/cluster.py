@@ -109,7 +109,8 @@ class TextClusterer:
             labels = np.array([0])
 
         clusters = []
-
+        # 防止混入np.int64
+        labels = labels.tolist()
         for label in set(labels):
             if label == -1:
                 continue
