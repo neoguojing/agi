@@ -37,7 +37,7 @@ async def file_loader_node(state: State, config: RunnableConfig):
             loader = get_web_loader(url)
     elif "file_path" in state:
         file_path = state["file_path"]
-        loader = get_file_loader(file_path)
+        loader,_ = get_file_loader(file_path)
 
     if loader:
         documents = loader.load()
