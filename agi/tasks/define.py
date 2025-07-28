@@ -9,7 +9,6 @@ from typing import (
     TypeVar,
     Union,
 )
-import operator
 
 from typing_extensions import TypedDict
 from pydantic import BaseModel,Field
@@ -64,7 +63,7 @@ class State(AgentState):
     # messages: Annotated[Sequence[BaseMessage], add_messages]
     input_type: str
     need_speech: bool
-    user_id: Annotated[str,op]
+    user_id: str
     conversation_id: str
     feature: str  # 支持的特性，1.agent，2.web 3.rag，4.tts，5.speech，6.image_recog 默认为agent
     # for rag search
