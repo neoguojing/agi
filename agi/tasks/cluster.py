@@ -47,8 +47,8 @@ class TextClusterer:
 
 
 
-    def summary(self,doc:Document):
-        summary_template.invoke({"text":doc.page_content})
+    def summary(self,text:str):
+        summary_template.invoke({"text":text})
         ai = self.llm.invoke(summary_template.t)
         _, result = split_think_content(ai.content)
 
