@@ -150,7 +150,7 @@ async def store_index_node(state: State, config: RunnableConfig):
         collection_name="index",
         tenant=user_id
     )
-    return state
+    return {}
 
 async def store_node(state: State, config: RunnableConfig):
     import pdb;pdb.set_trace()
@@ -168,7 +168,7 @@ async def store_node(state: State, config: RunnableConfig):
         embeddings=state["embds"],
         tenant=user_id
     )
-    return state
+    return {}
 
 async def last_node(state: State, config: RunnableConfig):
     import pdb;pdb.set_trace()
