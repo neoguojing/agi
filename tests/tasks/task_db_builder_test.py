@@ -7,9 +7,12 @@ class TestDBGraph(unittest.TestCase):
         pass
 
     def test_db_graph(self):
+        config={"configurable": {"user_id": "dbtest", "conversation_id": "",
+                                 "thread_id": "dbtest"}}
+        
         state = State()
         state['user_id'] = "dbtest"
         state['collection_name'] = "dbtest"
         state['file_path'] = "tests/test.pdf"
-        ret = db_graph.invoke(state)
+        ret = db_graph.invoke(state,config=config)
         print(ret)
