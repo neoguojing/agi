@@ -118,8 +118,8 @@ async def doc_filter_node(state: State, config: RunnableConfig):
 
 async def doc_embding_node(state: State, config: RunnableConfig):
     model = TaskFactory.get_embedding()
-    def embed_doc(doc: Document):
-        return model.embed_query(doc.page_content)
+    def embed_doc(text: str):
+        return model.embed_query(text)
     import pdb;pdb.set_trace()
     with ThreadPoolExecutor() as executor:
         state["embds"] = list(executor.map(embed_doc, state["filted_texts"]))
