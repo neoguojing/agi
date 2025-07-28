@@ -2,7 +2,7 @@ import unittest
 from agi.tasks.db_builder import db_graph
 from agi.tasks.define import State
 import asyncio
-
+import pytest
 @pytest.mark.asyncio
 class TestDBGraph(unittest.TestCase):
     def setUp(self):        
