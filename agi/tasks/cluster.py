@@ -1,5 +1,7 @@
 from typing import List, Dict, Optional
 from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+from sklearn.metrics.pairwise import cosine_similarity
 import hdbscan
 import umap
 import numpy as np
@@ -7,12 +9,6 @@ from sklearn.decomposition import PCA
 from langchain_core.documents import Document
 from collections import defaultdict
 import uuid
-import json
-
-from langchain_core.runnables import (
-    RunnableConfig,
-    RunnableLambda
-)
 
 from agi.config import log
 from agi.tasks.utils import get_last_message_text,split_think_content,graph_print
@@ -38,7 +34,7 @@ summary_template = ChatPromptTemplate.from_messages(
 
 class TextClusterer:
     def __init__(self,
-                 min_cluster_size: int = 2,
+                 min_cluster_size: int = 5,
                  min_samples: int = 1,
                  use_umap: bool = False,
                  umap_dim: int = 5):
@@ -87,11 +83,30 @@ class TextClusterer:
         if self.use_umap:
             embeddings = self._reduce_dim(embeddings)
 
-        clusterer = hdbscan.HDBSCAN(
-            min_cluster_size=self.min_cluster_size,
-            min_samples=self.min_samples
-        )
-        labels = clusterer.fit_predict(embeddings)
+        n_samples = len(embeddings)
+        labels = None
+        # 1. 样本足够 -> HDBSCAN
+        if n_samples >= self.min_cluster_size:
+            clusterer = hdbscan.HDBSCAN(
+                min_cluster_size=self.min_cluster_size,
+                min_samples=self.min_samples
+            )
+            labels = clusterer.fit_predict(embeddings)
+
+        # 2. 样本太少 -> fallback
+        elif n_samples > 1:
+            # 简单处理：用KMeans强制分两类；如果相似度很高则归为一类
+            sim = cosine_similarity(embeddings)
+            avg_sim = (sim.sum() - np.trace(sim)) / (n_samples*(n_samples-1))
+            if avg_sim > 0.85:
+                labels = np.zeros(n_samples, dtype=int)  # 所有样本归为同一类
+            else:
+                kmeans = KMeans(n_clusters=min(n_samples, 2), random_state=0)
+                labels = kmeans.fit_predict(embeddings)
+
+        # 3. 只有一个样本
+        else:
+            labels = np.array([0])
 
         clusters = []
 
