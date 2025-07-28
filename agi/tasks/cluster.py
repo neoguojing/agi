@@ -48,8 +48,8 @@ class TextClusterer:
 
 
     def summary(self,text:str):
-        summary_template.invoke({"text":text})
-        ai = self.llm.invoke(summary_template.t)
+        value = summary_template.invoke({"text":text})
+        ai = self.llm.invoke(value)
         _, result = split_think_content(ai.content)
 
         return result
