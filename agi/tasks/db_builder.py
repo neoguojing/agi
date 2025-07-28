@@ -4,12 +4,12 @@ from agi.tasks.task_factory import (
 )
 from agi.tasks.cluster import TextClusterer
 from agi.utils.nlp import TextProcessor
-from agi.tasks.vectore_store import default_collection_manager
+from agi.tasks.vectore_store import CollectionManager
 from langchain_core.runnables import (
     RunnableConfig,
     RunnableLambda
 )
-from agi.config import log
+from agi.config import log,CACHE_DIR
 from agi.tasks.utils import graph_print
 from langgraph.graph import END, StateGraph, START
 from langgraph.checkpoint.memory import MemorySaver
@@ -23,6 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 nlp = TextProcessor()
 cluster = TextClusterer()
+collection_manager = CollectionManager(data_path=CACHE_DIR,embedding=TaskFactory.get_embedding)
 
 # 🚀 统一入口：异步加载节点
 async def file_loader_node(state: State, config: RunnableConfig):
@@ -136,7 +137,7 @@ async def store_index_node(state: State, config: RunnableConfig):
     if not user_id and config:
         user_id = config.get("configurable").get("user_id","default")
 
-    default_collection_manager.add_documents(
+    collection_manager.add_documents(
         documents=state["clusters"],
         collection_name="index",
         tenant=user_id
@@ -152,7 +153,7 @@ async def store_node(state: State, config: RunnableConfig):
     if not user_id and config:
         user_id = config.get("configurable").get("user_id","default")
 
-    default_collection_manager.add_documents(
+    collection_manager.add_documents(
         documents=state["db_documents"],
         collection_name=collection_name,
         embeddings=state["embds"],

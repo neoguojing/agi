@@ -3,8 +3,7 @@ from chromadb import Settings
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from agi.utils.nlp import TextProcessor
-from agi.config import log,CACHE_DIR
-from agi.tasks.task_factory import TaskFactory
+from agi.config import log
 from typing import List
 import asyncio
 import uuid
@@ -241,4 +240,3 @@ class CollectionManager:
 
         return query
 
-default_collection_manager = CollectionManager(data_path=CACHE_DIR,embedding=TaskFactory.get_embedding)
