@@ -41,9 +41,9 @@ async def file_loader_node(state: State, config: RunnableConfig):
 
     if loader:
         documents = loader.load()
-        state["db_documents"] = documents
+        return {"db_documents": documents}
 
-    return state
+    return {}
 
 async def doc_split_node(state: State, config: RunnableConfig):
     text_splitter = RecursiveCharacterTextSplitter(separators=[
@@ -61,8 +61,8 @@ async def doc_split_node(state: State, config: RunnableConfig):
                                                 chunk_size=3000, chunk_overlap=300,add_start_index=True)
     import pdb;pdb.set_trace()
 
-    state["db_documents"] = await text_splitter.atransform_documents(state["db_documents"])
-    return state
+    documents = await text_splitter.atransform_documents(state["db_documents"])
+    return {"db_documents": documents}
 
 async def doc_clean_node(state: State, config: RunnableConfig):
     def _clean_text(doc: Document) -> Document:
@@ -104,17 +104,17 @@ async def doc_clean_node(state: State, config: RunnableConfig):
         return doc
     import pdb;pdb.set_trace()
     with ThreadPoolExecutor() as executor:
-        state["db_documents"] = list(executor.map(_clean_text, state["db_documents"]))
+        documents = list(executor.map(_clean_text, state["db_documents"]))
 
-    return state
+    return {"db_documents": documents}
 
 async def doc_filter_node(state: State, config: RunnableConfig):
     def filter_doc(doc: Document):
         return nlp.remove_stopwords(doc.page_content)
     import pdb;pdb.set_trace()
     with ThreadPoolExecutor() as executor:
-        state["filted_texts"] = list(executor.map(filter_doc, state["db_documents"]))
-    return state
+        filted_texts = list(executor.map(filter_doc, state["db_documents"]))
+    return {"filted_texts":filted_texts}
 
 async def doc_embding_node(state: State, config: RunnableConfig):
     model = TaskFactory.get_embedding()
@@ -122,21 +122,22 @@ async def doc_embding_node(state: State, config: RunnableConfig):
         return model.embed_query(text)
     import pdb;pdb.set_trace()
     with ThreadPoolExecutor() as executor:
-        state["embds"] = list(executor.map(embed_doc, state["filted_texts"]))
-    return state
+        embds = list(executor.map(embed_doc, state["filted_texts"]))
+    return {"embds":embds}
 
 async def doc_keywords_node(state: State, config: RunnableConfig):
     import pdb;pdb.set_trace()
     keywords_of_all = nlp.batch_process(state["filted_texts"])
+    documents = state["db_documents"]
     for i, keywords in enumerate(keywords_of_all):
-        state["db_documents"][i].metadata["keywords"] = keywords
-    return state
+        documents[i].metadata["keywords"] = keywords
+    return {"db_documents": documents}
 
 async def cluster_node(state: State, config: RunnableConfig):
     import pdb;pdb.set_trace()
     clusters = cluster.cluster(state["db_documents"],state["filted_texts"],state["embds"] )
     state["clusters"] = clusters
-    return state
+    return {"clusters":clusters}
 
 async def store_index_node(state: State, config: RunnableConfig):
     import pdb;pdb.set_trace()
