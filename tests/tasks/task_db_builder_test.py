@@ -21,7 +21,7 @@ async def test_db_graph():
 async def test_rag():
     config={"configurable": {"conversation_id": "2","thread_id": "dbtest"}}
     input = State(
-        messages=[HumanMessage(content="NTP3000Plus")],
+        messages=[HumanMessage(content="总结该文档")],
         collection_names = ["dbtest"],
         user_id = "dbtest"
     )

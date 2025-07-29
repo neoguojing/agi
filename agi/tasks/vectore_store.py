@@ -174,7 +174,7 @@ class CollectionManager:
             where_cond = None
             if cluster_id:
                 where_cond = {"cluster_id":cluster_id}
-            log.debug(f"text: {text} where:{where_cond}")
+            log.info(f"text: {text} where:{where_cond}")
             return collection.query(
                 query_embeddings=[embedding],
                 n_results=k,
@@ -218,7 +218,7 @@ class CollectionManager:
             where_cond = None
             if cluster_id:
                 where_cond = {"cluster_id":cluster_id}
-            log.debug(f"text: {text} query_single：{query},where:{where_cond}")
+            log.info(f"text: {text} query_single：{query},where:{where_cond}")
             return collection.query(
                 query_texts=[text],
                 n_results=k,
