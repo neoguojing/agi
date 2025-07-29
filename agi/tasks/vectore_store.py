@@ -154,7 +154,8 @@ class CollectionManager:
         self,
         texts: List[str],
         collection_name: str,
-        k: int = 3,
+        k: int = 10,
+        cluster_id: str = None,
         tenant=chromadb.DEFAULT_TENANT,
         database=chromadb.DEFAULT_DATABASE
     ):
@@ -164,21 +165,19 @@ class CollectionManager:
             database=database
         )
 
-        # 1. 异步批量关键词提取
-        processed_results = await self.text_proc.abatch_process(texts, method="textrank")
-
-        # 2. 构建并发查询任务
-        async def query_single(text: str, keywords: list):
-            keywords = [kw[0] for kw in keywords]
-            query = self.build_query(contains_list=keywords)
-            log.debug(f"text: {text} query_single：{query}")
+        async def query_single(text: str):
+            log.debug(f"text: {text}")
+            embedding = self.embedding.embed_query(text)
+            where_cond = None
+            if cluster_id:
+                where_cond = {"cluster_id":cluster_id}
             return collection.query(
-                query_embeddings=[self.embedding.embed_query(text)],
+                query_embeddings=[embedding],
                 n_results=k,
-                where_document=query
+                where=where_cond,         
             )
 
-        tasks = [query_single(texts[i],item) for i,item in processed_results]
+        tasks = [query_single(text) for text in texts]
 
         # 3. 并发执行所有查询任务
         results = await asyncio.gather(*tasks)
@@ -193,7 +192,7 @@ class CollectionManager:
         self,
         texts: List[str],
         collection_name: str,
-        k: int = 3,
+        k: int = 10,
         tenant=chromadb.DEFAULT_TENANT,
         database=chromadb.DEFAULT_DATABASE
     ):
@@ -217,7 +216,7 @@ class CollectionManager:
                 where_document=query
             )
 
-        tasks = [query_single(texts[i],item) for i,item in processed_results]
+        tasks = [query_single(texts[i], processed_results[i]) for i in range(len(texts))]
 
         # 3. 并发执行所有查询任务
         results = await asyncio.gather(*tasks)
@@ -229,14 +228,14 @@ class CollectionManager:
 
     
     def build_query(self,contains_list=None, not_contains_list=None):
-        query = {"$or": []}
+        query_or = {"$or": []}
         if contains_list:
             for s in contains_list:
-                query["$or"].append({"$contains": s})
+                query_or["$or"].append({"$contains": s})
 
         if not_contains_list:
             for s in not_contains_list:
-                query["$or"].append({"$not_contains": s})
+                query_or["$or"].append({"$not_contains": s})
 
-        return query
+        return {"$or": query_or} if query_or else {}
 

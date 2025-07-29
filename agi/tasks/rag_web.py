@@ -99,7 +99,7 @@ async def doc_rerank_node(state: State,config: RunnableConfig):
     return state 
 
 # 列举collection前面部分的文本页,用于总结文章
-async def doc_list_node(state: State,config: RunnableConfig):
+async def doc_summary_node(state: State,config: RunnableConfig):
     km = TaskFactory.get_knowledge_manager()
     collection_names = state.get("collection_names",[])
     tenant = state.get("user_id")
@@ -165,7 +165,11 @@ rag_graph_builder = StateGraph(State)
 rag_graph_builder.add_node("doc_chat", doc_chat_node)
 rag_graph_builder.add_node("rerank", doc_rerank_node)
 rag_graph_builder.add_node("rag", TaskFactory.create_task(TASK_RAG))
-rag_graph_builder.add_node("summary", doc_list_node)
+rag_graph_builder.add_node("summary", doc_summary_node)
+rag_graph_builder.add_node("index_full_search", index_retreive_node)
+rag_graph_builder.add_node("index_embeding_search", index_retreive_node)
+rag_graph_builder.add_node("full_search", index_retreive_node)
+rag_graph_builder.add_node("embeding_search", index_retreive_node)
 rag_graph_builder.add_node("llm_with_history", TaskFactory.create_task(TASK_LLM_WITH_HISTORY))
 rag_graph_builder.add_node("web", TaskFactory.create_task(TASK_WEB_SEARCH))
 rag_graph_builder.add_node("scrape", web_scrape_node)
