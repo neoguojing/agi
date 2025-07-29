@@ -12,6 +12,8 @@ IMAGE_GEN_TAGET = agi.apps.image.fast_api_image:app
 TTS_TARGET = agi.apps.tts.fast_api_audio:app
 WHISPER_TARGET = agi.apps.whisper.fast_api_whisper:app
 HUGFACE_TARGET = agi.apps.multimodal.fast_api_multimodal:app
+EMBD_TARGET = agi.apps.embding.fast_api_embding:app
+
 
 REGISTRY = "docker.io"
 # 可选值: tts 或 cosyvoice
@@ -62,6 +64,8 @@ run_whisper:
 run_hugface:
 	$(PYTHON) -m uvicorn $(HUGFACE_TARGET) --host 0.0.0.0 --port 8005 --reload
 
+run_embd:
+	$(PYTHON) -m uvicorn $(EMBD_TARGET) --host 0.0.0.0 --port 8006 --reload
 run:
 	python -m playwright install chromium
 	$(PYTHON) -m uvicorn $(TARGET) --host 0.0.0.0 --port 8000 --reload
@@ -136,3 +140,11 @@ image_hf:
 	--build-arg COMMIT_HASH=$$(git rev-parse HEAD) \
 	--build-arg BRANCH_NAME=$$(git rev-parse --abbrev-ref HEAD) \
 	-t $(REGISTRY)/guojingneo/agi-fastapi-hf:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
+
+.PHONY: image_embd
+image_embd:
+	docker build \
+	-f ./Dockerfile.embd \
+	--build-arg COMMIT_HASH=$$(git rev-parse HEAD) \
+	--build-arg BRANCH_NAME=$$(git rev-parse --abbrev-ref HEAD) \
+	-t $(REGISTRY)/guojingneo/agi-fastapi-embd:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .

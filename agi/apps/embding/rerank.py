@@ -5,7 +5,7 @@ import threading
 import time
 
 class Reranker:
-    def __init__(self, ,model_path: str=None, timeout: int = 300, device=None, max_length=8192):
+    def __init__(self,model_path: str=None, timeout: int = 300, device=None, max_length=8192):
         self.device = device if device else ("cuda" if torch.cuda.is_available() else "cpu")
         self.model_path = model_path
         self.timeout = timeout
