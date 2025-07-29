@@ -344,30 +344,3 @@ async def list_models(api_key: str = Depends(verify_api_key)):
         data=fixed_models
     )
 
-# 定义请求体模型
-class EmbeddingRequest(BaseModel):
-    input: str
-
-@app.post("/v1/embeddings",summary="文本向量")
-async def get_embedding(request: EmbeddingRequest):
-    if not request.input:
-        raise HTTPException(status_code=400, detail="Text cannot be empty.")
-    # 生成嵌入向量
-    llm_task = TaskFactory.get_embedding()
-    embedding = llm_task.embed_query(request.input)
-    
-    return {
-        "object": "list",
-        "data": [
-            {
-            "object": "embedding",
-            "embedding": embedding,
-            "index": 0
-            }
-        ],
-        "model": "bge-m3",
-        "usage": {
-            "prompt_tokens": 0,
-            "total_tokens": 0
-        }
-    }
