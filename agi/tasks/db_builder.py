@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 nlp = TextProcessor()
 cluster = TextClusterer()
-collection_manager = CollectionManager(data_path=CACHE_DIR,embedding=TaskFactory.get_embedding)
+collection_manager = CollectionManager(data_path=CACHE_DIR,embedding=TaskFactory.get_embedding())
 
 # 🚀 统一入口：异步加载节点
 async def file_loader_node(state: State, config: RunnableConfig):

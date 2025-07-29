@@ -77,7 +77,7 @@ async def intend_understand_modify_state_messages(state: State):
 intend_understand__modify_state_messages_runnable = RunnableLambda(intend_understand_modify_state_messages)
 
 intend_understand_chain = intend_understand__modify_state_messages_runnable | TaskFactory.get_llm() 
-collection_manager = CollectionManager(data_path=CACHE_DIR,embedding=TaskFactory.get_embedding)
+collection_manager = CollectionManager(data_path=CACHE_DIR,embedding=TaskFactory.get_embedding())
 
 def get_cluster_ids(docs:list[Document]):
     cluster_ids = []
