@@ -22,9 +22,9 @@ async def test_rag():
     config={"configurable": {"conversation_id": "2","thread_id": "dbtest"}}
     input = State(
         messages=[HumanMessage(content="NTP3000Plus")],
-        collection_names = ["dbtest"]
+        collection_names = ["dbtest"],
         user_id = "dbtest"
     )
-    ret = rag_graph.invoke(input,config=config)
+    ret = await rag_graph.ainvoke(input,config=config)
     print(ret)
         
