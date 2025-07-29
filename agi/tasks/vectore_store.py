@@ -8,6 +8,7 @@ from typing import List
 import asyncio
 import uuid
 import math
+import os
 from tqdm import tqdm  # 可选：用于进度显示
 from threading import Lock
 class CollectionManager:
@@ -88,10 +89,13 @@ class CollectionManager:
                       embedding_function=self.embedding, 
                       collection_name=collection_name)
 
-    def get_documents(self, collection_name,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE) -> list[Document]:
+    def get_documents(self, collection_name,source=None,limit=None,offset=0,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE) -> list[Document]:
         """Retrieve all documents and their metadata from the collection."""
         collection = self.get_or_create_collection(collection_name,tenant,database)
-        result = collection.get(limit=3,offset=0)
+        where_cond = None
+        if source:
+            where_cond = {"source": os.path.basename(source)}
+        result = collection.get(limit=limit,offset=offset,where=where_cond)
         
         return [Document(page_content=document, metadata=metadata) 
                 for document, metadata in zip(result['documents'], result['metadatas'])]
@@ -166,11 +170,11 @@ class CollectionManager:
         )
 
         async def query_single(text: str):
-            log.debug(f"text: {text}")
             embedding = self.embedding.embed_query(text)
             where_cond = None
             if cluster_id:
                 where_cond = {"cluster_id":cluster_id}
+            log.debug(f"text: {text} where:{where_cond}")
             return collection.query(
                 query_embeddings=[embedding],
                 n_results=k,
@@ -192,6 +196,7 @@ class CollectionManager:
         self,
         texts: List[str],
         collection_name: str,
+        cluster_id: str = None,
         k: int = 10,
         tenant=chromadb.DEFAULT_TENANT,
         database=chromadb.DEFAULT_DATABASE
@@ -209,11 +214,15 @@ class CollectionManager:
         async def query_single(text: str, keywords: list):
             keywords = [kw[0] for kw in keywords]
             query = self.build_query(contains_list=keywords)
-            log.debug(f"text: {text} query_single：{query}")
+            where_cond = None
+            if cluster_id:
+                where_cond = {"cluster_id":cluster_id}
+            log.debug(f"text: {text} query_single：{query},where:{where_cond}")
             return collection.query(
                 query_texts=[text],
                 n_results=k,
-                where_document=query
+                where_document=query,
+                where=where_cond,         
             )
 
         tasks = [query_single(texts[i], processed_results[i]) for i in range(len(texts))]

@@ -176,8 +176,6 @@ async def last_node(state: State, config: RunnableConfig):
     state["db_documents"] = []
     state["filted_texts"] = []
     state["embds"] = []
-    state["file_path"] = ""
-
     return state
 
 # graph

@@ -18,7 +18,8 @@ from langgraph.checkpoint.memory import MemorySaver
 from agi.tasks.retriever import FilterType,SourceType
 from agi.tasks.llm_app import build_citations
 from agi.tasks.utils import get_last_message_text,split_think_content,graph_print
-from agi.config import log
+from agi.config import log,CACHE_DIR
+from agi.tasks.vectore_store import CollectionManager
 import asyncio
 import json
 
@@ -73,6 +74,7 @@ async def intend_understand_modify_state_messages(state: State):
 intend_understand__modify_state_messages_runnable = RunnableLambda(intend_understand_modify_state_messages)
 
 intend_understand_chain = intend_understand__modify_state_messages_runnable | TaskFactory.get_llm() 
+collection_manager = CollectionManager(data_path=CACHE_DIR,embedding=TaskFactory.get_embedding)
 
 # NODE
 # 文档对话
@@ -98,15 +100,14 @@ async def doc_rerank_node(state: State,config: RunnableConfig):
     log.info(f"doc_rerank_node:{len(docs)}")
     return state 
 
-# 列举collection前面部分的文本页,用于总结文章
+# 获取指定文件的索引文件
 async def doc_summary_node(state: State,config: RunnableConfig):
-    km = TaskFactory.get_knowledge_manager()
-    collection_names = state.get("collection_names",[])
     tenant = state.get("user_id")
-    if len(collection_names) > 0 :
-        docs = km.list_documets(collection_names[0],tenant=tenant)
-        state["docs"] = docs
-        log.info(f"doc_list_node:{len(state['docs'])}")
+    source = state.get("file_path")
+
+    docs = collection_manager.get_documents("index",source=source,tenant=tenant)
+    state["docs"] = docs
+    log.info(f"doc_list_node:{len(state['docs'])}")
     return state 
 
 # 网页爬虫节点
@@ -156,7 +157,45 @@ async def route(state: State):
     elif state.get("collection_names"):
         return await rag_auto_route(state)
 
+async def index_full_search_node(state: State,config: RunnableConfig):
+    tenant = state.get("user_id")
+    question = get_last_message_text(state)
+    docs = collection_manager.full_search([question],"index",tenant=tenant)
+    state["docs"] = docs
+    log.info(f"index_full_search_node:{len(state['docs'])}")
+    return {"index_search_result":docs} 
 
+async def index_embeding_search_node(state: State,config: RunnableConfig):
+    tenant = state.get("user_id")
+    question = get_last_message_text(state)
+    docs = collection_manager.embedding_search([question],"index",tenant=tenant)
+    state["docs"] = docs
+    log.info(f"index_embeding_search_node:{len(state['docs'])}")
+    return {"index_search_result":docs} 
+
+async def full_search_node(state: State,config: RunnableConfig):
+    tenant = state.get("user_id")
+    question = get_last_message_text(state)
+    collection_names = state.get("collection_names")
+    index_docs = state.get("index_search_result")
+    
+    for collection_name in set(collection_names):
+        docs = collection_manager.full_search([question],collection_name,tenant=tenant)
+
+    state["docs"] = docs
+    log.info(f"full_search_node:{len(state['docs'])}")
+    return state 
+
+async def embeding_search_node(state: State,config: RunnableConfig):
+    tenant = state.get("user_id")
+    collection_names = state.get("collection_names")
+    index_docs = state.get("index_search_result")
+    question = get_last_message_text(state)
+    for collection_name in set(collection_names):
+        docs = collection_manager.embedding_search([question],collection_name,tenant=tenant)
+    state["docs"] = docs
+    log.info(f"embeding_search_node:{len(state['docs'])}")
+    return state
 # graph
 checkpointer = MemorySaver()
 
@@ -166,14 +205,13 @@ rag_graph_builder.add_node("doc_chat", doc_chat_node)
 rag_graph_builder.add_node("rerank", doc_rerank_node)
 rag_graph_builder.add_node("rag", TaskFactory.create_task(TASK_RAG))
 rag_graph_builder.add_node("summary", doc_summary_node)
-rag_graph_builder.add_node("index_full_search", index_retreive_node)
-rag_graph_builder.add_node("index_embeding_search", index_retreive_node)
-rag_graph_builder.add_node("full_search", index_retreive_node)
-rag_graph_builder.add_node("embeding_search", index_retreive_node)
+rag_graph_builder.add_node("index_full_search", index_full_search_node)
+rag_graph_builder.add_node("index_embeding_search", index_embeding_search_node)
+rag_graph_builder.add_node("full_search", full_search_node)
+rag_graph_builder.add_node("embeding_search", embeding_search_node)
 rag_graph_builder.add_node("llm_with_history", TaskFactory.create_task(TASK_LLM_WITH_HISTORY))
 rag_graph_builder.add_node("web", TaskFactory.create_task(TASK_WEB_SEARCH))
 rag_graph_builder.add_node("scrape", web_scrape_node)
-
 
 rag_graph_builder.add_conditional_edges(START, route)
 

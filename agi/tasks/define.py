@@ -9,7 +9,7 @@ from typing import (
     TypeVar,
     Union,
 )
-
+import operator
 from typing_extensions import TypedDict
 from pydantic import BaseModel,Field
 from langchain_core.messages import (
@@ -67,9 +67,10 @@ class State(AgentState):
     conversation_id: str
     feature: str  # 支持的特性，1.agent，2.web 3.rag，4.tts，5.speech，6.image_recog 默认为agent
     # for rag search
+    index_search_result: Annotated[Sequence[Document], operator.add]
     context: str
     urls: list[str]
-    docs: list[Document]
+    docs: Annotated[Sequence[Document], operator.add]
     citations: list[any]
     collection_names: list[str]
     # for doc store

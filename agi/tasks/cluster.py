@@ -3,6 +3,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import cosine_similarity
 import hdbscan
+import os
 import umap
 import numpy as np
 from sklearn.decomposition import PCA
@@ -140,9 +141,11 @@ class TextClusterer:
                 doc_id = str(uuid.uuid4())
                 doc.metadata["doc_id"] = doc_id
                 doc.metadata["cluster_id"] = cluster_id
+                doc.metadata["source"] = os.path.basename(doc.metadata["source"])
+                if cluster_doc.metadata["source"] is None:
+                    cluster_doc.metadata["source"] = doc.metadata["source"]
                 cluster_doc.metadata["related_docs"].append(doc_id)
                 context_texts  += "\n\n" + doc.page_content
-
                 keywords = doc.metadata.get("keywords", [])
                 all_keywords.extend(keywords)
 
