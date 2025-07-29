@@ -15,11 +15,11 @@ async def test_db_graph():
     state['collection_name'] = "dbtest"
     state['file_path'] = "tests/test.pdf"
     ret = await db_graph.ainvoke(state,config=config)
-    print(ret)
+    print(f"ainvoke:{ret}")
     colects = collection_manager.list_collections(tenant="dbtest")
     print(colects)
     docs = collection_manager.get_documents(collection_name="dbtest",tenant="dbtest")
-    print(ret)
+    print(f"get_documents:{docs}")
 
 
 
