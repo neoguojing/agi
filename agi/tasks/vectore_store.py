@@ -89,7 +89,7 @@ class CollectionManager:
                       embedding_function=self.embedding, 
                       collection_name=collection_name)
 
-    def get_documents(self, collection_name,source=None,limit=None,offset=0,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE) -> list[Document]:
+    def get_documents(self, collection_name,source=None,limit=10,offset=0,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE) -> list[Document]:
         """Retrieve all documents and their metadata from the collection."""
         collection = self.get_or_create_collection(collection_name,tenant,database)
         where_cond = None
@@ -132,7 +132,7 @@ class CollectionManager:
             if ids is None:
                 ids = [str(uuid.uuid4()) for _ in documents]  # 每条文档生成唯一 id
 
-        log.debug(f"texts={len(texts)},metadatas={len(metadatas)},ids={len(ids)}")
+        log.info(f"texts={len(texts)},metadatas={len(metadatas)},ids={len(ids)}")
         # 分批添加到 Chroma Collection
         num_batches = math.ceil(len(documents) / batch_size)
         for i in tqdm(range(num_batches), desc="Adding document batches"):

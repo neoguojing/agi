@@ -1,5 +1,5 @@
 from agi.tasks.db_builder import db_graph
-from agi.tasks.rag_web import rag_graph
+from agi.tasks.rag_web import rag_graph,collection_manager
 from agi.tasks.define import State
 import asyncio
 import pytest
@@ -16,6 +16,12 @@ async def test_db_graph():
     state['file_path'] = "tests/test.pdf"
     ret = await db_graph.ainvoke(state,config=config)
     print(ret)
+    colects = collection_manager.list_collections(tenant="dbtest")
+    print(colects)
+    docs = collection_manager.get_documents(collection_name="dbtest",tenant="dbtest")
+    print(ret)
+
+
 
 @pytest.mark.asyncio
 async def test_rag():
