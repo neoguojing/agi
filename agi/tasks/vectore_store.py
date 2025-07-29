@@ -187,9 +187,10 @@ class CollectionManager:
         results = await asyncio.gather(*tasks)
         ret = []
         for result in results:
-            for document, metadata,score in zip(result['documents'], result['metadatas'],result['distances']):
-                metadata['score'] = score
-                ret.append(Document(page_content=document, metadata=metadata))
+            for docs, metas, scores in zip(result['documents'], result['metadatas'], result['distances']):
+                for document, metadata, score in zip(docs, metas, scores):
+                    metadata['score'] = score
+                    ret.append(Document(page_content=document, metadata=metadata))
         return ret
     
     async def full_search(
@@ -231,8 +232,10 @@ class CollectionManager:
         results = await asyncio.gather(*tasks)
         ret = []
         for result in results:
-            for document, metadata in zip(result['documents'], result['metadatas']):
-                ret.append(Document(page_content=document, metadata=metadata))
+            for docs, metas, scores in zip(result['documents'], result['metadatas'], result['distances']):
+                for document, metadata, score in zip(docs, metas, scores):
+                    metadata['score'] = score
+                    ret.append(Document(page_content=document, metadata=metadata))
         return ret
 
     
