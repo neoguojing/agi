@@ -173,7 +173,7 @@ async def search_mid_node(state: State,config: RunnableConfig):
 async def index_full_search_node(state: State,config: RunnableConfig):
     tenant = state.get("user_id")
     question = get_last_message_text(state)
-    docs = collection_manager.full_search([question],"index",tenant=tenant)
+    docs = await collection_manager.full_search([question],"index",tenant=tenant)
     # state["docs"] = docs
     log.info(f"index_full_search_node:{len(state['docs'])}")
     return {"index_search_result":docs} 
@@ -181,7 +181,7 @@ async def index_full_search_node(state: State,config: RunnableConfig):
 async def index_embeding_search_node(state: State,config: RunnableConfig):
     tenant = state.get("user_id")
     question = get_last_message_text(state)
-    docs = collection_manager.embedding_search([question],"index",tenant=tenant)
+    docs = await collection_manager.embedding_search([question],"index",tenant=tenant)
     # state["docs"] = docs
     log.info(f"index_embeding_search_node:{len(state['docs'])}")
     return {"index_search_result":docs} 
@@ -195,7 +195,7 @@ async def full_search_node(state: State,config: RunnableConfig):
     docs = []
     for collection_name in set(collection_names):
         for id in cluster_ids:
-            parts = collection_manager.full_search([question],collection_name,cluster_id=id,tenant=tenant)
+            parts = await collection_manager.full_search([question],collection_name,cluster_id=id,tenant=tenant)
             docs.extend(parts)
 
     # state["docs"] = docs
@@ -213,7 +213,7 @@ async def embeding_search_node(state: State,config: RunnableConfig):
 
     for collection_name in set(collection_names):
         for id in cluster_ids:
-            parts = collection_manager.embedding_search([question],collection_name,cluster_id=id,tenant=tenant)
+            parts = await collection_manager.embedding_search([question],collection_name,cluster_id=id,tenant=tenant)
             docs.extend(parts)
             
     # state["docs"] = docs

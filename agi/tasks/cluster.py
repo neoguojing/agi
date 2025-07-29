@@ -142,7 +142,7 @@ class TextClusterer:
                 doc.metadata["doc_id"] = doc_id
                 doc.metadata["cluster_id"] = cluster_id
                 doc.metadata["source"] = os.path.basename(doc.metadata["source"])
-                if cluster_doc.metadata["source"] is None:
+                if cluster_doc.metadata.get("source") is None:
                     cluster_doc.metadata["source"] = doc.metadata["source"]
                 cluster_doc.metadata["related_docs"].append(doc_id)
                 context_texts  += "\n\n" + doc.page_content
