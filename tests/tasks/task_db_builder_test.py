@@ -18,6 +18,8 @@ async def test_db_graph():
     print(f"ainvoke:{ret}")
     colects = collection_manager.list_collections(tenant="dbtest")
     print(colects)
+    indexs = collection_manager.get_documents(collection_name="index",tenant="dbtest")
+    print(indexs)
     docs = collection_manager.get_documents(collection_name="dbtest",tenant="dbtest")
     print(f"get_documents:{docs}")
 
