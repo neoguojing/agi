@@ -240,14 +240,14 @@ class CollectionManager:
 
     
     def build_query(self,contains_list=None, not_contains_list=None):
-        query_or = {"$or": []}
+        query_or = []
         if contains_list:
             for s in contains_list:
-                query_or["$or"].append({"$contains": s})
+                query_or.append({"$contains": s})
 
         if not_contains_list:
             for s in not_contains_list:
-                query_or["$or"].append({"$not_contains": s})
+                query_or.append({"$not_contains": s})
 
         return {"$or": query_or} if query_or else {}
 

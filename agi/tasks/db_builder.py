@@ -172,11 +172,11 @@ async def last_node(state: State, config: RunnableConfig):
     print(len(state["filted_texts"]))
     print(len(state["embds"]))
 
-    state["clusters"] = []
-    state["db_documents"] = []
-    state["filted_texts"] = []
-    state["embds"] = []
-    return state
+    # state["clusters"] = []
+    # state["db_documents"] = []
+    # state["filted_texts"] = []
+    # state["embds"] = []
+    return {}
 
 # graph
 checkpointer = MemorySaver()
