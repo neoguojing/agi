@@ -96,7 +96,7 @@ class TextClusterer:
             embeddings = np.array(embeddings, dtype=float)
         if self.use_umap:
             embeddings = self._reduce_dim(embeddings)
-
+        import pdb;pdb.set_trace()
         n_samples = len(embeddings)
         labels = None
         # 1. 样本足够 -> HDBSCAN
