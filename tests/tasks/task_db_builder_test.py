@@ -8,30 +8,30 @@ from langchain_core.messages import AIMessage, HumanMessage,ToolMessage
 @pytest.mark.asyncio
 async def test_db_graph():
     config={"configurable": {"conversation_id": "1",
-                                "thread_id": "dbtest"}}
+                                "thread_id": "ragtest"}}
     
     state = State()
-    state['user_id'] = "dbtest"
-    state['collection_name'] = "dbtest"
+    state['user_id'] = "ragtest"
+    state['collection_name'] = "ragtest"
     state['file_path'] = "tests/test.pdf"
     ret = await db_graph.ainvoke(state,config=config)
     assert ret is not None, "ainvoke 返回值为空"
-    colects = collection_manager.list_collections(tenant="dbtest")
+    colects = collection_manager.list_collections(tenant="ragtest")
     assert len(colects) >= 2, "应包含至少两个集合"
-    indexs = collection_manager.get_documents(collection_name="index",tenant="dbtest")
+    indexs = collection_manager.get_documents(collection_name="index",tenant="ragtest")
     assert len(indexs) >= 1, "应包含至少1个索引"
-    docs = collection_manager.get_documents(collection_name="dbtest",tenant="dbtest")
+    docs = collection_manager.get_documents(collection_name="ragtest",tenant="ragtest")
     assert len(docs) >= 2, "应包含至少2个文档"
 
 
 
 @pytest.mark.asyncio
 async def test_summary_rag():
-    config={"configurable": {"conversation_id": "2","thread_id": "dbtest"}}
+    config={"configurable": {"conversation_id": "2","thread_id": "ragtest"}}
     input = State(
         messages=[HumanMessage(content="总结该文档")],
-        collection_names = ["dbtest"],
-        user_id = "dbtest"
+        collection_names = ["ragtest"],
+        user_id = "ragtest"
     )
     ret = await rag_graph.ainvoke(input,config=config)
     assert isinstance(ret,dict)
@@ -39,11 +39,11 @@ async def test_summary_rag():
 
 @pytest.mark.asyncio
 async def test_rag():
-    config={"configurable": {"conversation_id": "3","thread_id": "dbtest"}}
+    config={"configurable": {"conversation_id": "3","thread_id": "ragtest"}}
     input = State(
         messages=[HumanMessage(content="NTP3000Plus")],
-        collection_names = ["dbtest"],
-        user_id = "dbtest"
+        collection_names = ["ragtest"],
+        user_id = "ragtest"
     )
     ret = await rag_graph.ainvoke(input,config=config)
     print(ret)
