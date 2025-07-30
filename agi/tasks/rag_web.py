@@ -110,7 +110,7 @@ async def doc_summary_node(state: State,config: RunnableConfig):
     source = state.get("file_path")
 
     docs = collection_manager.get_documents("index",source=source,tenant=tenant)
-    log.info(f"doc_list_node:{len(state['docs'])}")
+    log.info(f"doc_list_node:{len(docs)}")
     return {"docs":docs}
 
 # 网页爬虫节点
@@ -161,13 +161,10 @@ async def route(state: State):
         return await rag_auto_route(state)
 
 async def search_start_node(state: State,config: RunnableConfig):
-    log.info(f"{len(state['index_search_result'])}")
-
     return {}
 
 async def search_mid_node(state: State,config: RunnableConfig):
-    log.info(f"{len(state['docs'])}")
-
+    log.info(f"{len(state['index_search_result'])}")
     return {}
 
 async def index_full_search_node(state: State,config: RunnableConfig):
@@ -175,7 +172,7 @@ async def index_full_search_node(state: State,config: RunnableConfig):
     question = get_last_message_text(state)
     docs = await collection_manager.full_search([question],"index",tenant=tenant)
     # state["docs"] = docs
-    log.info(f"index_full_search_node:{len(state['docs'])}")
+    log.info(f"index_full_search_node:{len(docs)}")
     return {"index_search_result":docs} 
 
 async def index_embeding_search_node(state: State,config: RunnableConfig):
@@ -183,7 +180,7 @@ async def index_embeding_search_node(state: State,config: RunnableConfig):
     question = get_last_message_text(state)
     docs = await collection_manager.embedding_search([question],"index",tenant=tenant)
     # state["docs"] = docs
-    log.info(f"index_embeding_search_node:{len(state['docs'])}")
+    log.info(f"index_embeding_search_node:{len(docs)}")
     return {"index_search_result":docs} 
 
 async def full_search_node(state: State,config: RunnableConfig):
@@ -199,7 +196,7 @@ async def full_search_node(state: State,config: RunnableConfig):
             docs.extend(parts)
 
     # state["docs"] = docs
-    log.info(f"full_search_node:{len(state['docs'])}")
+    log.info(f"full_search_node:{len(docs)}")
     return {"docs":docs} 
 
 async def embeding_search_node(state: State,config: RunnableConfig):
@@ -217,7 +214,7 @@ async def embeding_search_node(state: State,config: RunnableConfig):
             docs.extend(parts)
             
     # state["docs"] = docs
-    log.info(f"embeding_search_node:{len(state['docs'])}")
+    log.info(f"embeding_search_node:{len(docs)}")
     return {"docs":docs} 
 # graph
 checkpointer = MemorySaver()

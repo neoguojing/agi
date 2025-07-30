@@ -179,7 +179,7 @@ async def last_node(state: State, config: RunnableConfig):
     state["db_documents"] = []
     state["filted_texts"] = []
     state["embds"] = []
-    return {}
+    return state
 
 # graph
 checkpointer = MemorySaver()

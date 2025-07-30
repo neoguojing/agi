@@ -15,18 +15,18 @@ async def test_db_graph():
     state['collection_name'] = "dbtest"
     state['file_path'] = "tests/test.pdf"
     ret = await db_graph.ainvoke(state,config=config)
-    print(f"ainvoke:{ret}")
+    assert ret is not None, "ainvoke 返回值为空"
     colects = collection_manager.list_collections(tenant="dbtest")
-    print(f"---------{colects}")
+    assert len(colects) >= 2, "应包含至少两个集合"
     indexs = collection_manager.get_documents(collection_name="index",tenant="dbtest")
-    print(f"---------{indexs}")
+    assert len(indexs) >= 1, "应包含至少1个索引"
     docs = collection_manager.get_documents(collection_name="dbtest",tenant="dbtest")
-    print(f"get_documents:{docs}")
+    assert len(docs) >= 2, "应包含至少2个文档"
 
 
 
 @pytest.mark.asyncio
-async def test_rag():
+async def test_summary_rag():
     config={"configurable": {"conversation_id": "2","thread_id": "dbtest"}}
     input = State(
         messages=[HumanMessage(content="总结该文档")],
@@ -34,5 +34,21 @@ async def test_rag():
         user_id = "dbtest"
     )
     ret = await rag_graph.ainvoke(input,config=config)
+    assert isinstance(ret,dict)
+    assert len(ret.get("docs")) >= 1, "应包含至少1个文档"
+
+@pytest.mark.asyncio
+async def test_rag():
+    config={"configurable": {"conversation_id": "3","thread_id": "dbtest"}}
+    input = State(
+        messages=[HumanMessage(content="NTP3000Plus")],
+        collection_names = ["dbtest"],
+        user_id = "dbtest"
+    )
+    ret = await rag_graph.ainvoke(input,config=config)
     print(ret)
+    assert isinstance(ret,dict)
+    assert len(ret.get("docs")) >= 1, "应包含至少1个文档"
+    assert len(ret.get("index_search_result")) >= 1, "应包含至少1个文档"
+
         
