@@ -48,8 +48,8 @@ summary_template = ChatPromptTemplate.from_messages(
 
 class TextClusterer:
     def __init__(self,
-                 min_cluster_size: int = 5,
-                 min_samples: int = 1,
+                 min_cluster_size: int = 10,
+                 min_samples: int = 5,
                  use_umap: bool = False,
                  umap_dim: int = 5):
         self.min_cluster_size = min_cluster_size
