@@ -24,8 +24,8 @@ rerank = Reranker(model_path=RAG_RERANK_MODEL_PATH)
 # 定义请求体模型
 class EmbeddingRequest(BaseModel):
     input: Union[str, List[str], Iterable[int], Iterable[Iterable[int]]]
-    model: Optional[str]
-    dimensions: Optional[int]
+    model: Optional[str] = "qwen"
+    dimensions: Optional[int] = 1024
     encoding_format: Optional[Literal["float", "base64"]]
     user: Optional[str]
 
