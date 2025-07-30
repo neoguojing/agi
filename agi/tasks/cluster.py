@@ -50,8 +50,8 @@ class TextClusterer:
     def __init__(self,
                  min_cluster_size: int = 10,
                  min_samples: int = 5,
-                 use_umap: bool = False,
-                 umap_dim: int = 5):
+                 use_umap: bool = True,
+                 umap_dim: int = 10):
         self.min_cluster_size = min_cluster_size
         self.min_samples = min_samples
         self.use_umap = use_umap
@@ -69,14 +69,22 @@ class TextClusterer:
         return result
 
     def _reduce_dim(self, vectors: np.ndarray) -> np.ndarray:
-        # 先PCA降维至50维，再UMAP降至目标维度，减少大规模时的计算压力
-        # 4. 标准化
+        # 标准化
         scaler = StandardScaler()
         vectors = scaler.fit_transform(vectors)
 
+        # PCA 降维到 50
         pca = PCA(n_components=50, random_state=42)
         pca_result = pca.fit_transform(vectors)
-        reducer = umap.UMAP(n_components=self.umap_dim, random_state=42)
+
+        # UMAP 降维到目标维度
+        reducer = umap.UMAP(
+            n_components=self.umap_dim,
+            n_neighbors=30,
+            min_dist=0.1,
+            metric='cosine',
+            random_state=42
+        )
         return reducer.fit_transform(pca_result)
 
     def combined_keywords(self,all_keywords:list):
