@@ -36,7 +36,7 @@ async def get_embedding(request: EmbeddingRequest):
     # 生成嵌入向量
     embedding = None
     if request.model == "qwen":
-        embedding = qwen_embding.embed_query(request.input)
+        embedding = qwen_embding.embed_query(request.input,request.dimensions)
     else:
         embedding = ollama_embding.embed_query(request.input)
     return {

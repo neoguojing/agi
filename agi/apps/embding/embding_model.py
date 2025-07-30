@@ -41,7 +41,7 @@ class QwenEmbedding:
             batch_size = last_hidden_states.shape[0]
             return last_hidden_states[torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths]
 
-    def embed_query(self, query: str):
+    def embed_query(self, query: str,dimension=1024):
         self.get_model()
         task = "Given a web search query, retrieve relevant passages that answer the query"
         detailed_query = f"Instruct: {task}\nQuery:{query}"
@@ -54,9 +54,10 @@ class QwenEmbedding:
         ).to(self.model.device)
 
         with torch.no_grad():
-            output = self.model(**encoded)
+            output = self.model(**encoded,output_dimension=dimension)
             emb = self.last_token_pool(output.last_hidden_state, encoded['attention_mask'])
             emb = F.normalize(emb, p=2, dim=1)
+            print(f"[Embedding shape]: {emb.shape}")
             return emb.squeeze(0).tolist()
         
     def _unload(self):
