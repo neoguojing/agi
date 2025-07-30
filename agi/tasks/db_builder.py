@@ -159,7 +159,6 @@ async def store_node(state: State, config: RunnableConfig):
     if not user_id and config:
         user_id = config.get("configurable").get("user_id","default")
 
-    import pdb;pdb.set_trace()
     await collection_manager.add_documents(
         documents=state["db_documents"],
         collection_name=collection_name,
