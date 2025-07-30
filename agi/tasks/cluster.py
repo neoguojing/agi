@@ -74,8 +74,8 @@ class TextClusterer:
         vectors = scaler.fit_transform(vectors)
 
         # PCA 降维到 50
-        pca = PCA(n_components=50, random_state=42)
-        pca_result = pca.fit_transform(vectors)
+        # pca = PCA(n_components=50, random_state=42)
+        # pca_result = pca.fit_transform(vectors)
 
         # UMAP 降维到目标维度
         reducer = umap.UMAP(
@@ -85,7 +85,7 @@ class TextClusterer:
             metric='cosine',
             random_state=42
         )
-        return reducer.fit_transform(pca_result)
+        return reducer.fit_transform(vectors)
 
     def combined_keywords(self,all_keywords:list):
         # 3.3 加权统计关键词
