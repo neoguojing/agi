@@ -170,10 +170,10 @@ async def store_node(state: State, config: RunnableConfig):
     return {}
 
 async def last_node(state: State, config: RunnableConfig):
-    log.info(f"clusters={len(state["clusters"])}")
-    log.info(f"clusters={len(state["db_documents"]))
-    log.info(f"clusters={len(state["filted_texts"]))
-    log.info(f"clusters={len(state["embds"]))
+    log.info(f"clusters={len(state['clusters'])}")
+    log.info(f"db_documents={len(state['db_documents'])}")
+    log.info(f"filted_texts={len(state['filted_texts'])}")
+    log.info(f"embds={len(state['embds'])}")
 
     state["clusters"] = []
     state["db_documents"] = []
