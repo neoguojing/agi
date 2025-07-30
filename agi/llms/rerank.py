@@ -3,6 +3,7 @@ from typing import List, Optional
 import httpx
 from langchain_core.documents import Document
 from agi.config import EMBEDDING_BASE_URL
+from urllib.parse import urljoin
 class RerankItem:
     def __init__(self, object: str, index: int, document: str, score: float):
         self.object = object
@@ -32,7 +33,7 @@ async def rerank_batch(
         "model": model,
         "top_k": top_k
     }
-
+    endpoint = urljoin(endpoint,"rerank")
     resp = await client.post(endpoint, json=payload)
     resp.raise_for_status()
     result = resp.json()
