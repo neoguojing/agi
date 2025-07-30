@@ -4,7 +4,7 @@ from chromadb.utils.embedding_functions.openai_embedding_function import OpenAIE
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from agi.utils.nlp import TextProcessor
-from agi.config import log,EMBEDDING_BASE_URL,OPENAI_API_KEY
+from agi.config import log,EMBEDDING_BASE_URL,API_KEY
 from typing import List
 import asyncio
 import uuid
@@ -21,7 +21,7 @@ class CollectionManager:
 
         self.text_proc = TextProcessor()
         
-        self.openai_ef = OpenAIEmbeddingFunction(model_name="qwen",api_base=EMBEDDING_BASE_URL,api_key=OPENAI_API_KEY)
+        self.openai_ef = OpenAIEmbeddingFunction(model_name="qwen",api_base=EMBEDDING_BASE_URL,api_key=API_KEY)
         self.settings = Settings(
             chroma_api_impl="chromadb.api.segment.SegmentAPI",
             is_persistent=True,
