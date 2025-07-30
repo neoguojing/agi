@@ -128,7 +128,8 @@ class CollectionManager:
         metadatas = [
             {
                 **doc.metadata,
-                "keywords": ",".join([f"{kw}:{round(score, 3)}" for kw, score in doc.metadata.get("keywords", [])])
+                "keywords": ",".join([f"{kw}:{round(score, 3)}" for kw, score in doc.metadata.get("keywords", [])]),
+                "related_docs": ",".join([docid for docid in doc.metadata.get("related_docs", [])])
             }
             for doc in documents
         ]
