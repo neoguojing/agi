@@ -147,6 +147,7 @@ async def store_index_node(state: State, config: RunnableConfig):
         collection_name="index",
         tenant=user_id
     )
+    log.info("store_index_node done")
     return {}
 
 async def store_node(state: State, config: RunnableConfig):
@@ -164,6 +165,8 @@ async def store_node(state: State, config: RunnableConfig):
         embeddings=state["embds"],
         tenant=user_id
     )
+    log.info(f"store_node {collection_name} done")
+
     return {}
 
 async def last_node(state: State, config: RunnableConfig):
