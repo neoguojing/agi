@@ -73,7 +73,7 @@ class RerankRequest(BaseModel):
     query: str
     documents: List[str]
     model: Optional[str] = "bge-reranker-base"
-    top_k: Optional[int] = None  # 默认为返回所有
+    top_k: Optional[int] = 3  # 默认为返回所有
 
 @app.post("/v1/rerank", summary="排序文档", response_model=RerankResponse)
 async def rerank_api(request: RerankRequest):
@@ -92,7 +92,7 @@ async def rerank_api(request: RerankRequest):
         zip(request.documents, scores),
         key=lambda x: x[1],
         reverse=True
-    )[:request.top_n]
+    )[:request.top_k]
 
     # 构造响应
     return {
