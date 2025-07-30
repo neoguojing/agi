@@ -17,9 +17,9 @@ async def test_db_graph():
     ret = await db_graph.ainvoke(state,config=config)
     print(f"ainvoke:{ret}")
     colects = collection_manager.list_collections(tenant="dbtest")
-    print(colects)
+    print(f"---------{colects}")
     indexs = collection_manager.get_documents(collection_name="index",tenant="dbtest")
-    print(indexs)
+    print(f"---------{indexs}")
     docs = collection_manager.get_documents(collection_name="dbtest",tenant="dbtest")
     print(f"get_documents:{docs}")
 

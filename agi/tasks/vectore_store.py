@@ -124,7 +124,7 @@ class CollectionManager:
             tenant=tenant,
             database=database
         )
-
+        import pdb;pdb.set_trace()
         texts = [doc.page_content for doc in documents]
         metadatas = [doc.metadata for doc in documents]
         if ids is None:
