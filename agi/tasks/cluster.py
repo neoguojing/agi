@@ -148,9 +148,8 @@ class TextClusterer:
                 context_texts  += "\n\n" + doc.page_content
                 keywords = doc.metadata.get("keywords", [])
                 all_keywords.extend(keywords)
-                
-            final_keywords = self.combined_keywords(all_keywords)
-            cluster_doc.metadata["keywords"] =  ",".join([f"{kw}:{round(score, 3)}" for kw, score in final_keywords])
+            
+            cluster_doc.metadata["keywords"] = self.combined_keywords(all_keywords)
             cluster_doc.page_content = self.summary(context_texts)
             clusters.append(cluster_doc)
 

@@ -125,7 +125,14 @@ class CollectionManager:
             database=database
         )
         texts = [doc.page_content for doc in documents]
-        metadatas = [doc.metadata for doc in documents]
+        metadatas = [
+            {
+                **doc.metadata,
+                "keywords": ",".join([f"{kw}:{round(score, 3)}" for kw, score in doc.metadata.get("keywords", [])])
+            }
+            for doc in documents
+        ]
+
         if ids is None:
             ids = [doc.metadata.get("doc_id") for doc in documents]
             if ids is None:
