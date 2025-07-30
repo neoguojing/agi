@@ -110,7 +110,8 @@ async def doc_clean_node(state: State, config: RunnableConfig):
 
 async def doc_filter_node(state: State, config: RunnableConfig):
     def filter_doc(doc: Document):
-        return nlp.remove_stopwords(doc.page_content)
+        # return nlp.remove_stopwords(doc.page_content)
+        return doc.page_content
     with ThreadPoolExecutor() as executor:
         filted_texts = list(executor.map(filter_doc, state["db_documents"]))
     log.info(f"filted {len(filted_texts)} texts")
