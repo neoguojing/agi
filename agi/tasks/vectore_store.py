@@ -256,5 +256,5 @@ class CollectionManager:
             for s in not_contains_list:
                 query_or.append({"$not_contains": s})
 
-        return {"$or": query_or} if query_or else {}
+        return {"$or": query_or} if query_or else None
 

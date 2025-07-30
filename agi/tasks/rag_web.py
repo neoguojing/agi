@@ -108,7 +108,7 @@ async def doc_rerank_node(state: State,config: RunnableConfig):
 async def doc_summary_node(state: State,config: RunnableConfig):
     tenant = state.get("user_id")
     source = state.get("file_path")
-
+    state["docs"] = []
     docs = collection_manager.get_documents("index",source=source,tenant=tenant)
     log.info(f"doc_list_node:{len(docs)}")
     return {"docs":docs}
