@@ -27,7 +27,7 @@ class EmbeddingRequest(BaseModel):
     model: Optional[str] = "qwen"
     dimensions: Optional[int] = 1024
     encoding_format: Optional[Literal["float", "base64"]]
-    user: Optional[str]
+    user: Optional[str] = "default"
 
 @app.post("/v1/embeddings",summary="文本向量")
 async def get_embedding(request: EmbeddingRequest):
