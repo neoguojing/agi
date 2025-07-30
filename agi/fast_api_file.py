@@ -2,10 +2,13 @@ from fastapi import HTTPException, File, UploadFile, Response,Form,APIRouter
 from fastapi.responses import Response
 from fastapi import Request
 from agi.tasks.task_factory import TaskFactory
+from agi.tasks.define import State
+from agi.tasks.db_builder import doc_db_as_subgraph
 from agi.utils.file_storage import default_file_service,default_storage
-from agi.utils.common import path_to_preview_url
 from typing import Optional
 from agi.config import log
+
+import uuid
 
 # 允许的 MIME 类型
 ALLOWED_MIME_TYPES = {
@@ -45,9 +48,16 @@ async def save_file(
     unique_name = await default_file_service.save_file(file, file.filename)
     
     if collection_name and not file_type.startswith("image/") and not file_type.startswith("audio/"):
-        kmanager = TaskFactory.get_knowledge_manager()
-        param = {"filename" : file.filename}
-        await kmanager.store(collection_name,default_storage.to_local_path(unique_name),tenant=user_id,**param)
+        # kmanager = TaskFactory.get_knowledge_manager()
+        # param = {"filename" : file.filename}
+        # await kmanager.store(collection_name,default_storage.to_local_path(unique_name),tenant=user_id,**param)
+        config={"configurable": {"conversation_id": str(uuid.uuid4()),
+                                 "thread_id": str(uuid.uuid4())}}
+        state = State()
+        state['user_id'] = user_id
+        state['collection_name'] = unique_name
+        state['file_path'] = default_storage.to_local_path(unique_name)
+        await doc_db_as_subgraph.ainvoke(state,config=config)
         
     return {
         "original_filename": file.filename,
