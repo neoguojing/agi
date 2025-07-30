@@ -13,7 +13,6 @@ from agi.tasks.utils import graph_response_format_runnable,refine_last_message_t
 from agi.config import (
     OLLAMA_API_BASE_URL,
     OPENAI_API_KEY,
-    RAG_EMBEDDING_MODEL,
     OLLAMA_DEFAULT_MODE,
 )
 from langchain_openai import ChatOpenAI
@@ -146,7 +145,7 @@ def create_llm_task(**kwargs):
     
 # Helper functions for each task type creation
 def create_embedding_task(**kwargs):
-    model_name = kwargs.get("model_name") or RAG_EMBEDDING_MODEL
+    model_name = kwargs.get("model_name") or "bge-m3:latest"
     return OllamaEmbeddings(
         model=model_name,
         base_url=OLLAMA_API_BASE_URL,

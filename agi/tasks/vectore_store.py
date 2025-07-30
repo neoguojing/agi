@@ -4,7 +4,7 @@ from chromadb.utils.embedding_functions.openai_embedding_function import OpenAIE
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from agi.utils.nlp import TextProcessor
-from agi.config import log,EMBEDDING_BASE_URL,API_KEY
+from agi.config import log,EMBEDDING_BASE_URL,API_KEY,RAG_EMBEDDING_MODEL
 from typing import List
 import asyncio
 import uuid
@@ -68,7 +68,9 @@ class CollectionManager:
     
     def get_or_create_collection(self, collection_name,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE):
         """Get or create a collection by name."""
-        return self.client(tenant,database).get_or_create_collection(name=collection_name,embedding_function=self.openai_ef)
+        if RAG_EMBEDDING_MODEL:
+            return self.client(tenant,database).get_or_create_collection(name=collection_name,embedding_function=self.openai_ef)
+        return self.client(tenant,database).get_or_create_collection(name=collection_name)
       
 
     def delete_collection(self, collection_name,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE):
@@ -178,19 +180,28 @@ class CollectionManager:
             database=database
         )
 
-        async def query_single(text: str):
+        # 1. 异步批量关键词提取
+        processed_results = await self.text_proc.abatch_process(texts, method="textrank")
+
+        async def query_single(text: str, keywords: list):
             embedding = self.embedding.embed_query(text)
+
+            keywords = [kw[0] for kw in keywords]
+            query = self.build_query(contains_list=keywords)
+
             where_cond = None
             if cluster_id:
                 where_cond = {"cluster_id":cluster_id}
-            log.info(f"text: {text} where:{where_cond}")
+
+            log.info(f"text: {text} where:{where_cond},query:{query}")
             return collection.query(
                 query_embeddings=[embedding],
                 n_results=k,
+                where_document=query,
                 where=where_cond,         
             )
 
-        tasks = [query_single(text) for text in texts]
+        tasks = [query_single(texts[i], processed_results[i]) for i in range(len(texts))]
 
         # 3. 并发执行所有查询任务
         results = await asyncio.gather(*tasks)

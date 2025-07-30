@@ -117,7 +117,7 @@ class TaskFactory:
         return TaskFactory._knowledge_manager
     
     @staticmethod
-    def get_embedding(model="qwen"):
+    def get_embedding(model=RAG_EMBEDDING_MODEL):
         if model == "qwen":
             return TaskFactory.openai_embedding
         return TaskFactory.ollama_embedding

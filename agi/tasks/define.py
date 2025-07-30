@@ -67,10 +67,10 @@ class State(AgentState):
     conversation_id: str
     feature: str  # 支持的特性，1.agent，2.web 3.rag，4.tts，5.speech，6.image_recog 默认为agent
     # for rag search
-    index_search_result: Annotated[Sequence[Document], operator.add]
+    index_search_result: list[Document]
     context: str
     urls: list[str]
-    docs: Annotated[Sequence[Document], operator.add]
+    docs: list[Document]
     citations: list[any]
     collection_names: list[str]
     # for doc store

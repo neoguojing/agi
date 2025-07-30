@@ -142,7 +142,7 @@ async def rag_auto_route(state: State):
     if "summary" in result:
         return "summary"
     elif "rag" in result:
-        return "search_start"
+        return "index_search"
     
     return "llm_with_history"
     
@@ -160,22 +160,7 @@ async def route(state: State):
     elif state.get("collection_names"):
         return await rag_auto_route(state)
 
-async def search_start_node(state: State,config: RunnableConfig):
-    return {}
-
-async def search_mid_node(state: State,config: RunnableConfig):
-    log.info(f"{len(state['index_search_result'])}")
-    return {}
-
-async def index_full_search_node(state: State,config: RunnableConfig):
-    tenant = state.get("user_id")
-    question = get_last_message_text(state)
-    docs = await collection_manager.full_search([question],"index",tenant=tenant)
-    # state["docs"] = docs
-    log.info(f"index_full_search_node:{len(docs)}")
-    return {"index_search_result":docs} 
-
-async def index_embeding_search_node(state: State,config: RunnableConfig):
+async def index_search_node(state: State,config: RunnableConfig):
     tenant = state.get("user_id")
     question = get_last_message_text(state)
     docs = await collection_manager.embedding_search([question],"index",tenant=tenant)
@@ -183,23 +168,7 @@ async def index_embeding_search_node(state: State,config: RunnableConfig):
     log.info(f"index_embeding_search_node:{len(docs)}")
     return {"index_search_result":docs} 
 
-async def full_search_node(state: State,config: RunnableConfig):
-    tenant = state.get("user_id")
-    question = get_last_message_text(state)
-    collection_names = state.get("collection_names")
-    index_docs = state.get("index_search_result")
-    cluster_ids = get_cluster_ids(index_docs)
-    docs = []
-    for collection_name in set(collection_names):
-        for id in cluster_ids:
-            parts = await collection_manager.full_search([question],collection_name,cluster_id=id,tenant=tenant)
-            docs.extend(parts)
-
-    # state["docs"] = docs
-    log.info(f"full_search_node:{len(docs)}")
-    return {"docs":docs} 
-
-async def embeding_search_node(state: State,config: RunnableConfig):
+async def search_node(state: State,config: RunnableConfig):
     tenant = state.get("user_id")
     collection_names = state.get("collection_names")
     index_docs = state.get("index_search_result")
@@ -227,12 +196,8 @@ rag_graph_builder.add_node("rerank", doc_rerank_node)
 
 rag_graph_builder.add_node("summary", doc_summary_node)
 
-rag_graph_builder.add_node("search_start", search_start_node)
-rag_graph_builder.add_node("index_full_search", index_full_search_node)
-rag_graph_builder.add_node("index_embeding_search", index_embeding_search_node)
-rag_graph_builder.add_node("search_mid", search_mid_node)
-rag_graph_builder.add_node("full_search", full_search_node)
-rag_graph_builder.add_node("embeding_search", embeding_search_node)
+rag_graph_builder.add_node("index_search", index_search_node)
+rag_graph_builder.add_node("search", search_node)
 
 
 rag_graph_builder.add_node("web", TaskFactory.create_task(TASK_WEB_SEARCH))
@@ -243,16 +208,10 @@ rag_graph_builder.add_conditional_edges(START, route)
 rag_graph_builder.add_edge("web","scrape")
 rag_graph_builder.add_conditional_edges("scrape", context_control)
 
-rag_graph_builder.add_edge("search_start", "index_full_search")
-rag_graph_builder.add_edge("search_start", "index_embeding_search")
-rag_graph_builder.add_edge("index_full_search", "search_mid")
-rag_graph_builder.add_edge("index_embeding_search", "search_mid")
-rag_graph_builder.add_edge("search_mid", "full_search")
-rag_graph_builder.add_edge("search_mid", "embeding_search")
-rag_graph_builder.add_edge("full_search", "rerank")
-rag_graph_builder.add_edge("embeding_search", "rerank")
-
+rag_graph_builder.add_edge("index_search", "search")
+rag_graph_builder.add_edge("search", "rerank")
 rag_graph_builder.add_edge("rerank", "doc_chat")
+
 rag_graph_builder.add_edge("summary", "doc_chat")
 
 rag_graph_builder.add_edge("llm_with_history", END)

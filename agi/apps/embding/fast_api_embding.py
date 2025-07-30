@@ -2,7 +2,7 @@ from fastapi import FastAPI,HTTPException
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, List, Union,Required,Iterable
 from langchain_ollama import OllamaEmbeddings
-from agi.config import RAG_EMBEDDING_MODEL,OLLAMA_API_BASE_URL,RAG_EMBEDDING_MODEL_PATH,RAG_RERANK_MODEL_PATH,log
+from agi.config import OLLAMA_API_BASE_URL,RAG_EMBEDDING_MODEL_PATH,RAG_RERANK_MODEL_PATH,log
 from agi.apps.embding.embding_model import QwenEmbedding
 from agi.apps.embding.rerank import Reranker
 
@@ -14,7 +14,7 @@ app = FastAPI(
 )
 
 ollama_embding = OllamaEmbeddings(
-            model=RAG_EMBEDDING_MODEL,
+            model="bge-m3:latest",
             base_url=OLLAMA_API_BASE_URL,
         )
 
