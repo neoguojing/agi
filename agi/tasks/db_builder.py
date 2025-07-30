@@ -129,7 +129,7 @@ async def doc_keywords_node(state: State, config: RunnableConfig):
     keywords_of_all = nlp.batch_process(state["filted_texts"])
     documents = state["db_documents"]
     for i, keywords in enumerate(keywords_of_all):
-        documents[i].metadata["keywords"] = keywords
+        documents[i].metadata["keywords"] = ",".join([f"{kw}:{round(score, 3)}" for kw, score in keywords])
     log.info(f"keywords {len(documents)}")
     return {"db_documents": documents}
 
