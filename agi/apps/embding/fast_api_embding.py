@@ -2,7 +2,7 @@ from fastapi import FastAPI,HTTPException
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, List, Union,Required,Iterable
 from langchain_ollama import OllamaEmbeddings
-from agi.config import RAG_EMBEDDING_MODEL,OLLAMA_API_BASE_URL,RAG_EMBEDDING_MODEL_PATH,RAG_RERANK_MODEL_PATH
+from agi.config import RAG_EMBEDDING_MODEL,OLLAMA_API_BASE_URL,RAG_EMBEDDING_MODEL_PATH,RAG_RERANK_MODEL_PATH,log
 from agi.apps.embding.embding_model import QwenEmbedding
 from agi.apps.embding.rerank import Reranker
 
@@ -31,6 +31,8 @@ class EmbeddingRequest(BaseModel):
 
 @app.post("/v1/embeddings",summary="文本向量")
 async def get_embedding(request: EmbeddingRequest):
+    log.info(request)
+
     if not request.input:
         raise HTTPException(status_code=400, detail="Text cannot be empty.")
     # 生成嵌入向量
@@ -77,10 +79,11 @@ class RerankRequest(BaseModel):
 async def rerank_api(request: RerankRequest):
     if not request.query or not request.documents:
         raise HTTPException(status_code=400, detail="Query and documents cannot be empty.")
-
+    log.info(request)
     # 加载 reranker（比如你已有的 qwen_reranker, ollama_reranker）
     if request.model == "qwen":
-        scores = rerank.rerank(request.query, request.documents)
+        queries = [request.query] * len(request.documents)
+        scores = rerank.rerank(queries, request.documents)
     else:
         scores = rerank.rerank(request.query, request.documents)
 
