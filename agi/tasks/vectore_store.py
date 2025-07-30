@@ -143,22 +143,23 @@ class CollectionManager:
             if ids is None:
                 ids = [str(uuid.uuid4()) for _ in documents]  # 每条文档生成唯一 id
 
-        log.info(f"texts={len(texts)},metadatas={len(metadatas)},ids={len(ids)}")
+        # 异步并发生成嵌入（嵌套列表需要解包）
+        if embeddings is None:
+            embeddings = await asyncio.gather(*[
+                asyncio.to_thread(self.embedding.embed_query, text)
+                for text in texts
+            ])
+
+        log.info(f"texts={len(texts)},metadatas={len(metadatas)},ids={len(ids)},embd={len(embeddings)}")
         # 分批添加到 Chroma Collection
         num_batches = math.ceil(len(documents) / batch_size)
         for i in tqdm(range(num_batches), desc="Adding document batches"):
             start = i * batch_size
             end = start + batch_size
             try:
-                # 异步并发生成嵌入（嵌套列表需要解包）
-                if embeddings is None:
-                    embeddings = await asyncio.gather(*[
-                        asyncio.to_thread(self.embedding.embed_query, text)
-                        for text in texts[start:end]
-                    ])
                 collection.add(
                     documents=texts[start:end],
-                    embeddings=embeddings,
+                    embeddings=embeddings[start:end],
                     metadatas=metadatas[start:end],
                     ids=ids[start:end]
                 )

@@ -165,7 +165,7 @@ async def index_search_node(state: State,config: RunnableConfig):
     question = get_last_message_text(state)
     docs = await collection_manager.embedding_search([question],"index",tenant=tenant)
     # state["docs"] = docs
-    log.info(f"index_embeding_search_node:{len(docs)}")
+    log.info(f"index_search_node:{len(docs)}")
     return {"index_search_result":docs} 
 
 async def search_node(state: State,config: RunnableConfig):
@@ -183,7 +183,7 @@ async def search_node(state: State,config: RunnableConfig):
             docs.extend(parts)
             
     # state["docs"] = docs
-    log.info(f"embeding_search_node:{len(docs)}")
+    log.info(f"search_node:{len(docs)}")
     return {"docs":docs} 
 # graph
 checkpointer = MemorySaver()
