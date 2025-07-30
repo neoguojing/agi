@@ -7,9 +7,11 @@ from urllib.parse import urljoin
 from agi.config import (
     OLLAMA_API_BASE_URL,
     RAG_EMBEDDING_MODEL,
-    CACHE_DIR
+    CACHE_DIR,
+    EMBEDDING_BASE_URL
 )
 from langchain_ollama import OllamaEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from agi.tasks.llm_app import (
     create_chat,
     create_chat_with_history,
@@ -81,9 +83,13 @@ class TaskFactory:
     _instances = {}
     _lock = threading.Lock()  # 异步锁
     _llm = create_llm_task()
-    _embedding = OllamaEmbeddings(
-            model=RAG_EMBEDDING_MODEL,
+    ollama_embedding = OllamaEmbeddings(
+            model="bge-m3:latest",
             base_url=OLLAMA_API_BASE_URL,
+        )
+    openai_embedding = OpenAIEmbeddings(
+            model="qwen",
+            openai_api_base=EMBEDDING_BASE_URL
         )
     
     task_creators = {
@@ -105,14 +111,16 @@ class TaskFactory:
         
     }
     
-    _knowledge_manager = KnowledgeManager(CACHE_DIR,_llm,_embedding)
+    _knowledge_manager = KnowledgeManager(CACHE_DIR,_llm,ollama_embedding)
     @staticmethod
     def get_knowledge_manager():
         return TaskFactory._knowledge_manager
     
     @staticmethod
-    def get_embedding():
-        return TaskFactory._embedding
+    def get_embedding(model="qwen"):
+        if model == "qwen":
+            return TaskFactory.openai_embedding
+        return TaskFactory.ollama_embedding
     
     @staticmethod
     def get_llm():
