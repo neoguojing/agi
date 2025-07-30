@@ -170,15 +170,15 @@ async def store_node(state: State, config: RunnableConfig):
     return {}
 
 async def last_node(state: State, config: RunnableConfig):
-    print(state["clusters"])
-    print(len(state["db_documents"]))
-    print(len(state["filted_texts"]))
-    print(len(state["embds"]))
+    log.info(f"clusters={len(state["clusters"])}")
+    log.info(f"clusters={len(state["db_documents"]))
+    log.info(f"clusters={len(state["filted_texts"]))
+    log.info(f"clusters={len(state["embds"]))
 
-    # state["clusters"] = []
-    # state["db_documents"] = []
-    # state["filted_texts"] = []
-    # state["embds"] = []
+    state["clusters"] = []
+    state["db_documents"] = []
+    state["filted_texts"] = []
+    state["embds"] = []
     return {}
 
 # graph

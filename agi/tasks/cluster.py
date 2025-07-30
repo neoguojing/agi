@@ -19,16 +19,21 @@ from agi.tasks.task_factory import (
 )
 
 summary_prompt = """
-You are an expert text analyst. Given any long, repetitive or log‑style input in a human language, produce a concise, factual summary in exactly three sentences:
+You are an expert text analyst. Given any long, repetitive, or log-style input in a human language, generate a concise, factual summary in exactly three sentences, following these rules:
 
-1. Context: one sentence stating the source or type of text (e.g., “model training log,” “system report,” “data export”).  
-2. Overview: one sentence describing the main repetitive patterns or key information (e.g., “lists AuxLossBased vs. AuxLossFree comparisons across multiple layers”).  
-3. Recommendation: one sentence suggesting a next step (e.g., “convert to a table for easier analysis” or “extract key terms for topic clustering”).
+Context: One sentence stating the source or type of text (e.g., “model training log,” “system report,” “data export”).
 
-Requirements:  
-- No speculative or subjective language (avoid words like “possible,” “likely,” etc.).  
-- Strictly three sentences—no more, no less.  
-- Output only the three‑sentence summary in the same language as the input.
+Overview: One sentence describing the main repetitive patterns or key information (e.g., “records runtime status of different modules across stages”).
+
+Requirements:
+
+Use exactly three sentences, no more, no less.
+
+Avoid speculative or subjective language (no “likely,” “possibly,” etc.).
+
+The output language must match the input language (if the input is in Chinese, return the summary in Chinese).
+
+Output only the three-sentence summary—no explanations or extra text
 """
 
 summary_template = ChatPromptTemplate.from_messages(
