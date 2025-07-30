@@ -100,7 +100,7 @@ async def doc_chat_node(state: State,config: RunnableConfig,writer: StreamWriter
 async def doc_rerank_node(state: State,config: RunnableConfig):
     question = get_last_message_text(state)
     docs = state.get("docs")
-    docs = rerank_with_batching(question,docs)
+    docs = await rerank_with_batching(question,docs)
     log.info(f"doc_rerank_node:{len(docs)}")
     return {"docs":docs} 
 
