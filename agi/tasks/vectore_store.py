@@ -1,9 +1,10 @@
 import chromadb
 from chromadb import Settings
+from chromadb.utils.embedding_functions.openai_embedding_function import OpenAIEmbeddingFunction
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from agi.utils.nlp import TextProcessor
-from agi.config import log
+from agi.config import log,EMBEDDING_BASE_URL
 from typing import List
 import asyncio
 import uuid
@@ -19,7 +20,8 @@ class CollectionManager:
         self.anonymized_telemetry = anonymized_telemetry
 
         self.text_proc = TextProcessor()
-
+        
+        self.openai_ef = OpenAIEmbeddingFunction(model_name="qwen",api_base=EMBEDDING_BASE_URL)
         self.settings = Settings(
             chroma_api_impl="chromadb.api.segment.SegmentAPI",
             is_persistent=True,
@@ -66,7 +68,7 @@ class CollectionManager:
     
     def get_or_create_collection(self, collection_name,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE):
         """Get or create a collection by name."""
-        return self.client(tenant,database).get_or_create_collection(name=collection_name)
+        return self.client(tenant,database).get_or_create_collection(name=collection_name,embedding_function=self.openai_ef)
       
 
     def delete_collection(self, collection_name,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE):
