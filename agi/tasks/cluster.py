@@ -82,7 +82,7 @@ class TextClusterer:
 
         # 3.4 选择top-k关键词
         sorted_keywords = sorted(keyword_weights.items(), key=lambda x: x[1], reverse=True)
-        combined_keywords = [kw for kw, _ in sorted_keywords[:self.cluster_top_k_keywords]]
+        combined_keywords = [(kw,weight) for kw, weight in sorted_keywords[:self.cluster_top_k_keywords]]
         return combined_keywords
 
     def cluster(self, docs: List[Document], filtered_texts: List[str], embeddings: np.ndarray) -> list:
