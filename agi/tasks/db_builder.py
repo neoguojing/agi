@@ -135,7 +135,7 @@ async def doc_keywords_node(state: State, config: RunnableConfig):
     return {"db_documents": documents}
 
 async def cluster_node(state: State, config: RunnableConfig):
-    clusters = cluster.cluster(state["db_documents"],state["filted_texts"],state["embds"] )
+    clusters = cluster.cluster(state["db_documents"],state["embds"])
     return {"clusters":clusters}
 
 async def store_index_node(state: State, config: RunnableConfig):

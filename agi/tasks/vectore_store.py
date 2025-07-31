@@ -156,12 +156,32 @@ class CollectionManager:
         for i in tqdm(range(num_batches), desc="Adding document batches"):
             start = i * batch_size
             end = start + batch_size
+
+            # 切片
+            batch_ids = ids[start:end]
+            batch_texts = texts[start:end]
+            batch_embeddings = embeddings[start:end]
+            batch_metadatas = metadatas[start:end]
+
+            # 过滤掉 id 为 None 的项
+            valid_items = [
+                (id_, text, embedding, metadata)
+                for id_, text, embedding, metadata in zip(batch_ids, batch_texts, batch_embeddings, batch_metadatas)
+                if id_ is not None
+            ]
+
+            if not valid_items:
+                continue  # 当前 batch 全部为 None，跳过
+
+            # 拆分回各自的字段
+            filtered_ids, filtered_texts, filtered_embeddings, filtered_metadatas = zip(*valid_items)
+
             try:
                 collection.add(
-                    documents=texts[start:end],
-                    embeddings=embeddings[start:end],
-                    metadatas=metadatas[start:end],
-                    ids=ids[start:end]
+                    documents=filtered_texts,
+                    embeddings=filtered_embeddings,
+                    metadatas=filtered_metadatas,
+                    ids=filtered_ids
                 )
             except Exception as e:
                 log.error(f"Failed to add batch {i + 1}: {e}")
