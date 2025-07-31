@@ -14,7 +14,7 @@ from langchain_core.documents import Document
 from collections import defaultdict
 import uuid
 from typing import List,Dict
-from agi.config import log
+from agi.config import log,CLUSTER_ALGO
 from agi.tasks.utils import get_last_message_text,split_think_content,graph_print
 from langchain.prompts import ChatPromptTemplate
 from agi.tasks.task_factory import (
@@ -50,7 +50,9 @@ summary_template = ChatPromptTemplate.from_messages(
 )
 
 class TextClusterer:
-    def __init__(self, hnsw_m=32, ef_search=128, distance_threshold=0.5):
+    def __init__(self, hnsw_m=32, ef_search=128, distance_threshold=0.5,
+                 min_cluster_size: int = 5,min_samples: int = 1,
+                 use_umap: bool = True,umap_dim: int = 5,):
         """
         初始化参数。
         Args:
@@ -63,10 +65,16 @@ class TextClusterer:
         """
         self.cluster_top_k_keywords = 10
         self.llm = TaskFactory.get_llm()
+
         self.hnsw_m = hnsw_m
         self.ef_search = ef_search
         self.distance_threshold = distance_threshold
         self.candidate_k = 5
+
+        self.min_cluster_size = min_cluster_size
+        self.min_samples = min_samples
+        self.use_umap = use_umap
+        self.umap_dim = umap_dim
         
 
     def summary(self,text:str):
@@ -87,13 +95,36 @@ class TextClusterer:
         combined_keywords = [(kw,weight) for kw, weight in sorted_keywords[:self.cluster_top_k_keywords]]
         return combined_keywords
 
-    def cluster(self, docs: List[Document], embeddings: np.ndarray) -> List[Document]:
-        """
-        使用带有动态质心更新的在线贪心算法对文档进行聚类。
-        """
-        if isinstance(embeddings, list):
-            embeddings = np.array(embeddings, dtype=np.float32)
+    def _reduce_dim(self, vectors: np.ndarray) -> np.ndarray:
+        # 先PCA降维至50维，再UMAP降至目标维度，减少大规模时的计算压力
+        pca = PCA(n_components=50, random_state=42)
+        pca_result = pca.fit_transform(vectors)
+        reducer = umap.UMAP(n_components=self.umap_dim, random_state=42)
+        return reducer.fit_transform(pca_result)
+    
+    def do_hdbscan(self,embeddings):
+        # 3. 标准化
+        scaler = StandardScaler()
+        embeddings_scaled = scaler.fit_transform(embeddings)
 
+        # 4. 降维
+        if self.use_umap:
+            embeddings_scaled = self._reduce_dim(embeddings_scaled)
+
+        # 5. 聚类
+        clusterer = hdbscan.HDBSCAN(
+            min_cluster_size=self.min_cluster_size,
+            min_samples=self.min_samples
+        )
+        labels = clusterer.fit_predict(embeddings_scaled)
+        
+        print(f"Clustering with hdbscan created {len(labels)} clusters.")
+
+        result = self.evaluate_clusters(embeddings_scaled,labels=labels)
+        print(f"evaluate_clusters:{result}")
+        return labels
+    
+    def do_dpmeans(self,embeddings):
         n_samples, dim = embeddings.shape
         if n_samples == 0:
             return []
@@ -176,6 +207,22 @@ class TextClusterer:
                 cluster_members_count[best_label] += 1
         
         print(f"Clustering with dynamic centroids created {next_cluster_label} clusters.")
+        result = self.evaluate_clusters(embeddings,labels=labels)
+        print(f"evaluate_clusters:{result}")
+        return labels
+
+    def cluster(self, docs: List[Document], embeddings: np.ndarray) -> List[Document]:
+        """
+        使用带有动态质心更新的在线贪心算法对文档进行聚类。
+        """
+        if isinstance(embeddings, list):
+            embeddings = np.array(embeddings, dtype=np.float32)
+
+        labels = None
+        if CLUSTER_ALGO = "hdbscan":
+            labels = self.do_hdbscan(embeddings)
+        else:
+            labels = self.do_dpmeans(embeddings)
 
         # 4. 根据最终标签聚合文档
         # 按标签分组，提高效率
@@ -226,8 +273,6 @@ class TextClusterer:
             )
             final_clusters.append(cluster_doc)
         print(f"total:{len(docs)},clusted:{clustered_docs_num},cluster num:{len(final_clusters)}")
-        result = self.evaluate_clusters(embeddings,labels=labels)
-        print(f"evaluate_clusters:{result}")
         return final_clusters
     
     def evaluate_clusters(self,
