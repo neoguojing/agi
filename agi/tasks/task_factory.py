@@ -87,9 +87,9 @@ class TaskFactory:
             model="bge-m3:latest",
             base_url=OLLAMA_API_BASE_URL,
         )
-    openai_embedding = OpenAIEmbeddings(
+    qwen_embedding = OllamaEmbeddings(
             model="qwen",
-            openai_api_base=EMBEDDING_BASE_URL
+            base_url=EMBEDDING_BASE_URL
         )
     
     task_creators = {
@@ -119,7 +119,7 @@ class TaskFactory:
     @staticmethod
     def get_embedding(model=RAG_EMBEDDING_MODEL):
         if model == "qwen":
-            return TaskFactory.openai_embedding
+            return TaskFactory.qwen_embedding
         return TaskFactory.ollama_embedding
     
     @staticmethod
