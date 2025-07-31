@@ -97,16 +97,16 @@ class TextClusterer:
 
     def _reduce_dim(self, vectors: np.ndarray) -> np.ndarray:
         # 先PCA降维至50维，再UMAP降至目标维度，减少大规模时的计算压力
-        pca = PCA(n_components=50, random_state=42)
-        pca_result = pca.fit_transform(vectors)
+        # pca = PCA(n_components=50, random_state=42)
+        # vectors = pca.fit_transform(vectors)
         reducer = umap.UMAP(
-                n_components=self.umap_dim,
-                n_neighbors=30,
-                min_dist=0.3,
+                n_components=50,
+                n_neighbors=10,
+                min_dist=0.1,
                 metric='cosine',
                 random_state=42
         )
-        return reducer.fit_transform(pca_result)
+        return reducer.fit_transform(vectors)
     
     def do_hdbscan(self,embeddings):
         normed_embeddings = embeddings.copy()
