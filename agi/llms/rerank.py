@@ -25,7 +25,7 @@ async def rerank_batch(
     query: str,
     documents: List[Document],
     model: str = RAG_EMBEDDING_MODEL,
-    top_k: Optional[int] = None
+    top_k: Optional[int] = 3
 ) -> List[RerankItem]:
     payload = {
         "query": query,
@@ -52,7 +52,7 @@ async def rerank_with_batching(
     query: str,
     documents: List[Document],
     endpoint: str = EMBEDDING_BASE_URL,
-    model: str = "qwen",
+    model: str = RAG_EMBEDDING_MODEL,
     top_k: Optional[int] = 3,
     batch_size: int = 50
 ) -> List[Document]:

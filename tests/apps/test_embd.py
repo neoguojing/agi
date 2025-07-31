@@ -2,7 +2,6 @@ import pytest
 from httpx import AsyncClient
 from agi.apps.embding.fast_api_embding import app  # 替换为你的实际模块路径
 from agi.tasks.task_factory import TaskFactory
-from langchain_openai import OpenAIEmbeddings
 from langchain_ollama import OllamaEmbeddings
 from agi.llms.rerank import rerank_with_batching
 
@@ -16,10 +15,21 @@ async def test_embding():
     client = TaskFactory.get_embedding()
     assert isinstance(client,OllamaEmbeddings)
     ret = client.embed_query("我爱北京天安门")
+    print(len(ret))
     assert isinstance(ret,list)
     ret1 = client.embed_query("good morning")
     assert isinstance(ret1,list)
     assert ret != ret1
+
+    client = TaskFactory.get_embedding(model="qwen")
+    assert isinstance(client,OllamaEmbeddings)
+    ret = client.embed_query("我爱北京天安门")
+    assert isinstance(ret,list)
+    ret1 = client.embed_query("good morning")
+    assert isinstance(ret1,list)
+    assert ret != ret1
+    print(len(ret))
+
 
 
 
