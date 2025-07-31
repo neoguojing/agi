@@ -119,8 +119,10 @@ class Reranker:
             pairs = [[q,d] for q, d in zip(queries, documents)]
             with torch.no_grad():
                 inputs = self.tokenizer(pairs, padding=True, truncation=True, return_tensors='pt', max_length=self.max_length)
-                scores = self.model(**inputs, return_dict=True).logits.view(-1, ).float()
-        print(scores)
+                print(inputs)
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                scores = self.model(**inputs, return_dict=True).logits.view(-1, ).float().tolist()
+        print(scores,type(scores))
         return scores
     
     def _unload(self):
