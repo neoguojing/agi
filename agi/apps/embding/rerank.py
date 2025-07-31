@@ -101,6 +101,7 @@ class Reranker:
         pairs = [self.format_instruction(instruction, q, d) for q, d in zip(queries, documents)]
         print(pairs)
         inputs = self.process_inputs(pairs)
+        print(inputs)
         scores = self.compute_logits(inputs)
         return scores
     
