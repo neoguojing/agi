@@ -118,7 +118,7 @@ class TextClusterer:
         )
         labels = clusterer.fit_predict(embeddings_scaled)
         
-        print(f"Clustering with hdbscan created {len(labels)} clusters.")
+        print(f"Clustering with hdbscan created {len(set(labels))} clusters.")
 
         result = self.evaluate_clusters(embeddings_scaled,labels=labels)
         print(f"evaluate_clusters:{result}")
