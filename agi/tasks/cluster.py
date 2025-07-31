@@ -52,7 +52,7 @@ summary_template = ChatPromptTemplate.from_messages(
 class TextClusterer:
     def __init__(self, hnsw_m=32, ef_search=128, distance_threshold=0.5,
                  min_cluster_size: int = 3,min_samples: int = 1,
-                 use_umap: bool = True,umap_dim: int = 10):
+                 use_umap: bool = True,umap_dim: int = 30):
         """
         初始化参数。
         Args:
@@ -99,7 +99,13 @@ class TextClusterer:
         # 先PCA降维至50维，再UMAP降至目标维度，减少大规模时的计算压力
         pca = PCA(n_components=50, random_state=42)
         pca_result = pca.fit_transform(vectors)
-        reducer = umap.UMAP(n_components=self.umap_dim, random_state=42)
+        reducer = umap.UMAP(
+                n_components=self.umap_dim,
+                n_neighbors=30,
+                min_dist=0.3,
+                metric='cosine',
+                random_state=42
+        )
         return reducer.fit_transform(pca_result)
     
     def do_hdbscan(self,embeddings):
