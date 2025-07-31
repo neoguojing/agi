@@ -54,3 +54,32 @@ async def test_rerank():
         assert isinstance(item["index"], int)
         assert isinstance(item["document"], str)
         assert isinstance(item["score"], float)
+
+    async with AsyncClient(app=app, base_url="http://test") as ac:
+        payload = {
+            "query": "什么是深度学习？",
+            "documents": [
+                "深度学习是机器学习的一个子集",
+                "法国的首都是巴黎",
+                "深度学习中会使用神经网络"
+            ],
+            "model": "qwen",
+            "top_k": 2
+        }
+        response = await ac.post("/v1/rerank", json=payload)
+
+    assert response.status_code == 200, response.text
+    data = response.json()
+    print(data)
+    # 验证 response 格式
+    assert data["object"] == "list"
+    assert isinstance(data["data"], list)
+    assert len(data["data"]) == 2  # 因为 top_k=2
+    assert data["model"] == "qwen"
+
+    # 验证每一项结构
+    for item in data["data"]:
+        assert item["object"] == "rerank"
+        assert isinstance(item["index"], int)
+        assert isinstance(item["document"], str)
+        assert isinstance(item["score"], float)

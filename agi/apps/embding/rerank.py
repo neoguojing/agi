@@ -75,7 +75,7 @@ class Reranker:
             inputs[key] = inputs[key].to(self.device)
         return inputs
     
-    def process_inputs(self, queries: list, documents: list):
+    def process_inputs1(self, queries: list, documents: list):
         """
         queries: List[str] 查询部分，比如 ["What is deep learning?"]
         documents: List[str] 对应文档内容，比如 ["Deep learning is a subset of machine learning."]
