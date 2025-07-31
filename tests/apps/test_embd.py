@@ -12,14 +12,14 @@ headers={
 
 @pytest.mark.asyncio
 async def test_embding():
-    client = TaskFactory.get_embedding()
+    client = TaskFactory.get_embedding(model="bge")
     assert isinstance(client,OllamaEmbeddings)
     ret = client.embed_query("我爱北京天安门")
-    print(len(ret))
     assert isinstance(ret,list)
     ret1 = client.embed_query("good morning")
     assert isinstance(ret1,list)
     assert ret != ret1
+    assert len(ret) == 1024
 
     client = TaskFactory.get_embedding(model="qwen")
     assert isinstance(client,OllamaEmbeddings)
@@ -28,7 +28,7 @@ async def test_embding():
     ret1 = client.embed_query("good morning")
     assert isinstance(ret1,list)
     assert ret != ret1
-    print(len(ret))
+    assert len(ret) == 1024
 
 
 
