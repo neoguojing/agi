@@ -3,11 +3,12 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from typing import List, Tuple
 import threading
 import time
-
+from agi.config import RAG_EMBEDDING_MODEL
 class Reranker:
     def __init__(self,model_path: str=None, timeout: int = 300, device=None, max_length=8192):
         self.device = device if device else ("cuda" if torch.cuda.is_available() else "cpu")
         self.model_path = model_path
+        self.model_name = RAG_EMBEDDING_MODEL
         self.timeout = timeout
         self.model = None
         self.tokenizer = None
@@ -32,7 +33,7 @@ class Reranker:
         self.prefix_tokens = None
         self.suffix_tokens = None
 
-    def get_model(self):
+    def get_model(self,model:str = RAG_EMBEDDING_MODEL):
         """访问模型，如果未加载则自动加载"""
         with self.lock:
             self.last_used = time.time()
@@ -82,7 +83,7 @@ class Reranker:
         outputs = self.model(**inputs)
         import pdb;pdb.set_trace()
         logits = outputs.logits[:, -1, :]
-        
+
         true_vector = logits[:, self.token_true_id]
         false_vector = logits[:, self.token_false_id]
         batch_scores = torch.stack([false_vector, true_vector], dim=1)

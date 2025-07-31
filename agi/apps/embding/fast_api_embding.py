@@ -19,7 +19,7 @@ ollama_embding = OllamaEmbeddings(
         )
 
 qwen_embding = QwenEmbedding(model_path=RAG_EMBEDDING_MODEL_PATH)
-rerank = Reranker(model_path=RAG_RERANK_MODEL_PATH)
+qwen_rerank = Reranker(model_path=RAG_RERANK_MODEL_PATH)
 
 # 请求体模型
 class OllamaEmbedRequest(BaseModel):
@@ -94,10 +94,10 @@ async def rerank_api(request: RerankRequest):
     if request.model == "qwen":
         queries = [request.query] * len(request.documents)
         print(queries)
-        scores = rerank.rerank(queries, request.documents)
+        scores = qwen_rerank.rerank(queries, request.documents)
     else:
         queries = [request.query] * len(request.documents)
-        scores = rerank.rerank(queries, request.documents)
+        scores = qwen_rerank.rerank(queries, request.documents)
 
     print(scores)
     # 排序 & 截取 top_n
