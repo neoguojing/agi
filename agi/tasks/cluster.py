@@ -52,7 +52,7 @@ summary_template = ChatPromptTemplate.from_messages(
 class TextClusterer:
     def __init__(self, hnsw_m=32, ef_search=128, distance_threshold=0.5,
                  min_cluster_size: int = 3,min_samples: int = 1,
-                 use_umap: bool = False,umap_dim: int = 10):
+                 use_umap: bool = True,umap_dim: int = 10):
         """
         初始化参数。
         Args:
