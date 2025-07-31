@@ -80,6 +80,7 @@ class Reranker:
         self.get_model()
 
         outputs = self.model(**inputs)
+        import pdb;pdb.set_trace()
         logits = outputs.logits[:, -1, :]
         # 解码预测的 token（logits 最大值的 token）
         predicted_ids = torch.argmax(logits, dim=-1)
