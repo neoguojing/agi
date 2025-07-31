@@ -146,7 +146,6 @@ class CollectionManager:
             ids = [doc.metadata.get("doc_id") for doc in documents]
             if ids is None:
                 ids = [str(uuid.uuid4()) for _ in documents]  # 每条文档生成唯一 id
-        import pdb;pdb.set_trace()
 
         # 异步并发生成嵌入（嵌套列表需要解包）
         if embeddings is None:

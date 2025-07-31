@@ -4,6 +4,10 @@ from sklearn.metrics import (
     davies_bouldin_score,
     calinski_harabasz_score,
 )
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+import hdbscan
+import umap
 import os
 import numpy as np
 from langchain_core.documents import Document

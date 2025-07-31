@@ -89,7 +89,6 @@ class Reranker:
     def compute_logits(self, inputs):
 
         outputs = self.model(**inputs)
-        import pdb;pdb.set_trace()
         logits = outputs.logits[:, -1, :]
 
         true_vector = logits[:, self.token_true_id]
