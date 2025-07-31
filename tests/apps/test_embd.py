@@ -43,7 +43,7 @@ async def test_rerank():
 
     assert response.status_code == 200, response.text
     data = response.json()
-
+    print(data)
     # 验证 response 格式
     assert data["object"] == "list"
     assert isinstance(data["data"], list)
