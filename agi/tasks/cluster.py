@@ -87,6 +87,7 @@ class TextClusterer:
         """
         使用带有动态质心更新的在线贪心算法对文档进行聚类。
         """
+        import pdb;pdb.set_trace()
         if isinstance(embeddings, list):
             embeddings = np.array(embeddings, dtype=np.float32)
 
@@ -95,10 +96,10 @@ class TextClusterer:
             return []
 
         # (可选但推荐) 随机打乱输入顺序，减轻顺序敏感性
-        indices = list(range(n_samples))
-        random.shuffle(indices)
-        docs = [docs[i] for i in indices]
-        embeddings = embeddings[indices, :]
+        # indices = list(range(n_samples))
+        # random.shuffle(indices)
+        # docs = [docs[i] for i in indices]
+        # embeddings = embeddings[indices, :]
 
         # 1. 归一化嵌入向量
         normed_embeddings = embeddings.copy()
