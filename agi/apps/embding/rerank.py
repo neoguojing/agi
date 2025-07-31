@@ -75,34 +75,6 @@ class Reranker:
             inputs[key] = inputs[key].to(self.device)
         return inputs
     
-    def process_inputs1(self, queries: list, documents: list):
-        """
-        queries: List[str] 查询部分，比如 ["What is deep learning?"]
-        documents: List[str] 对应文档内容，比如 ["Deep learning is a subset of machine learning."]
-        """
-        assert len(queries) == len(documents)
-
-        # 拼接完整字符串
-        texts = []
-        for q, doc in zip(queries, documents):
-            full_text = f"{self.prefix_str}{q}{self.suffix_str} {doc}"
-            texts.append(full_text)
-
-        # 调用 tokenizer，统一处理截断和 padding
-        inputs = self.tokenizer(
-            texts,
-            padding=True,            # 动态 pad 到最大长度
-            truncation=True,         # 自动截断超过 max_length 的文本
-            max_length=self.max_length,
-            return_tensors="pt",
-            return_attention_mask=True
-        )
-
-        # 转设备
-        inputs = {k: v.to(self.device) for k, v in inputs.items()}
-
-        return inputs
-    
     @torch.no_grad()
     def compute_logits(self, inputs):
         self.get_model()
@@ -114,6 +86,8 @@ class Reranker:
         batch_scores = torch.stack([false_vector, true_vector], dim=1)
         batch_scores = torch.nn.functional.log_softmax(batch_scores, dim=1)
         scores = batch_scores[:, 1].exp().tolist()
+        for i, input_id in enumerate(inputs["input_ids"]):
+            print(f"Pair {i}:", self.tokenizer.decode(input_id))
         return scores
 
     def rerank(self, queries, documents, instruction=None):
