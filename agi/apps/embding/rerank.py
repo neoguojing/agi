@@ -99,6 +99,7 @@ class Reranker:
         """
         assert len(queries) == len(documents), "Queries and documents must have the same length."
         pairs = [self.format_instruction(instruction, q, d) for q, d in zip(queries, documents)]
+        print(pairs)
         inputs = self.process_inputs(pairs)
         scores = self.compute_logits(inputs)
         return scores
