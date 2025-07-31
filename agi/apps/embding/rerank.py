@@ -81,13 +81,15 @@ class Reranker:
 
         outputs = self.model(**inputs)
         logits = outputs.logits[:, -1, :]
+        # 解码预测的 token（logits 最大值的 token）
+        predicted_ids = torch.argmax(logits, dim=-1)
+        predicted_tokens = [self.tokenizer.decode([token_id]) for token_id in predicted_ids]
+        print("Predicted tokens:", predicted_tokens)
         true_vector = logits[:, self.token_true_id]
         false_vector = logits[:, self.token_false_id]
         batch_scores = torch.stack([false_vector, true_vector], dim=1)
         batch_scores = torch.nn.functional.log_softmax(batch_scores, dim=1)
         scores = batch_scores[:, 1].exp().tolist()
-        for i, input_id in enumerate(inputs["input_ids"]):
-            print(f"Pair {i}:", self.tokenizer.decode(input_id))
         return scores
 
     def rerank(self, queries, documents, instruction=None):
