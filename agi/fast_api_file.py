@@ -7,6 +7,7 @@ from agi.tasks.db_builder import doc_db_as_subgraph
 from agi.utils.file_storage import default_file_service,default_storage
 from typing import Optional
 from agi.config import log
+import asyncio
 
 import uuid
 
@@ -51,13 +52,21 @@ async def save_file(
         # kmanager = TaskFactory.get_knowledge_manager()
         # param = {"filename" : file.filename}
         # await kmanager.store(collection_name,default_storage.to_local_path(unique_name),tenant=user_id,**param)
-        config={"configurable": {"conversation_id": str(uuid.uuid4()),
+        async def run_doc_db():
+            try:
+                config={"configurable": {"conversation_id": str(uuid.uuid4()),
                                  "thread_id": str(uuid.uuid4())}}
-        state = State()
-        state['user_id'] = user_id
-        state['collection_name'] = unique_name
-        state['file_path'] = default_storage.to_local_path(unique_name)
-        await doc_db_as_subgraph.ainvoke(state,config=config)
+                state = State()
+                state['user_id'] = user_id
+                state['collection_name'] = unique_name
+                state['file_path'] = default_storage.to_local_path(unique_name)
+                await doc_db_as_subgraph.ainvoke(state,config=config)
+            except Exception as e:
+                print(f"Error during ainvoke: {e}")
+
+        # 后台调度任务
+        asyncio.create_task(run_doc_db())
+
         
     return {
         "original_filename": file.filename,

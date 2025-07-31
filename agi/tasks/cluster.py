@@ -87,7 +87,6 @@ class TextClusterer:
         """
         使用带有动态质心更新的在线贪心算法对文档进行聚类。
         """
-        import pdb;pdb.set_trace()
         if isinstance(embeddings, list):
             embeddings = np.array(embeddings, dtype=np.float32)
 
