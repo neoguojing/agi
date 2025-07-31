@@ -71,7 +71,6 @@ class Reranker:
         return f"<Instruct>: {instruction}\n<Query>: {query}\n<Document>: {doc}"
 
     def process_inputs(self, pairs):
-        self.get_model()
         inputs = self.tokenizer(
             pairs,
             padding=False,
@@ -88,7 +87,6 @@ class Reranker:
     
     @torch.no_grad()
     def compute_logits(self, inputs):
-        self.get_model()
 
         outputs = self.model(**inputs)
         import pdb;pdb.set_trace()
@@ -101,7 +99,7 @@ class Reranker:
         scores = batch_scores[:, 1].exp().tolist()
         return scores
 
-    def rerank(self, queries, documents, instruction=None):
+    def rerank(self, queries, documents, model=RAG_EMBEDDING_MODEL,instruction=None):
         """
         输入：
             queries: List[str] 查询列表
@@ -112,7 +110,8 @@ class Reranker:
         """
         assert len(queries) == len(documents), "Queries and documents must have the same length."
         scores = None
-        if self.model_name == "qwen":
+        self.get_model(model)
+        if model == "qwen":
             pairs = [self.format_instruction(instruction, q, d) for q, d in zip(queries, documents)]
             inputs = self.process_inputs(pairs)
             scores = self.compute_logits(inputs)

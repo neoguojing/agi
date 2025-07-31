@@ -19,7 +19,7 @@ ollama_embding = OllamaEmbeddings(
         )
 
 qwen_embding = QwenEmbedding(model_path=RAG_EMBEDDING_MODEL_PATH)
-qwen_rerank = Reranker()
+rerank = Reranker()
 
 # 请求体模型
 class OllamaEmbedRequest(BaseModel):
@@ -90,14 +90,9 @@ async def rerank_api(request: RerankRequest):
         raise HTTPException(status_code=400, detail="Query and documents cannot be empty.")
     log.info(request)
     # 加载 reranker（比如你已有的 qwen_reranker, ollama_reranker）
-    scores = None
-    if request.model == "qwen":
-        queries = [request.query] * len(request.documents)
-        print(queries)
-        scores = qwen_rerank.rerank(queries, request.documents)
-    else:
-        queries = [request.query] * len(request.documents)
-        scores = qwen_rerank.rerank(queries, request.documents)
+    queries = [request.query] * len(request.documents)
+    print(queries)
+    scores = rerank.rerank(queries, request.documents,model=request.model)
 
     print(scores)
     # 排序 & 截取 top_n
