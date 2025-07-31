@@ -34,7 +34,7 @@ async def test_rerank():
                 "The capital of France is Paris.",
                 "Neural networks are used in deep learning models."
             ],
-            "model": "qwen",
+            "model": "bge",
             "top_k": 2
         }
         response = await ac.post("/v1/rerank", json=payload)
@@ -46,7 +46,7 @@ async def test_rerank():
     assert data["object"] == "list"
     assert isinstance(data["data"], list)
     assert len(data["data"]) == 2  # 因为 top_k=2
-    assert data["model"] == "qwen"
+    assert data["model"] == "bge"
 
     # 验证每一项结构
     for item in data["data"]:
