@@ -179,7 +179,7 @@ class CollectionManager:
                 continue  # 当前 batch 全部为 None，跳过
 
             # 拆分回各自的字段
-            filtered_ids, filtered_texts, filtered_embeddings, filtered_metadatas = zip(*valid_items)
+            filtered_ids, filtered_texts, filtered_embeddings, filtered_metadatas = map(list,zip(*valid_items))
             log.info(f"valid texts={len(filtered_texts)},metadatas={len(filtered_metadatas)},ids={len(ids)},embd={len(filtered_embeddings)}")
 
             try:
