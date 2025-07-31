@@ -219,7 +219,7 @@ class TextClusterer:
             embeddings = np.array(embeddings, dtype=np.float32)
 
         labels = None
-        if CLUSTER_ALGO = "hdbscan":
+        if CLUSTER_ALGO == "hdbscan":
             labels = self.do_hdbscan(embeddings)
         else:
             labels = self.do_dpmeans(embeddings)
