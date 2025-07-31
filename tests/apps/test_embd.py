@@ -36,7 +36,7 @@ async def test_rerank():
                 "The capital of France is Paris.",
                 "Neural networks are used in deep learning models."
             ],
-            "model": "bge-reranker-base",
+            "model": "qwen",
             "top_k": 2
         }
         response = await ac.post("/v1/rerank", json=payload)

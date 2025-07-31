@@ -94,7 +94,8 @@ async def rerank_api(request: RerankRequest):
         queries = [request.query] * len(request.documents)
         scores = rerank.rerank(queries, request.documents)
     else:
-        scores = rerank.rerank(request.query, request.documents)
+        queries = [request.query] * len(request.documents)
+        scores = rerank.rerank(queries, request.documents)
 
     # 排序 & 截取 top_n
     results = sorted(
