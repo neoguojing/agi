@@ -1,9 +1,11 @@
 import faiss
-from sklearn.cluster import KMeans
-from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.metrics import (
+    silhouette_score,
+    davies_bouldin_score,
+    calinski_harabasz_score,
+)
 import os
 import numpy as np
-from sklearn.decomposition import PCA
 from langchain_core.documents import Document
 from collections import defaultdict
 import uuid
@@ -173,9 +175,12 @@ class TextClusterer:
 
         # 4. 根据最终标签聚合文档
         # 按标签分组，提高效率
+        clustered_docs_num = 0
         clustered_indices: Dict[int, List[int]] = {}
         for i, label in enumerate(labels):
-            if label == -1: continue
+            if label == -1: 
+                continue
+            clustered_docs_num += 1
             if label not in clustered_indices:
                 clustered_indices[label] = []
             clustered_indices[label].append(i)
@@ -216,7 +221,65 @@ class TextClusterer:
                 }
             )
             final_clusters.append(cluster_doc)
-
+        print(f"total:{len(docs)},clusted:{clustered_docs_num},cluster num:{len(final_clusters)}")
+        result = self.evaluate_clusters(embeddings,labels=labels)
+        print(f"evaluate_clusters:{result}")
         return final_clusters
+    
+    def evaluate_clusters(self,
+        embeddings: np.ndarray,
+        labels: np.ndarray,
+        sample_size: int = 10000,
+        random_state: int = 42
+    ) -> Dict[str, float]:
+        """
+        对聚类结果做内部指标评估。
+
+        Args:
+            embeddings: (n_samples, n_features) 原始或降维后的嵌入矩阵，dtype=float32/64
+            labels:     (n_samples,) 每个样本的簇标签，-1（若有噪声簇）也会参与计算
+            sample_size: 最大采样数，防止大规模数据计算过慢。
+            random_state: 采样和轮廓系数的随机种子。
+
+        Returns:
+            dict:
+                silhouette    -- 轮廓系数（[-1,1]，越大越好）
+                davies_bouldin -- DB 指数（[0,∞)，越小越好）
+                calinski_harabasz -- CH 指数（[0,∞)，越大越好）
+        """
+        n_samples = labels.shape[0]
+        # 如果样本数过大，随机采样
+        if n_samples > sample_size:
+            rng = np.random.RandomState(random_state)
+            idx = rng.choice(n_samples, size=sample_size, replace=False)
+            emb_samp = embeddings[idx]
+            lab_samp = labels[idx]
+        else:
+            emb_samp = embeddings
+            lab_samp = labels
+
+        results = {}
+        # 轮廓系数需要至少 2 个簇，且每个簇至少 1 个样本
+        unique_labels = set(lab_samp)
+        if len(unique_labels) >= 2:
+            results["silhouette"] = silhouette_score(
+                emb_samp, lab_samp, metric="euclidean", random_state=random_state
+            )
+        else:
+            results["silhouette"] = float("nan")
+
+        # Davies–Bouldin 指数，同样至少 2 个簇
+        if len(unique_labels) >= 2:
+            results["davies_bouldin"] = davies_bouldin_score(emb_samp, lab_samp)
+        else:
+            results["davies_bouldin"] = float("nan")
+
+        # Calinski–Harabasz 指数，也需要至少 2 个簇
+        if len(unique_labels) >= 2:
+            results["calinski_harabasz"] = calinski_harabasz_score(emb_samp, lab_samp)
+        else:
+            results["calinski_harabasz"] = float("nan")
+
+        return results
 
 
