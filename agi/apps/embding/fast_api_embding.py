@@ -90,13 +90,16 @@ async def rerank_api(request: RerankRequest):
         raise HTTPException(status_code=400, detail="Query and documents cannot be empty.")
     log.info(request)
     # 加载 reranker（比如你已有的 qwen_reranker, ollama_reranker）
+    scores = None
     if request.model == "qwen":
         queries = [request.query] * len(request.documents)
+        print(queries)
         scores = rerank.rerank(queries, request.documents)
     else:
         queries = [request.query] * len(request.documents)
         scores = rerank.rerank(queries, request.documents)
 
+    print(scores)
     # 排序 & 截取 top_n
     results = sorted(
         zip(request.documents, scores),
