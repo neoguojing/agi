@@ -43,7 +43,6 @@ LLM_WITH_NO_THINKING = os.environ.get("LLM_WITH_NO_THINKING", "/no_think")
 # RAG_EMBEDDING_MODEL = os.environ.get("RAG_EMBEDDING_MODEL", "bge-m3:latest")
 RAG_EMBEDDING_MODEL = os.environ.get("RAG_EMBEDDING_MODEL", "bge") #qwen
 RAG_EMBEDDING_MODEL_PATH = os.getenv("RAG_EMBEDDING_MODEL_PATH", os.path.join(MODEL_PATH,"Qwen3-Embedding-0.6B"))
-RAG_RERANK_MODEL_PATH = os.getenv("RAG_RERANK_MODEL_PATH", os.path.join(MODEL_PATH,"Qwen3-Reranker-0.6B"))
 EMBEDDING_BASE_URL = os.getenv("EMBEDDING_BASE_URL", "http://localhost:8006")
 
 

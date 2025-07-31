@@ -2,7 +2,7 @@ from fastapi import FastAPI,HTTPException
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, List, Union,Required,Iterable
 from langchain_ollama import OllamaEmbeddings
-from agi.config import OLLAMA_API_BASE_URL,RAG_EMBEDDING_MODEL_PATH,RAG_RERANK_MODEL_PATH,log
+from agi.config import OLLAMA_API_BASE_URL,RAG_EMBEDDING_MODEL_PATH,log
 from agi.apps.embding.embding_model import QwenEmbedding
 from agi.apps.embding.rerank import Reranker
 import time
@@ -19,7 +19,7 @@ ollama_embding = OllamaEmbeddings(
         )
 
 qwen_embding = QwenEmbedding(model_path=RAG_EMBEDDING_MODEL_PATH)
-qwen_rerank = Reranker(model_path=RAG_RERANK_MODEL_PATH)
+qwen_rerank = Reranker()
 
 # 请求体模型
 class OllamaEmbedRequest(BaseModel):

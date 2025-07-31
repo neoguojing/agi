@@ -3,11 +3,11 @@ from transformers import AutoModelForCausalLM, AutoTokenizer,AutoModelForSequenc
 from typing import List, Tuple
 import threading
 import time
-from agi.config import RAG_EMBEDDING_MODEL
+import os
+from agi.config import RAG_EMBEDDING_MODEL,MODEL_PATH
 class Reranker:
-    def __init__(self,model_path: str=None, timeout: int = 300, device=None, max_length=8192):
+    def __init__(self,timeout: int = 300, device=None, max_length=8192):
         self.device = device if device else ("cuda" if torch.cuda.is_available() else "cpu")
-        self.model_path = model_path
         self.model_name = RAG_EMBEDDING_MODEL
         self.timeout = timeout
         self.model = None
@@ -49,11 +49,11 @@ class Reranker:
 
     def _load(self):
         if self.model_name == "qwen":
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, padding_side='left')
+            self.tokenizer = AutoTokenizer.from_pretrained(os.path.join(MODEL_PATH,"Qwen3-Reranker-0.6B"), padding_side='left')
             # self.model = AutoModelForCausalLM.from_pretrained(model_name).to(self.device).eval()
             # 如果需要使用加速或者混合精度，可以在这里解注释：
             self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_path, torch_dtype=torch.float16, attn_implementation="flash_attention_2"
+                os.path.join(MODEL_PATH,"Qwen3-Reranker-0.6B"), torch_dtype=torch.float16, attn_implementation="flash_attention_2"
             ).to(self.device).eval()
 
             self.token_false_id = self.tokenizer.convert_tokens_to_ids("no")
@@ -62,8 +62,8 @@ class Reranker:
             self.prefix_tokens = self.tokenizer.encode(self.prefix, add_special_tokens=False)
             self.suffix_tokens = self.tokenizer.encode(self.suffix, add_special_tokens=False)
         else:
-            self.tokenizer = AutoTokenizer.from_pretrained('BAAI/bge-reranker-v2-m3')
-            self.model = AutoModelForSequenceClassification.from_pretrained('BAAI/bge-reranker-v2-m3').to(self.device).eval()
+            self.tokenizer = AutoTokenizer.from_pretrained(os.path.join(MODEL_PATH,"bge-reranker-v2-m3"))
+            self.model = AutoModelForSequenceClassification.from_pretrained(os.path.join(MODEL_PATH,"bge-reranker-v2-m3")).to(self.device).eval()
 
     def format_instruction(self, instruction: str, query: str, doc: str) -> str:
         if not instruction:
@@ -125,7 +125,7 @@ class Reranker:
         return scores
     
     def _unload(self):
-        print(f"[Model] Unloading model from {self.model_path}")
+        print(f"[Model] Unloading model {self.model_name}")
         del self.model
         self.model = None
         self.tokenizer = None
