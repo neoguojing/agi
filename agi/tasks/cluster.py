@@ -103,24 +103,26 @@ class TextClusterer:
         return reducer.fit_transform(pca_result)
     
     def do_hdbscan(self,embeddings):
+        normed_embeddings = embeddings.copy()
+
         # 3. 标准化
         # scaler = StandardScaler()
-        # embeddings_scaled = scaler.fit_transform(embeddings)
+        # normed_embeddings = scaler.fit_transform(normed_embeddings)
 
         # 4. 降维
         if self.use_umap:
-            embeddings_scaled = self._reduce_dim(embeddings_scaled)
+            normed_embeddings = self._reduce_dim(normed_embeddings)
 
         # 5. 聚类
         clusterer = hdbscan.HDBSCAN(
             min_cluster_size=self.min_cluster_size,
             min_samples=self.min_samples
         )
-        labels = clusterer.fit_predict(embeddings_scaled)
+        labels = clusterer.fit_predict(normed_embeddings)
         
         print(f"Clustering with hdbscan created {len(set(labels))} clusters.")
 
-        result = self.evaluate_clusters(embeddings_scaled,labels=labels)
+        result = self.evaluate_clusters(normed_embeddings,labels=labels)
         print(f"evaluate_clusters:{result}")
         return labels
     
