@@ -104,8 +104,8 @@ class TextClusterer:
     
     def do_hdbscan(self,embeddings):
         # 3. 标准化
-        scaler = StandardScaler()
-        embeddings_scaled = scaler.fit_transform(embeddings)
+        # scaler = StandardScaler()
+        # embeddings_scaled = scaler.fit_transform(embeddings)
 
         # 4. 降维
         if self.use_umap:
