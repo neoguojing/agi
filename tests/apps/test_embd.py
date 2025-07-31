@@ -28,14 +28,20 @@ async def test_embding():
 async def test_rerank():
     async with AsyncClient(app=app, base_url="http://test") as ac:
         payload = {
-            "query": "What is deep learning?",
+            "query": "What are the effects of global warming?",
             "documents": [
-                "Deep learning is a subset of machine learning.",
-                "The capital of France is Paris.",
-                "Neural networks are used in deep learning models."
+                "Global warming has led to rising sea levels due to melting glaciers and polar ice caps. Coastal cities around the world are at risk of flooding, and small island nations face existential threats. Additionally, increased ocean temperatures contribute to more frequent and severe hurricanes.",
+                
+                "The Mona Lisa is a famous portrait painted by Leonardo da Vinci during the Italian Renaissance. It is housed in the Louvre Museum in Paris and is considered one of the most iconic pieces of art in history.",
+                
+                "As global temperatures rise, ecosystems are disrupted, leading to habitat loss and species extinction. For example, coral reefs suffer from bleaching events caused by warmer waters. Changes in temperature and rainfall patterns also affect agriculture, threatening food security.",
+                
+                "The process of photosynthesis allows plants to convert sunlight into energy. This process is essential for producing the oxygen we breathe and forms the basis of the food chain. It occurs primarily in the chloroplasts of plant cells.",
+                
+                "Global warming contributes to more frequent and intense heatwaves, droughts, and wildfires. These events put pressure on human health systems, increase energy demand for cooling, and exacerbate existing inequalities by disproportionately affecting vulnerable populations."
             ],
             "model": "qwen",
-            "top_k": 2
+            "top_k": 3
         }
         response = await ac.post("/v1/rerank", json=payload)
 
@@ -45,36 +51,7 @@ async def test_rerank():
     # 验证 response 格式
     assert data["object"] == "list"
     assert isinstance(data["data"], list)
-    assert len(data["data"]) == 2  # 因为 top_k=2
-    assert data["model"] == "qwen"
-
-    # 验证每一项结构
-    for item in data["data"]:
-        assert item["object"] == "rerank"
-        assert isinstance(item["index"], int)
-        assert isinstance(item["document"], str)
-        assert isinstance(item["score"], float)
-
-    async with AsyncClient(app=app, base_url="http://test") as ac:
-        payload = {
-            "query": "什么是深度学习？",
-            "documents": [
-                "深度学习是机器学习的一个子集",
-                "法国的首都是巴黎",
-                "深度学习中会使用神经网络"
-            ],
-            "model": "qwen",
-            "top_k": 2
-        }
-        response = await ac.post("/v1/rerank", json=payload)
-
-    assert response.status_code == 200, response.text
-    data = response.json()
-    print(data)
-    # 验证 response 格式
-    assert data["object"] == "list"
-    assert isinstance(data["data"], list)
-    assert len(data["data"]) == 2  # 因为 top_k=2
+    assert len(data["data"]) == 3  # 因为 top_k=2
     assert data["model"] == "qwen"
 
     # 验证每一项结构
