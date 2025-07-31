@@ -82,10 +82,7 @@ class Reranker:
         outputs = self.model(**inputs)
         import pdb;pdb.set_trace()
         logits = outputs.logits[:, -1, :]
-        # 解码预测的 token（logits 最大值的 token）
-        predicted_ids = torch.argmax(logits, dim=-1)
-        predicted_tokens = [self.tokenizer.decode([token_id]) for token_id in predicted_ids]
-        print("Predicted tokens:", predicted_tokens)
+        
         true_vector = logits[:, self.token_true_id]
         false_vector = logits[:, self.token_false_id]
         batch_scores = torch.stack([false_vector, true_vector], dim=1)
