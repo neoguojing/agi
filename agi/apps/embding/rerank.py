@@ -1,5 +1,5 @@
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer,AutoModelForSequenceClassification
 from typing import List, Tuple
 import threading
 import time
@@ -38,22 +38,32 @@ class Reranker:
         with self.lock:
             self.last_used = time.time()
             if self.model is None:
+                self.model_name = model
                 self._load()
+            else:
+                if model != self.model_name:
+                    self._unload()
+                    self.model_name = model
+                    self._load()
             return self.model
 
     def _load(self):
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, padding_side='left')
-        # self.model = AutoModelForCausalLM.from_pretrained(model_name).to(self.device).eval()
-        # 如果需要使用加速或者混合精度，可以在这里解注释：
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_path, torch_dtype=torch.float16, attn_implementation="flash_attention_2"
-        ).to(self.device).eval()
+        if self.model_name == "qwen":
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, padding_side='left')
+            # self.model = AutoModelForCausalLM.from_pretrained(model_name).to(self.device).eval()
+            # 如果需要使用加速或者混合精度，可以在这里解注释：
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.model_path, torch_dtype=torch.float16, attn_implementation="flash_attention_2"
+            ).to(self.device).eval()
 
-        self.token_false_id = self.tokenizer.convert_tokens_to_ids("no")
-        self.token_true_id = self.tokenizer.convert_tokens_to_ids("yes")
+            self.token_false_id = self.tokenizer.convert_tokens_to_ids("no")
+            self.token_true_id = self.tokenizer.convert_tokens_to_ids("yes")
 
-        self.prefix_tokens = self.tokenizer.encode(self.prefix, add_special_tokens=False)
-        self.suffix_tokens = self.tokenizer.encode(self.suffix, add_special_tokens=False)
+            self.prefix_tokens = self.tokenizer.encode(self.prefix, add_special_tokens=False)
+            self.suffix_tokens = self.tokenizer.encode(self.suffix, add_special_tokens=False)
+        else:
+            self.tokenizer = AutoTokenizer.from_pretrained('BAAI/bge-reranker-v2-m3')
+            self.model = AutoModelForSequenceClassification.from_pretrained('BAAI/bge-reranker-v2-m3').to(self.device).eval()
 
     def format_instruction(self, instruction: str, query: str, doc: str) -> str:
         if not instruction:
@@ -101,55 +111,18 @@ class Reranker:
             scores: List[float] 每个query-doc对的相关度分数，范围0~1
         """
         assert len(queries) == len(documents), "Queries and documents must have the same length."
-        pairs = [self.format_instruction(instruction, q, d) for q, d in zip(queries, documents)]
-        print(pairs)
-        inputs = self.process_inputs(pairs)
-        print(inputs)
-        scores = self.compute_logits(inputs)
-        return scores
-    
-    def rerank_topk(
-        self,
-        queries: List[str],
-        candidates: List[List[str]],
-        instruction: str = None,
-        top_k: int = 3
-    ) -> List[List[Tuple[str, float]]]:
-        """
-        对每个 query 对应的候选文档列表做 rerank，返回按分数排序的 Top-k 结果。
-        
-        输入：
-            queries: List[str]，多个查询
-            candidates: List[List[str]]，与 queries 对应的候选文档列表
-            instruction: rerank任务描述，可选
-            top_k: 返回每个query的top_k条结果
-
-        返回：
-            List[List[(文档, 分数)]]，每个query对应的top_k个文档及其分数
-        """
-        assert len(queries) == len(candidates), "Queries and candidates length mismatch."
-
-        all_results = []
-        for query, docs in zip(queries, candidates):
-            if not docs:
-                all_results.append([])
-                continue
-
-            # 构建格式化输入对
-            pairs = [self.format_instruction(instruction, query, doc) for doc in docs]
+        scores = None
+        if self.model_name == "qwen":
+            pairs = [self.format_instruction(instruction, q, d) for q, d in zip(queries, documents)]
             inputs = self.process_inputs(pairs)
             scores = self.compute_logits(inputs)
-
-            # 添加原始索引
-            indexed_docs = list(enumerate(docs))  # [(0, doc0), (1, doc1), ...]
-            scored_docs = [(idx, doc, score) for (idx, doc), score in zip(indexed_docs, scores)]
-
-            # 排序并取 top-k
-            sorted_docs = sorted(scored_docs, key=lambda x: x[2], reverse=True)
-            top_docs = sorted_docs[:top_k]
-            all_results.append(top_docs)
-
-        return all_results
+        else:
+            pairs = [[q,d] for q, d in zip(queries, documents)]
+            with torch.no_grad():
+                inputs = self.tokenizer(pairs, padding=True, truncation=True, return_tensors='pt', max_length=self.max_length)
+                scores = self.model(**inputs, return_dict=True).logits.view(-1, ).float()
+        print(scores)
+        return scores
     
     def _unload(self):
         print(f"[Model] Unloading model from {self.model_path}")

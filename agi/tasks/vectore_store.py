@@ -1,10 +1,10 @@
 import chromadb
 from chromadb import Settings
-from chromadb.utils.embedding_functions.openai_embedding_function import OpenAIEmbeddingFunction
+from chromadb.utils.embedding_functions.ollama_embedding_function import OllamaEmbeddingFunction
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from agi.utils.nlp import TextProcessor
-from agi.config import log,EMBEDDING_BASE_URL,API_KEY,RAG_EMBEDDING_MODEL
+from agi.config import log,EMBEDDING_BASE_URL,RAG_EMBEDDING_MODEL,OLLAMA_API_BASE_URL
 from typing import List
 import asyncio
 import uuid
@@ -21,7 +21,8 @@ class CollectionManager:
 
         self.text_proc = TextProcessor()
         
-        self.openai_ef = OpenAIEmbeddingFunction(model_name="qwen",api_base=EMBEDDING_BASE_URL,api_key=API_KEY)
+        self.qwen_ef = OllamaEmbeddingFunction(model_name="qwen",url=EMBEDDING_BASE_URL)
+        self.ollama_ef = OllamaEmbeddingFunction(model_name="bge-m3:latest",url=OLLAMA_API_BASE_URL)
         self.settings = Settings(
             chroma_api_impl="chromadb.api.segment.SegmentAPI",
             is_persistent=True,
@@ -68,8 +69,11 @@ class CollectionManager:
     
     def get_or_create_collection(self, collection_name,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE):
         """Get or create a collection by name."""
-        if RAG_EMBEDDING_MODEL:
-            return self.client(tenant,database).get_or_create_collection(name=collection_name,embedding_function=self.openai_ef)
+        if RAG_EMBEDDING_MODEL == "qwen":
+            return self.client(tenant,database).get_or_create_collection(name=collection_name,embedding_function=self.qwen_ef)
+        elif RAG_EMBEDDING_MODEL == "bge":
+            return self.client(tenant,database).get_or_create_collection(name=collection_name,embedding_function=self.ollama_ef)
+
         return self.client(tenant,database).get_or_create_collection(name=collection_name)
       
 

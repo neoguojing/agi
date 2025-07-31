@@ -2,7 +2,7 @@ import asyncio
 from typing import List, Optional
 import httpx
 from langchain_core.documents import Document
-from agi.config import EMBEDDING_BASE_URL
+from agi.config import EMBEDDING_BASE_URL,RAG_EMBEDDING_MODEL
 from urllib.parse import urljoin
 class RerankItem:
     def __init__(self, object: str, index: int, document: str, score: float):
@@ -24,7 +24,7 @@ async def rerank_batch(
     endpoint: str,
     query: str,
     documents: List[Document],
-    model: str = "bge-reranker-base",
+    model: str = RAG_EMBEDDING_MODEL,
     top_k: Optional[int] = None
 ) -> List[RerankItem]:
     payload = {
@@ -33,7 +33,7 @@ async def rerank_batch(
         "model": model,
         "top_k": top_k
     }
-    endpoint = urljoin(endpoint,"rerank")
+    endpoint = urljoin(endpoint,"/api/embed")
     resp = await client.post(endpoint, json=payload)
     resp.raise_for_status()
     result = resp.json()
