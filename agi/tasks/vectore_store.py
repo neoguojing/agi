@@ -180,7 +180,7 @@ class CollectionManager:
 
             # 拆分回各自的字段
             filtered_ids, filtered_texts, filtered_embeddings, filtered_metadatas = map(list,zip(*valid_items))
-            log.info(f"valid texts={len(filtered_texts)},metadatas={len(filtered_metadatas)},ids={len(ids)},embd={len(filtered_embeddings)}")
+            log.info(f"valid texts={len(filtered_texts)},metadatas={len(filtered_metadatas)},ids={len(filtered_ids)},embd={len(filtered_embeddings)}")
 
             try:
                 collection.add(

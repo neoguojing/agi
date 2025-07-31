@@ -33,7 +33,7 @@ async def rerank_batch(
         "model": model,
         "top_k": top_k
     }
-    endpoint = urljoin(endpoint,"/api/embed")
+    endpoint = urljoin(endpoint,"/v1/rerank")
     resp = await client.post(endpoint, json=payload)
     resp.raise_for_status()
     result = resp.json()

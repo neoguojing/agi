@@ -213,7 +213,7 @@ class TextClusterer:
                 metadata={
                     "doc_id": cluster_id,
                     "cluster_id": cluster_id,
-                    "label": label,
+                    "label": int(label),
                     "related_docs": related_doc_ids,
                     "source": source_file,
                     "keywords": self.combined_keywords(all_keywords),
