@@ -5,7 +5,7 @@ from langchain_ollama import OllamaEmbeddings
 from agi.config import OLLAMA_API_BASE_URL,RAG_EMBEDDING_MODEL_PATH,RAG_RERANK_MODEL_PATH,log
 from agi.apps.embding.embding_model import QwenEmbedding
 from agi.apps.embding.rerank import Reranker
-
+import time
 app = FastAPI(
     title="AGI embding API",
     description="兼容 OpenAI API 的 AGI 接口",
@@ -21,41 +21,50 @@ ollama_embding = OllamaEmbeddings(
 qwen_embding = QwenEmbedding(model_path=RAG_EMBEDDING_MODEL_PATH)
 rerank = Reranker(model_path=RAG_RERANK_MODEL_PATH)
 
-# 定义请求体模型
-class EmbeddingRequest(BaseModel):
-    input: Union[str, List[str], Iterable[int], Iterable[Iterable[int]]]
-    model: Optional[str] = "qwen"
-    dimensions: Optional[int] = 1024
-    encoding_format: Optional[Literal["float", "base64"]]
-    user: Optional[str] = "default"
+# 请求体模型
+class OllamaEmbedRequest(BaseModel):
+    model: str
+    input: Union[str, List[str]]
+    truncate: Optional[bool] = True
+    options: Optional[dict] = None
+    keep_alive: Optional[str] = "5m"
 
-@app.post("/v1/embeddings",summary="文本向量")
-async def get_embedding(request: EmbeddingRequest):
-    log.info(request)
+# 响应体模型
+class OllamaEmbedResponse(BaseModel):
+    model: str
+    embeddings: List[List[float]]
+    total_duration: Optional[int] = 0
+    load_duration: Optional[int] = 0
+    prompt_eval_count: Optional[int] = 0
 
-    if not request.input:
-        raise HTTPException(status_code=400, detail="Text cannot be empty.")
-    # 生成嵌入向量
-    embedding = None
-    if request.model == "qwen":
-        embedding = qwen_embding.embed_query(request.input,request.dimensions)
-    else:
-        embedding = ollama_embding.embed_query(request.input)
-    return {
-        "object": "list",
-        "data": [
-            {
-            "object": "embedding",
-            "embedding": embedding,
-            "index": 0
-            }
-        ],
-        "model": "bge-m3",
-        "usage": {
-            "prompt_tokens": 0,
-            "total_tokens": 0
-        }
-    }
+# 接口定义
+@app.post("/api/embed", summary="Ollama-compatible embedding API", response_model=OllamaEmbedResponse)
+async def embed(request: OllamaEmbedRequest):
+    log.info(f"Received embed request: {request}")
+
+    start_time = time.time()
+
+    # 准备输入
+    inputs = request.input if isinstance(request.input, list) else [request.input]
+
+    # 加载嵌入模型（可记录 load_duration）
+    try:
+        if request.model.lower() == "qwen":
+            embeddings = [qwen_embding.embed_query(text, 1024) for text in inputs]
+        else:
+            embeddings = [ollama_embding.embed_query(text) for text in inputs]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Embedding error: {str(e)}")
+
+    total_duration = int((time.time() - start_time) * 1_000_000)  # 微秒
+
+    return OllamaEmbedResponse(
+        model=request.model,
+        embeddings=embeddings,
+        total_duration=total_duration,
+        load_duration=total_duration,
+        prompt_eval_count=len(inputs)
+    )
 
 
 class RerankItem(BaseModel):
