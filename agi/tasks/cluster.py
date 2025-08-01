@@ -21,6 +21,9 @@ from agi.tasks.task_factory import (
     TaskFactory
 )
 import random
+from skopt import gp_minimize
+from skopt.space import Integer, Real, Categorical
+from skopt.utils import use_named_args
 summary_prompt = """
 You are an expert text analyst. Given any long, repetitive, or log-style input in a human language, generate a concise, factual summary in exactly three sentences, following these rules:
 
@@ -84,6 +87,62 @@ class TextClusterer:
 
         return result
 
+    def evaluate_clusters(self,
+        embeddings: np.ndarray,
+        labels: np.ndarray,
+        sample_size: int = 10000,
+        random_state: int = 42
+    ) -> Dict[str, float]:
+        """
+        对聚类结果做内部指标评估。
+
+        Args:
+            embeddings: (n_samples, n_features) 原始或降维后的嵌入矩阵，dtype=float32/64
+            labels:     (n_samples,) 每个样本的簇标签，-1（若有噪声簇）也会参与计算
+            sample_size: 最大采样数，防止大规模数据计算过慢。
+            random_state: 采样和轮廓系数的随机种子。
+
+        Returns:
+            dict:
+                silhouette    -- 轮廓系数（[-1,1]，越大越好）
+                davies_bouldin -- DB 指数（[0,∞)，越小越好）
+                calinski_harabasz -- CH 指数（[0,∞)，越大越好）
+        """
+        n_samples = labels.shape[0]
+        # 如果样本数过大，随机采样
+        if n_samples > sample_size:
+            rng = np.random.RandomState(random_state)
+            idx = rng.choice(n_samples, size=sample_size, replace=False)
+            emb_samp = embeddings[idx]
+            lab_samp = labels[idx]
+        else:
+            emb_samp = embeddings
+            lab_samp = labels
+
+        results = {}
+        # 轮廓系数需要至少 2 个簇，且每个簇至少 1 个样本
+        unique_labels = set(lab_samp)
+        if len(unique_labels) >= 2:
+            results["silhouette"] = silhouette_score(
+                emb_samp, lab_samp, metric="euclidean", random_state=random_state
+            )
+        else:
+            results["silhouette"] = float("nan")
+
+        # Davies–Bouldin 指数，同样至少 2 个簇
+        if len(unique_labels) >= 2:
+            results["davies_bouldin"] = davies_bouldin_score(emb_samp, lab_samp)
+        else:
+            results["davies_bouldin"] = float("nan")
+
+        # Calinski–Harabasz 指数，也需要至少 2 个簇
+        if len(unique_labels) >= 2:
+            results["calinski_harabasz"] = calinski_harabasz_score(emb_samp, lab_samp)
+        else:
+            results["calinski_harabasz"] = float("nan")
+        score = results["silhouette"] - results["davies_bouldin"] * 0.2 + results["calinski_harabasz"] * 0.001
+        return results,score
+    
     def combined_keywords(self,all_keywords:list):
         # 3.3 加权统计关键词
         keyword_weights = defaultdict(float)
@@ -128,8 +187,8 @@ class TextClusterer:
         
         print(f"Clustering with hdbscan created {len(set(labels))} clusters.")
 
-        result = self.evaluate_clusters(normed_embeddings,labels=labels)
-        print(f"evaluate_clusters:{result}")
+        result,score = self.evaluate_clusters(normed_embeddings,labels=labels)
+        print(f"evaluate_clusters:{result},{score}")
         return labels
     
     def do_dpmeans(self,embeddings):
@@ -215,8 +274,8 @@ class TextClusterer:
                 cluster_members_count[best_label] += 1
         
         print(f"Clustering with dynamic centroids created {next_cluster_label} clusters.")
-        result = self.evaluate_clusters(embeddings,labels=labels)
-        print(f"evaluate_clusters:{result}")
+        result,score = self.evaluate_clusters(embeddings,labels=labels)
+        print(f"evaluate_clusters:{result},{score}")
         return labels
 
     def cluster(self, docs: List[Document], embeddings: np.ndarray) -> List[Document]:
@@ -283,60 +342,36 @@ class TextClusterer:
         print(f"total:{len(docs)},clusted:{clustered_docs_num},cluster num:{len(final_clusters)}")
         return final_clusters
     
-    def evaluate_clusters(self,
-        embeddings: np.ndarray,
-        labels: np.ndarray,
-        sample_size: int = 10000,
-        random_state: int = 42
-    ) -> Dict[str, float]:
-        """
-        对聚类结果做内部指标评估。
+    def train(self,embeddings):
+        # 定义搜索空间
+        search_space = [
+            Integer(2, 20, name='min_cluster_size'),
+            Integer(1, 10, name='min_samples'),
+            Categorical([True, False], name='use_umap'),
+            Integer(5, 200, name='umap_dim'),
+        ]
 
-        Args:
-            embeddings: (n_samples, n_features) 原始或降维后的嵌入矩阵，dtype=float32/64
-            labels:     (n_samples,) 每个样本的簇标签，-1（若有噪声簇）也会参与计算
-            sample_size: 最大采样数，防止大规模数据计算过慢。
-            random_state: 采样和轮廓系数的随机种子。
+        # 假设你有嵌入数据 `embeddings`，和对应的清洗文本列表
+        # embeddings: np.ndarray
+        # filtered_texts: List[str]
 
-        Returns:
-            dict:
-                silhouette    -- 轮廓系数（[-1,1]，越大越好）
-                davies_bouldin -- DB 指数（[0,∞)，越小越好）
-                calinski_harabasz -- CH 指数（[0,∞)，越大越好）
-        """
-        n_samples = labels.shape[0]
-        # 如果样本数过大，随机采样
-        if n_samples > sample_size:
-            rng = np.random.RandomState(random_state)
-            idx = rng.choice(n_samples, size=sample_size, replace=False)
-            emb_samp = embeddings[idx]
-            lab_samp = labels[idx]
-        else:
-            emb_samp = embeddings
-            lab_samp = labels
+        @use_named_args(search_space)
+        def objective(**params):
+            print(f"Trying: {params}")
+            clusterer = TextClusterer(**params)
+            try:
+                labels = clusterer.do_hdbscan(embeddings)
+                _, score = clusterer.evaluate_clusters(embeddings, labels)
+                return -score  # skopt 最小化目标，因此我们取负
+            except Exception as e:
+                print(f"Error: {e}")
+                return 1e6  # 失败时返回极大值避免
 
-        results = {}
-        # 轮廓系数需要至少 2 个簇，且每个簇至少 1 个样本
-        unique_labels = set(lab_samp)
-        if len(unique_labels) >= 2:
-            results["silhouette"] = silhouette_score(
-                emb_samp, lab_samp, metric="euclidean", random_state=random_state
-            )
-        else:
-            results["silhouette"] = float("nan")
+        # 运行优化
+        res = gp_minimize(objective, search_space, n_calls=30, random_state=42)
 
-        # Davies–Bouldin 指数，同样至少 2 个簇
-        if len(unique_labels) >= 2:
-            results["davies_bouldin"] = davies_bouldin_score(emb_samp, lab_samp)
-        else:
-            results["davies_bouldin"] = float("nan")
-
-        # Calinski–Harabasz 指数，也需要至少 2 个簇
-        if len(unique_labels) >= 2:
-            results["calinski_harabasz"] = calinski_harabasz_score(emb_samp, lab_samp)
-        else:
-            results["calinski_harabasz"] = float("nan")
-
-        return results
+        # 最佳参数和分数
+        print(f"Best parameters: {res.x}")
+        print(f"Best score: {-res.fun}")
 
 

@@ -20,4 +20,5 @@ lxml==5.4.0
 spacy==3.8.2
 faiss-gpu-cu12==1.11.0
 scikit-learn==1.6.1
+scikit-optimize==0.10.2
 
