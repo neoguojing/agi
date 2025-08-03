@@ -80,6 +80,8 @@ class State(AgentState):
     embds: list[list[float]]
     clusters: list[Document]
     collection_name: str
+    do_train: bool  # 是否需要训练
+    train_results: dict[str, any]  # 用于存储训练结果
 
     auto_decide_result: str
     status: str

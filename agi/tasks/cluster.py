@@ -13,7 +13,7 @@ import numpy as np
 from langchain_core.documents import Document
 from collections import defaultdict
 import uuid
-from typing import List,Dict
+from typing import List,Dict,Optional
 from agi.config import log,CLUSTER_ALGO
 from agi.tasks.utils import get_last_message_text,split_think_content,graph_print
 from langchain.prompts import ChatPromptTemplate
@@ -54,8 +54,8 @@ summary_template = ChatPromptTemplate.from_messages(
 
 class TextClusterer:
     def __init__(self, hnsw_m=32, ef_search=128, distance_threshold=0.5,
-                 min_cluster_size: int = 3,min_samples: int = 1,
-                 use_umap: bool = True,umap_dim: int = 50):
+                 min_cluster_size: int = 2,min_samples: int = 6,
+                 use_umap: bool = True,umap_dim: int = 15,umap_n_neighbors: int = 10,umap_min_dist: float = 0.1):
         """
         初始化参数。
         Args:
@@ -78,6 +78,8 @@ class TextClusterer:
         self.min_samples = min_samples
         self.use_umap = use_umap
         self.umap_dim = umap_dim
+        self.umap_n_neighbors = umap_n_neighbors
+        self.umap_min_dist = umap_min_dist
         
 
     def summary(self,text:str):
@@ -87,29 +89,45 @@ class TextClusterer:
 
         return result
 
+    def auto_cluster_penalty(self,n_clusters: int, n_samples: int, 
+                         base_penalty: float = 1.0,
+                         penalty_power: float = 0.5) -> float:
+        """
+        根据聚类数量和样本数量自适应计算聚类惩罚权重。
+        """
+        if n_clusters <= 1 or n_samples <= 1:
+            return 0.0  # 无需惩罚
+        ratio = n_clusters / n_samples
+        penalty = base_penalty * (ratio ** penalty_power)
+        return penalty
+
     def evaluate_clusters(self,
         embeddings: np.ndarray,
         labels: np.ndarray,
         sample_size: int = 10000,
-        random_state: int = 42
+        random_state: int = 42,
+        cluster_penalty: float = None,  # 新增参数，控制惩罚权重
     ) -> Dict[str, float]:
         """
-        对聚类结果做内部指标评估。
+        对聚类结果做内部指标评估，并综合聚类数量考虑最终评分。
 
         Args:
-            embeddings: (n_samples, n_features) 原始或降维后的嵌入矩阵，dtype=float32/64
-            labels:     (n_samples,) 每个样本的簇标签，-1（若有噪声簇）也会参与计算
-            sample_size: 最大采样数，防止大规模数据计算过慢。
-            random_state: 采样和轮廓系数的随机种子。
+            embeddings: (n_samples, n_features) 原始或降维后的嵌入矩阵
+            labels:     (n_samples,) 每个样本的簇标签
+            sample_size: 最大采样数，避免大规模数据计算过慢
+            random_state: 随机种子
+            cluster_penalty: 聚类数量惩罚权重
 
         Returns:
             dict:
-                silhouette    -- 轮廓系数（[-1,1]，越大越好）
-                davies_bouldin -- DB 指数（[0,∞)，越小越好）
-                calinski_harabasz -- CH 指数（[0,∞)，越大越好）
+                silhouette
+                davies_bouldin
+                calinski_harabasz
+                n_clusters
+                score -- 综合评分
         """
         n_samples = labels.shape[0]
-        # 如果样本数过大，随机采样
+
         if n_samples > sample_size:
             rng = np.random.RandomState(random_state)
             idx = rng.choice(n_samples, size=sample_size, replace=False)
@@ -119,29 +137,38 @@ class TextClusterer:
             emb_samp = embeddings
             lab_samp = labels
 
-        results = {}
-        # 轮廓系数需要至少 2 个簇，且每个簇至少 1 个样本
         unique_labels = set(lab_samp)
-        if len(unique_labels) >= 2:
+        n_clusters = len(unique_labels)
+
+        results = {}
+        if n_clusters >= 2:
             results["silhouette"] = silhouette_score(
                 emb_samp, lab_samp, metric="euclidean", random_state=random_state
             )
-        else:
-            results["silhouette"] = float("nan")
-
-        # Davies–Bouldin 指数，同样至少 2 个簇
-        if len(unique_labels) >= 2:
             results["davies_bouldin"] = davies_bouldin_score(emb_samp, lab_samp)
-        else:
-            results["davies_bouldin"] = float("nan")
-
-        # Calinski–Harabasz 指数，也需要至少 2 个簇
-        if len(unique_labels) >= 2:
             results["calinski_harabasz"] = calinski_harabasz_score(emb_samp, lab_samp)
         else:
+            results["silhouette"] = float("nan")
+            results["davies_bouldin"] = float("nan")
             results["calinski_harabasz"] = float("nan")
-        score = results["silhouette"] - results["davies_bouldin"] * 0.2 + results["calinski_harabasz"] * 0.001
-        return results,score
+
+        results["n_clusters"] = n_clusters
+
+        if cluster_penalty is None:
+            cluster_penalty = self.auto_cluster_penalty(n_clusters, len(lab_samp))
+        
+        # 综合评分
+        if all(np.isfinite([results["silhouette"], results["davies_bouldin"], results["calinski_harabasz"]])):
+            results["score"] = (
+                results["silhouette"]
+                - 0.2 * results["davies_bouldin"]
+                + 0.001 * results["calinski_harabasz"]
+                - cluster_penalty * n_clusters
+            )
+        else:
+            results["score"] = float("nan")
+
+        return results
     
     def combined_keywords(self,all_keywords:list):
         # 3.3 加权统计关键词
@@ -159,9 +186,9 @@ class TextClusterer:
         # pca = PCA(n_components=50, random_state=42)
         # vectors = pca.fit_transform(vectors)
         reducer = umap.UMAP(
-                n_components=50,
-                n_neighbors=10,
-                min_dist=0.1,
+                n_components=self.umap_dim,
+                n_neighbors=self.umap_n_neighbors,
+                min_dist=self.umap_min_dist,
                 metric='cosine',
                 random_state=42
         )
@@ -187,8 +214,8 @@ class TextClusterer:
         
         print(f"Clustering with hdbscan created {len(set(labels))} clusters.")
 
-        result,score = self.evaluate_clusters(normed_embeddings,labels=labels)
-        print(f"evaluate_clusters:{result},{score}")
+        result = self.evaluate_clusters(normed_embeddings,labels=labels)
+        print(f"evaluate_clusters:{result}")
         return labels
     
     def do_dpmeans(self,embeddings):
@@ -274,8 +301,8 @@ class TextClusterer:
                 cluster_members_count[best_label] += 1
         
         print(f"Clustering with dynamic centroids created {next_cluster_label} clusters.")
-        result,score = self.evaluate_clusters(embeddings,labels=labels)
-        print(f"evaluate_clusters:{result},{score}")
+        result= self.evaluate_clusters(embeddings,labels=labels)
+        print(f"evaluate_clusters:{result}")
         return labels
 
     def cluster(self, docs: List[Document], embeddings: np.ndarray) -> List[Document]:
@@ -349,6 +376,8 @@ class TextClusterer:
             Integer(1, 10, name='min_samples'),
             Categorical([True, False], name='use_umap'),
             Integer(5, 200, name='umap_dim'),
+            Integer(5, 50, name='umap_n_neighbors'),
+            Real(0.001, 0.5, name='umap_min_dist'),
         ]
 
         # 假设你有嵌入数据 `embeddings`，和对应的清洗文本列表
@@ -361,8 +390,8 @@ class TextClusterer:
             clusterer = TextClusterer(**params)
             try:
                 labels = clusterer.do_hdbscan(embeddings)
-                _, score = clusterer.evaluate_clusters(embeddings, labels)
-                return -score  # skopt 最小化目标，因此我们取负
+                results = clusterer.evaluate_clusters(embeddings, labels)
+                return -results["score"]  # skopt 最小化目标，因此我们取负
             except Exception as e:
                 print(f"Error: {e}")
                 return 1e6  # 失败时返回极大值避免
@@ -373,5 +402,24 @@ class TextClusterer:
         # 最佳参数和分数
         print(f"Best parameters: {res.x}")
         print(f"Best score: {-res.fun}")
+        
+        for param in res.x:
+            print(f"Type of parameter: {type(param)}")
+
+        # Check the type of res.fun
+        print(f"Type of best score: {type(res.fun)}")
+        
+        result = {
+            "min_cluster_size": int(res.x[0]),
+            "min_samples": int(res.x[1]),
+            "use_umap": bool(res.x[2]),
+            "umap_dim": int(res.x[3]),
+            "umap_n_neighbors": int(res.x[4]),
+            "umap_min_dist": float(res.x[5]),
+            "score": float(-res.fun),
+        }
+
+        return result
+    
 
 

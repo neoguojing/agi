@@ -1,1 +1,4 @@
 hdbscan==0.8.40
+faiss-gpu-cu12==1.11.0
+scikit-learn==1.6.1
+scikit-optimize==0.10.2

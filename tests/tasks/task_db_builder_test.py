@@ -5,6 +5,25 @@ import asyncio
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage,ToolMessage 
 
+# @pytest.mark.asyncio
+# async def test_db_graph_train():
+#     config={"configurable": {"conversation_id": "1",
+#                             "thread_id": "ragtest"}}
+    
+#     state = State()
+#     state['user_id'] = "ragtest"
+#     state['collection_name'] = "ragtest"
+#     state['do_train'] = True
+#     state['file_path'] = "/home/neo/Downloads/ir2023_ashare.pdf"
+#     ret = await db_graph.ainvoke(state,config=config)
+#     assert ret is not None, "ainvoke 返回值为空"
+#     colects = collection_manager.list_collections(tenant="ragtest")
+#     assert len(colects) >= 2, "应包含至少两个集合"
+#     indexs = collection_manager.get_documents(collection_name="index",tenant="ragtest")
+#     assert len(indexs) >= 1, "应包含至少1个索引"
+#     docs = collection_manager.get_documents(collection_name="ragtest",tenant="ragtest")
+#     assert len(docs) >= 2, "应包含至少2个文档"
+    
 @pytest.mark.asyncio
 async def test_db_graph():
     config={"configurable": {"conversation_id": "1",

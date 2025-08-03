@@ -10,6 +10,7 @@ COPY requirements/ ./requirements/
 RUN pip install --no-cache-dir -r ./requirements/langchain.txt && rm -rf /root/.cache /tmp/* /var/tmp/*
 RUN pip install --no-cache-dir -r ./requirements/common.txt && rm -rf /root/.cache /tmp/* /var/tmp/*
 RUN pip install --no-cache-dir -r ./requirements/extra.txt && rm -rf /root/.cache /tmp/* /var/tmp/*
+RUN pip install --no-cache-dir -r ./requirements/rag.txt && rm -rf /root/.cache /tmp/* /var/tmp/*
 
 # 将应用代码拷贝到容器中
 COPY agi/ /agi/agi/

@@ -138,6 +138,10 @@ async def cluster_node(state: State, config: RunnableConfig):
     clusters = cluster.cluster(state["db_documents"],state["embds"])
     return {"clusters":clusters}
 
+async def cluster_train_node(state: State, config: RunnableConfig):
+    train_results = cluster.train(state["embds"])
+    return {"train_results":train_results}
+
 async def store_index_node(state: State, config: RunnableConfig):
     user_id = state.get("user_id")
     if not user_id and config:
@@ -182,6 +186,12 @@ async def last_node(state: State, config: RunnableConfig):
     state["embds"] = []
     return state
 
+async def context_control(state: State):
+    docs = state.get("do_train")
+    if docs:
+        return "train"
+    return "cluster"
+
 # graph
 checkpointer = MemorySaver()
 
@@ -193,6 +203,7 @@ doc_graph_builder.add_node("clean", doc_clean_node)
 doc_graph_builder.add_node("filterd", doc_filter_node)
 doc_graph_builder.add_node("embding", doc_embding_node)
 doc_graph_builder.add_node("cluster", cluster_node)
+doc_graph_builder.add_node("train", cluster_train_node)
 doc_graph_builder.add_node("keyword", doc_keywords_node)
 doc_graph_builder.add_node("store_index", store_index_node)
 doc_graph_builder.add_node("store_docs", store_node)
@@ -208,6 +219,8 @@ doc_graph_builder.add_edge("clean", "filterd")
 # 可并行处理
 doc_graph_builder.add_edge("filterd", "embding")
 doc_graph_builder.add_edge("filterd", "keyword")
+# doc_graph_builder.add_conditional_edges("embding", context_control)
+doc_graph_builder.add_edge("embding", "train")
 doc_graph_builder.add_edge("embding", "cluster")
 doc_graph_builder.add_edge("keyword", "cluster")
 doc_graph_builder.add_edge("cluster", "store_index")
@@ -216,6 +229,7 @@ doc_graph_builder.add_edge("store_index", "last")
 doc_graph_builder.add_edge("store_docs", "last")
 
 doc_graph_builder.add_edge("last", END)
+doc_graph_builder.add_edge("train", END)
 
 
 db_graph = doc_graph_builder.compile(checkpointer=checkpointer,name="doc_db")
