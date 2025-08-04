@@ -21,32 +21,24 @@ from agi.tasks.utils import get_last_message_text,split_think_content,graph_prin
 from agi.config import log,CACHE_DIR
 from agi.tasks.vectore_store import CollectionManager
 from agi.llms.rerank import rerank_with_batching
-
-import asyncio
 import json
 from langchain_core.documents import Document
 
 intend_understand_prompt = '''
-    Task
-        Classify each user query as “summary” or “rag” for a retrieval-augmented generation (RAG) system. The router should decide whether to extract and summarize default content or to perform targeted document retrieval.
-    Output Format
-        Return exactly one token: either summary or rag (without quotes).
+    You are a router that classifies user queries for a retrieval-augmented generation (RAG) system. Output either summary or rag.
 
-    Choose summary if specific retrieval cues are lacking:
-        The user asks for a summary but does not provide clear, concrete details (e.g., no exact article title, product name, chapter heading, or unique keywords/entities).
-        The query is generic or vague about content, making targeted search unreliable.
-        There are no obvious identifiers (names, titles, or unique phrases) to use for document retrieval.
-        In case of uncertainty or incomplete information, prefer summary (use the default content/pages).
+    [Examples]
+    Q: What is the overview of the privacy policy?
+    A: summary
 
-    Choose rag if specific retrieval cues are present:
-        The query includes identifiable details that enable precise searching, such as an exact document title, product name, chapter name, author name, organization, or distinct keywords/entities.
-        Even if the user asks for a summary, the presence of these specifics indicates a high-quality similarity search is possible.
-        Any clear references (titles, headings, unique phrases) that allow locating relevant documents signal a rag decision.
-    
-    Additional Guidelines
-        Strictness: If it’s unclear whether the information suffices for targeted retrieval, default to rag.
-        Language: Queries may be in English, Chinese, or mixed languages. Apply the same criteria regardless of language.
-        Focus on Clarity: The decision must be based solely on the information provided in the query. Do not assume any missing context.
+    Q: Summarize chapter 5 of the GDPR compliance manual.
+    A: rag
+
+    Q: Give me a summary.
+    A: summary
+
+    Q: Explain what Elon Musk said about AGI at the conference.
+    A: rag
 
     Use these rules to output exactly one of the tokens: summary or rag.
 '''
