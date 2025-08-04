@@ -304,7 +304,7 @@ class TextClusterer:
         print(f"Clustering with dynamic centroids created {next_cluster_label} clusters.")
         return labels
 
-    def cluster(self, docs: List[Document], embeddings: np.ndarray):
+    def cluster(self,embeddings: np.ndarray):
         """
         使用带有动态质心更新的在线贪心算法对文档进行聚类。
         """
@@ -316,7 +316,9 @@ class TextClusterer:
             labels = self.do_hdbscan(embeddings)
         else:
             labels = self.do_dpmeans(embeddings)
-
+        return labels
+        
+    def post_processor(self, docs: List[Document], labels: np.ndarray):
         # 4. 根据最终标签聚合文档
         # 按标签分组，提高效率
         clustered_docs_num = 0
@@ -366,7 +368,7 @@ class TextClusterer:
             )
             final_clusters.append(cluster_doc)
         print(f"total:{len(docs)},clusted:{clustered_docs_num},cluster num:{len(final_clusters)}")
-        return final_clusters,labels
+        return final_clusters
 
 
 def train(docs: List[Document], embeddings: np.ndarray):
@@ -395,21 +397,21 @@ def train(docs: List[Document], embeddings: np.ndarray):
     # filtered_texts: List[str]
 
     # 最佳聚类结果缓存
-    best_clusters = None
+    best_labels = None
     best_score = float("inf")  # 因为是最小化问题
     @use_named_args(search_space)
     def objective(**params):
         print(f"Trying: {params}")
-        nonlocal best_clusters,best_score
+        nonlocal best_labels,best_score
         try:
             clusterer = TextClusterer(**params)
-            clusters,labels = clusterer.cluster(docs,embeddings)
+            labels = clusterer.cluster(embeddings)
             results = clusterer.evaluate_clusters(embeddings, labels)
 
             score = -results["score"]  # 目标函数返回负数，越小越好
             if score < best_score:
                 best_score = score
-                best_clusters = clusters
+                best_labels = labels
             print(f"score: {results['score']}")
             return score
 
@@ -423,15 +425,11 @@ def train(docs: List[Document], embeddings: np.ndarray):
     # 最佳参数和分数
     print(f"Best parameters: {res.x}")
     print(f"Best score: {-res.fun}")
-    
-    for param in res.x:
-        print(f"Type of parameter: {type(param)}")
+    # 后处理
+    clusterer = TextClusterer()
+    final_clusters = clusterer.post_processor(docs,labels=best_labels)
 
-    # Check the type of res.fun
-    print(f"Type of best score: {type(res.fun)}")
-    
-
-    return best_clusters
+    return final_clusters
     
 
 
