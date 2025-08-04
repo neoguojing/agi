@@ -370,7 +370,7 @@ class TextClusterer:
 
 
 def train(docs: List[Document], embeddings: np.ndarray):
-    
+
     if isinstance(embeddings, list):
         embeddings = np.array(embeddings, dtype=np.float32)
     # 定义搜索空间
@@ -410,7 +410,7 @@ def train(docs: List[Document], embeddings: np.ndarray):
             if score < best_score:
                 best_score = score
                 best_clusters = clusters
-
+            print(f"score: {results["score"]}")
             return score
 
         except Exception as e:
