@@ -410,7 +410,7 @@ def train(docs: List[Document], embeddings: np.ndarray):
             if score < best_score:
                 best_score = score
                 best_clusters = clusters
-            print(f"score: {results["score"]}")
+            print(f"score: {results['score']}")
             return score
 
         except Exception as e:
