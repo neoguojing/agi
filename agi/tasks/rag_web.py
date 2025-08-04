@@ -70,7 +70,7 @@ async def intend_understand_modify_state_messages(state: State):
         if not isinstance(message.content,str):
              message.content = json.dumps(message.content)
         filter_messages.append(message)
-    render_result = await intend_understand_template.ainvoke({"messages": filter_messages[-1]})
+    render_result = await intend_understand_template.ainvoke({"messages": [filter_messages[-1]]})
     return render_result.to_messages()
 
 
