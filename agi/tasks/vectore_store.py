@@ -97,7 +97,7 @@ class CollectionManager:
                       embedding_function=self.embedding, 
                       collection_name=collection_name)
 
-    def get_documents(self, collection_name,source=None,limit=10,offset=0,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE) -> list[Document]:
+    def get_documents(self, collection_name,source=None,limit=3,offset=0,tenant=chromadb.DEFAULT_TENANT, database=chromadb.DEFAULT_DATABASE) -> list[Document]:
         """Retrieve all documents and their metadata from the collection."""
         collection = self.get_or_create_collection(collection_name,tenant,database)
         where_cond = None
