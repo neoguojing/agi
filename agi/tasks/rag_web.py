@@ -25,22 +25,46 @@ import json
 from langchain_core.documents import Document
 
 intend_understand_prompt = '''
-    You are a router that classifies user queries for a retrieval-augmented generation (RAG) system. Output either summary or rag.
+    You are a router that classifies user queries for a retrieval-augmented generation (RAG) system. 
+
+    You must decide whether the user's intent is to:
+    - **summary**: Summarize existing text, document content, or provide a high-level overview without retrieving external knowledge.
+    - **rag**: Retrieve knowledge from external documents (e.g., manuals, knowledge bases, articles) based on specific topics, named entities, or document structure.
+
+    [Instructions]
+    Classify the user's query strictly as either `summary` or `rag`. Use the following principles:
+
+    1. If the query asks to “summarize something specific” (like a chapter, a policy, a person, a concept), it is `rag`.
+    2. If the query is vague (e.g., “give me a summary”, “summarize this”, “概括一下”), it is `summary`.
+    3. If the query contains a named entity (e.g., Elon Musk, GDPR, 联邦学习, ChatGPT), a document structure (e.g., 第三章, section 5), or is a question (e.g., “What is...”, “如何...”), it is `rag`.
+    4. The query may be in English or Chinese.
 
     [Examples]
-    Q: What is the overview of the privacy policy?
-    A: summary
-
-    Q: Summarize chapter 5 of the GDPR compliance manual.
+    Q: 简单介绍一下联邦学习是做什么的  
     A: rag
 
-    Q: Give me a summary.
-    A: summary
-
-    Q: Explain what Elon Musk said about AGI at the conference.
+    Q: 总结一下第5章的主要内容  
     A: rag
 
-    Use these rules to output exactly one of the tokens: summary or rag.
+    Q: 简要概括以下内容  
+    A: summary
+
+    Q: Give me a summary.  
+    A: summary
+
+    Q: What is the role of data encryption in secure communication?  
+    A: rag
+
+    Q: Summarize this document.  
+    A: summary
+
+    Q: 请概括下面这篇文章的核心观点  
+    A: summary
+
+    Q: Explain what Elon Musk said about AGI at the conference.  
+    A: rag
+
+    [Now classify:]
 '''
 intend_understand_template = ChatPromptTemplate.from_messages(
     [
