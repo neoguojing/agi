@@ -371,12 +371,19 @@ class TextClusterer:
 
 def train(docs: List[Document], embeddings: np.ndarray):
     # 定义搜索空间
+    n_samples, n_features = embeddings.shape
+
+    # 动态设置范围，确保不会越界
+    max_umap_dim = min(200, n_features, n_samples - 1)
+    max_n_neighbors = min(50, n_samples - 1)
+
+    # 构建合法的搜索空间
     search_space = [
-        Integer(2, 20, name='min_cluster_size'),
-        Integer(1, 10, name='min_samples'),
+        Integer(2, max(2, min(20, n_samples - 1)), name='min_cluster_size'),
+        Integer(1, min(10, n_samples - 1), name='min_samples'),
         Categorical([True, False], name='use_umap'),
-        Integer(5, 200, name='umap_dim'),
-        Integer(5, 50, name='umap_n_neighbors'),
+        Integer(5, max_umap_dim, name='umap_dim'),
+        Integer(5, max_n_neighbors, name='umap_n_neighbors'),
         Real(0.001, 0.5, name='umap_min_dist'),
     ]
 
@@ -391,11 +398,11 @@ def train(docs: List[Document], embeddings: np.ndarray):
     def objective(**params):
         print(f"Trying: {params}")
         nonlocal best_clusters,best_score
-        clusterer = TextClusterer(**params)
         try:
+            clusterer = TextClusterer(**params)
             clusters,labels = clusterer.cluster(docs,embeddings)
             results = clusterer.evaluate_clusters(embeddings, labels)
-            
+
             score = -results["score"]  # 目标函数返回负数，越小越好
             if score < best_score:
                 best_score = score
