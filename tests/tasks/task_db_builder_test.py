@@ -25,30 +25,30 @@ async def test_db_graph():
 
 
 
-# @pytest.mark.asyncio
-# async def test_summary_rag():
-#     config={"configurable": {"conversation_id": "2","thread_id": "ragtest"}}
-#     input = State(
-#         messages=[HumanMessage(content="总结该文档")],
-#         collection_names = ["ragtest"],
-#         user_id = "ragtest"
-#     )
-#     ret = await rag_graph.ainvoke(input,config=config)
-#     assert isinstance(ret,dict)
-#     assert len(ret.get("docs")) >= 1, "应包含至少1个文档"
+@pytest.mark.asyncio
+async def test_summary_rag():
+    config={"configurable": {"conversation_id": "2","thread_id": "ragtest"}}
+    input = State(
+        messages=[HumanMessage(content="总结该文档")],
+        collection_names = ["ragtest"],
+        user_id = "ragtest"
+    )
+    ret = await rag_graph.ainvoke(input,config=config)
+    assert isinstance(ret,dict)
+    assert len(ret.get("docs")) >= 1, "应包含至少1个文档"
 
-# @pytest.mark.asyncio
-# async def test_rag():
-#     config={"configurable": {"conversation_id": "3","thread_id": "ragtest"}}
-#     input = State(
-#         messages=[HumanMessage(content="NTP3000Plus")],
-#         collection_names = ["ragtest"],
-#         user_id = "ragtest"
-#     )
-#     ret = await rag_graph.ainvoke(input,config=config)
-#     print(ret)
-#     assert isinstance(ret,dict)
-#     assert len(ret.get("docs")) >= 1, "应包含至少1个文档"
-#     assert len(ret.get("index_search_result")) >= 1, "应包含至少1个文档"
+@pytest.mark.asyncio
+async def test_rag():
+    config={"configurable": {"conversation_id": "3","thread_id": "ragtest"}}
+    input = State(
+        messages=[HumanMessage(content="NTP3000Plus")],
+        collection_names = ["ragtest"],
+        user_id = "ragtest"
+    )
+    ret = await rag_graph.ainvoke(input,config=config)
+    print(ret)
+    assert isinstance(ret,dict)
+    assert len(ret.get("docs")) >= 1, "应包含至少1个文档"
+    assert len(ret.get("index_search_result")) >= 1, "应包含至少1个文档"
 
         

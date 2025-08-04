@@ -213,9 +213,7 @@ doc_graph_builder.add_edge("train", "store_index")
 doc_graph_builder.add_edge("train", "store_docs")
 doc_graph_builder.add_edge("store_index", "last")
 doc_graph_builder.add_edge("store_docs", "last")
-
 doc_graph_builder.add_edge("last", END)
-doc_graph_builder.add_edge("train", END)
 
 
 db_graph = doc_graph_builder.compile(checkpointer=checkpointer,name="doc_db")

@@ -1,4 +1,3 @@
-import faiss
 from sklearn.metrics import (
     silhouette_score,
     davies_bouldin_score,
@@ -220,6 +219,7 @@ class TextClusterer:
         return labels
     
     def do_dpmeans(self,embeddings):
+        import faiss
         n_samples, dim = embeddings.shape
         if n_samples == 0:
             return []
