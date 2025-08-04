@@ -37,7 +37,7 @@ def get_file_loader(file_path: str, file_content_type: str = None):
 
     # Extension-based loader map
     ext_loader_map = {
-        "pdf": lambda: PDFPlumberLoader(file_path,dedupe=True, extract_images=False),
+        "pdf": lambda: PDFPlumberLoader(file_path,dedupe=False,text_kwargs={"layout": True}, extract_images=False),
         "csv": lambda: CSVLoader(file_path),
         "rst": lambda: UnstructuredRSTLoader(file_path, mode="elements"),
         "xml": lambda: UnstructuredXMLLoader(file_path),
