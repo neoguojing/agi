@@ -19,6 +19,10 @@ class RerankItem:
             "score": self.score
         }
 
+MAX_CONCURRENCY = 3  # 同时最多有3个请求在跑
+
+sem = asyncio.Semaphore(MAX_CONCURRENCY)
+
 async def rerank_batch(
     client: httpx.AsyncClient,
     endpoint: str,
@@ -34,6 +38,7 @@ async def rerank_batch(
         "top_k": top_k
     }
     endpoint = urljoin(endpoint,"/v1/rerank")
+    
     resp = await client.post(endpoint, json=payload)
     resp.raise_for_status()
     result = resp.json()
@@ -48,6 +53,10 @@ async def rerank_batch(
         for item in result["data"]
     ]
 
+async def safe_rerank_batch(*args, **kwargs):
+    async with sem:
+        return await rerank_batch(*args, **kwargs)
+    
 async def rerank_with_batching(
     query: str,
     documents: List[Document],
@@ -56,15 +65,21 @@ async def rerank_with_batching(
     top_k: Optional[int] = 3,
     batch_size: int = 50
 ) -> List[Document]:
-    all_results: List[tuple[Document, float]] = []
+    all_results = []
 
     async with httpx.AsyncClient() as client:
-        for i in range(0, len(documents), batch_size):
-            batch = documents[i:i + batch_size]
-            reranked = await rerank_batch(client, endpoint, query, batch, model)
+        tasks = []
+        batches = [(documents[i:i + batch_size], i) for i in range(0, len(documents), batch_size)]
 
+        for batch, _ in batches:
+            tasks.append(
+                safe_rerank_batch(client, endpoint, query, batch, model)
+            )
+
+        results = await asyncio.gather(*tasks)
+
+        for (batch, _), reranked in zip(batches, results):
             for item in reranked:
-                # 将得分写入 metadata，保留原文
                 doc = batch[item.index]
                 scored_doc = Document(
                     page_content=doc.page_content,
@@ -72,7 +87,6 @@ async def rerank_with_batching(
                 )
                 all_results.append((scored_doc, item.score))
 
-    # 全部打平后统一排序
     all_results.sort(key=lambda x: x[1], reverse=True)
     reranked_docs = [doc for doc, _ in all_results]
 
