@@ -14,6 +14,9 @@ RUN pip install --no-cache-dir -r ./requirements/rag.txt && rm -rf /root/.cache 
 
 # 将应用代码拷贝到容器中
 COPY agi/ /agi/agi/
+RUN mkdir -p /agi/asset
+COPY asset/stopwords.txt /agi/asset/stopwords.txt
+
 # 暴露应用运行的端口（默认 FastAPI 使用 8000）
 EXPOSE 8000
 
