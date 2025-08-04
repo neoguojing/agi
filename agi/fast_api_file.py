@@ -26,6 +26,7 @@ ALLOWED_MIME_TYPES = {
     "text/html",  # .html, .htm
     "application/epub+zip",  # .epub
     "message/rfc822",  # .msg (Outlook 邮件)
+    "application/octet-stream"
 }
 
 router_file = APIRouter(prefix="/v1")
