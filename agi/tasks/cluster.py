@@ -53,7 +53,7 @@ summary_template = ChatPromptTemplate.from_messages(
 )
 
 class TextClusterer:
-    def __init__(self, hnsw_m=32, ef_search=128, distance_threshold=0.5,
+    def __init__(self, cluster_algo=CLUSTER_ALGO,hnsw_m=32, ef_search=128, distance_threshold=0.5,
                  min_cluster_size: int = 2,min_samples: int = 6,
                  use_umap: bool = True,umap_dim: int = 15,umap_n_neighbors: int = 10,umap_min_dist: float = 0.1):
         """
@@ -80,6 +80,8 @@ class TextClusterer:
         self.umap_dim = umap_dim
         self.umap_n_neighbors = umap_n_neighbors
         self.umap_min_dist = umap_min_dist
+
+        self.cluster_algo = cluster_algo
         
 
     def summary(self,text:str):
@@ -89,17 +91,19 @@ class TextClusterer:
 
         return result
 
-    def auto_cluster_penalty(self,n_clusters: int, n_samples: int, 
-                         base_penalty: float = 1.0,
-                         penalty_power: float = 0.5) -> float:
+    def cluster_range_reward(self,n_clusters: int, n_samples: int, 
+                         target_min: float = 0.05, target_max: float = 0.15) -> float:
         """
-        根据聚类数量和样本数量自适应计算聚类惩罚权重。
+        对于类簇数量是否落在理想比例区间内，给予奖励/惩罚。
+        返回值越高表示越接近目标区间。
         """
-        if n_clusters <= 1 or n_samples <= 1:
-            return 0.0  # 无需惩罚
         ratio = n_clusters / n_samples
-        penalty = base_penalty * (ratio ** penalty_power)
-        return penalty
+        if target_min <= ratio <= target_max:
+            return 0.0  # 完美落在区间内，无惩罚
+        elif ratio < target_min:
+            return (target_min - ratio) ** 2 * 10  # 偏少惩罚
+        else:  # ratio > target_max
+            return (ratio - target_max) ** 2 * 10  # 偏多惩罚
 
     def evaluate_clusters(self,
         embeddings: np.ndarray,
@@ -155,7 +159,7 @@ class TextClusterer:
         results["n_clusters"] = n_clusters
 
         if cluster_penalty is None:
-            cluster_penalty = self.auto_cluster_penalty(n_clusters, len(lab_samp))
+            cluster_penalty = self.cluster_range_reward(n_clusters, n_samples)
         
         # 综合评分
         if all(np.isfinite([results["silhouette"], results["davies_bouldin"], results["calinski_harabasz"]])):
@@ -163,7 +167,7 @@ class TextClusterer:
                 results["silhouette"]
                 - 0.2 * results["davies_bouldin"]
                 + 0.001 * results["calinski_harabasz"]
-                - cluster_penalty * n_clusters
+                - cluster_penalty
             )
         else:
             results["score"] = float("nan")
@@ -213,9 +217,6 @@ class TextClusterer:
         labels = clusterer.fit_predict(normed_embeddings)
         
         print(f"Clustering with hdbscan created {len(set(labels))} clusters.")
-
-        result = self.evaluate_clusters(normed_embeddings,labels=labels)
-        print(f"evaluate_clusters:{result}")
         return labels
     
     def do_dpmeans(self,embeddings):
@@ -301,11 +302,9 @@ class TextClusterer:
                 cluster_members_count[best_label] += 1
         
         print(f"Clustering with dynamic centroids created {next_cluster_label} clusters.")
-        result= self.evaluate_clusters(embeddings,labels=labels)
-        print(f"evaluate_clusters:{result}")
         return labels
 
-    def cluster(self, docs: List[Document], embeddings: np.ndarray) -> List[Document]:
+    def cluster(self, docs: List[Document], embeddings: np.ndarray):
         """
         使用带有动态质心更新的在线贪心算法对文档进行聚类。
         """
@@ -313,7 +312,7 @@ class TextClusterer:
             embeddings = np.array(embeddings, dtype=np.float32)
 
         labels = None
-        if CLUSTER_ALGO == "hdbscan":
+        if self.cluster_algo == "hdbscan":
             labels = self.do_hdbscan(embeddings)
         else:
             labels = self.do_dpmeans(embeddings)
@@ -367,59 +366,62 @@ class TextClusterer:
             )
             final_clusters.append(cluster_doc)
         print(f"total:{len(docs)},clusted:{clustered_docs_num},cluster num:{len(final_clusters)}")
-        return final_clusters
+        return final_clusters,labels
+
+
+def train(docs: List[Document], embeddings: np.ndarray):
+    # 定义搜索空间
+    search_space = [
+        Integer(2, 20, name='min_cluster_size'),
+        Integer(1, 10, name='min_samples'),
+        Categorical([True, False], name='use_umap'),
+        Integer(5, 200, name='umap_dim'),
+        Integer(5, 50, name='umap_n_neighbors'),
+        Real(0.001, 0.5, name='umap_min_dist'),
+    ]
+
+    # 假设你有嵌入数据 `embeddings`，和对应的清洗文本列表
+    # embeddings: np.ndarray
+    # filtered_texts: List[str]
+
+    # 最佳聚类结果缓存
+    best_clusters = None
+    best_score = float("inf")  # 因为是最小化问题
+    @use_named_args(search_space)
+    def objective(**params):
+        print(f"Trying: {params}")
+        nonlocal best_clusters,best_score
+        clusterer = TextClusterer(**params)
+        try:
+            clusters,labels = clusterer.cluster(docs,embeddings)
+            results = clusterer.evaluate_clusters(embeddings, labels)
+            
+            score = -results["score"]  # 目标函数返回负数，越小越好
+            if score < best_score:
+                best_score = score
+                best_clusters = clusters
+
+            return score
+
+        except Exception as e:
+            print(f"Error: {e}")
+            return 1e6  # 失败时返回极大值避免
+
+    # 运行优化
+    res = gp_minimize(objective, search_space, n_calls=30, random_state=42)
+
+    # 最佳参数和分数
+    print(f"Best parameters: {res.x}")
+    print(f"Best score: {-res.fun}")
     
-    def train(self,embeddings):
-        # 定义搜索空间
-        search_space = [
-            Integer(2, 20, name='min_cluster_size'),
-            Integer(1, 10, name='min_samples'),
-            Categorical([True, False], name='use_umap'),
-            Integer(5, 200, name='umap_dim'),
-            Integer(5, 50, name='umap_n_neighbors'),
-            Real(0.001, 0.5, name='umap_min_dist'),
-        ]
+    for param in res.x:
+        print(f"Type of parameter: {type(param)}")
 
-        # 假设你有嵌入数据 `embeddings`，和对应的清洗文本列表
-        # embeddings: np.ndarray
-        # filtered_texts: List[str]
+    # Check the type of res.fun
+    print(f"Type of best score: {type(res.fun)}")
+    
 
-        @use_named_args(search_space)
-        def objective(**params):
-            print(f"Trying: {params}")
-            clusterer = TextClusterer(**params)
-            try:
-                labels = clusterer.do_hdbscan(embeddings)
-                results = clusterer.evaluate_clusters(embeddings, labels)
-                return -results["score"]  # skopt 最小化目标，因此我们取负
-            except Exception as e:
-                print(f"Error: {e}")
-                return 1e6  # 失败时返回极大值避免
-
-        # 运行优化
-        res = gp_minimize(objective, search_space, n_calls=30, random_state=42)
-
-        # 最佳参数和分数
-        print(f"Best parameters: {res.x}")
-        print(f"Best score: {-res.fun}")
-        
-        for param in res.x:
-            print(f"Type of parameter: {type(param)}")
-
-        # Check the type of res.fun
-        print(f"Type of best score: {type(res.fun)}")
-        
-        result = {
-            "min_cluster_size": int(res.x[0]),
-            "min_samples": int(res.x[1]),
-            "use_umap": bool(res.x[2]),
-            "umap_dim": int(res.x[3]),
-            "umap_n_neighbors": int(res.x[4]),
-            "umap_min_dist": float(res.x[5]),
-            "score": float(-res.fun),
-        }
-
-        return result
+    return best_clusters
     
 
 

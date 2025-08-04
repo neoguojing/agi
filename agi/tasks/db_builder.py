@@ -2,7 +2,7 @@ from agi.tasks.define import State,InputType,Feature
 from agi.tasks.task_factory import (
     TaskFactory
 )
-from agi.tasks.cluster import TextClusterer
+from agi.tasks.cluster import train
 from agi.utils.nlp import TextProcessor
 from agi.tasks.vectore_store import CollectionManager
 from langchain_core.runnables import (
@@ -22,7 +22,6 @@ from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor
 
 nlp = TextProcessor()
-cluster = TextClusterer()
 collection_manager = CollectionManager(data_path=CACHE_DIR,embedding=TaskFactory.get_embedding())
 
 # 🚀 统一入口：异步加载节点
@@ -134,13 +133,9 @@ async def doc_keywords_node(state: State, config: RunnableConfig):
     log.info(f"keywords {len(documents)}")
     return {"db_documents": documents}
 
-async def cluster_node(state: State, config: RunnableConfig):
-    clusters = cluster.cluster(state["db_documents"],state["embds"])
-    return {"clusters":clusters}
-
 async def cluster_train_node(state: State, config: RunnableConfig):
-    train_results = cluster.train(state["embds"])
-    return {"train_results":train_results}
+    clusters = train(state["db_documents"],state["embds"])
+    return {"clusters":clusters}
 
 async def store_index_node(state: State, config: RunnableConfig):
     user_id = state.get("user_id")
@@ -186,12 +181,6 @@ async def last_node(state: State, config: RunnableConfig):
     state["embds"] = []
     return state
 
-async def context_control(state: State):
-    docs = state.get("do_train")
-    if docs:
-        return "train"
-    return "cluster"
-
 # graph
 checkpointer = MemorySaver()
 
@@ -202,7 +191,6 @@ doc_graph_builder.add_node("split", doc_split_node)
 doc_graph_builder.add_node("clean", doc_clean_node)
 doc_graph_builder.add_node("filterd", doc_filter_node)
 doc_graph_builder.add_node("embding", doc_embding_node)
-doc_graph_builder.add_node("cluster", cluster_node)
 doc_graph_builder.add_node("train", cluster_train_node)
 doc_graph_builder.add_node("keyword", doc_keywords_node)
 doc_graph_builder.add_node("store_index", store_index_node)
@@ -219,12 +207,10 @@ doc_graph_builder.add_edge("clean", "filterd")
 # 可并行处理
 doc_graph_builder.add_edge("filterd", "embding")
 doc_graph_builder.add_edge("filterd", "keyword")
-# doc_graph_builder.add_conditional_edges("embding", context_control)
 doc_graph_builder.add_edge("embding", "train")
-doc_graph_builder.add_edge("embding", "cluster")
-doc_graph_builder.add_edge("keyword", "cluster")
-doc_graph_builder.add_edge("cluster", "store_index")
-doc_graph_builder.add_edge("cluster", "store_docs")
+doc_graph_builder.add_edge("keyword", "train")
+doc_graph_builder.add_edge("train", "store_index")
+doc_graph_builder.add_edge("train", "store_docs")
 doc_graph_builder.add_edge("store_index", "last")
 doc_graph_builder.add_edge("store_docs", "last")
 
