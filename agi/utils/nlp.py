@@ -130,7 +130,8 @@ class TextProcessor:
     ) -> List[Tuple[str, float]]:
         """提取关键词，并根据词性过滤（可选）"""
         zh, en = self.detect_language(text)  # 返回中文文本和英文文本
-
+        print(zh)
+        print(en)
         keywords = []
 
         if zh:
