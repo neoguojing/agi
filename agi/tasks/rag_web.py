@@ -178,7 +178,7 @@ async def route(state: State):
 
     collection_names = collection_manager.list_collections(tenant=tenant)
     state["collection_names"] = collection_names
-    log.info(f"collection_names for {tenant} are {state["collection_names"]}")
+    log.info(f"collection_names for {tenant} are {state['collection_names']}")
 
     if feature == Feature.RAG or collection_names:
         return await rag_auto_route(state)
