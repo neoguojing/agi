@@ -146,7 +146,7 @@ class TextProcessor:
             keywords.extend(kw_zh)
 
         if en:
-            tokens_en = word_tokenize(en)
+            tokens_en = word_tokenize(en,language="english")
             # 过滤停用词和非字母词
             filtered_en = [w.lower() for w in tokens_en if w.isalpha() and w.lower() not in getattr(self, 'stopwords_en', set())]
             freq = {}
