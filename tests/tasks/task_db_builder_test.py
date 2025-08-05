@@ -42,7 +42,7 @@ async def test_rag():
     config={"configurable": {"conversation_id": "3","thread_id": "ragtest"}}
     input = State(
         # messages=[HumanMessage(content="NTP3000Plus")],
-        messages=[HumanMessage(content="what is 'Supervised Fine-Tuning'")],
+        messages=[HumanMessage(content="Ablation Studies for Multi-Token Prediction 讲了什么？")],
         collection_names = ["ragtest"],
         user_id = "ragtest"
     )

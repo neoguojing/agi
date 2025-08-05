@@ -199,7 +199,6 @@ async def search_node(state: State,config: RunnableConfig):
             parts = await collection_manager.embedding_search([question],collection_name,cluster_id=id,tenant=tenant)
             docs.extend(parts)
             
-    # state["docs"] = docs
     log.info(f"search_node:{len(docs)}")
     return {"docs":docs} 
 # graph
