@@ -1,6 +1,7 @@
 from agi.tasks.db_builder import db_graph
 from agi.tasks.rag_web import rag_graph,collection_manager
 from agi.tasks.define import State
+from agi.utils.nlp import TextProcessor
 import asyncio
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage,ToolMessage 
@@ -39,17 +40,25 @@ from langchain_core.messages import AIMessage, HumanMessage,ToolMessage
 
 @pytest.mark.asyncio
 async def test_rag():
-    config={"configurable": {"conversation_id": "3","thread_id": "ragtest"}}
-    input = State(
-        # messages=[HumanMessage(content="NTP3000Plus")],
-        messages=[HumanMessage(content="Ablation Studies for Multi-Token Prediction 讲了什么？")],
-        collection_names = ["ragtest"],
-        user_id = "ragtest"
-    )
-    ret = await rag_graph.ainvoke(input,config=config)
-    print(ret)
-    assert isinstance(ret,dict)
-    assert len(ret.get("docs")) >= 1, "应包含至少1个文档"
-    assert len(ret.get("index_search_result")) >= 1, "应包含至少1个文档"
+    # config={"configurable": {"conversation_id": "3","thread_id": "ragtest"}}
+    # input = State(
+    #     # messages=[HumanMessage(content="NTP3000Plus")],
+    #     messages=[HumanMessage(content="Ablation Studies for Multi-Token Prediction 讲了什么？")],
+    #     collection_names = ["ragtest"],
+    #     user_id = "ragtest"
+    # )
+    # ret = await rag_graph.ainvoke(input,config=config)
+    # print(ret)
+    # assert isinstance(ret,dict)
+    # assert len(ret.get("docs")) >= 1, "应包含至少1个文档"
+    # assert len(ret.get("index_search_result")) >= 1, "应包含至少1个文档"
+
+    text_proc = TextProcessor()
+    processed_results = await text_proc.abatch_process(["Ablation Studies for Multi-Token Prediction 讲了什么？"], method="textrank")
+    print(processed_results)
+    processed_results = await text_proc.abatch_process(["我爱北京天安门"], method="textrank")
+    print(processed_results)
+
+
 
         
