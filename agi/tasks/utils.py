@@ -61,13 +61,15 @@ def split_think_content(content):
 
 def get_last_message_text(state: AgentState):
     last_message = state["messages"][-1]
+    text = ""
     if isinstance(last_message,HumanMessage):
         if isinstance(last_message.content,str):
-            return last_message.content
+            text = last_message.content
         elif isinstance(last_message.content,list):
             for item in last_message.content:
                 if item["type"] == "text":
-                    return item["text"]
+                    text = item["text"]
+    text.removesuffix("/no_think").strip()
     return ""
 
 def refine_human_message(
