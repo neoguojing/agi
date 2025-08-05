@@ -13,9 +13,6 @@ import unicodedata
 from bs4 import BeautifulSoup
 import re
 
-# 加载英文模型
-nlp_en = spacy.load("en_core_web_sm")
-
 class TextProcessor:
     def __init__(
         self,
@@ -33,6 +30,8 @@ class TextProcessor:
             self.stopwords_zh = self.load_stopwords(stop_words_path)
         if user_dict_path:
             jieba.load_userdict(user_dict_path)
+
+        self.nlp_en = spacy.load("en_core_web_sm")
 
     def detect_language(self, text: str) -> str:
         """简单中文/英文判断"""
@@ -52,7 +51,7 @@ class TextProcessor:
         """分词 + 词性标注"""
         zh, en = self.detect_language(text)
         zh_part = [(word.word, word.flag) for word in pseg.cut(zh)] if zh else []
-        en_part = [(token.text, token.pos_) for token in nlp_en(en)] if en else []
+        en_part = [(token.text, token.pos_) for token in self.nlp_en(en)] if en else []
         
         return zh_part + en_part
 

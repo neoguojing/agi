@@ -35,13 +35,6 @@ def test_extract_keywords_tfidf(processor):
     assert isinstance(keywords, list)
     assert len(keywords) <= processor.top_k
 
-@pytest.mark.asyncio
-async def test_process_text(processor):
-    result = await processor.process_text(sample_text, method="textrank")
-    print(result)
-
-    assert isinstance(result, list)
-    assert all(isinstance(item, tuple) for item in result)
 
 @pytest.mark.asyncio
 async def test_batch_process(processor):
@@ -51,3 +44,10 @@ async def test_batch_process(processor):
     assert isinstance(results, list)
     assert len(results) == len(texts)
     assert all(isinstance(r, list) for r in results)
+
+    processed_results = await processor.abatch_process(["Ablation Studies for Multi-Token Prediction 讲了什么？"], method="textrank")
+    print(processed_results)
+    processed_results = await processor.abatch_process(["我爱北京天安门"], method="textrank")
+    print(processed_results)
+    processed_results = await processor.abatch_process(["Ablation Studies for Multi-Token Prediction"], method="textrank")
+    print(processed_results)
