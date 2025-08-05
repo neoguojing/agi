@@ -60,7 +60,7 @@ async def doc_split_node(state: State, config: RunnableConfig):
                                                 chunk_size=3000, chunk_overlap=300,add_start_index=True)
 
     documents = await text_splitter.atransform_documents(state["db_documents"])
-    log.info(f"split {len(documents)} docs,{documents[0]}")
+    log.info(f"split {len(documents)} docs")
 
     return {"db_documents": documents}
 
