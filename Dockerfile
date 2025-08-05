@@ -12,6 +12,8 @@ RUN pip install --no-cache-dir -r ./requirements/common.txt && rm -rf /root/.cac
 RUN pip install --no-cache-dir -r ./requirements/extra.txt && rm -rf /root/.cache /tmp/* /var/tmp/*
 RUN pip install --no-cache-dir -r ./requirements/rag.txt && rm -rf /root/.cache /tmp/* /var/tmp/*
 
+RUN python -m nltk.downloader stopwords punkt
+RUN python -m spacy download en_core_web_sm
 # 将应用代码拷贝到容器中
 COPY agi/ /agi/agi/
 RUN mkdir -p /agi/asset
