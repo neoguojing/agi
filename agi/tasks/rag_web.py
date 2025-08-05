@@ -173,13 +173,17 @@ async def route(state: State):
     state["docs"] = None
     state["citations"] = None
 
+    tenant = state.get("user_id")
     feature = state.get("feature","")
-    if feature == Feature.RAG:
+
+    collection_names = collection_manager.list_collections(tenant=tenant)
+    state["collection_names"] = collection_names
+    log.info(f"collection_names for {tenant} are {state["collection_names"]}")
+
+    if feature == Feature.RAG or collection_names:
         return await rag_auto_route(state)
     elif feature == Feature.WEB:
         return "web"
-    elif state.get("collection_names"):
-        return await rag_auto_route(state)
 
 async def index_search_node(state: State,config: RunnableConfig):
     tenant = state.get("user_id")
@@ -191,10 +195,9 @@ async def index_search_node(state: State,config: RunnableConfig):
 
 async def search_node(state: State,config: RunnableConfig):
     tenant = state.get("user_id")
-    collection_names = state.get("collection_names")
+    collection_names = state["collection_names"]
     index_docs = state.get("index_search_result")
     question = get_last_message_text(state)
-
     cluster_ids = get_cluster_ids(index_docs)
     docs = []
 

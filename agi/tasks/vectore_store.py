@@ -285,8 +285,9 @@ class CollectionManager:
         return ret
 
     
-    def build_query(self,contains_list=None, not_contains_list=None):
+    def build_query(self, contains_list=None, not_contains_list=None):
         query_or = []
+
         if contains_list:
             for s in contains_list:
                 query_or.append({"$contains": s})
@@ -295,5 +296,10 @@ class CollectionManager:
             for s in not_contains_list:
                 query_or.append({"$not_contains": s})
 
-        return {"$or": query_or} if query_or else None
+        if len(query_or) > 1:
+            return {"$or": query_or}
+        elif len(query_or) == 1:
+            return query_or[0]
+        else:
+            return None
 
