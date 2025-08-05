@@ -19,7 +19,7 @@ class TextProcessor:
         stop_words_path: Optional[str] = STOP_WORDS_PATH,
         user_dict_path: Optional[str] = None,
         top_k: int = 5,
-        allowed_flags: Optional[List[str]] = ['n', 'v', 'a', 'vn', 'nr', 'ns', 'nt', 'nz']  # 限定关键词词性，如 ["n", "v"]
+        allowed_flags: Optional[List[str]] = None #['n', 'v', 'a', 'vn', 'nr', 'ns', 'nt', 'nz']  # 限定关键词词性，如 ["n", "v"]
     ):
         self.top_k = top_k
         self.allowed_flags = allowed_flags
@@ -33,7 +33,7 @@ class TextProcessor:
 
         self.nlp_en = spacy.load("en_core_web_sm")
         nltk.download('punkt_tab')
-        
+
     def detect_language(self, text: str) -> str:
         """简单中文/英文判断"""
         zh_part = re.findall(r'[\u4e00-\u9fa5]+', text)
