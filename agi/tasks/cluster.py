@@ -372,17 +372,12 @@ class TextClusterer:
 
 
 def train(docs: List[Document], embeddings: np.ndarray):
-
-    if isinstance(embeddings, list):
-        embeddings = np.array(embeddings, dtype=np.float32)
-    # 定义搜索空间
+    embeddings = np.array(embeddings, dtype=np.float32) if isinstance(embeddings, list) else embeddings
     n_samples, n_features = embeddings.shape
 
-    # 动态设置范围，确保不会越界
     max_umap_dim = min(200, n_features, n_samples - 1)
     max_n_neighbors = min(50, n_samples - 1)
 
-    # 构建合法的搜索空间
     search_space = [
         Integer(2, max(2, min(20, n_samples - 1)), name='min_cluster_size'),
         Integer(1, min(10, n_samples - 1), name='min_samples'),
@@ -392,42 +387,50 @@ def train(docs: List[Document], embeddings: np.ndarray):
         Real(0.001, 0.5, name='umap_min_dist'),
     ]
 
-    # 假设你有嵌入数据 `embeddings`，和对应的清洗文本列表
-    # embeddings: np.ndarray
-    # filtered_texts: List[str]
-
-    # 最佳聚类结果缓存
+    best_score = float("inf")
     best_labels = None
-    best_score = float("inf")  # 因为是最小化问题
+    best_params = None
+    best_clusterer = None
+
     @use_named_args(search_space)
     def objective(**params):
-        print(f"Trying: {params}")
-        nonlocal best_labels,best_score
+        nonlocal best_score, best_labels, best_params, best_clusterer
         try:
+            if not params["use_umap"]:
+                params.pop("umap_dim", None)
+                params.pop("umap_n_neighbors", None)
+                params.pop("umap_min_dist", None)
+
             clusterer = TextClusterer(**params)
             labels = clusterer.cluster(embeddings)
-            results = clusterer.evaluate_clusters(embeddings, labels)
 
-            score = -results["score"]  # 目标函数返回负数，越小越好
+            if len(set(labels)) <= 2:
+                return 1e6
+
+            results = clusterer.evaluate_clusters(embeddings, labels)
+            score = -results["score"]
+
+            if not np.isfinite(score):
+                return 1e6
+
             if score < best_score:
                 best_score = score
                 best_labels = labels
-            print(f"score: {results['score']}")
-            return score
+                best_params = params.copy()
+                best_clusterer = clusterer
 
+            return score
         except Exception as e:
             print(f"Error: {e}")
-            return 1e6  # 失败时返回极大值避免
+            return 1e6
 
-    # 运行优化
     res = gp_minimize(objective, search_space, n_calls=30, random_state=42)
+
+    final_clusters = best_clusterer.post_processor(docs, labels=best_labels)
 
     # 最佳参数和分数
     print(f"Best parameters: {res.x}")
     print(f"Best score: {-res.fun}")
-    # 后处理
-    clusterer = TextClusterer()
-    final_clusters = clusterer.post_processor(docs,labels=best_labels)
 
     return final_clusters
     

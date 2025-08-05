@@ -39,7 +39,7 @@ async def file_loader_node(state: State, config: RunnableConfig):
 
     if loader:
         documents = loader.load()
-        log.info(f"load {len(documents)} pages,{documents[0]}")
+        log.info(f"load {len(documents)} pages")
         return {"db_documents": documents}
 
     return {}
@@ -66,41 +66,55 @@ async def doc_split_node(state: State, config: RunnableConfig):
 
 async def doc_clean_node(state: State, config: RunnableConfig):
     def _clean_text(doc: Document) -> Document:
-        """文本清洗主流程：
+        """文本清洗主流程（修复版）：
         1. 去除 HTML 标签
-        2. unicode 标准化
+        2. unicode 标准化 (NFKC)
         3. 全角转半角
-        4. 去除特殊符号
-        5. 合并多空白字符
+        4. 温和地去除无用字符，保留重要标点和符号
+        5. 合并多余空白字符
         6. 去除首尾空格
         """
 
-        # 去除 HTML 标签（如 <p>, <div>）
-        text = BeautifulSoup(doc.page_content, "html.parser").get_text()
+        # 1. 去除 HTML 标签
+        text = BeautifulSoup(doc.page_content, "html.parser").get_text(separator=' ')
 
-        # Unicode 标准化（兼容表情、异体字等）
+        # 2. Unicode 标准化（兼容表情、异体字等）
         text = unicodedata.normalize("NFKC", text)
 
-        # 全角转半角（如：中文输入法下的符号）
-        def fullwidth_to_halfwidth(char):
+        # 3. 全角转半角
+        def fullwidth_to_halfwidth(char: str) -> str:
             code = ord(char)
-            if code == 0x3000:
+            if code == 0x3000:  # 全角空格
                 return ' '
-            elif 0xFF01 <= code <= 0xFF5E:
+            elif 0xFF01 <= code <= 0xFF5E:  # 全角字符（除空格）
                 return chr(code - 0xFEE0)
             return char
-
         text = ''.join(fullwidth_to_halfwidth(c) for c in text)
 
-        # 去除特殊字符（保留中英文、数字和常用标点）
-        text = re.sub(r"[^\u4e00-\u9fa5a-zA-Z0-9\s.,!?;:，。！？；：]", '', text)
+        # 4. 温和地去除特殊字符（修复核心）
+        # 我们扩展了保留字符的范围，加入了各种括号、引号、以及常见的数学和特殊符号
+        # 注意：这里将中英文标点符号统一在半角状态下处理
+        # 保留：中文、英文、数字、空格
+        # 保留：常用标点 .,!?;:
+        # 保留：各种括号 ()[]{}
+        # 保留：各种引号 "'`
+        # 保留：常见数学与特殊符号 +-*/=<>@#$%&_`
+        # 如果还需要保留其他字符（如日文、韩文），可以在此基础上继续添加
+        # \u4e00-\u9fa5  (中文字符)
+        # a-zA-Z0-9   (英文字母和数字)
+        # \s           (空白字符)
+        # .,!?;:'"`()\[\]{} (英文标点、引号、括号)
+        # +-*/=<>@#$%&_  (数学及特殊符号)
+        text = re.sub(r'[^\u4e00-\u9fa5a-zA-Z0-9\s.,!?;:\'"`()\[\]{}<>+\-*/=@#$%&_]', '', text, flags=re.UNICODE)
 
-        # 合并多空格为一个空格
+
+        # 5. 合并多余空白字符（包括空格、换行、制表符）
         text = re.sub(r'\s+', ' ', text)
+        
+        # 6. 去除首尾空格
         text = text.strip()
             
         doc.page_content = text
-        # 去除首尾空格
         return doc
     with ThreadPoolExecutor() as executor:
         documents = list(executor.map(_clean_text, state["db_documents"]))
