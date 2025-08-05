@@ -58,6 +58,10 @@ async def test_rag():
     print(processed_results)
     processed_results = await text_proc.abatch_process(["我爱北京天安门"], method="textrank")
     print(processed_results)
+    processed_results = await text_proc.abatch_process(["Ablation Studies for Multi-Token Prediction"], method="textrank")
+    print(processed_results)
+
+
 
 
 
