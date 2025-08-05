@@ -112,6 +112,10 @@ async def doc_chat_node(state: State,config: RunnableConfig,writer: StreamWriter
     log.info(f"doc_chat_node:{len(state['docs'])}")
     result = await chain.ainvoke(state,config=config)
     result["citations"] = state["citations"]
+    result["docs"] = None
+    result["doc_list_node"] = None
+    result["index_search_result"] = None
+
     return result
 
 async def doc_rerank_node(state: State,config: RunnableConfig):
