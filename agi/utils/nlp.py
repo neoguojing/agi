@@ -133,7 +133,7 @@ class TextProcessor:
         print(zh)
         print(en)
         keywords = []
-
+        import pdb;pdb.set_trace()
         if zh:
             if method == "tfidf":
                 kw_zh = jieba.analyse.extract_tags(zh, topK=self.top_k, withWeight=True)
