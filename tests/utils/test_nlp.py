@@ -45,7 +45,7 @@ async def test_batch_process(processor):
     assert len(results) == len(texts)
     assert all(isinstance(r, list) for r in results)
 
-    processed_results = await processor.abatch_process(["我爱北京天安门"], method="textrank")
+    processed_results = await processor.abatch_process(["清华大学投档线 /no_think"], method="textrank")
     print(processed_results)
     processed_results = await processor.abatch_process(["Ablation Studies for Multi-Token Prediction"], method="textrank")
     print(processed_results)
