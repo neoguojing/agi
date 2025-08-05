@@ -33,8 +33,7 @@ class TextProcessor:
 
         self.nlp_en = spacy.load("en_core_web_sm")
         nltk.download('punkt_tab')
-        nltk.download('stopwords')
-        nltk.download('punkt')
+        
     def detect_language(self, text: str) -> str:
         """简单中文/英文判断"""
         zh_part = re.findall(r'[\u4e00-\u9fa5]+', text)
