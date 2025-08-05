@@ -39,7 +39,7 @@ def test_extract_keywords_tfidf(processor):
 @pytest.mark.asyncio
 async def test_batch_process(processor):
     texts = [sample_text, "他在北京大学获得硕士学位。"]
-    results = await processor.batch_process(texts, method="textrank")
+    results = await processor.abatch_process(texts, method="textrank")
     print(results)
     assert isinstance(results, list)
     assert len(results) == len(texts)
