@@ -51,4 +51,6 @@ async def test_batch_process(processor):
     print(processed_results)
     processed_results = await processor.abatch_process(["Ablation Studies for Multi-Token Prediction 讲了什么？"], method="textrank")
     print(processed_results)
+    processed_results = await processor.abatch_process(["这段文字讲了什么？"], method="textrank")
+    print(processed_results)
     
