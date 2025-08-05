@@ -1,6 +1,10 @@
 import jieba
 import jieba.analyse
 import jieba.posseg as pseg
+import nltk
+import spacy
+from nltk.corpus import stopwords as nltk_stopwords
+from nltk.tokenize import word_tokenize
 import asyncio
 from typing import List, Literal, Tuple, Optional
 from agi.config import STOP_WORDS_PATH
@@ -8,6 +12,10 @@ from concurrent.futures import ThreadPoolExecutor
 import unicodedata
 from bs4 import BeautifulSoup
 import re
+
+# 加载英文模型
+nlp_en = spacy.load("en_core_web_sm")
+
 class TextProcessor:
     def __init__(
         self,
@@ -18,20 +26,36 @@ class TextProcessor:
     ):
         self.top_k = top_k
         self.allowed_flags = allowed_flags
-        self.stopwords = None
+        self.stopwords_en = set(nltk_stopwords.words('english'))
+        self.stopwords_zh = set()
         if stop_words_path:
             jieba.analyse.set_stop_words(stop_words_path)
-            self.stopwords = self.load_stopwords(stop_words_path)
+            self.stopwords_zh = self.load_stopwords(stop_words_path)
         if user_dict_path:
             jieba.load_userdict(user_dict_path)
 
+    def detect_language(self, text: str) -> str:
+        """简单中文/英文判断"""
+        if re.search(r'[\u4e00-\u9fff]', text):
+            return 'zh'
+        return 'en'
+    
     def tokenize(self, text: str) -> List[str]:
         """仅分词（不带词性）"""
-        return list(jieba.cut(text))
+        lang = self.detect_language(text)
+        if lang == 'zh':
+            return list(jieba.cut(text))
+        else:
+            return word_tokenize(text)
 
     def tokenize_with_pos(self, text: str) -> List[Tuple[str, str]]:
         """分词 + 词性标注"""
-        return [(word.word, word.flag) for word in pseg.cut(text)]
+        lang = self.detect_language(text)
+        if lang == 'zh':
+            return [(word.word, word.flag) for word in pseg.cut(text)]
+        else:
+            doc = nlp_en(text)
+            return [(token.text, token.pos_) for token in doc]
 
     def load_stopwords(self, stop_words_path: Optional[str] = None) -> set:
         stopwords = set()
@@ -42,9 +66,13 @@ class TextProcessor:
 
     def remove_stopwords(self, text: str):
         """从分词结果中移除停用词"""
-        words = self.tokenize(text)
-        words = [w for w in words if w not in self.stopwords and w.strip()]
-        return ' '.join(words)
+        lang = self.detect_language(text)
+        tokens = self.tokenize(text)
+        if lang == 'zh':
+            tokens = [w for w in tokens if w not in self.stopwords_zh and w.strip()]
+        else:
+            tokens = [w for w in tokens if w.lower() not in self.stopwords_en and w.isalpha()]
+        return ' '.join(tokens)
 
     def remove_stopwords_batch(self, texts: List[str]):
         """批量清洗文本"""
@@ -99,21 +127,25 @@ class TextProcessor:
         method: Literal["tfidf", "textrank"] = "textrank"
     ) -> List[Tuple[str, float]]:
         """提取关键词，并根据词性过滤（可选）"""
-        if method == "tfidf":
-            keywords = jieba.analyse.extract_tags(text, topK=self.top_k, withWeight=True)
-        elif method == "textrank":
-            keywords = jieba.analyse.textrank(text, topK=self.top_k, withWeight=True)
+        lang = self.detect_language(text)
+        if lang == 'zh':
+            if method == "tfidf":
+                keywords = jieba.analyse.extract_tags(text, topK=self.top_k, withWeight=True)
+            else:
+                keywords = jieba.analyse.textrank(text, topK=self.top_k, withWeight=True)
+            if self.allowed_flags:
+                pos_dict = {word.word: word.flag for word in pseg.cut(text)}
+                keywords = [(word, weight) for word, weight in keywords if pos_dict.get(word, '') in self.allowed_flags]
+            return keywords
         else:
-            raise ValueError("method must be 'tfidf' or 'textrank'")
+            doc = nlp_en(text)
+            words = [token.text.lower() for token in doc if token.is_alpha and token.text.lower() not in self.stopwords_en]
+            freq = {}
+            for w in words:
+                freq[w] = freq.get(w, 0) + 1
+            sorted_keywords = sorted(freq.items(), key=lambda x: x[1], reverse=True)
+            return sorted_keywords[:self.top_k]
 
-        # 如果设置了词性过滤（仅 textrank 支持 withFlag）
-        if self.allowed_flags:
-            # 构造词性字典
-            pos_dict = {word.word: word.flag for word in pseg.cut(text)}
-            # 筛选
-            keywords = [(word, weight) for word, weight in keywords if pos_dict.get(word, '') in self.allowed_flags]
-        
-        return keywords
 
     def batch_process(
         self,
