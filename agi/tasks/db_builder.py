@@ -92,7 +92,7 @@ async def doc_clean_node(state: State, config: RunnableConfig):
     semaphore = asyncio.Semaphore(2)  # 控制并发数量，视资源能力而定
 
     async def _clean_text(doc: Document):
-        result = await clean_chain.ainvoke({"text": doc.page_content})
+        result = await clean_chain.ainvoke({"text": doc.page_content + " /no_think"})
         doc.page_content = result.content
         log.info(doc.page_content)
         return doc
