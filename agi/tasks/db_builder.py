@@ -61,6 +61,8 @@ async def doc_split_node(state: State, config: RunnableConfig):
 
     documents = await text_splitter.atransform_documents(state["db_documents"])
     log.info(f"split {len(documents)} docs")
+    for doc in documents:
+        log.info(doc.page_content)
 
     return {"db_documents": documents}
 
