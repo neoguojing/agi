@@ -50,7 +50,7 @@ intend_understand_template = ChatPromptTemplate.from_messages(
     ]
 )
 
-clean_chain = intend_understand_template | TaskFactory.get_llm()
+clean_chain = intend_understand_template | TaskFactory.get_small_llm()
 
 # 🚀 统一入口：异步加载节点
 async def file_loader_node(state: State, config: RunnableConfig):

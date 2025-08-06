@@ -8,9 +8,10 @@ from agi.config import (
     OLLAMA_API_BASE_URL,
     RAG_EMBEDDING_MODEL,
     CACHE_DIR,
-    EMBEDDING_BASE_URL
+    EMBEDDING_BASE_URL,
+    OLLAMA_SMALL_MODE
 )
-from langchain_ollama import OllamaEmbeddings
+from langchain_ollama import OllamaEmbeddings,ChatOllama
 from langchain_openai import OpenAIEmbeddings
 from agi.tasks.llm_app import (
     create_chat,
@@ -83,6 +84,10 @@ class TaskFactory:
     _instances = {}
     _lock = threading.Lock()  # 异步锁
     _llm = create_llm_task()
+    _llm_small = ChatOllama(
+            model=OLLAMA_SMALL_MODE,
+            base_url=OLLAMA_API_BASE_URL,
+        )
     ollama_embedding = OllamaEmbeddings(
             model="bge-m3:latest",
             base_url=OLLAMA_API_BASE_URL,
@@ -125,6 +130,10 @@ class TaskFactory:
     @staticmethod
     def get_llm():
         return TaskFactory._llm
+    
+    @staticmethod
+    def get_small_llm():
+        return TaskFactory._llm_small
     
     @staticmethod
     def get_llm_with_output_format(debug=False):
