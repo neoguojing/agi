@@ -19,10 +19,10 @@ class TextProcessor:
         stop_words_path: Optional[str] = STOP_WORDS_PATH,
         user_dict_path: Optional[str] = None,
         top_k: int = 5,
-        allowed_flags: Optional[List[str]] = ['n', 'v', 'a', 'vn', 'nr', 'ns', 'nt', 'nz']  # 限定关键词词性，如 ["n", "v"]
+        filtered_flags: Optional[List[str]] = ['x', 'uj', 'ul', 'e', 'y', 'r', 'd', 'p', 'm', 'q', 'u']  # 限定关键词词性，如 ["n", "v"]
     ):
         self.top_k = top_k
-        self.allowed_flags = allowed_flags
+        self.filtered_flags = filtered_flags
         self.stopwords_en = set(nltk_stopwords.words('english'))
         self.stopwords_zh = set()
         if stop_words_path:
@@ -138,10 +138,13 @@ class TextProcessor:
                 kw_zh = jieba.analyse.extract_tags(zh, topK=self.top_k, withWeight=True)
             else:
                 kw_zh = jieba.analyse.textrank(zh, topK=self.top_k, withWeight=True)
+                # 若 textrank 返回为空，fallback 到 tfidf
+                if not kw_zh:
+                    kw_zh = jieba.analyse.extract_tags(zh, topK=self.top_k, withWeight=True)
 
-            if hasattr(self, 'allowed_flags') and self.allowed_flags:
+            if self.filtered_flags:
                 pos_dict = {word.word: word.flag for word in pseg.cut(zh)}
-                kw_zh = [(word, weight) for word, weight in kw_zh if pos_dict.get(word, '') in self.allowed_flags]
+                kw_zh = [(word, weight) for word, weight in kw_zh if pos_dict.get(word, '') not in self.filtered_flags]
 
             keywords.extend(kw_zh)
 
