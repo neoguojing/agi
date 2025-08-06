@@ -19,7 +19,7 @@ class TextProcessor:
         stop_words_path: Optional[str] = STOP_WORDS_PATH,
         user_dict_path: Optional[str] = None,
         top_k: int = 5,
-        allowed_flags: Optional[List[str]] = None #['n', 'v', 'a', 'vn', 'nr', 'ns', 'nt', 'nz']  # 限定关键词词性，如 ["n", "v"]
+        allowed_flags: Optional[List[str]] = ['n', 'v', 'a', 'vn', 'nr', 'ns', 'nt', 'nz']  # 限定关键词词性，如 ["n", "v"]
     ):
         self.top_k = top_k
         self.allowed_flags = allowed_flags
