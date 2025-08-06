@@ -16,10 +16,9 @@ from langgraph.checkpoint.memory import MemorySaver
 from agi.tasks.file_loader import get_file_loader,get_web_loader,get_youtube_loader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
-import re
-import unicodedata
-from bs4 import BeautifulSoup
+from langchain.prompts import ChatPromptTemplate
 from concurrent.futures import ThreadPoolExecutor
+import asyncio
 
 nlp = TextProcessor()
 collection_manager = CollectionManager(data_path=CACHE_DIR,embedding=TaskFactory.get_embedding())
@@ -38,13 +37,17 @@ doc_clean_prompt = """
     - Preserve table content as best as possible in plain text if tables are embedded.
     - Keep the semantic meaning intact. Do not hallucinate or add new information.
     - Do not summarize — return a cleaned and well-structured version of the original fragment.
-
-    ## Input:
-    <Insert document fragment here>
-
-    ## Output:
-    Return only the cleaned and formatted version of the text.
 """
+
+intend_understand_template = ChatPromptTemplate.from_messages(
+    [
+        ("system",doc_clean_prompt),
+        ("human", "## Input:\n {text}")
+    ]
+)
+
+clean_chain = intend_understand_template | TaskFactory.get_llm()
+
 # 🚀 统一入口：异步加载节点
 async def file_loader_node(state: State, config: RunnableConfig):
     loader = None
@@ -86,9 +89,25 @@ async def doc_split_node(state: State, config: RunnableConfig):
     return {"db_documents": documents}
 
 async def doc_clean_node(state: State, config: RunnableConfig):
-    with ThreadPoolExecutor() as executor:
-        documents = list(executor.map(_clean_text, state["db_documents"]))
+    semaphore = asyncio.Semaphore(2)  # 控制并发数量，视资源能力而定
 
+    async def _clean_text(doc: Document):
+        result = await clean_chain.ainvoke({"text": doc.page_content})
+        doc.page_content = result.content
+        return doc
+
+    async def limited_clean_text(doc: Document):
+        async with semaphore:
+            return await _clean_text(doc)
+
+    # 依旧使用 gather 保证结果顺序
+    documents = await asyncio.gather(
+        *(limited_clean_text(doc) for doc in state["db_documents"])
+    )
+
+    for doc in documents:
+        log.info(doc.page_content)
+        
     return {"db_documents": documents}
 
 

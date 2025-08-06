@@ -47,9 +47,11 @@ async def save_file(
         raise HTTPException(status_code=400, detail=f"不支持的文件类型: {file_type}")
 
     
-    unique_name = await default_file_service.save_file(file, file.filename)
-    
-    if collection_name and not file_type.startswith("image/") and not file_type.startswith("audio/"):
+    unique_name,exist = await default_file_service.save_file(file, file.filename)
+    if exist:
+        log.info(f"{file.filename} already existed")
+        
+    if not exist and not file_type.startswith("image/") and not file_type.startswith("audio/"):
         # kmanager = TaskFactory.get_knowledge_manager()
         # param = {"filename" : file.filename}
         # await kmanager.store(collection_name,default_storage.to_local_path(unique_name),tenant=user_id,**param)
@@ -59,7 +61,10 @@ async def save_file(
                                  "thread_id": str(uuid.uuid4())}}
                 state = State()
                 state['user_id'] = user_id
-                state['collection_name'] = unique_name
+                if collection_name:
+                    state['collection_name'] = collection_name
+                else:
+                    state['collection_name'] = unique_name
                 state['file_path'] = default_storage.to_local_path(unique_name)
                 await doc_db_as_subgraph.ainvoke(state,config=config)
             except Exception as e:

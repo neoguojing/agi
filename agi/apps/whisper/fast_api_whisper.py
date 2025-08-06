@@ -26,7 +26,7 @@ async def transcribe_audio(
     if not file.filename.endswith((".mp3", ".wav", ".m4a", ".ogg", ".webm")):
         raise HTTPException(status_code=400, detail="Unsupported audio format.")
     try:
-        uniq_name = await default_file_service.save_file(file,file.filename)
+        uniq_name,_ = await default_file_service.save_file(file,file.filename)
         file_path = default_storage.to_local_path(uniq_name)
         file_path = compress_audio(file_path)
         text = info = None

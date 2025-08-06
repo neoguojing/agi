@@ -6,6 +6,7 @@ from typing import List, Dict
 import uuid
 from agi.config import FILE_STORAGE_URL,BASE_URL
 import urllib.parse
+import hashlib
 
 class StorageError(Exception):
     """通用存储错误基类"""
@@ -30,6 +31,10 @@ class FSSpecStorage:
             raise InvalidFilename(f"Invalid filename: {filename}")
         return os.path.join(self.base,filename)
 
+    def exists(self, filename: str) -> bool:
+        full_path = self._full_path(filename)
+        return self.fs.exists(full_path)
+    
     def to_local_path(self, filename: str) -> str:
         """
         如果当前存储后端是 file://，返回本地路径；否则抛出异常。
@@ -62,13 +67,15 @@ class FSSpecStorage:
         preview_url = f"{base_url}/v1/files/{urllib.parse.quote(filename)}"
         return preview_url
     
-    async def save(self, file_obj, filename: str) -> str:
+    async def save(self, file_obj, filename: str):
         try:
-            with self.fs.open(self._full_path(filename), 'wb') as f:
-                f.write(await file_obj.read())
+            exits = self.exists(filename)
+            if not exits:
+                with self.fs.open(self._full_path(filename), 'wb') as f:
+                    f.write(await file_obj.read())
         except Exception as e:
             raise StorageError(f"Failed to save file: {e}")
-        return filename
+        return exits
 
     async def load(self, filename: str) -> bytes:
         path = self._full_path(filename)
@@ -105,6 +112,14 @@ class FSSpecStorage:
     def get_mime_type(self, filename: str) -> str:
         return mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
+def compute_sha256(file, chunk_size=8192):
+    sha256 = hashlib.sha256()
+    file.seek(0)
+    while chunk := file.read(chunk_size):
+        sha256.update(chunk)
+    file.seek(0)
+    return sha256.hexdigest()
+
 class FileService:
     def __init__(self, storage: FSSpecStorage):
         self.storage = storage
@@ -112,11 +127,16 @@ class FileService:
     def generate_unique_filename(self, original_name: str) -> str:
         ext = os.path.splitext(original_name)[1]
         return f"{uuid.uuid4().hex}{ext}"
+    
+    def generate_hashed_filename(self, file, original_name: str) -> str:
+        ext = os.path.splitext(original_name)[1]
+        hash_digest = compute_sha256(file)
+        return f"{hash_digest}{ext}"
 
     async def save_file(self, file, original_name: str):
-        unique_name = self.generate_unique_filename(original_name)
-        await self.storage.save(file, unique_name)
-        return unique_name
+        unique_name = self.generate_hashed_filename(file,original_name)
+        exist = await self.storage.save(file, unique_name)
+        return unique_name,exist
 
 default_storage = FSSpecStorage(FILE_STORAGE_URL)
 default_file_service = FileService(default_storage)
