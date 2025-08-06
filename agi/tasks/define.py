@@ -76,7 +76,6 @@ class State(AgentState):
     # for doc store
     file_path: str
     db_documents: list[Document]
-    filted_texts: list[str]
     embds: list[list[float]]
     clusters: list[Document]
     collection_name: str

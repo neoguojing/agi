@@ -24,6 +24,27 @@ from concurrent.futures import ThreadPoolExecutor
 nlp = TextProcessor()
 collection_manager = CollectionManager(data_path=CACHE_DIR,embedding=TaskFactory.get_embedding())
 
+doc_clean_prompt = """
+    You are a document cleaning and restructuring assistant.
+
+    Your task is to take a raw fragment of a document that may be partially structured or messy (e.g., broken paragraphs, misaligned headings, noise like page numbers or repeated footers), and transform it into a clean, well-structured, and semantically coherent version.
+
+    ## Instructions:
+    - Remove any noise such as page numbers, footers, headers, URLs, or repeated titles.
+    - Fix broken paragraphs: merge lines if they belong to the same paragraph.
+    - Preserve and properly format section headings (e.g., convert “1. Introduction” into a Markdown-style heading like “## 1. Introduction”).
+    - Normalize bullet points or numbered lists into consistent Markdown list format.
+    - Retain meaningful formatting like bold text indicators (e.g., “**important**”) if visible.
+    - Preserve table content as best as possible in plain text if tables are embedded.
+    - Keep the semantic meaning intact. Do not hallucinate or add new information.
+    - Do not summarize — return a cleaned and well-structured version of the original fragment.
+
+    ## Input:
+    <Insert document fragment here>
+
+    ## Output:
+    Return only the cleaned and formatted version of the text.
+"""
 # 🚀 统一入口：异步加载节点
 async def file_loader_node(state: State, config: RunnableConfig):
     loader = None
@@ -65,86 +86,27 @@ async def doc_split_node(state: State, config: RunnableConfig):
     return {"db_documents": documents}
 
 async def doc_clean_node(state: State, config: RunnableConfig):
-    def _clean_text(doc: Document) -> Document:
-        """文本清洗主流程（修复版）：
-        1. 去除 HTML 标签
-        2. unicode 标准化 (NFKC)
-        3. 全角转半角
-        4. 温和地去除无用字符，保留重要标点和符号
-        5. 合并多余空白字符
-        6. 去除首尾空格
-        """
-
-        # 1. 去除 HTML 标签
-        text = BeautifulSoup(doc.page_content, "html.parser").get_text(separator=' ')
-
-        # 2. Unicode 标准化（兼容表情、异体字等）
-        text = unicodedata.normalize("NFKC", text)
-
-        # 3. 全角转半角
-        def fullwidth_to_halfwidth(char: str) -> str:
-            code = ord(char)
-            if code == 0x3000:  # 全角空格
-                return ' '
-            elif 0xFF01 <= code <= 0xFF5E:  # 全角字符（除空格）
-                return chr(code - 0xFEE0)
-            return char
-        text = ''.join(fullwidth_to_halfwidth(c) for c in text)
-
-        # 4. 温和地去除特殊字符（修复核心）
-        # 我们扩展了保留字符的范围，加入了各种括号、引号、以及常见的数学和特殊符号
-        # 注意：这里将中英文标点符号统一在半角状态下处理
-        # 保留：中文、英文、数字、空格
-        # 保留：常用标点 .,!?;:
-        # 保留：各种括号 ()[]{}
-        # 保留：各种引号 "'`
-        # 保留：常见数学与特殊符号 +-*/=<>@#$%&_`
-        # 如果还需要保留其他字符（如日文、韩文），可以在此基础上继续添加
-        # \u4e00-\u9fa5  (中文字符)
-        # a-zA-Z0-9   (英文字母和数字)
-        # \s           (空白字符)
-        # .,!?;:'"`()\[\]{} (英文标点、引号、括号)
-        # +-*/=<>@#$%&_  (数学及特殊符号)
-        text = re.sub(r'[^\u4e00-\u9fa5a-zA-Z0-9\s.,!?;:\'"`()\[\]{}<>+\-*/=@#$%&_]', '', text, flags=re.UNICODE)
-
-
-        # 5. 合并多余空白字符（包括空格、换行、制表符）
-        text = re.sub(r'\s+', ' ', text)
-        
-        # 6. 去除首尾空格
-        text = text.strip()
-            
-        doc.page_content = text
-        return doc
     with ThreadPoolExecutor() as executor:
         documents = list(executor.map(_clean_text, state["db_documents"]))
 
     return {"db_documents": documents}
 
-# 主要是去除停用词
-async def doc_filter_node(state: State, config: RunnableConfig):
-    def filter_doc(doc: Document):
-        return nlp.remove_stopwords(doc.page_content)
-        # return doc.page_content
-    with ThreadPoolExecutor() as executor:
-        filted_texts = list(executor.map(filter_doc, state["db_documents"]))
-    log.info(f"filted {len(filted_texts)} texts")
-    for text in filted_texts:
-        log.info(text)
-    return {"filted_texts":filted_texts}
 
 async def doc_embding_node(state: State, config: RunnableConfig):
     model = TaskFactory.get_embedding()
-    def embed_doc(text: str):
-        return model.embed_query(text)
+    def embed_doc(doc: Document):
+        return model.embed_query(doc.page_content)
     with ThreadPoolExecutor() as executor:
-        embds = list(executor.map(embed_doc, state["filted_texts"]))
+        embds = list(executor.map(embed_doc, state["db_documents"]))
     log.info(f"embding {len(embds)} embding")
     return {"embds":embds}
 
 async def doc_keywords_node(state: State, config: RunnableConfig):
-    keywords_of_all = nlp.batch_process(state["filted_texts"])
     documents = state["db_documents"]
+
+    texts = [doc.page_content for doc in documents]
+    keywords_of_all = nlp.batch_process(texts)
+
     for i, keywords in enumerate(keywords_of_all):
         documents[i].metadata["keywords"] = keywords
     log.info(f"keywords {len(documents)}")
@@ -189,12 +151,10 @@ async def store_node(state: State, config: RunnableConfig):
 async def last_node(state: State, config: RunnableConfig):
     log.info(f"clusters={len(state['clusters'])}")
     log.info(f"db_documents={len(state['db_documents'])}")
-    log.info(f"filted_texts={len(state['filted_texts'])}")
     log.info(f"embds={len(state['embds'])}")
 
     state["clusters"] = []
     state["db_documents"] = []
-    state["filted_texts"] = []
     state["embds"] = []
     return state
 
@@ -206,7 +166,6 @@ doc_graph_builder = StateGraph(State)
 doc_graph_builder.add_node("load", file_loader_node)
 doc_graph_builder.add_node("split", doc_split_node)
 doc_graph_builder.add_node("clean", doc_clean_node)
-doc_graph_builder.add_node("filterd", doc_filter_node)
 doc_graph_builder.add_node("embding", doc_embding_node)
 doc_graph_builder.add_node("train", cluster_train_node)
 doc_graph_builder.add_node("keyword", doc_keywords_node)
@@ -220,10 +179,10 @@ doc_graph_builder.add_edge(START, "load")
 
 doc_graph_builder.add_edge("load","split")
 doc_graph_builder.add_edge("split", "clean")
-doc_graph_builder.add_edge("clean", "filterd")
+
 # 可并行处理
-doc_graph_builder.add_edge("filterd", "embding")
-doc_graph_builder.add_edge("filterd", "keyword")
+doc_graph_builder.add_edge("clean", "embding")
+doc_graph_builder.add_edge("clean", "keyword")
 doc_graph_builder.add_edge("embding", "train")
 doc_graph_builder.add_edge("keyword", "train")
 doc_graph_builder.add_edge("train", "store_index")
