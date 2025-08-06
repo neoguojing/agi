@@ -37,6 +37,10 @@ doc_clean_prompt = """
     - Preserve table content as best as possible in plain text if tables are embedded.
     - Keep the semantic meaning intact. Do not hallucinate or add new information.
     - Do not summarize — return a cleaned and well-structured version of the original fragment.
+
+    Output must be in valid, readable Markdown format only.
+    Example:
+    {example}
 """
 
 intend_understand_template = ChatPromptTemplate.from_messages(
@@ -89,10 +93,23 @@ async def doc_split_node(state: State, config: RunnableConfig):
     return {"db_documents": documents}
 
 async def doc_clean_node(state: State, config: RunnableConfig):
-    semaphore = asyncio.Semaphore(2)  # 控制并发数量，视资源能力而定
 
+    if not state["db_documents"]:
+        return {}
+    
+    semaphore = asyncio.Semaphore(2)
+    # 单独处理第一个文档，生成 example
+    first_doc = state["db_documents"][0]
+    result = await clean_chain.ainvoke({"text": first_doc.page_content + " /no_think"})
+    first_doc.page_content = result.content
+    example = first_doc.page_content
+
+    # 用 example 处理剩下的文档
     async def _clean_text(doc: Document):
-        result = await clean_chain.ainvoke({"text": doc.page_content + " /no_think"})
+        result = await clean_chain.ainvoke({
+            "text": doc.page_content + " /no_think",
+            "example": example
+        })
         doc.page_content = result.content
         log.info(doc.page_content)
         return doc
@@ -101,12 +118,13 @@ async def doc_clean_node(state: State, config: RunnableConfig):
         async with semaphore:
             return await _clean_text(doc)
 
-    # 依旧使用 gather 保证结果顺序
+    # 处理剩下的文档
     documents = await asyncio.gather(
-        *(limited_clean_text(doc) for doc in state["db_documents"])
-    )        
-        
-    return {"db_documents": documents}
+        *(limited_clean_text(doc) for doc in state["db_documents"][1:])
+    )
+
+    # 加上第一个处理过的文档
+    return {"db_documents": [first_doc] + documents}
 
 
 async def doc_embding_node(state: State, config: RunnableConfig):
