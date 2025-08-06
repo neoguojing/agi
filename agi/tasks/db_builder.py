@@ -119,10 +119,9 @@ async def doc_clean_node(state: State, config: RunnableConfig):
     with ThreadPoolExecutor() as executor:
         documents = list(executor.map(_clean_text, state["db_documents"]))
 
-    for doc in documents:
-        log.info(doc.page_content)
     return {"db_documents": documents}
 
+# 主要是去除停用词
 async def doc_filter_node(state: State, config: RunnableConfig):
     def filter_doc(doc: Document):
         return nlp.remove_stopwords(doc.page_content)
@@ -130,6 +129,8 @@ async def doc_filter_node(state: State, config: RunnableConfig):
     with ThreadPoolExecutor() as executor:
         filted_texts = list(executor.map(filter_doc, state["db_documents"]))
     log.info(f"filted {len(filted_texts)} texts")
+    for text in filted_texts:
+        log.info(text)
     return {"filted_texts":filted_texts}
 
 async def doc_embding_node(state: State, config: RunnableConfig):
