@@ -24,14 +24,14 @@ def test_tokenize_with_pos(processor):
 
 def test_extract_keywords_textrank(processor):
     keywords = processor.extract_keywords(sample_text, method="textrank")
-    print(keywords)
+    print(f"test_extract_keywords_textrank:{keywords}")
     assert isinstance(keywords, list)
     assert all(isinstance(k, tuple) and isinstance(k[0], str) and isinstance(k[1], float) for k in keywords)
     assert len(keywords) <= processor.top_k
 
 def test_extract_keywords_tfidf(processor):
     keywords = processor.extract_keywords(sample_text, method="tfidf")
-    print(keywords)
+    print(f"test_extract_keywords_tfidf:{keywords}")
     assert isinstance(keywords, list)
     assert len(keywords) <= processor.top_k
 
