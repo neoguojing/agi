@@ -94,6 +94,7 @@ async def doc_clean_node(state: State, config: RunnableConfig):
     async def _clean_text(doc: Document):
         result = await clean_chain.ainvoke({"text": doc.page_content})
         doc.page_content = result.content
+        log.info(doc.page_content)
         return doc
 
     async def limited_clean_text(doc: Document):
@@ -103,10 +104,7 @@ async def doc_clean_node(state: State, config: RunnableConfig):
     # 依旧使用 gather 保证结果顺序
     documents = await asyncio.gather(
         *(limited_clean_text(doc) for doc in state["db_documents"])
-    )
-
-    for doc in documents:
-        log.info(doc.page_content)
+    )        
         
     return {"db_documents": documents}
 
