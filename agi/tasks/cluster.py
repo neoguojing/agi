@@ -66,7 +66,7 @@ class TextClusterer:
                                         所以这里设置 distance_threshold=0.5 意味着相似度阈值为 0.75。
         """
         self.cluster_top_k_keywords = 10
-        self.llm = TaskFactory.get_llm()
+        self.llm = TaskFactory.get_small_llm()
 
         self.hnsw_m = hnsw_m
         self.ef_search = ef_search
