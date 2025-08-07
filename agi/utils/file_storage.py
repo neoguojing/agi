@@ -112,10 +112,10 @@ class FSSpecStorage:
     def get_mime_type(self, filename: str) -> str:
         return mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
-def compute_sha256(file, chunk_size=8192):
+async def compute_sha256(file, chunk_size=8192):
     sha256 = hashlib.sha256()
     file.seek(0)
-    while chunk := file.read(chunk_size):
+    while chunk := await file.read(chunk_size):
         sha256.update(chunk)
     file.seek(0)
     return sha256.hexdigest()
@@ -128,13 +128,13 @@ class FileService:
         ext = os.path.splitext(original_name)[1]
         return f"{uuid.uuid4().hex}{ext}"
     
-    def generate_hashed_filename(self, file, original_name: str) -> str:
+    async def generate_hashed_filename(self, file, original_name: str) -> str:
         ext = os.path.splitext(original_name)[1]
-        hash_digest = compute_sha256(file)
+        hash_digest = await compute_sha256(file)
         return f"{hash_digest}{ext}"
 
     async def save_file(self, file, original_name: str):
-        unique_name = self.generate_hashed_filename(file,original_name)
+        unique_name = await self.generate_hashed_filename(file,original_name)
         exist = await self.storage.save(file, unique_name)
         return unique_name,exist
 
