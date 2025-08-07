@@ -39,6 +39,7 @@ doc_clean_prompt = """
     - Do not summarize — return a cleaned and well-structured version of the original fragment.
 
     Output must be in valid, readable Markdown format only.
+    Make sure the output remains in the same language as the input.
 """
 
 intend_understand_template = ChatPromptTemplate.from_messages(
