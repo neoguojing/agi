@@ -69,8 +69,8 @@ def get_last_message_text(state: AgentState):
             for item in last_message.content:
                 if item["type"] == "text":
                     text = item["text"]
-    text.removesuffix("/no_think").strip()
-    return text
+
+    return text.removesuffix("/no_think").strip()
 
 def refine_human_message(
     state: AgentState,
