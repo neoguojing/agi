@@ -103,6 +103,7 @@ async def doc_clean_node(state: State, config: RunnableConfig):
     result = await clean_chain.ainvoke({"text": first_doc.page_content + " /no_think","example":""})
     first_doc.page_content = result.content
     example = first_doc.page_content
+    log.info(first_doc.page_content)
 
     # 用 example 处理剩下的文档
     async def _clean_text(doc: Document):

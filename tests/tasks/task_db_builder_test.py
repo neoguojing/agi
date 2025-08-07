@@ -14,7 +14,7 @@ async def test_db_graph():
     state = State()
     state['user_id'] = "ragtest"
     state['collection_name'] = "ragtest"
-    state['file_path'] = "tests/2025CHIANSAE.pdf"
+    state['file_path'] = "tests/2412.19437v1.pdf"
     ret = await db_graph.ainvoke(state,config=config)
     assert ret is not None, "ainvoke 返回值为空"
     colects = collection_manager.list_collections(tenant="ragtest")
@@ -43,7 +43,7 @@ async def test_rag():
     config={"configurable": {"conversation_id": "3","thread_id": "ragtest"}}
     input = State(
         # messages=[HumanMessage(content="NTP3000Plus")],
-        messages=[HumanMessage(content="南开大学录取分数线")],
+        messages=[HumanMessage(content="Reward Model 介绍")],
         collection_names = ["ragtest"],
         user_id = "ragtest"
     )
