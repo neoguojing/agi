@@ -28,6 +28,11 @@ milvus.io
 。这种方法无需人工标注样本，但精度依赖提示设计。
 
 
-TOOD:
+TOOD: 无法使用
 - https://github.com/datalab-to/marker pdf测试
+
+## 模型路径
+- /root/.cache/datalab/models/text_recognition/
+## 依赖模型
+- text_recognition
 
