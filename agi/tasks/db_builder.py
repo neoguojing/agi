@@ -95,7 +95,7 @@ async def doc_clean_node(state: State, config: RunnableConfig):
     if not state["db_documents"]:
         return {}
     
-    semaphore = asyncio.Semaphore(1)
+    semaphore = asyncio.Semaphore(2)
 
     # 用 example 处理剩下的文档
     async def _clean_text(doc: Document):
