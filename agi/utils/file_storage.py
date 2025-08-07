@@ -114,10 +114,10 @@ class FSSpecStorage:
 
 async def compute_sha256(file, chunk_size=8192):
     sha256 = hashlib.sha256()
-    file.seek(0)
+    await file.seek(0)
     while chunk := await file.read(chunk_size):
         sha256.update(chunk)
-    file.seek(0)
+    await file.seek(0)
     return sha256.hexdigest()
 
 class FileService:
