@@ -97,7 +97,7 @@ async def doc_clean_node(state: State, config: RunnableConfig):
     if not state["db_documents"]:
         return {}
     
-    semaphore = asyncio.Semaphore(2)
+    semaphore = asyncio.Semaphore(1)
     # 单独处理第一个文档，生成 example
     first_doc = state["db_documents"][0]
     result = await clean_chain.ainvoke({"text": first_doc.page_content + " /no_think","example":""})
