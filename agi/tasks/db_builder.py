@@ -204,9 +204,9 @@ doc_graph_builder.add_node("last", last_node)
 
 doc_graph_builder.add_edge(START, "load")
 
-# doc_graph_builder.add_edge("load","split")
-# doc_graph_builder.add_edge("split", "clean")
-doc_graph_builder.add_edge("load","clean")
+doc_graph_builder.add_edge("load","split")
+doc_graph_builder.add_edge("split", "clean")
+# doc_graph_builder.add_edge("load","clean")
 # 可并行处理
 doc_graph_builder.add_edge("clean", "embding")
 doc_graph_builder.add_edge("clean", "keyword")
