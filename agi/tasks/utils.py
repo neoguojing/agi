@@ -148,7 +148,7 @@ def debug_info(x : Any):
         if len(stack) > 2:  # stack[0] 是 get_parent_function_name，stack[1] 是调用它的函数
             parent_name = stack[2].function  # stack[2] 是再往上的函数，即父函数
         
-        log.info(f"message:{x}")
+        log.debug(f"message:{x}")
 
     return x
 

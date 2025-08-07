@@ -123,6 +123,8 @@ async def doc_rerank_node(state: State,config: RunnableConfig):
     docs = state.get("docs")
     docs = await rerank_with_batching(question,docs)
     log.info(f"doc_rerank_node:{len(docs)}")
+    log.info(f"doc_rerank_node:{docs}")
+
     return {"docs":docs} 
 
 # 获取指定文件的索引文件
@@ -191,6 +193,8 @@ async def index_search_node(state: State,config: RunnableConfig):
     docs = await collection_manager.embedding_search([question],"index",tenant=tenant)
     # state["docs"] = docs
     log.info(f"index_search_node:{len(docs)}")
+    log.info(f"index_search_node:{docs}")
+
     return {"index_search_result":docs} 
 
 async def search_node(state: State,config: RunnableConfig):
