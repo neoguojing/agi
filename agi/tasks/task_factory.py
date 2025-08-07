@@ -87,7 +87,13 @@ class TaskFactory:
     _llm_small = ChatOllama(
             model=OLLAMA_SMALL_MODE,
             base_url=OLLAMA_API_BASE_URL,
-            num_ctx=4096
+            num_ctx=4096,
+            temperature=0.1,
+            top_k=10,
+            top_p=0.5,
+            repeat_penalty=1.5,
+            repeat_last_n=-1,
+            seed=42
         )
     ollama_embedding = OllamaEmbeddings(
             model="bge-m3:latest",
