@@ -133,6 +133,7 @@ def create_llm_task(**kwargs):
         llm = ChatOllama(
             model=model_name,
             base_url=OLLAMA_API_BASE_URL,
+            num_ctx=32768
         )
     else:
         llm = ChatOpenAI(
