@@ -39,8 +39,6 @@ doc_clean_prompt = """
     - Do not summarize — return a cleaned and well-structured version of the original fragment.
 
     Output must be in valid, readable Markdown format only.
-    Example:
-    {example}
 """
 
 intend_understand_template = ChatPromptTemplate.from_messages(
@@ -98,18 +96,11 @@ async def doc_clean_node(state: State, config: RunnableConfig):
         return {}
     
     semaphore = asyncio.Semaphore(1)
-    # 单独处理第一个文档，生成 example
-    first_doc = state["db_documents"][0]
-    result = await clean_chain.ainvoke({"text": first_doc.page_content + " /no_think","example":""})
-    first_doc.page_content = result.content
-    example = first_doc.page_content
-    log.info(first_doc.page_content)
 
     # 用 example 处理剩下的文档
     async def _clean_text(doc: Document):
         result = await clean_chain.ainvoke({
-            "text": doc.page_content + " /no_think",
-            "example": example
+            "text": doc.page_content + " /no_think"
         })
         doc.page_content = result.content
         log.info(doc.page_content)
@@ -121,11 +112,11 @@ async def doc_clean_node(state: State, config: RunnableConfig):
 
     # 处理剩下的文档
     documents = await asyncio.gather(
-        *(limited_clean_text(doc) for doc in state["db_documents"][1:])
+        *(limited_clean_text(doc) for doc in state["db_documents"])
     )
 
     # 加上第一个处理过的文档
-    return {"db_documents": [first_doc] + documents}
+    return {"db_documents": documents}
 
 
 async def doc_embding_node(state: State, config: RunnableConfig):
