@@ -131,19 +131,22 @@ async def doc_keywords_node(state: State, config: RunnableConfig):
     return {"db_documents": documents}
 
 async def cluster_train_node(state: State, config: RunnableConfig):
-    clusters = train(state["db_documents"],state["embds"])
+    clusters = None
+    if len(state["embds"]) > 5:
+        clusters = train(state["db_documents"],state["embds"])
     return {"clusters":clusters}
 
 async def store_index_node(state: State, config: RunnableConfig):
-    user_id = state.get("user_id")
-    if not user_id and config:
-        user_id = config.get("configurable").get("user_id","default")
+    if state["clusters"]:
+        user_id = state.get("user_id")
+        if not user_id and config:
+            user_id = config.get("configurable").get("user_id","default")
 
-    await collection_manager.add_documents(
-        documents=state["clusters"],
-        collection_name="index",
-        tenant=user_id
-    )
+        await collection_manager.add_documents(
+            documents=state["clusters"],
+            collection_name="index",
+            tenant=user_id
+        )
     log.info("store_index_node done")
     return {}
 

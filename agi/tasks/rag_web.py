@@ -184,7 +184,7 @@ async def route(state: State):
 
     feature = state.get("feature","")
 
-    if feature == Feature.RAG or collection_names:
+    if feature == Feature.RAG:
         return await rag_auto_route(state)
     elif feature == Feature.WEB:
         return "web"
