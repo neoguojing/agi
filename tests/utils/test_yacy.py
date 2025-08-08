@@ -8,7 +8,7 @@ YACY_HOST = "http://localhost:8090"
 @pytest.mark.asyncio
 async def test_yacy_search_async_real_call():
     # 用一个合理的搜索词测试，限制返回条数避免过大
-    query = "freedom /date LANGUAGE:en"
+    query = "俄乌战争 /date LANGUAGE:zh"
     max_records = 5
 
     result = await yacy_search_async(query=query, maximum_records=max_records)
