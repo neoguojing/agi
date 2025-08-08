@@ -1,10 +1,11 @@
 import asyncio
 import httpx
+import os
+YACY_HOST = os.getenv("YACY_HOST","http://localhost:8090")
 
-YACY_HOST = "http://localhost:8090"
 CRAWLER_URL = f"{YACY_HOST}/Crawler_p.html"
 
-async def start_yacy_crawl_async(target_url, username=None, password=None):
+async def start_yacy_crawl_async(target_url, username="admin", password="yacy"):
     params = {
         "crawlingDomMaxPages": "10000",      # DOM 解析时最多访问页面数，防止过度爬取
         "range": "wide",                     # 爬取范围，'wide'表示广泛爬取
@@ -112,23 +113,13 @@ async def yacy_search_async(
         simplified_items.append({
             "title": item.get("title", ""),
             "link": item.get("link", ""),
-            "description": item.get("description", ""),
-            "pubDate": item.get("pubDate", ""),
+            "snippet": item.get("description", ""),
+            "date": item.get("pubDate", ""),
+            "score": item.get("ranking", ""),
+            "source": item.get("host", ""),
         })
 
     result["totalResults"] = total_results
     result["items"] = simplified_items
     return result
 
-
-async def main():
-    # 示例：搜索包含关键词 "freedom" 并按时间排序
-    query = "freedom /date LANGUAGE:en"
-    results = await yacy_search_async(query=query, maximum_records=5)
-    
-    for i, item in enumerate(results.get('searchResult', {}).get('results', []), 1):
-        print(f"Result {i}:")
-        print(f" Title: {item.get('title')}")
-        print(f" URL: {item.get('url')}")
-        print(f" Snippet: {item.get('snippet')}")
-        print("-" * 40)
