@@ -171,9 +171,9 @@ async def rag_auto_route(state: State):
             state["collection_names"].extend(collection_names)
         else:
             state["collection_names"] = collection_names
-        log.info(f"collection_names for {tenant} are {state['collection_names']}")
         return "index_search"
-    
+    log.info(f"collection_names for {tenant} are {state['collection_names']}")
+
     return "llm_with_history"
     
 async def route(state: State):
