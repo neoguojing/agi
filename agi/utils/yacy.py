@@ -41,6 +41,7 @@ async def start_yacy_crawl_async(target_url, username=None, password=None):
             print(f"Started crawl for {target_url}")
         else:
             print(f"Failed to start crawl for {target_url}, status code: {response.status_code}")
+        
 
 
 
@@ -92,7 +93,32 @@ async def yacy_search_async(
     async with httpx.AsyncClient() as client:
         response = await client.get(SEARCH_API, params=params)
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+    
+    # 下面根据典型 YaCy JSON结构精简结果
+    result = {}
+    channels = data.get("channels", [])
+    if not channels:
+        # 无结果返回空
+        return {"totalResults": 0, "items": []}
+
+    channel = channels[0]
+    total_results = int(channel.get("totalResults", 0))
+    items = channel.get("items", [])
+
+    # 只保留每条结果的部分字段，方便后续处理
+    simplified_items = []
+    for item in items:
+        simplified_items.append({
+            "title": item.get("title", ""),
+            "link": item.get("link", ""),
+            "description": item.get("description", ""),
+            "pubDate": item.get("pubDate", ""),
+        })
+
+    result["totalResults"] = total_results
+    result["items"] = simplified_items
+    return result
 
 
 async def main():
