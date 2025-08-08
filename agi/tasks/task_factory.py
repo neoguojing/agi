@@ -88,7 +88,7 @@ class TaskFactory:
             model=OLLAMA_SMALL_MODE,
             base_url=OLLAMA_API_BASE_URL,
             num_ctx=4096,
-            num_gpu=100, #确保所有层都在GPU上
+            num_gpu=4, #最大使用的GPU个数
             temperature=0.1,
             top_k=10,
             top_p=0.5,
