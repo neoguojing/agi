@@ -162,9 +162,16 @@ async def rag_auto_route(state: State):
     _, result = split_think_content(ai.content)
     log.info(f"rag_auto_route:{result}")
 
-    if "summary" in result:
+    tenant = state.get("user_id")
+    if "summary" in result and state["collection_names"]:
         return "summary"
     elif "rag" in result:
+        collection_names = collection_manager.list_collections(tenant=tenant)
+        if state["collection_names"]:
+            state["collection_names"].extend(collection_names)
+        else:
+            state["collection_names"] = collection_names
+        log.info(f"collection_names for {tenant} are {state['collection_names']}")
         return "index_search"
     
     return "llm_with_history"
@@ -175,12 +182,7 @@ async def route(state: State):
     state["docs"] = None
     state["citations"] = None
 
-    tenant = state.get("user_id")
     feature = state.get("feature","")
-
-    collection_names = collection_manager.list_collections(tenant=tenant)
-    state["collection_names"] = collection_names
-    log.info(f"collection_names for {tenant} are {state['collection_names']}")
 
     if feature == Feature.RAG or collection_names:
         return await rag_auto_route(state)
@@ -206,8 +208,12 @@ async def search_node(state: State,config: RunnableConfig):
     docs = []
 
     for collection_name in set(collection_names):
-        for id in cluster_ids:
-            parts = await collection_manager.embedding_search([question],collection_name,cluster_id=id,tenant=tenant)
+        if cluster_ids:
+            for id in cluster_ids:
+                parts = await collection_manager.embedding_search([question],collection_name,cluster_id=id,tenant=tenant)
+                docs.extend(parts)
+        else: #在index未检索到时，全量检索
+            parts = await collection_manager.embedding_search([question],collection_name,tenant=tenant)
             docs.extend(parts)
             
     log.info(f"search_node:{len(docs)}")
