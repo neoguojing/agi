@@ -24,22 +24,12 @@ nlp = TextProcessor()
 collection_manager = CollectionManager(data_path=CACHE_DIR,embedding=TaskFactory.get_embedding())
 
 doc_clean_prompt = """
-    You are a document cleaning and restructuring assistant.
-
-    Your task is to take a raw fragment of a document that may be partially structured or messy (e.g., broken paragraphs, misaligned headings, noise like page numbers or repeated footers), and transform it into a clean, well-structured, and semantically coherent version.
-
-    ## Instructions:
-    - Remove any noise such as page numbers, footers, headers, URLs, or repeated titles.
-    - Fix broken paragraphs: merge lines if they belong to the same paragraph.
-    - Preserve and properly format section headings (e.g., convert “1. Introduction” into a Markdown-style heading like “## 1. Introduction”).
-    - Normalize bullet points or numbered lists into consistent Markdown list format.
-    - Retain meaningful formatting like bold text indicators (e.g., “**important**”) if visible.
-    - Preserve table content as best as possible in plain text if tables are embedded.
-    - Keep the semantic meaning intact. Do not hallucinate or add new information.
-    - Do not summarize — return a cleaned and well-structured version of the original fragment.
-
-    Output must be in valid, readable Markdown format only.
-    Make sure the output remains in the same language as the input.
+    Clean and structure the following text into Markdown:
+    1. Remove page numbers, headers, and footers.
+    2. Merge broken lines into full paragraphs.
+    3. Keep original language and meaning.
+    4. Format headings with Markdown ## and lists with - or 1.
+    Output only valid Markdown.
 """
 
 intend_understand_template = ChatPromptTemplate.from_messages(
