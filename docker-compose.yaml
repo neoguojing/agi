@@ -1,4 +1,17 @@
 services:
+  yacy:
+    image: yacy/yacy_search_server:latest
+    container_name: yacy
+    volumes:
+      - /data/agi/yacy:/opt/yacy/DATA/
+    ports:
+      - 8090:8090
+    env_file: "docker-compose.env"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    restart: unless-stopped
+    networks:
+      - agi-net
   embd:
     image: guojingneo/agi-fastapi-embd:f89017a-
     container_name: embd
@@ -92,6 +105,7 @@ services:
       - whisper
       - huggingface
       - embd
+      - yacy
     env_file: "docker-compose.env"
     extra_hosts:
       - host.docker.internal:host-gateway
