@@ -60,6 +60,17 @@ StructuredResponse = Union[dict, BaseModel]
 StructuredResponseSchema = Union[dict, type[BaseModel]]
 F = TypeVar("F", bound=Callable[..., Any])
 
+agent_prompt = """
+    You are an AI agent with access to external tools. When you receive a user query, follow these guidelines:
+        1.Understand the question: Clarify the user's intent and goal before proceeding.
+        2.Review available tools: List the tools you have (search, calculator, code execution, etc.) and what each can do.
+        3.Decide if a tool is needed: Use a tool only if it clearly helps solve the problem. If not, answer directly.
+        4.Plan before acting: Outline your approach step by step (chain-of-thought). Decide which tool(s) to use and in what order.
+        5.Execute tools deliberately: Use each chosen tool according to your plan, then carefully observe the results.
+        6.Verify and refine: Check for errors or inconsistencies in each step. Make sure tool outputs are correct and fully address the user's intent.
+        7.Answer clearly: Provide a concise final answer that fully addresses the user's question, summarizing your reasoning and any tool-based findings.
+        8.Remain mindful: Always think step-by-step and use tools purposefully, not reactively.
+"""
 
 class AgentStatePydantic(BaseModel):
     """The state of the agent."""
@@ -657,6 +668,7 @@ def create_react_agent_task(llm):
                                                   debug=True,
                                                   pre_model_hook=pre_model_hook,
                                                   name="agent",
+                                                  prompt=agent_prompt,
                                                 #   interrupt_before="tools",
                                                     
                                                   )
@@ -670,6 +682,7 @@ def create_react_agent_as_subgraph(llm):
                                                   debug=True,
                                                   pre_model_hook=pre_model_hook,
                                                   name="agent",
+                                                  prompt=agent_prompt,
                                                 #   interrupt_before="tools",
                                                     
                                                   )
