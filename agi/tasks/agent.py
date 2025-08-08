@@ -70,6 +70,8 @@ agent_prompt = """
         6.Verify and refine: Check for errors or inconsistencies in each step. Make sure tool outputs are correct and fully address the user's intent.
         7.Answer clearly: Provide a concise final answer that fully addresses the user's question, summarizing your reasoning and any tool-based findings.
         8.Remain mindful: Always think step-by-step and use tools purposefully, not reactively.
+        
+    Respond only in {language}.
 """
 
 class AgentStatePydantic(BaseModel):
@@ -633,7 +635,7 @@ def create_react_agent(
 # agent 的提示词
 prompt = ChatPromptTemplate.from_messages(
     [
-        ("system", "You are a helpful assistant named agi. Respond only in {language}."),
+        ("system", agent_prompt),
         ("placeholder", "{messages}"),
     ]
 )
@@ -668,7 +670,6 @@ def create_react_agent_task(llm):
                                                   debug=True,
                                                   pre_model_hook=pre_model_hook,
                                                   name="agent",
-                                                  prompt=agent_prompt,
                                                 #   interrupt_before="tools",
                                                     
                                                   )
@@ -682,7 +683,6 @@ def create_react_agent_as_subgraph(llm):
                                                   debug=True,
                                                   pre_model_hook=pre_model_hook,
                                                   name="agent",
-                                                  prompt=agent_prompt,
                                                 #   interrupt_before="tools",
                                                     
                                                   )
