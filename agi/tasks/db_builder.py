@@ -19,6 +19,7 @@ from langchain_core.documents import Document
 from langchain.prompts import ChatPromptTemplate
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
+import re
 
 nlp = TextProcessor()
 collection_manager = CollectionManager(data_path=CACHE_DIR,embedding=TaskFactory.get_embedding())
@@ -30,12 +31,15 @@ doc_clean_prompt = """
     3. Keep original language and meaning.
     4. Format headings with Markdown ## and lists with - or 1.
     Output only valid Markdown.
+
+    Input:\n
+
 """
 
 intend_understand_template = ChatPromptTemplate.from_messages(
     [
         ("system",doc_clean_prompt),
-        ("human", "## Input:\n {text}")
+        ("human", "{text}")
     ]
 )
 
@@ -93,7 +97,8 @@ async def doc_clean_node(state: State, config: RunnableConfig):
         result = await clean_chain.ainvoke({
             "text": doc.page_content + " /no_think"
         })
-        doc.page_content = result.content
+
+        doc.page_content = re.sub(r"<think>.*?</think>", "", result.content, flags=re.S)
         log.info(doc.page_content)
         return doc
 

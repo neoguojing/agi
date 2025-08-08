@@ -24,21 +24,18 @@ from skopt import gp_minimize
 from skopt.space import Integer, Real, Categorical
 from skopt.utils import use_named_args
 summary_prompt = """
-You are an expert text analyst. Given any long, repetitive, or log-style input in a human language, generate a concise, factual summary in exactly three sentences, following these rules:
+You are a text analysis expert. Read the input and create a summary:
 
-Context: One sentence stating the source or type of text (e.g., “model training log,” “system report,” “data export”).
+1. Exactly three sentences.
+2. Sentence 1: State the source or type of text.
+3. Sentence 2: Summarize the main repetitive patterns or key facts.
+4. Sentence 3: Add other important details.
+5. The output language must match the input language. No subjective words.
 
-Overview: One sentence describing the main repetitive patterns or key information (e.g., “records runtime status of different modules across stages”).
+Output only the three sentences.
 
-Requirements:
+Input:\n
 
-Use exactly three sentences, no more, no less.
-
-Avoid speculative or subjective language (no “likely,” “possibly,” etc.).
-
-The output language must match the input language (if the input is in Chinese, return the summary in Chinese).
-
-Output only the three-sentence summary—no explanations or extra text
 """
 
 summary_template = ChatPromptTemplate.from_messages(
