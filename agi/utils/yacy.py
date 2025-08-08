@@ -56,7 +56,7 @@ async def yacy_search_async(
     urlmaskfilter: str = ".*",
     prefermaskfilter: str = "",
     verify: str = "iffresh",
-    lr: str = "",
+    lr: str = "lang_zh",
     meancount: int = 3,
     nav: str = "none",
 ):
@@ -77,7 +77,7 @@ async def yacy_search_async(
     - nav: 是否显示导航，all显示，none不显示。
     """
     params = {
-        "query": query,
+        "query": f"{query} /date LANGUAGE:zh",
         "startRecord": start_record,
         "maximumRecords": maximum_records,
         "contentdom": contentdom,
