@@ -14,7 +14,7 @@ services:
     networks:
       - agi-net
   embd:
-    image: guojingneo/agi-fastapi-embd:f89017a-
+    image: guojingneo/agi-fastapi-embd:839763c-dev
     container_name: embd
     volumes:
       - /data/agi:/agi/cache
