@@ -6,7 +6,7 @@ from langchain_tavily import TavilySearch
 from exa_py import Exa
 from typing import Any, Optional, Type
 from agi.config import EXA_API_KEY,log,TAVILY_API_KEY
-
+from agi.utils.yacy import YaCySearch
 from langchain_core.callbacks import CallbackManagerForToolRun
 from langchain_core.tools import BaseTool
 from typing import DefaultDict,Annotated
@@ -38,7 +38,7 @@ class SearchEngineSelector(BaseTool):
         # Always add DuckDuckGoSearch
         duckwrapper = DuckDuckGoSearchAPIWrapper(region="wt-wt", safesearch="moderate", time="y", max_results=self.max_results, source="text")
         self._search_engines["DuckDuckGoSearch"] = DuckDuckGoSearchResults(api_wrapper=duckwrapper, output_format="list")
-
+        self._search_engines["YACY"] = YaCySearch(max_results=self.max_results)
         if EXA_API_KEY:
             self._search_engines["Exa"] = Exa(EXA_API_KEY)
         if TAVILY_API_KEY:
@@ -106,6 +106,8 @@ class SearchEngineSelector(BaseTool):
                 search_results = []
                 if isinstance(search,DuckDuckGoSearchResults):
                     search_results = search.invoke(query, max_results=self.max_results)
+                elif isinstance(search,YaCySearch):
+                    search_results = search.search(query=query, maximum_records=self.max_results)
                 elif isinstance(search,Exa):
                     resp = search.search_and_contents(
                         query,

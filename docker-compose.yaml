@@ -6,7 +6,8 @@ services:
       - /data/agi/yacy:/opt/yacy/DATA/
     ports:
       - 8090:8090
-    env_file: "docker-compose.env"
+    environment:
+      - YACY_HOST=0.0.0.0
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped
