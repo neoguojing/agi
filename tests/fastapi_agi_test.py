@@ -375,9 +375,9 @@ class TestFastApiAgi(unittest.TestCase):
         response = None
         url = "http://localhost:8000/v1/files"  # 替换为你的服务地址
         # 打开 PDF 文件
-        with open("tests/test.pdf", "rb") as f:
+        with open("tests/tot.pdf", "rb") as f:
             files = {
-                "file": ("test.pdf", f, "application/pdf")  # (filename, file object, MIME type)
+                "file": ("tot.pdf", f, "application/pdf")  # (filename, file object, MIME type)
             }
             data = {
                 "collection_name": "test",
@@ -389,7 +389,7 @@ class TestFastApiAgi(unittest.TestCase):
         assert response.status_code == 200
         response_json = response.json()
         print(response_json)
-        assert response_json["original_filename"] == "test.pdf"
+        assert response_json["original_filename"] == "tot.pdf"
         assert "saved_filename" in response_json
         assert response_json["file_type"] == "application/pdf"
 

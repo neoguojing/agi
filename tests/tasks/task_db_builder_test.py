@@ -14,7 +14,7 @@ async def test_db_graph():
     state = State()
     state['user_id'] = "ragtest"
     state['collection_name'] = "ragtest"
-    state['file_path'] = "tests/2412.19437v1.pdf"
+    state['file_path'] = "tests/tot.pdf"
     ret = await db_graph.ainvoke(state,config=config)
     assert ret is not None, "ainvoke 返回值为空"
     colects = collection_manager.list_collections(tenant="ragtest")
