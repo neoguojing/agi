@@ -37,8 +37,8 @@ class SearchEngineSelector(BaseTool):
     def __init__(self,**kwargs):
         super().__init__(**kwargs)
         # Always add DuckDuckGoSearch
-        duckwrapper = DuckDuckGoSearchAPIWrapper(region="wt-wt", safesearch="moderate", time="y", max_results=self.max_results, source="text")
-        self._search_engines["DuckDuckGoSearch"] = DuckDuckGoSearchResults(api_wrapper=duckwrapper, output_format="list")
+        # duckwrapper = DuckDuckGoSearchAPIWrapper(region="wt-wt", safesearch="moderate", time="y", max_results=self.max_results, source="text")
+        # self._search_engines["DuckDuckGoSearch"] = DuckDuckGoSearchResults(api_wrapper=duckwrapper, output_format="list")
         self._search_engines["YACY"] = YaCySearch(max_results=self.max_results)
         if EXA_API_KEY:
             self._search_engines["Exa"] = Exa(EXA_API_KEY)
