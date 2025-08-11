@@ -13,12 +13,12 @@ from typing import DefaultDict,Annotated
 from pydantic import Field,BaseModel,PrivateAttr
 import traceback
 class SGInput(BaseModel):
-    """Input for the search engine tool."""
+    """Input for the search tool."""
 
     query: str = Field(description="search query to look up")
 
 class SearchEngineSelector(BaseTool):
-    name: str = "search engine"
+    name: str = "search"
     description: str = (
         "Useful for when you need to answer questions about current events. Not for weather、stock."
         "Input should be a search query."
@@ -99,7 +99,7 @@ class SearchEngineSelector(BaseTool):
         while retries < self.max_retries and not success:
             try:
                 random_key = self.select_engine()[0]
-                log.debug(f"choose engine{random_key}")
+                log.info(f"choose engine{random_key}")
                 
                 search = self._search_engines[random_key]
 
