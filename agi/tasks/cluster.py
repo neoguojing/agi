@@ -454,6 +454,7 @@ def train(docs: List[Document], embeddings: np.ndarray,cluster_algo=CLUSTER_ALGO
 
     res = gp_minimize(objective, search_space, n_calls=30, random_state=42)
 
+    final_clusters = None
     if best_clusterer:
         final_clusters = best_clusterer.post_processor(docs, labels=best_labels)
 
