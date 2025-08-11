@@ -1,4 +1,5 @@
 import random
+import json
 from collections import defaultdict
 from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 from langchain_community.tools import DuckDuckGoSearchResults
@@ -117,7 +118,7 @@ class SearchEngineSelector(BaseTool):
                     )
                     for r in resp.results:
                         search_results.append({
-                            "snippet": r.text,
+                            "snippet": json.dumps(r.text),
                             "title": r.title,
                             "link": r.url,
                             "date": r.published_date,
@@ -140,7 +141,7 @@ class SearchEngineSelector(BaseTool):
                     resp = search.invoke({"query": query})
                     for r in resp.get("results",[]):
                         search_results.append({
-                            "snippet": r.get("content",""),
+                            "snippet": json.dumps(r.get("content","")),
                             "title": r.get("content",""),
                             "link": r.get("url",""),
                             "date": "",
