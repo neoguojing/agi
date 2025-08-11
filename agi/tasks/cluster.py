@@ -424,7 +424,7 @@ def train(docs: List[Document], embeddings: np.ndarray,cluster_algo=CLUSTER_ALGO
     def objective(**params):
         nonlocal best_score, best_labels, best_params, best_clusterer
         try:
-            if not params["use_umap"]:
+            if not params.get("use_umap"):
                 params.pop("umap_dim", None)
                 params.pop("umap_n_neighbors", None)
                 params.pop("umap_min_dist", None)
