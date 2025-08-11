@@ -48,7 +48,7 @@ summary_template = ChatPromptTemplate.from_messages(
 )
 
 class TextClusterer:
-    def __init__(self, cluster_algo=CLUSTER_ALGO,hnsw_m=32, ef_search=128, distance_threshold=0.5,
+    def __init__(self, cluster_algo=CLUSTER_ALGO,hnsw_m=32, ef_search=128, distance_threshold=0.5,candidate_k=5,
                  min_cluster_size: int = 2,min_samples: int = 6,
                  use_umap: bool = True,umap_dim: int = 15,umap_n_neighbors: int = 10,umap_min_dist: float = 0.1):
         """
@@ -67,7 +67,7 @@ class TextClusterer:
         self.hnsw_m = hnsw_m
         self.ef_search = ef_search
         self.distance_threshold = distance_threshold
-        self.candidate_k = 5
+        self.candidate_k = candidate_k
 
         self.min_cluster_size = min_cluster_size
         self.min_samples = min_samples
