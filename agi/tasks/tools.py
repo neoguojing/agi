@@ -41,15 +41,15 @@ def pythonREPL():
     return repl_tool
 
 image_gen_tool = TaskFactory.create_task(TASK_IMAGE_GEN).as_tool(
-    name = "",
-    description=""
+    name = "image_gen",
+    description="A tool used to generate images based on text descriptions."
 )
 image_gen_tool.return_direct = True
 print(image_gen_tool.args_schema.model_json_schema())
 
 image_recog_tool = TaskFactory.create_task(TASK_MULTI_MODEL).as_tool(
-    name = "",
-    description=""
+    name = "image_recog",
+    description="A tool used to recognize the content of an image and return relevant descriptions or labels."
 )
 image_recog_tool.return_direct = True
 print(image_recog_tool.args_schema.model_json_schema())

@@ -67,7 +67,7 @@ class WLInput(BaseModel):
     web_paths: str = Field(description="urls need to be scraped")
 
 class WebScraper(BaseTool):
-    name: str = "web scraper"
+    name: str = "web_scraper"
     description: str = (
         "This web scraper tool takes a list of URLs as input and retrieves the content from each webpage."
     )
