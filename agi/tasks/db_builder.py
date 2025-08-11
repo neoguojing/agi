@@ -25,16 +25,17 @@ nlp = TextProcessor()
 collection_manager = CollectionManager(data_path=CACHE_DIR,embedding=TaskFactory.get_embedding())
 
 doc_clean_prompt = """
-    Clean and structure the following text into Markdown:
-    1. Remove page numbers, headers, and footers.
-    2. Merge broken lines into full paragraphs.
-    3. Keep original language and meaning.
-    4. Format headings with Markdown ## and lists with - or 1.
-    Output only valid Markdown.
+Clean and structure the following text into Markdown:
+1. Remove page numbers, headers, and footers.
+2. Merge broken lines into full paragraphs.
+3. Keep original language and meaning.
+4. Format headings with Markdown ## and lists with - or 1.
+5. If there is no meaningful content after cleaning, output exactly: None
+Output only valid Markdown or None.
 
-    Input:\n
-
+Input:\n
 """
+
 
 intend_understand_template = ChatPromptTemplate.from_messages(
     [
@@ -92,13 +93,18 @@ async def doc_clean_node(state: State, config: RunnableConfig):
     
     semaphore = asyncio.Semaphore(2)
 
-    # 用 example 处理剩下的文档
     async def _clean_text(doc: Document):
         result = await clean_chain.ainvoke({
             "text": doc.page_content
         })
 
-        doc.page_content = re.sub(r"<think>.*?</think>", "", result.content, flags=re.S)
+        cleaned = re.sub(r"<think>.*?</think>", "", result.content, flags=re.S).strip()
+
+        # 过滤无效内容
+        if not cleaned or "none" in cleaned.lower():
+            return None
+
+        doc.page_content = cleaned
         log.info(doc.page_content)
         return doc
 
@@ -106,12 +112,14 @@ async def doc_clean_node(state: State, config: RunnableConfig):
         async with semaphore:
             return await _clean_text(doc)
 
-    # 处理剩下的文档
-    documents = await asyncio.gather(
+    # 异步处理
+    results = await asyncio.gather(
         *(limited_clean_text(doc) for doc in state["db_documents"])
     )
 
-    # 加上第一个处理过的文档
+    # 过滤掉 None
+    documents = [doc for doc in results if doc is not None]
+
     return {"db_documents": documents}
 
 

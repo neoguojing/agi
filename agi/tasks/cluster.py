@@ -24,19 +24,18 @@ from skopt import gp_minimize
 from skopt.space import Integer, Real, Categorical
 from skopt.utils import use_named_args
 summary_prompt = """
-You are a text analysis expert. Read the input and create a summary:
+You are a text analysis expert. Read the input text and produce a concise, factual summary.
 
-1. Exactly three sentences.
-2. Sentence 1: State the source or type of text.
-3. Sentence 2: Summarize the main repetitive patterns or key facts.
-4. Sentence 3: Add other important details.
-5. The output language must match the input language. No subjective words.
-
-Output only the three sentences.
+Requirements:
+1. Preserve the original language of the input.
+2. Focus on the key information, main points, and important details.
+3. Avoid subjective opinions or interpretation.
+4. Keep the summary clear and well-structured, using full sentences.
+5. If there is no meaningful content, output exactly: None.
 
 Input:\n
-
 """
+
 
 summary_template = ChatPromptTemplate.from_messages(
     [
@@ -351,8 +350,10 @@ class TextClusterer:
                 context_texts += "\n\n" + doc.page_content
                 all_keywords.extend(doc.metadata.get("keywords", []))
             
+            summary = self.summary(context_texts.strip())
+            log.info(f"cluster summary result:{summary}")
             cluster_doc = Document(
-                page_content=self.summary(context_texts.strip()),
+                page_content=summary,
                 metadata={
                     "doc_id": cluster_id,
                     "cluster_id": cluster_id,
@@ -368,7 +369,7 @@ class TextClusterer:
         return final_clusters
 
 
-def train(docs: List[Document], embeddings: np.ndarray):
+def get_hdbscan_params(embeddings: np.ndarray):
     embeddings = np.array(embeddings, dtype=np.float32) if isinstance(embeddings, list) else embeddings
     n_samples, n_features = embeddings.shape
 
@@ -384,6 +385,36 @@ def train(docs: List[Document], embeddings: np.ndarray):
         Real(0.001, 0.5, name='umap_min_dist'),
     ]
 
+    return search_space
+
+def get_dpmeans_params(embeddings: np.ndarray):
+    embeddings = np.array(embeddings, dtype=np.float32) if isinstance(embeddings, list) else embeddings
+    n_samples, n_features = embeddings.shape
+
+    search_space = [
+        # hnsw_m: HNSW 索引的 M 参数，通常 5-48，取样本数约束
+        Integer(5, min(48, max(5, n_samples - 1)), name='hnsw_m'),
+        
+        # ef_search: 搜索时的 ef 参数，通常 10-200，取样本数约束
+        Integer(10, min(200, max(10, n_samples)), name='ef_search'),
+        
+        # distance_threshold: DP-Means 的半径阈值，通常小于 1
+        Real(0.01, 1.0, name='distance_threshold'),
+        
+        # candidate_k: 候选邻居数，固定 5
+        Integer(5, 5, name='candidate_k'),
+    ]
+    
+    return search_space
+
+def train(docs: List[Document], embeddings: np.ndarray,cluster_algo=CLUSTER_ALGO):
+
+    search_space = None
+    if cluster_algo == "dpmeans":
+        search_space = get_dpmeans_params(embeddings)
+    else:
+        search_space = get_dpmeans_params(embeddings)
+
     best_score = float("inf")
     best_labels = None
     best_params = None
@@ -398,7 +429,7 @@ def train(docs: List[Document], embeddings: np.ndarray):
                 params.pop("umap_n_neighbors", None)
                 params.pop("umap_min_dist", None)
 
-            clusterer = TextClusterer(**params)
+            clusterer = TextClusterer(**params,cluster_algo=cluster_algo)
             labels = clusterer.cluster(embeddings)
 
             if len(set(labels)) <= 2:

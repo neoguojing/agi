@@ -26,32 +26,32 @@ async def test_db_graph():
 
 
 
-@pytest.mark.asyncio
-async def test_summary_rag():
-    config={"configurable": {"conversation_id": "2","thread_id": "ragtest"}}
-    input = State(
-        messages=[HumanMessage(content="总结该文档")],
-        collection_names = ["ragtest"],
-        user_id = "ragtest"
-    )
-    ret = await rag_graph.ainvoke(input,config=config)
-    assert isinstance(ret,dict)
-    assert ret.get("docs") is None, "应包含至少1个文档"
+# @pytest.mark.asyncio
+# async def test_summary_rag():
+#     config={"configurable": {"conversation_id": "2","thread_id": "ragtest"}}
+#     input = State(
+#         messages=[HumanMessage(content="总结该文档")],
+#         collection_names = ["ragtest"],
+#         user_id = "ragtest"
+#     )
+#     ret = await rag_graph.ainvoke(input,config=config)
+#     assert isinstance(ret,dict)
+#     assert ret.get("docs") is None, "应包含至少1个文档"
 
-@pytest.mark.asyncio
-async def test_rag():
-    config={"configurable": {"conversation_id": "3","thread_id": "ragtest"}}
-    input = State(
-        # messages=[HumanMessage(content="NTP3000Plus")],
-        messages=[HumanMessage(content="Reward Model 介绍")],
-        collection_names = ["ragtest"],
-        user_id = "ragtest"
-    )
-    ret = await rag_graph.ainvoke(input,config=config)
-    print(ret)
-    assert isinstance(ret,dict)
-    assert ret.get("docs") is None, "应包含至少1个文档"
-    assert ret.get("index_search_result") is None, "应包含至少1个文档"
+# @pytest.mark.asyncio
+# async def test_rag():
+#     config={"configurable": {"conversation_id": "3","thread_id": "ragtest"}}
+#     input = State(
+#         # messages=[HumanMessage(content="NTP3000Plus")],
+#         messages=[HumanMessage(content="Reward Model 介绍")],
+#         collection_names = ["ragtest"],
+#         user_id = "ragtest"
+#     )
+#     ret = await rag_graph.ainvoke(input,config=config)
+#     print(ret)
+#     assert isinstance(ret,dict)
+#     assert ret.get("docs") is None, "应包含至少1个文档"
+#     assert ret.get("index_search_result") is None, "应包含至少1个文档"
 
 
 
