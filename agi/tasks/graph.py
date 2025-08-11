@@ -142,7 +142,7 @@ class AgiGraph:
     # 文本输入决策
     async def text_feature_control(self,state: State):
         if state.get("user_id") == "raspberrypi":
-            refine_human_message(state,lambda x:f"{x} /no_think")
+            refine_human_message(state,lambda x:f"{x}")
         feature = state.get("feature","")
         if feature == Feature.AGENT:
             return "agent"

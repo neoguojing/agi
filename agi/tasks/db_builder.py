@@ -95,7 +95,7 @@ async def doc_clean_node(state: State, config: RunnableConfig):
     # 用 example 处理剩下的文档
     async def _clean_text(doc: Document):
         result = await clean_chain.ainvoke({
-            "text": doc.page_content + " /no_think"
+            "text": doc.page_content
         })
 
         doc.page_content = re.sub(r"<think>.*?</think>", "", result.content, flags=re.S)
