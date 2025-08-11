@@ -234,7 +234,7 @@ class TextClusterer:
         labels = -np.ones(n_samples, dtype=int)
         
         # faiss索引只存储每个簇的“种子”向量，用于快速筛选
-        index = faiss.IndexHNSWFlat(dim, self.hnsw_m)
+        index = faiss.IndexHNSWFlat(int(dim), self.hnsw_m)
         index.hnsw.efSearch = self.ef_search
         
         # 核心数据结构，用于维护动态质心
