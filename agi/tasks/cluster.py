@@ -402,7 +402,7 @@ def get_dpmeans_params(embeddings: np.ndarray):
         Real(0.01, 1.0, name='distance_threshold'),
         
         # candidate_k: 候选邻居数，固定 5
-        Integer(5, 5, name='candidate_k'),
+        Categorical([5], name='candidate_k'),
     ]
     
     return search_space
