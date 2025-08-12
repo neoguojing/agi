@@ -186,7 +186,7 @@ async def route(state: State):
 
     if feature == Feature.RAG:
         return await rag_auto_route(state)
-    elif feature == Feature.WEB:
+    else:
         return "web"
 
 async def index_search_node(state: State,config: RunnableConfig):
@@ -253,3 +253,4 @@ rag_graph_builder.add_edge("doc_chat", END)
 rag_graph = rag_graph_builder.compile(checkpointer=checkpointer,name="rag")
 rag_as_subgraph = rag_graph_builder.compile(name="rag")
 graph_print(rag_graph)
+rag_graph.as_tool()

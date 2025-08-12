@@ -7,6 +7,7 @@ from agi.utils.search_engine import SearchEngineSelector
 from agi.utils.stock_market import get_stock
 from agi.utils.scrape import WebScraper
 from agi.tasks.task_factory import TaskFactory,TASK_IMAGE_GEN,TASK_MULTI_MODEL
+from agi.tasks.rag_web import rag_as_subgraph
 from agi.config import log
 from agi.tasks.define import AskHuman
 from langchain_community.tools.yahoo_finance_news import YahooFinanceNewsTool
@@ -45,14 +46,22 @@ image_gen_tool = TaskFactory.create_task(TASK_IMAGE_GEN).as_tool(
     description="A tool used to generate images based on text descriptions."
 )
 image_gen_tool.return_direct = True
-print(image_gen_tool.args_schema.model_json_schema())
+log.info(image_gen_tool.args_schema.model_json_schema())
 
 image_recog_tool = TaskFactory.create_task(TASK_MULTI_MODEL).as_tool(
     name = "image_recog",
     description="A tool used to recognize the content of an image and return relevant descriptions or labels."
 )
 image_recog_tool.return_direct = True
-print(image_recog_tool.args_schema.model_json_schema())
+log.info(image_recog_tool.args_schema.model_json_schema())
+
+
+rag_tool = rag_as_subgraph.as_tool(
+    name = "search",
+    description="Useful for when you need to answer questions about current events. Not for weather、stock."
+)
+rag_tool.return_direct = True
+log.info(f"rag_tool input:{rag_tool.args_schema.model_json_schema()}")
 
 tools = [
     AskHuman,
@@ -63,7 +72,8 @@ tools = [
             Quantitative Biology, Quantitative Finance, Statistics, Electrical Engineering, and Economics from scientific articles \
             on arxiv.org."
     ),
-    SearchEngineSelector(),
+    # SearchEngineSelector(),
+    rag_tool,
     # TEST FAIED
     # YahooFinanceNewsTool(),
     YouTubeSearchTool(),
