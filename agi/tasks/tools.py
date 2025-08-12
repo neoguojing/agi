@@ -58,7 +58,7 @@ image_recog_tool.return_direct = True
 log.info(image_recog_tool.args_schema.model_json_schema())
 
 @tool(return_direct=True)
-def search(query: str):
+async def search(query: str):
     """Useful for when you need to answer questions about current events. Not for weather、stock."""
     config={"configurable": {"conversation_id": "agent","thread_id": "agent"}}
     state = State(
@@ -66,7 +66,7 @@ def search(query: str):
         user_id = "agent",
         feature="web"
     )
-    return rag_as_subgraph.invoke(state,config=config)
+    return await rag_as_subgraph.ainvoke(state,config=config)
 
 tools = [
     AskHuman,
