@@ -1,5 +1,5 @@
 from agi.tasks.define import AskHuman
-from agi.config import log
+from agi.config import log,AGI_DEBUG
 from agi.tasks.utils import split_think_content
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.prompts import ChatPromptTemplate
@@ -667,7 +667,7 @@ def create_react_agent_task(llm):
     langgraph_agent_executor = create_react_agent(llm, 
                                                   tools,state_modifier=modify_state_messages,
                                                   checkpointer=memory,
-                                                  debug=True,
+                                                  debug=AGI_DEBUG,
                                                   pre_model_hook=pre_model_hook,
                                                   name="agent",
                                                 #   interrupt_before="tools",
@@ -680,7 +680,7 @@ def create_react_agent_as_subgraph(llm):
     from agi.tasks.tools import tools
     langgraph_agent_executor = create_react_agent(llm, 
                                                   tools,state_modifier=modify_state_messages,
-                                                  debug=True,
+                                                  debug=AGI_DEBUG,
                                                   pre_model_hook=pre_model_hook,
                                                   name="agent",
                                                 #   interrupt_before="tools",
