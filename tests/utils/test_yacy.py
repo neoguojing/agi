@@ -16,16 +16,12 @@ def test_yacy_search_real_call():
     result = client.search(query=query, maximum_records=max_records)
 
     # 断言返回的是 dict 且包含预期字段
-    assert isinstance(result, dict)
-    assert "totalResults" in result
-    assert "items" in result
-    assert isinstance(result["items"], list)
-
+    assert isinstance(result, list)
     # 验证返回条数不超过请求的最大条数
-    assert len(result["items"]) <= max_records
+    assert len(result) <= max_records
 
     # 验证部分字段存在且非空
-    for item in result["items"]:
+    for item in result:
         assert "title" in item and item["title"]
         assert "link" in item and item["link"]
         assert "snippet" in item
@@ -33,8 +29,7 @@ def test_yacy_search_real_call():
         assert "score" in item
 
     # 输出部分结果，用于调试或查看
-    print(f"Total results: {result['totalResults']}")
-    print("First item:", result["items"][0] if result["items"] else "No items found")
+    print("First item:", result[0] if result else "No items found")
     
 @pytest.mark.asyncio
 async def test_yacy_search_async_real_call():
@@ -45,16 +40,12 @@ async def test_yacy_search_async_real_call():
     result = await client.yacy_search_async(query=query, maximum_records=max_records)
 
     # 断言返回的是 dict 且包含预期字段
-    assert isinstance(result, dict)
-    assert "totalResults" in result
-    assert "items" in result
-    assert isinstance(result["items"], list)
-
+    assert isinstance(result, list)
     # 验证返回条数不超过请求的最大条数
-    assert len(result["items"]) <= max_records
+    assert len(result) <= max_records
 
     # 验证部分字段存在且非空
-    for item in result["items"]:
+    for item in result:
         assert "title" in item and item["title"]
         assert "link" in item and item["link"]
         assert "snippet" in item
@@ -62,8 +53,7 @@ async def test_yacy_search_async_real_call():
         assert "score" in item
 
 
-    print(f"Total results: {result['totalResults']}")
-    print("First item:", result["items"][0] if result["items"] else "No items found")
+    print("First item:", result[0] if result else "No items found")
 
 
 # @pytest.mark.asyncio
