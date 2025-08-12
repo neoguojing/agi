@@ -235,7 +235,7 @@ class TextClusterer:
         
         # faiss索引只存储每个簇的“种子”向量，用于快速筛选
         index = faiss.IndexHNSWFlat(int(dim), int(self.hnsw_m))
-        index.hnsw.efSearch = self.ef_search
+        index.hnsw.efSearch = int(self.ef_search)
         
         # 核心数据结构，用于维护动态质心
         index_to_label: Dict[int, int] = {}       # faiss内部索引 -> 自定义簇标签
@@ -260,7 +260,7 @@ class TextClusterer:
 
             # --- 混合搜索策略 ---
             # 步骤 A: 使用faiss快速筛选出k个候选簇
-            k = min(index.ntotal, self.candidate_k)
+            k = min(index.ntotal, int(self.candidate_k))
             _, I_cand = index.search(vec, k)
             
             # 步骤 B: 精确计算与候选簇真实质心的距离
@@ -275,7 +275,7 @@ class TextClusterer:
                     best_label = label
             
             # 步骤 C: 根据精确距离决策
-            if min_dist_sq > self.distance_threshold:
+            if min_dist_sq > float(self.distance_threshold):
                 # 创建新簇
                 new_label = next_cluster_label
                 labels[i] = new_label
