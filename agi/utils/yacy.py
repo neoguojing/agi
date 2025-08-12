@@ -92,7 +92,7 @@ class YaCySearch:
             "nav": nav,
         }
 
-        timeout = httpx.Timeout(10.0, connect=5.0)  
+        timeout = httpx.Timeout(30.0, connect=10.0)  
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.get(SEARCH_API, params=params)
             response.raise_for_status()
