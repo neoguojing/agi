@@ -59,14 +59,14 @@ log.info(image_recog_tool.args_schema.model_json_schema())
 
 @tool(return_direct=True)
 def search(query: str):
-   """Useful for when you need to answer questions about current events. Not for weather、stock."""
+    """Useful for when you need to answer questions about current events. Not for weather、stock."""
     config={"configurable": {"conversation_id": "agent","thread_id": "agent"}}
-    input = State(
+    state = State(
         messages=[HumanMessage(content=query)],
         user_id = "agent",
         feature="web"
     )
-   return rag_as_subgraph.invoke(input,config=config)
+    return rag_as_subgraph.invoke(state,config=config)
 
 tools = [
     AskHuman,
