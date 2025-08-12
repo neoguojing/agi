@@ -23,14 +23,15 @@ import random
 from skopt import gp_minimize
 from skopt.space import Integer, Real, Categorical
 from skopt.utils import use_named_args
+
 summary_prompt = """
 You are a text analysis expert. Read the input text and produce a concise, factual summary.
 
 Requirements:
 1. Preserve the original language of the input.
-2. Focus on the key information, main points, and important details.
-3. Avoid subjective opinions or interpretation.
-4. Keep the summary clear and well-structured, using full sentences.
+2. Focus only on the most important points, ignoring minor details.
+3. Limit the summary to no more than 5 sentences or 100 words.
+4. Avoid subjective opinions or interpretation.
 5. If there is no meaningful content, output exactly: None.
 
 Input:\n
@@ -96,7 +97,7 @@ class TextClusterer:
         if target_min <= ratio <= target_max:
             return 0.0  # 完美落在区间内，无惩罚
         elif ratio < target_min:
-            return (target_min - ratio) ** 2 * 10  # 偏少惩罚
+            return (target_min - ratio) ** 4 * 10  # 偏少惩罚 更多
         else:  # ratio > target_max
             return (ratio - target_max) ** 2 * 10  # 偏多惩罚
 
@@ -351,7 +352,8 @@ class TextClusterer:
                 all_keywords.extend(doc.metadata.get("keywords", []))
             
             summary = self.summary(context_texts.strip())
-            log.info(f"cluster summary result:{summary}")
+            keywords = self.combined_keywords(all_keywords)
+            log.info(f"cluster summary result:{summary} \n keywords={keywords}\n,related_doc_ids={len(related_doc_ids)}")
             cluster_doc = Document(
                 page_content=summary,
                 metadata={
@@ -360,12 +362,12 @@ class TextClusterer:
                     "label": int(label),
                     "related_docs": related_doc_ids,
                     "source": source_file,
-                    "keywords": self.combined_keywords(all_keywords),
+                    "keywords": keywords,
                     "cluster_size": len(member_indices)
                 }
             )
             final_clusters.append(cluster_doc)
-        print(f"total:{len(docs)},clusted:{clustered_docs_num},cluster num:{len(final_clusters)}")
+        print(f"total docs:{len(docs)},clusted docs:{clustered_docs_num},cluster num:{len(final_clusters)}")
         return final_clusters
 
 
