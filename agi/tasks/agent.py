@@ -7,7 +7,7 @@ from agi.tasks.define import AgentState
 from langchain_core.messages import trim_messages
 from agi.tasks.utils import refine_last_message_text,format_state_message_to_str
 from agi.tasks.define import State
-
+from datetime import datetime
 import functools
 import inspect
 from typing import (
@@ -70,7 +70,7 @@ agent_prompt = """
         6.Verify and refine: Check for errors or inconsistencies in each step. Make sure tool outputs are correct and fully address the user's intent.
         7.Answer clearly: Provide a concise final answer that fully addresses the user's question, summarizing your reasoning and any tool-based findings.
         8.Remain mindful: Always think step-by-step and use tools purposefully, not reactively.
-        
+    Date:{date}
     Respond only in {language}.
 """
 
@@ -644,7 +644,7 @@ def modify_state_messages(state: State):
     # 过滤掉非法的消息类型
     state["messages"] = list(filter(lambda x: not isinstance(x.content, dict), state["messages"]))
     refine_last_message_text(state["messages"])
-    return prompt.invoke({"messages": state["messages"],"language":"chinese"}).to_messages()
+    return prompt.invoke({"messages": state["messages"],"language":"chinese","date":datetime.now()}).to_messages()
 
 def pre_model_hook(state):
     refine_last_message_text(state["messages"])
