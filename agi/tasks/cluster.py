@@ -337,7 +337,7 @@ class TextClusterer:
             related_doc_ids = []
 
             for idx in member_indices:
-                doc = docs[idx] # 使用被打乱顺序后的doc
+                doc = docs[idx] 
                 doc_id = str(uuid.uuid4())
                 doc.metadata["doc_id"] = doc_id
                 doc.metadata["cluster_id"] = cluster_id
