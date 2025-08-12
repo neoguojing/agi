@@ -1,6 +1,7 @@
 import asyncio
 import httpx
 import os
+import traceback
 YACY_HOST = os.getenv("YACY_HOST","http://localhost:8090")
 
 CRAWLER_URL = f"{YACY_HOST}/Crawler_p.html"
@@ -99,14 +100,12 @@ class YaCySearch:
             data = response.json()
         
         # 下面根据典型 YaCy JSON结构精简结果
-        result = {}
         channels = data.get("channels", [])
         if not channels:
             # 无结果返回空
             return {"totalResults": 0, "items": []}
 
         channel = channels[0]
-        total_results = int(channel.get("totalResults", 0))
         items = channel.get("items", [])
 
         # 只保留每条结果的部分字段，方便后续处理
@@ -121,9 +120,7 @@ class YaCySearch:
                 "source": item.get("host", ""),
             })
 
-        result["totalResults"] = total_results
-        result["items"] = simplified_items
-        return result
+        return simplified_items
     
     def search(self, query: str,
                start_record: int = 0,
@@ -149,38 +146,38 @@ class YaCySearch:
             "meancount": meancount,
             "nav": nav,
         }
+        try:
+            timeout = httpx.Timeout(10.0, connect=5.0)
+            response = httpx.get(SEARCH_API, params=params, timeout=timeout)
 
-        timeout = httpx.Timeout(10.0, connect=5.0)
-        response = httpx.get(SEARCH_API, params=params, timeout=timeout)
+            # 检查响应状态码
+            response.raise_for_status()
+            data = response.json()
 
-        # 检查响应状态码
-        response.raise_for_status()
-        data = response.json()
+            # 下面根据典型 YaCy JSON结构精简结果
+            channels = data.get("channels", [])
+            if not channels:
+                # 无结果返回空
+                return []
 
-        # 下面根据典型 YaCy JSON结构精简结果
-        result = {}
-        channels = data.get("channels", [])
-        if not channels:
-            # 无结果返回空
-            return {"totalResults": 0, "items": []}
+            channel = channels[0]
+            items = channel.get("items", [])
 
-        channel = channels[0]
-        total_results = int(channel.get("totalResults", 0))
-        items = channel.get("items", [])
+            # 只保留每条结果的部分字段，方便后续处理
+            simplified_items = []
+            for item in items:
+                simplified_items.append({
+                    "title": item.get("title", ""),
+                    "link": item.get("link", ""),
+                    "snippet": item.get("description", ""),
+                    "date": item.get("pubDate", ""),
+                    "score": item.get("ranking", ""),
+                    "source": item.get("host", ""),
+                })
 
-        # 只保留每条结果的部分字段，方便后续处理
-        simplified_items = []
-        for item in items:
-            simplified_items.append({
-                "title": item.get("title", ""),
-                "link": item.get("link", ""),
-                "snippet": item.get("description", ""),
-                "date": item.get("pubDate", ""),
-                "score": item.get("ranking", ""),
-                "source": item.get("host", ""),
-            })
-
-        result["totalResults"] = total_results
-        result["items"] = simplified_items
-        return result
+            return simplified_items
+        except Exception as e:
+            print(f"[ERROR] Search request failed: {e}")
+            traceback.print_exc()
+            return []
 
