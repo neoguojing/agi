@@ -8,10 +8,12 @@ from agi.utils.stock_market import get_stock
 from agi.utils.scrape import WebScraper
 from agi.tasks.task_factory import TaskFactory,TASK_IMAGE_GEN,TASK_MULTI_MODEL
 from agi.tasks.rag_web import rag_as_subgraph
+from agi.tasks.define import State
 from agi.config import log
 from agi.tasks.define import AskHuman
 from langchain_community.tools.yahoo_finance_news import YahooFinanceNewsTool
 from langchain_community.tools import YouTubeSearchTool
+from langchain_core.messages import HumanMessage
 
 arxiv = ArxivAPIWrapper()
 
@@ -55,13 +57,16 @@ image_recog_tool = TaskFactory.create_task(TASK_MULTI_MODEL).as_tool(
 image_recog_tool.return_direct = True
 log.info(image_recog_tool.args_schema.model_json_schema())
 
-
-rag_tool = rag_as_subgraph.as_tool(
-    name = "search",
-    description="Useful for when you need to answer questions about current events. Not for weather、stock."
-)
-rag_tool.return_direct = True
-log.info(f"rag_tool input:{rag_tool.args_schema.model_json_schema()}")
+@tool(return_direct=True)
+def search(query: str):
+   """Useful for when you need to answer questions about current events. Not for weather、stock."""
+    config={"configurable": {"conversation_id": "agent","thread_id": "agent"}}
+    input = State(
+        messages=[HumanMessage(content=query)],
+        user_id = "agent",
+        feature="web"
+    )
+   return rag_as_subgraph.invoke(input,config=config)
 
 tools = [
     AskHuman,
@@ -73,7 +78,7 @@ tools = [
             on arxiv.org."
     ),
     # SearchEngineSelector(),
-    rag_tool,
+    search,
     # TEST FAIED
     # YahooFinanceNewsTool(),
     YouTubeSearchTool(),
