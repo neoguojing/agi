@@ -372,7 +372,7 @@ def build_citations(inputs: dict):
                 "metadata": metadata,
                 "distances": distances
             })
-        log.debug(f"build_citations----{citations}")
+        log.info(f"build_citations----{citations}")
     except Exception as e:
         log.error(e)
         print(traceback.format_exc())

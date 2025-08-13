@@ -156,10 +156,8 @@ class YaCySearch:
 
             # 检查响应状态码
             response.raise_for_status()
-            log.info(response.text)
             # data = response.json()
             data = json.loads(response.text,strict=False)
-            log.info(data)
             # 下面根据典型 YaCy JSON结构精简结果
             channels = data.get("channels", [])
             if not channels:
@@ -180,7 +178,8 @@ class YaCySearch:
                     "score": item.get("ranking", ""),
                     "source": item.get("host", ""),
                 })
-
+                
+            log.info(simplified_items)
             return simplified_items
         except Exception as e:
             print(f"[ERROR] Search request failed: {e}")
