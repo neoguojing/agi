@@ -88,13 +88,22 @@ class WebScraper(BaseTool):
     def _fetch_playwright(self, url: str) -> str:
         # 轻量版 playwright 抓取（如果未安装或失败会抛异常）
         from playwright.sync_api import sync_playwright
+        from playwright_stealth import stealth_sync
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=self.headless)
+            browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
             page = browser.new_page()
-            # 少量防检测脚本
-            page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
-            page.goto(url, wait_until="networkidle", timeout=20000)
-            time.sleep(random.uniform(0.2, 0.8))
+            
+            # 应用 Stealth 反检测
+            stealth_sync(page)
+            
+            page.goto(url, wait_until="domcontentloaded", timeout=20000)
+            
+            # 等待正文加载
+            page.wait_for_selector("#js_content", timeout=10000)
+            
+            # 模拟人类浏览延迟
+            time.sleep(random.uniform(0.5, 1.5))
+            
             html = page.content()
             browser.close()
             return html
