@@ -147,7 +147,8 @@ class YaCySearch:
             "nav": nav,
         }
         try:
-            timeout = httpx.Timeout(10.0, connect=5.0)
+            print(SEARCH_API)
+            timeout = httpx.Timeout(20.0, connect=10.0)
             response = httpx.get(SEARCH_API, params=params, timeout=timeout)
 
             # 检查响应状态码
