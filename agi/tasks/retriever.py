@@ -473,7 +473,7 @@ class KnowledgeManager:
             return 
     
         try:
-            questions = self.search_chain.invoke({"date":datetime.now().date(),"text":query,"results_num":max_results})
+            questions = self.search_chain.invoke({"date":datetime.now().date(),"text":query,"results_num":max_results,"language":"chinese"})
             log.info(f"questions:{questions}")
             
             raw_results = []

@@ -3,3 +3,4 @@ faiss-gpu-cu12==1.11.0
 scikit-learn==1.6.1
 scikit-optimize==0.10.2
 umap-learn==0.5.7
+langdetect==1.0.9

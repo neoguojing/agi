@@ -2,10 +2,9 @@ from agi.tasks.define import State,InputType,Feature
 from agi.tasks.task_factory import (
     TaskFactory,
     TASK_DOC_CHAT,
-    TASK_RAG,
-    TASK_WEB_SEARCH,
     TASK_LLM_WITH_HISTORY
 )
+from agi.tasks.prompt import DEFAULT_SEARCH_PROMPT
 from langchain_core.runnables import (
     RunnableLambda,
     RunnableConfig
@@ -15,13 +14,17 @@ from langchain.prompts import ChatPromptTemplate
 from langgraph.types import StreamWriter
 from langgraph.graph import END, StateGraph, START
 from langgraph.checkpoint.memory import MemorySaver
-from agi.tasks.retriever import FilterType,SourceType
+from langchain_community.retrievers.web_research import QuestionListOutputParser
 from agi.tasks.llm_app import build_citations
-from agi.tasks.utils import get_last_message_text,split_think_content,graph_print
+from agi.tasks.utils import get_last_message_text,split_think_content,graph_print,refine_last_message_runnable
 from agi.config import log,CACHE_DIR
 from agi.tasks.vectore_store import CollectionManager
 from agi.llms.rerank import rerank_with_batching
+from agi.utils.search_engine import SearchEngineSelector
 import json
+import traceback
+from datetime import datetime
+from langdetect import detect
 from langchain_core.documents import Document
 
 intend_understand_prompt = '''
@@ -94,13 +97,34 @@ async def intend_understand_modify_state_messages(state: State):
 intend_understand__modify_state_messages_runnable = RunnableLambda(intend_understand_modify_state_messages)
 
 intend_understand_chain = intend_understand__modify_state_messages_runnable | TaskFactory.get_llm() 
+
+search_question_generate_chain = DEFAULT_SEARCH_PROMPT | TaskFactory.get_llm() | refine_last_message_runnable | QuestionListOutputParser()
+
 collection_manager = CollectionManager(data_path=CACHE_DIR,embedding=TaskFactory.get_embedding())
+
+search_engines = SearchEngineSelector()
 
 def get_cluster_ids(docs:list[Document]):
     cluster_ids = []
     for doc in docs:
         cluster_ids.append(doc.metadata.get("cluster_id"))
     return set(cluster_ids)
+
+# 产生新的问题
+def refine_query(feature:str,query: str):
+    language = ""
+    if feature == "web":
+        language = "English"
+    else:
+        lang = detect(query)
+        if lang == "zh":
+            language = "Chinese"
+        else:
+            language = "English"
+
+    questions = search_question_generate_chain.invoke({"date":datetime.now().date(),"text":query,"results_num":3,"language":language})
+    log.info(f"questions:{questions}")
+    return questions
 
 # NODE
 # 文档对话
@@ -136,16 +160,45 @@ async def doc_summary_node(state: State,config: RunnableConfig):
     log.info(f"doc_list_node:{len(docs)}")
     return {"docs":docs}
 
+async def web_search_node(state: State,config: RunnableConfig):
+    try:
+        feature = state.get("feature")
+        question = get_last_message_text(state)
+        questions = refine_query(feature,query=question)
+        if not questions:
+            return {}
+        
+        raw_results = []
+        raw_docs = []
+        # Relevant urls
+        urls,raw_results = await search_engines.batch_search(questions)
+        for source in raw_results:
+            if not source.get("snippet"):
+                continue
+            raw_docs.append(
+                Document(
+                page_content = f'{source.get("date", "")}\n{source.get("title", "")}\n{source.get("snippet")}',
+                    metadata={"source": source.get("source"), "link": source.get("link"),"score":source.get("score")},
+                )
+            )
+        log.info(f"web_scrape_node:{len(raw_docs)}")
+        return {"urls":urls,"docs": raw_docs}
+    except Exception as e:
+        log.error(f"Error search: {e}")
+        print(traceback.format_exc())
+        return {}
+
 # 网页爬虫节点
 async def web_scrape_node(state: State,config: RunnableConfig):
-    km = TaskFactory.get_knowledge_manager()
     urls = state.get("urls")
+    docs = None
     if urls and not state.get("docs"):
-        _,_,docs = await km.store("web",source=urls,source_type=SourceType.WEB)
-        state["docs"] = docs
-        log.info(f"web_scrape_node:{len(state['docs'])}")
+        from agi.utils.scrape import WebScraper
+        scraper = WebScraper(web_paths=urls)
+        docs = scraper.load()
+        log.info(f"web_scrape_node:{len(docs)}")
 
-    return state 
+    return {"docs": docs} 
 
 # 适用于web 和 rag的情况，当无法获取有效的上下文信息时，
     # 1.重置feature特性
@@ -167,10 +220,7 @@ async def rag_auto_route(state: State):
         return "summary"
     elif "rag" in result:
         collection_names = collection_manager.list_collections(tenant=tenant)
-        if state["collection_names"]:
-            state["collection_names"].extend(collection_names)
-        else:
-            state["collection_names"] = collection_names
+        state["collection_names"] = collection_names
         return "index_search"
     log.info(f"collection_names for {tenant} are {state['collection_names']}")
 
@@ -183,37 +233,40 @@ async def route(state: State):
     state["citations"] = None
 
     feature = state.get("feature","")
-
     if feature == Feature.RAG:
         return await rag_auto_route(state)
     else:
+        state["feature"] = feature = "web"
         return "web"
 
 async def index_search_node(state: State,config: RunnableConfig):
     tenant = state.get("user_id")
+    feature = state.get("feature")
     question = get_last_message_text(state)
-    docs = await collection_manager.embedding_search([question],"index",tenant=tenant)
+    questions = refine_query(feature,query=question)
+
+    docs = await collection_manager.embedding_search(questions,"index",tenant=tenant)
     # state["docs"] = docs
     log.info(f"index_search_node:{len(docs)}")
     log.info(f"index_search_node:{docs}")
 
-    return {"index_search_result":docs} 
+    return {"index_search_result":docs,"questions":questions} 
 
 async def search_node(state: State,config: RunnableConfig):
     tenant = state.get("user_id")
     collection_names = state["collection_names"]
     index_docs = state.get("index_search_result")
-    question = get_last_message_text(state)
+    questions = state.get("questions")
     cluster_ids = get_cluster_ids(index_docs)
     docs = []
 
     for collection_name in set(collection_names):
         if cluster_ids:
             for id in cluster_ids:
-                parts = await collection_manager.embedding_search([question],collection_name,cluster_id=id,tenant=tenant)
+                parts = await collection_manager.embedding_search(questions,collection_name,cluster_id=id,tenant=tenant)
                 docs.extend(parts)
         else: #在index未检索到时，全量检索
-            parts = await collection_manager.embedding_search([question],collection_name,tenant=tenant)
+            parts = await collection_manager.embedding_search(questions,collection_name,tenant=tenant)
             docs.extend(parts)
             
     log.info(f"search_node:{len(docs)}")
@@ -233,7 +286,7 @@ rag_graph_builder.add_node("index_search", index_search_node)
 rag_graph_builder.add_node("search", search_node)
 
 
-rag_graph_builder.add_node("web", TaskFactory.create_task(TASK_WEB_SEARCH))
+rag_graph_builder.add_node("web", web_search_node)
 rag_graph_builder.add_node("scrape", web_scrape_node)
 # graph
 rag_graph_builder.add_conditional_edges(START, route)
@@ -243,8 +296,8 @@ rag_graph_builder.add_conditional_edges("scrape", context_control)
 
 rag_graph_builder.add_edge("index_search", "search")
 rag_graph_builder.add_edge("search", "rerank")
-rag_graph_builder.add_edge("rerank", "doc_chat")
 
+rag_graph_builder.add_edge("rerank", "doc_chat")
 rag_graph_builder.add_edge("summary", "doc_chat")
 
 rag_graph_builder.add_edge("llm_with_history", END)

@@ -69,10 +69,11 @@ class State(AgentState):
     # for rag search
     index_search_result: list[Document]
     context: str
-    urls: list[str]
+    urls: list[str] #网页检索结果或用户输入
     docs: list[Document]
     citations: list[any]
     collection_names: list[str]
+    questions: list[str] #依据原始问题产生的新问题，默认3个
     # for doc store
     file_path: str
     db_documents: list[Document]

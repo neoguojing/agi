@@ -1,11 +1,12 @@
 import random
 import json
+import asyncio
 from collections import defaultdict
 from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 from langchain_community.tools import DuckDuckGoSearchResults
 from langchain_tavily import TavilySearch
 from exa_py import Exa
-from typing import Any, Optional, Type
+from typing import Any, Optional, Type,Dict,Tuple,List,Set
 from agi.config import EXA_API_KEY,log,TAVILY_API_KEY
 from agi.utils.yacy import YaCySearch
 from langchain_core.callbacks import CallbackManagerForToolRun
@@ -165,4 +166,50 @@ class SearchEngineSelector(BaseTool):
                 if retries >= self.max_retries:
                     log.error("Max retries reached, skipping this query.")
                 else:
-                    continue  # 如果还没有达到最大重试次数，则继续尝试其他引擎    
+                    continue  # 如果还没有达到最大重试次数，则继续尝试其他引擎   
+
+    async def batch_search(self, questions: List[str]) -> Tuple[Set[str], List[Dict]]:
+        """
+        异步执行多问题搜索，返回去重URL集合和原始结果列表
+        
+        参数:
+            questions: 待查询的问题列表
+            
+        返回:
+            Tuple[Set[str], List[Dict]]: (去重URL集合, 原始结果列表)
+        """
+        urls_to_look = set()
+        raw_results = []
+        
+        async def search_single_question(q: str) -> List[Dict]:
+            """异步处理单个问题的搜索"""
+            try:
+                # 使用异步接口调用搜索引擎
+                search_results = await self._run(q)  # 假设有异步接口
+                if search_results:
+                    # 提取有效链接
+                    valid_links = {res["link"] for res in search_results if res.get("link")}
+                    return list(valid_links), search_results
+            except Exception as e:
+                log.error(f"Error searching for '{q}': {str(e)}")
+                return [], []
+            return [], []
+
+        try:
+            log.info("Starting parallel search...")
+            # 并行执行所有搜索任务
+            tasks = [search_single_question(q) for q in questions]
+            results = await asyncio.gather(*tasks)
+            
+            # 合并结果
+            for links, res in results:
+                urls_to_look.update(links)
+                raw_results.extend(res)
+                
+            log.info(f"Found {len(urls_to_look)} unique URLs from {len(raw_results)} total results")
+        except Exception as e:
+            log.error(f"Global search error: {str(e)}")
+            print(traceback.format_exc())
+
+        return urls_to_look, raw_results 
+        
