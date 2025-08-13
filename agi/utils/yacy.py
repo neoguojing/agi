@@ -2,6 +2,7 @@ import asyncio
 import httpx
 import os
 import traceback
+from agi.config import log
 YACY_HOST = os.getenv("YACY_HOST","http://localhost:8090")
 
 CRAWLER_URL = f"{YACY_HOST}/Crawler_p.html"
@@ -147,7 +148,7 @@ class YaCySearch:
             "nav": nav,
         }
         try:
-            print(SEARCH_API)
+            log.info(SEARCH_API)
             timeout = httpx.Timeout(20.0, connect=10.0)
             response = httpx.get(SEARCH_API, params=params, timeout=timeout)
 
