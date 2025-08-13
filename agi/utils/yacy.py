@@ -3,7 +3,8 @@ import httpx
 import os
 import traceback
 from agi.config import log
-from urllib.parse import quote
+import json
+
 YACY_HOST = os.getenv("YACY_HOST","http://localhost:8090")
 
 CRAWLER_URL = f"{YACY_HOST}/Crawler_p.html"
@@ -82,7 +83,7 @@ class YaCySearch:
         - nav: 是否显示导航，all显示，none不显示。
         """
         params = {
-            "query": quote(f"{query} /date", safe=''),
+            "query": f"{query} /date",
             "startRecord": start_record,
             "maximumRecords": maximum_records,
             "contentdom": contentdom,
@@ -136,7 +137,7 @@ class YaCySearch:
                meancount: int = 3,
                nav: str = "none"):
         params = {
-            "query": quote(f"{query} /date", safe=''),
+            "query": f"{query} /date",
             "startRecord": start_record,
             "maximumRecords": maximum_records,
             "contentdom": contentdom,
@@ -156,8 +157,9 @@ class YaCySearch:
             # 检查响应状态码
             response.raise_for_status()
             log.info(response.text)
-            data = response.json()
-
+            # data = response.json()
+            data = json.loads(response.text,strict=False)
+            log.info(data)
             # 下面根据典型 YaCy JSON结构精简结果
             channels = data.get("channels", [])
             if not channels:
