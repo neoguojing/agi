@@ -154,6 +154,7 @@ class YaCySearch:
 
             # 检查响应状态码
             response.raise_for_status()
+            log.info(response.text)
             data = response.json()
 
             # 下面根据典型 YaCy JSON结构精简结果
