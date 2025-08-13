@@ -40,7 +40,7 @@ class WebScraper(BaseTool):
     def _run(self, web_paths: Union[str, List[str], dict], run_manager: Optional[Any] = None) -> List[Document]:
         """同步主入口：接受 str / list / dict（兼容旧接口）"""
         docs: List[Document] = []
-
+        import pdb;pdb.set_trace()
         if isinstance(web_paths, str):
             web_paths = [web_paths]
         elif isinstance(web_paths, dict):
