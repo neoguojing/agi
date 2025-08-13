@@ -234,9 +234,9 @@ async def route(state: State):
 
     feature = state.get("feature","")
 
-    if state["collection_names"]:
+    if state.get("collection_names"):
         feature = "rag"
-        
+
     if feature == Feature.RAG:
         return await rag_auto_route(state)
     else:
