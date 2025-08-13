@@ -9,7 +9,7 @@ from agi.config import (
     RAG_EMBEDDING_MODEL,
     CACHE_DIR,
     EMBEDDING_BASE_URL,
-    OLLAMA_SMALL_MODE
+    OLLAMA_THINKING_MODE
 )
 from langchain_ollama import OllamaEmbeddings,ChatOllama
 from langchain_openai import OpenAIEmbeddings
@@ -45,7 +45,7 @@ def create_llm_chat_task(**kwargs):
     return create_chat(TaskFactory._llm)
 
 def create_llm_with_history_task(**kwargs):
-    return create_chat_with_history(TaskFactory._llm)
+    return create_chat_with_history(TaskFactory._llm_thinking)
 
 def create_rag_task(**kwargs):
     from agi.tasks.llm_app import create_rag
@@ -84,8 +84,8 @@ class TaskFactory:
     _instances = {}
     _lock = threading.Lock()  # 异步锁
     _llm = create_llm_task()
-    _llm_small = ChatOllama(
-            model=OLLAMA_SMALL_MODE,
+    _llm_thinking = ChatOllama(
+            model=OLLAMA_THINKING_MODE,
             base_url=OLLAMA_API_BASE_URL,
             num_ctx=4096,
             # num_gpu=1,
@@ -140,8 +140,8 @@ class TaskFactory:
         return TaskFactory._llm
     
     @staticmethod
-    def get_small_llm():
-        return TaskFactory._llm_small
+    def get_thinking_llm():
+        return TaskFactory._llm_thinking
     
     @staticmethod
     def get_llm_with_output_format(debug=False):
