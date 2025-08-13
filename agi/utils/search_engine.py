@@ -185,7 +185,7 @@ class SearchEngineSelector(BaseTool):
             """异步处理单个问题的搜索"""
             try:
                 # 使用异步接口调用搜索引擎
-                search_results = await self._run(q)  # 假设有异步接口
+                search_results = self._run(q)  # 假设有异步接口
                 if search_results:
                     # 提取有效链接
                     valid_links = {res["link"] for res in search_results if res.get("link")}

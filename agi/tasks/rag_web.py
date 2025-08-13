@@ -233,6 +233,10 @@ async def route(state: State):
     state["citations"] = None
 
     feature = state.get("feature","")
+
+    if state["collection_names"]:
+        feature = "rag"
+        
     if feature == Feature.RAG:
         return await rag_auto_route(state)
     else:
