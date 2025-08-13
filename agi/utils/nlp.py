@@ -32,7 +32,7 @@ class TextProcessor:
             jieba.load_userdict(user_dict_path)
 
         self.nlp_en = spacy.load("en_core_web_sm")
-        nltk.download('punkt_tab')
+        # nltk.download('punkt_tab')
 
     def detect_language(self, text: str) -> str:
         """简单中文/英文判断"""
