@@ -62,7 +62,7 @@ class YaCySearch:
         urlmaskfilter: str = ".*",
         prefermaskfilter: str = "",
         verify: str = "iffresh",
-        lr: str = "lang_zh",
+        lr: str = "lang_en",
         meancount: int = 3,
         nav: str = "none",
     ):
@@ -133,7 +133,7 @@ class YaCySearch:
                urlmaskfilter: str = ".*",
                prefermaskfilter: str = "",
                verify: str = "iffresh",
-               lr: str = "lang_zh",
+               lr: str = "lang_en",
                meancount: int = 3,
                nav: str = "none"):
         params = {
