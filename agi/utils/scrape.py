@@ -16,9 +16,8 @@ class WLInput(BaseModel):
 
 
 class WebScraper(BaseTool):
-    name = "web_scraper"
-    description = "Simple web scraper: fetch pages, extract main text, return Documents."
-
+    name: str = "web_scraper"                          # <- 加上类型注解
+    description: str = "Simple web scraper"            # <- 加上类型注解
     args_schema: Type[BaseModel] = WLInput
 
     def __init__(self, web_paths: Optional[List[str]] = None, llm: Any = None, use_playwright: bool = False, headless: bool = True, **kwargs):
