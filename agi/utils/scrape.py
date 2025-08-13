@@ -20,6 +20,12 @@ class WebScraper(BaseTool):
     description: str = "Simple web scraper"            # <- 加上类型注解
     args_schema: Type[BaseModel] = WLInput
 
+     # **关键**：加上类型注解，使其成为 Pydantic 字段
+    web_paths: Optional[List[str]] = None
+    chain: Optional[Any] = None
+    use_playwright: bool = False
+    headless: bool = True
+
     def __init__(self, web_paths: Optional[List[str]] = None, llm: Any = None, use_playwright: bool = False, headless: bool = True, **kwargs):
         super().__init__(**kwargs)
         self.web_paths = list(web_paths) if web_paths else []
