@@ -34,8 +34,8 @@ OLLAMA_API_BASE_URL = os.environ.get(
     "OLLAMA_API_BASE_URL", "http://localhost:11434"
 )
 
-OLLAMA_DEFAULT_MODE = os.environ.get("OLLAMA_DEFAULT_MODE", "qwen2.5:14b")
-OLLAMA_SMALL_MODE = os.environ.get("OLLAMA_SMALL_MODE", "gemma3:1b") #qwen3:0.6b
+OLLAMA_DEFAULT_MODE = os.environ.get("OLLAMA_DEFAULT_MODE", "qwen3:4b-instruct")
+OLLAMA_SMALL_MODE = os.environ.get("OLLAMA_SMALL_MODE", "qwen3:4b-instruct")
 
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "xxx")
