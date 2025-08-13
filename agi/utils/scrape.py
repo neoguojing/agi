@@ -148,7 +148,7 @@ class WebScraper(BaseTool):
         try:
             # 支持两种调用方式：chain.invoke({"text": ...}) 或可调用对象 chain(summary_input)
             if hasattr(self.chain, "invoke"):
-                result = self.chain.invoke({"text": summary_input})
+                result = self.chain.invoke(summary_input)
             else:
                 result = self.chain(summary_input)  # type: ignore
         except Exception as e:
