@@ -134,7 +134,7 @@ class YaCySearch:
                meancount: int = 3,
                nav: str = "none"):
         params = {
-            "query": f"{query} /date LANGUAGE:zh",
+            "query": f"{query} /date",
             "startRecord": start_record,
             "maximumRecords": maximum_records,
             "contentdom": contentdom,
