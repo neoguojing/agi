@@ -117,7 +117,7 @@ def refine_query(feature:str,query: str):
         language = "English"
     else:
         lang = detect(query)
-        if lang == "zh":
+        if lang in ["zh","zh-cn","sw","ko","jp"]:
             language = "Chinese"
         else:
             language = "English"
