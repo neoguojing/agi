@@ -3,6 +3,7 @@ import httpx
 import os
 import traceback
 from agi.config import log
+from urllib.parse import quote
 YACY_HOST = os.getenv("YACY_HOST","http://localhost:8090")
 
 CRAWLER_URL = f"{YACY_HOST}/Crawler_p.html"
@@ -81,7 +82,7 @@ class YaCySearch:
         - nav: 是否显示导航，all显示，none不显示。
         """
         params = {
-            "query": f"{query} /date LANGUAGE:zh",
+            "query": quote(f"{query} /date", safe=''),
             "startRecord": start_record,
             "maximumRecords": maximum_records,
             "contentdom": contentdom,
@@ -135,7 +136,7 @@ class YaCySearch:
                meancount: int = 3,
                nav: str = "none"):
         params = {
-            "query": f"{query} /date",
+            "query": quote(f"{query} /date", safe=''),
             "startRecord": start_record,
             "maximumRecords": maximum_records,
             "contentdom": contentdom,
