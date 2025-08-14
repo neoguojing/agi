@@ -182,6 +182,7 @@ doc_qa_prompt = (
     "{context}"
     "\n\n"
     "Please respond in {language}."
+    "Please respond using Markdown format."
 )
 
 doc_qa_template = ChatPromptTemplate.from_messages(

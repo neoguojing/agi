@@ -331,13 +331,13 @@ def create_chat_with_history(llm):
             ]
         }
 '''
-def build_citations(inputs: dict):
+def build_citations(documents: list):
     citations = []
     # 使用 defaultdict 来根据 source 聚合文档
     source_dict = defaultdict(list)
     try:
         # 将文档按 source 聚合
-        for doc in inputs["docs"]:
+        for doc in documents:
             # 使用llm extract 提取内容时，与输入无关会返回NO_OUTPUT
             if doc.page_content.strip().startswith("NO"):           
                 continue
@@ -374,7 +374,7 @@ def build_citations(inputs: dict):
             })
         log.info(f"build_citations----{citations}")
     except Exception as e:
-        log.error(e)
+        log.error(f"build_citations {e}")
         print(traceback.format_exc())
         
     return citations

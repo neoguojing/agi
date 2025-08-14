@@ -104,6 +104,8 @@ collection_manager = CollectionManager(data_path=CACHE_DIR,embedding=TaskFactory
 
 search_engines = SearchEngineSelector()
 
+doc_chain = TaskFactory.create_task(TASK_DOC_CHAT)
+
 def get_cluster_ids(docs:list[Document]):
     cluster_ids = []
     for doc in docs:
@@ -129,13 +131,16 @@ def refine_query(feature:str,query: str):
 # NODE
 # 文档对话
 async def doc_chat_node(state: State,config: RunnableConfig,writer: StreamWriter):
-    chain = TaskFactory.create_task(TASK_DOC_CHAT)
-    state["citations"] = build_citations(state)
-    if state.get("citations"):
-        writer({"citations":state["citations"],"docs":state["docs"]})
-    log.info(f"doc_chat_node:{len(state['docs'])}")
-    result = await chain.ainvoke(state,config=config)
-    result["citations"] = state["citations"]
+    docs = state.get("docs")
+    log.info(f"doc_chat_node:{len(docs)}")
+
+    citations = build_citations(docs)
+    if citations:
+        writer({"citations":citations,"docs":state["docs"]})
+
+    log.info(f"doc_chat_node: citations={len(citations)}")
+    result = await doc_chain.ainvoke(state,config=config)
+    result["citations"] = citations
     result["docs"] = None
     result["doc_list_node"] = None
     result["index_search_result"] = None
