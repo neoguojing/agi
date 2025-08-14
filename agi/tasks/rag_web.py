@@ -14,6 +14,7 @@ from langchain.prompts import ChatPromptTemplate
 from langgraph.types import StreamWriter
 from langgraph.graph import END, StateGraph, START
 from langgraph.checkpoint.memory import MemorySaver
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.retrievers.web_research import QuestionListOutputParser
 from agi.tasks.llm_app import build_citations
 from agi.tasks.utils import get_last_message_text,split_think_content,graph_print,refine_last_message_runnable
@@ -24,6 +25,7 @@ from agi.utils.search_engine import SearchEngineSelector
 import json
 import traceback
 from datetime import datetime
+from typing import Dict,List,Union
 from langdetect import detect
 from langchain_core.documents import Document
 
@@ -106,11 +108,27 @@ search_engines = SearchEngineSelector()
 
 doc_chain = TaskFactory.create_task(TASK_DOC_CHAT)
 
-def get_cluster_ids(docs:list[Document]):
-    cluster_ids = []
-    for doc in docs:
-        cluster_ids.append(doc.metadata.get("cluster_id"))
-    return set(cluster_ids)
+def get_cluster_ids(docs: Union[List[Document], Dict[str, List[Document]]]) -> set:
+    cluster_ids = set()
+    
+    if isinstance(docs, dict):
+        # 处理 {question: list[Document]} 的情况
+        for doc_list in docs.values():
+            for doc in doc_list:
+                cid = doc.metadata.get("cluster_id")
+                if cid is not None:
+                    cluster_ids.add(cid)
+    elif isinstance(docs, list):
+        # 处理 list[Document] 的情况
+        for doc in docs:
+            cid = doc.metadata.get("cluster_id")
+            if cid is not None:
+                cluster_ids.add(cid)
+    else:
+        raise TypeError(f"Unsupported type for docs: {type(docs)}")
+    
+    return cluster_ids
+
 
 # 产生新的问题
 def refine_query(feature:str,query: str):
@@ -148,9 +166,11 @@ async def doc_chat_node(state: State,config: RunnableConfig,writer: StreamWriter
     return result
 
 async def doc_rerank_node(state: State,config: RunnableConfig):
-    question = get_last_message_text(state)
-    docs = state.get("docs")
-    docs = await rerank_with_batching(question,docs)
+    docs = []
+    docs_map = state.get("docs_map")
+    for question,doc_list in docs_map.items():
+        parts = await rerank_with_batching(question,doc_list)
+        docs.extend(parts)
     log.info(f"doc_rerank_node:{len(docs)}")
     log.info(f"doc_rerank_node:{docs}")
 
@@ -173,21 +193,28 @@ async def web_search_node(state: State,config: RunnableConfig):
         if not questions:
             return {}
         
-        raw_results = []
-        raw_docs = []
-        # Relevant urls
-        urls,raw_results = await search_engines.batch_search(questions)
-        for source in raw_results:
-            if not source.get("snippet"):
-                continue
-            raw_docs.append(
-                Document(
-                page_content = f'{source.get("date", "")}\n{source.get("title", "")}\n{source.get("snippet")}',
-                    metadata={"source": source.get("source"), "link": source.get("link"),"score":source.get("score")},
+        docs_map = {}
+        raw_results_map = await search_engines.batch_search(questions)
+        for q,raw_search_results in raw_results_map.items():
+            raw_docs = []
+            for source in raw_search_results:
+                snippet = source.get("snippet", "")
+                link = source.get("link","")
+                if not snippet.strip() and not link:  # 丢弃 snippet 和 url 为空的
+                    continue
+                raw_docs.append(
+                    Document(
+                    page_content = f'{source.get("date", "")}\n{source.get("title", "")}\n{source.get("snippet")}',
+                        metadata={"source": source.get("source"), "link": source.get("link"),"score":source.get("score")},
+                    )
                 )
-            )
-        log.info(f"web_search_node:{len(raw_docs)}")
-        return {"urls":urls,"docs": raw_docs}
+            if raw_docs:
+                docs_map[q] = raw_docs
+
+        total_docs = sum(len(docs) for docs in docs_map.values())
+        log.info(f"web_search_node:{total_docs}")
+        return {"docs_map": docs_map}
+    
     except Exception as e:
         log.error(f"Error search: {e}")
         print(traceback.format_exc())
@@ -195,33 +222,61 @@ async def web_search_node(state: State,config: RunnableConfig):
 
 # 网页爬虫节点
 async def web_scrape_node(state: State,config: RunnableConfig):
-    urls = state.get("urls")
-    docs = state.get("docs")
-    if docs is None:
-        docs = []
+    docs_map = state.get("docs_map")
+    if docs_map is None:
+        return {}
     try:
-        if urls:
+        query_url_map = {k: [doc.metadata["link"] for doc in v if doc.metadata.get("link")] for k, v in docs_map.items()}
+        log.info(f"web_scrape_node:{len(query_url_map)}")
+        if query_url_map:
             from agi.utils.scrape import WebScraper
             scraper = WebScraper()
-            scape_docs = await scraper.aload(urls)
-            log.info(f"web_scrape_node:{scape_docs}")
-            docs.extend(scape_docs)
-            log.info(f"web_scrape_node:{len(docs)}")
+            query_doc_map = await scraper.aload2(query_url_map)
+            for q, new_docs in query_doc_map.items():
+                if new_docs:  # 非空才追加
+                    docs_map.setdefault(q, []).extend(new_docs)
+            return {"docs_map": docs_map}
+        
+        total_docs = sum(len(docs) for docs in docs_map.values())
+        log.info(f"web_scrape_node:{total_docs}")
 
-        return {"docs": docs}
     except Exception as e:
         log.error(f"Error web_scrape_node: {e}")
         print(traceback.format_exc())
-        return {"docs": docs}
+        return {"docs_map": docs_map}
+
+async def doc_split_node(state: State, config: RunnableConfig):
+    text_splitter = RecursiveCharacterTextSplitter(separators=[
+                                                    "\n\n",
+                                                    "\n",
+                                                    " ",
+                                                    ".",
+                                                    ",",
+                                                    "\u200b",  # Zero-width space
+                                                    "\uff0c",  # Fullwidth comma
+                                                    "\u3001",  # Ideographic comma
+                                                    "\uff0e",  # Fullwidth full stop
+                                                    "\u3002",  # Ideographic full stop
+                                                ],
+                                                chunk_size=3000, chunk_overlap=300,add_start_index=True)
+    docs_map = state["docs_map"]
+    for q,docs in docs_map.items():
+        documents = await text_splitter.atransform_documents(docs)
+        docs_map[q] =  documents
+    
+    total_docs = sum(len(docs) for docs in docs_map.values())
+    log.info(f"split {total_docs} docs")
+
+    return {"docs_map": docs_map}
 
 # 适用于web 和 rag的情况，当无法获取有效的上下文信息时，
     # 1.重置feature特性
     # 2.交给llm_with_history处理
 async def context_control(state: State):
-    docs = state.get("docs")
-    log.info(f"context_control:{len(docs)}")
-    if docs:
-        return "rerank"
+    docs_map = state.get("docs_map")
+    log.info(f"context_control:{len(docs_map)}")
+    if docs_map:
+        return "split"
     return "llm_with_history"
 
 # 分析用户意图，自主决策
@@ -264,32 +319,47 @@ async def index_search_node(state: State,config: RunnableConfig):
     question = get_last_message_text(state)
     questions = refine_query(feature,query=question)
 
-    docs = await collection_manager.embedding_search(questions,"index",tenant=tenant)
-    # state["docs"] = docs
-    log.info(f"index_search_node:{len(docs)}")
-    log.info(f"index_search_node:{docs}")
+    doc_map = await collection_manager.embedding_search(questions,"index",tenant=tenant)
+    total_docs = sum(len(docs) for docs in doc_map.values())
+    log.info(f"index_search_node:{total_docs}")
+    log.info(f"index_search_node:{doc_map}")
 
-    return {"index_search_result":docs,"questions":questions} 
+    return {"index_search_result":doc_map,"questions":questions} 
 
-async def search_node(state: State,config: RunnableConfig):
+async def search_node(state: State, config: RunnableConfig):
     tenant = state.get("user_id")
     collection_names = state["collection_names"]
     index_docs = state.get("index_search_result")
     questions = state.get("questions")
     cluster_ids = get_cluster_ids(index_docs)
-    docs = []
+    
+    docs_map: Dict[str, List[Document]] = {q: [] for q in questions}
 
     for collection_name in set(collection_names):
         if cluster_ids:
-            for id in cluster_ids:
-                parts = await collection_manager.embedding_search(questions,collection_name,cluster_id=id,tenant=tenant)
-                docs.extend(parts)
-        else: #在index未检索到时，全量检索
-            parts = await collection_manager.embedding_search(questions,collection_name,tenant=tenant)
-            docs.extend(parts)
-            
-    log.info(f"search_node:{len(docs)}")
-    return {"docs":docs} 
+            for cid in cluster_ids:
+                parts_map = await collection_manager.embedding_search(
+                    texts=questions,
+                    collection_name=collection_name,
+                    cluster_id=cid,
+                    tenant=tenant
+                )
+                # 合并到 docs_map
+                for q in questions:
+                    docs_map[q].extend(parts_map.get(q, []))
+        else:
+            # 全量检索
+            parts_map = await collection_manager.embedding_search(
+                texts=questions,
+                collection_name=collection_name,
+                tenant=tenant
+            )
+            for q in questions:
+                docs_map[q].extend(parts_map.get(q, []))
+
+    total_docs = sum(len(docs) for docs in docs_map.values())
+    log.info(f"search_node: total_docs={total_docs}")
+    return {"docs_map": docs_map}
 # graph
 checkpointer = MemorySaver()
 
@@ -307,11 +377,14 @@ rag_graph_builder.add_node("search", search_node)
 
 rag_graph_builder.add_node("web", web_search_node)
 rag_graph_builder.add_node("scrape", web_scrape_node)
+rag_graph_builder.add_node("split", doc_split_node)
 # graph
 rag_graph_builder.add_conditional_edges(START, route)
 
 rag_graph_builder.add_edge("web","scrape")
 rag_graph_builder.add_conditional_edges("scrape", context_control)
+rag_graph_builder.add_conditional_edges("split", "rerank")
+
 
 rag_graph_builder.add_edge("index_search", "search")
 rag_graph_builder.add_edge("search", "rerank")

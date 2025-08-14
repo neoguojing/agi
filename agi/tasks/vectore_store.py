@@ -5,7 +5,7 @@ from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from agi.utils.nlp import TextProcessor
 from agi.config import log,EMBEDDING_BASE_URL,RAG_EMBEDDING_MODEL,OLLAMA_API_BASE_URL
-from typing import List
+from typing import List,Dict
 import asyncio
 import uuid
 import math
@@ -207,7 +207,7 @@ class CollectionManager:
         )
 
         # 1. 异步批量关键词提取
-        processed_results = await self.text_proc.abatch_process(texts, method="textrank")
+        keywords_results = await self.text_proc.abatch_process(texts, method="textrank")
 
         async def query_single(text: str, keywords: list):
             embedding = self.embedding.embed_query(text)
@@ -227,17 +227,21 @@ class CollectionManager:
                 where=where_cond,         
             )
 
-        tasks = [query_single(texts[i], processed_results[i]) for i in range(len(texts))]
+        tasks = [query_single(texts[i], keywords_results[i]) for i in range(len(texts))]
 
         # 3. 并发执行所有查询任务
         results = await asyncio.gather(*tasks)
-        ret = []
-        for result in results:
+        # 4. 按文本组合成 map
+        ret_map: Dict[str, List[Document]] = {}
+        for text, result in zip(texts, results):
+            docs_for_text = []
             for docs, metas, scores in zip(result['documents'], result['metadatas'], result['distances']):
                 for document, metadata, score in zip(docs, metas, scores):
                     metadata['score'] = score
-                    ret.append(Document(page_content=document, metadata=metadata))
-        return ret
+                    docs_for_text.append(Document(page_content=document, metadata=metadata))
+            ret_map[text] = docs_for_text
+
+        return ret_map
     
     async def full_search(
         self,

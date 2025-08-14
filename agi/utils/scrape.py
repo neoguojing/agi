@@ -1,7 +1,7 @@
 import asyncio
 import random
 import traceback
-from typing import List, Optional, Union, Any, Type
+from typing import List, Optional, Union, Any, Type,Dict
 import requests
 from bs4 import BeautifulSoup
 from pydantic import Field, BaseModel
@@ -79,6 +79,22 @@ class WebScraper(BaseTool):
             if res:
                 docs.append(res)
         return docs
+    
+    async def aload2(self, question_url_map: Optional[Dict[str, list[str]]] = None) -> Dict[str, list[Document]]:
+        """异步入口，可并行抓取多个 URL，输入是 {question: [url1, url2, ...]}"""
+
+        # 构建 (question, url) 对应列表
+        q_u_pairs = [(q, url) for q, urls in question_url_map.items() for url in urls]
+        results = await asyncio.gather(*(self._fetch_and_parse(url) for _, url in q_u_pairs), return_exceptions=True)
+
+        out: Dict[str, list[Document]] = {q: [] for q in question_url_map}
+        for (q, _), res in zip(q_u_pairs, results):
+            if not isinstance(res, Exception) and res is not None:
+                out[q].append(res)
+
+        return out
+
+
 
     # ------------------- 内部抓取和解析 -------------------
     async def _fetch_and_parse(self, url: str) -> Optional[Document]:

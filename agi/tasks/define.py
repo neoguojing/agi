@@ -67,10 +67,11 @@ class State(AgentState):
     conversation_id: str
     feature: str  # 支持的特性，1.agent，2.web 3.rag，4.tts，5.speech，6.image_recog 默认为agent
     # for rag search
-    index_search_result: list[Document]
+    index_search_result: dict
     context: str
     urls: list[str] #网页检索结果或用户输入
     docs: list[Document]
+    docs_map: dict
     citations: list[any]
     collection_names: list[str]
     questions: list[str] #依据原始问题产生的新问题，默认3个

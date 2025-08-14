@@ -168,48 +168,40 @@ class SearchEngineSelector(BaseTool):
                 else:
                     continue  # 如果还没有达到最大重试次数，则继续尝试其他引擎   
 
-    async def batch_search(self, questions: List[str]) -> Tuple[Set[str], List[Dict]]:
+    async def batch_search(self, questions: List[str]) -> Dict[str, List[Dict]]:
         """
-        异步执行多问题搜索，返回去重URL集合和原始结果列表
-        
+        异步执行多问题搜索，返回问题到检索结果的映射（空结果丢弃）
+
         参数:
             questions: 待查询的问题列表
-            
+
         返回:
-            Tuple[Set[str], List[Dict]]: (去重URL集合, 原始结果列表)
+            Dict[str, List[Dict]]: 问题与对应检索结果的字典
         """
-        urls_to_look = set()
-        raw_results = []
-        
-        async def search_single_question(q: str) -> List[Dict]:
+        results_map = {}
+
+        async def search_single_question(q: str) -> Tuple[str, List[Dict]]:
             """异步处理单个问题的搜索"""
             try:
-                # 使用异步接口调用搜索引擎
-                search_results = self._run(q)  # 假设有异步接口
+                search_results = await self._run(q)  # 注意确保 _run 是异步方法
                 if search_results:
-                    # 提取有效链接
-                    valid_links = {res["link"] for res in search_results if res.get("link")}
-                    return list(valid_links), search_results
+                    return q, search_results
             except Exception as e:
                 log.error(f"Error searching for '{q}': {str(e)}")
-                return [], []
-            return [], []
+            return q, []
 
         try:
             log.info("Starting parallel search...")
-            # 并行执行所有搜索任务
             tasks = [search_single_question(q) for q in questions]
             results = await asyncio.gather(*tasks)
-            
-            # 合并结果
-            for links, res in results:
-                urls_to_look.update(links)
-                raw_results.extend(res)
-                
-            log.info(f"Found {len(urls_to_look)} unique URLs from {len(raw_results)} total results")
+
+            # 构建字典，过滤掉空结果
+            results_map = {q: res for q, res in results if res}
+
+            log.info(f"Kept {len(results_map)} questions with non-empty results")
         except Exception as e:
             log.error(f"Global search error: {str(e)}")
             print(traceback.format_exc())
 
-        return urls_to_look, raw_results 
+        return results_map
         
