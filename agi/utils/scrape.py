@@ -159,6 +159,7 @@ class WebScraper(BaseTool):
                     await page.wait_for_selector(sel, state="attached", timeout=10000)
                     break
                 except Exception:
+                    log.warning(f"{sel} failed")
                     continue  # 下一个选择器
 
             # 如果仍未找到元素，打印警告
