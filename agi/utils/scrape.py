@@ -92,6 +92,7 @@ class WebScraper(BaseTool):
                     return None
                 return doc, html
             except Exception as e:
+                traceback.print_exc()
                 log.warning("Fetch failed for %s: %s", url, e)
                 return None
 
