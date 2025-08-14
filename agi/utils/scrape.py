@@ -124,9 +124,12 @@ class WebScraper(BaseTool):
             return None
 
     async def _fetch_playwright(self, url: str) -> str:
-        """异步 Playwright 抓取，支持 2.0.0 stealth"""
+        """异步 Playwright 抓取，适配微信公众号文章"""
         from playwright.async_api import async_playwright
         from playwright_stealth import Stealth
+
+        
+        stealth = Stealth()  # 默认 Stealth 设置
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(
@@ -134,16 +137,33 @@ class WebScraper(BaseTool):
                 args=["--disable-blink-features=AutomationControlled"]
             )
 
-            context = await browser.new_context()
-            # 创建 Stealth 实例并注入 context
-            stealth = Stealth()
+            # 手机 UA + 视口
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) "
+                        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
+                viewport={"width": 375, "height": 812},
+            )
+
+            # 应用 stealth 到 context
             await stealth.apply_stealth_async(context)
 
             page = await context.new_page()
-            await page.goto(url, wait_until="domcontentloaded", timeout=20000)
 
-            # 等待正文加载
-            await page.wait_for_selector("#js_content", timeout=10000)
+            # 打开页面，等待网络空闲
+            await page.goto(url, wait_until="networkidle", timeout=30000)
+
+            # 尝试等待常用正文选择器出现
+            selectors = ["#js_content", ".rich_media_content", "article", "main"]
+            for sel in selectors:
+                try:
+                    await page.wait_for_selector(sel, state="attached", timeout=10000)
+                    break
+                except Exception:
+                    continue  # 下一个选择器
+
+            # 如果仍未找到元素，打印警告
+            else:
+                print(f"Warning: none of the selectors found for {url}")
 
             # 模拟人类浏览延迟
             await asyncio.sleep(random.uniform(0.5, 1.5))
