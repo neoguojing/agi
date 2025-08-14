@@ -8,6 +8,7 @@ from pydantic import Field, BaseModel
 from langchain_core.tools import BaseTool
 from langchain_core.documents import Document
 from agi.config import log
+import asyncio
 
 # 非必须：如果要用 LLM pipeline，请传入 llm 且它支持 .invoke({"text": ...})
 # 如果不传 llm，则使用本地解析结果。
@@ -37,6 +38,17 @@ class WebScraper(BaseTool):
     def load(self) -> List[Document]:
         return self._run(self.web_paths)
 
+    def run_async(self,coro):
+        """兼容同步 / 异步调用 async 函数"""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # 没有正在运行的 loop => 同步环境
+            return asyncio.run(coro)
+        else:
+            # 已经有 loop => 异步环境
+            return loop.create_task(coro)
+    
     def _run(self, web_paths: Union[str, List[str], dict], run_manager: Optional[Any] = None) -> List[Document]:
         """同步主入口：接受 str / list / dict（兼容旧接口）"""
         docs: List[Document] = []
@@ -46,9 +58,20 @@ class WebScraper(BaseTool):
         elif isinstance(web_paths, dict):
             web_paths = web_paths.get("urls") or web_paths.get("url") or []
 
+        html = None
         for url in web_paths:
             try:
-                html = self._fetch(url)
+                html_future = self.run_async(self._fetch(url))  # 不管同步/异步都能跑
+                # 如果在异步环境，html_future 是 task，需要拿结果
+                if asyncio.isfuture(html_future) or asyncio.iscoroutine(html_future):
+                    # 如果 _run 是异步环境中被同步调用的，这里需要阻塞取结果
+                    # 注意：不能 await，因为 _run 是同步函数
+                    loop = asyncio.get_running_loop()
+                    html = loop.run_until_complete(html_future)
+                else:
+                    # 同步环境
+                    html = html_future
+
                 if not html:
                     log.warning("Empty response for %s", url)
                     continue
@@ -69,10 +92,10 @@ class WebScraper(BaseTool):
         return docs
 
     # ---- 简单抓取（requests）；如需动态页面可启用 Playwright（开关 use_playwright） ----
-    def _fetch(self, url: str) -> Optional[str]:
+    async def _fetch(self, url: str) -> Optional[str]:
         if self.use_playwright:
             try:
-                return self._fetch_playwright(url)
+                return await self._fetch_playwright(url)
             except Exception as e:
                 log.warning("Playwright fetch failed, fallback to requests: %s", e)
 
@@ -85,27 +108,31 @@ class WebScraper(BaseTool):
             log.error("requests fetch failed for %s: %s", url, e)
             return None
 
-    def _fetch_playwright(self, url: str) -> str:
+    async def _fetch_playwright(self, url: str) -> str:
         # 轻量版 playwright 抓取（如果未安装或失败会抛异常）
-        from playwright.sync_api import sync_playwright
-        from playwright_stealth import stealth_sync
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
-            page = browser.new_page()
-            
+        from playwright.async_api import async_playwright
+        from playwright_stealth import stealth_async
+
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--disable-blink-features=AutomationControlled"]
+            )
+            page = await browser.new_page()
+
             # 应用 Stealth 反检测
-            stealth_sync(page)
-            
-            page.goto(url, wait_until="domcontentloaded", timeout=20000)
-            
+            await stealth_async(page)
+
+            await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+
             # 等待正文加载
-            page.wait_for_selector("#js_content", timeout=10000)
-            
+            await page.wait_for_selector("#js_content", timeout=10000)
+
             # 模拟人类浏览延迟
-            time.sleep(random.uniform(0.5, 1.5))
-            
-            html = page.content()
-            browser.close()
+            await asyncio.sleep(random.uniform(0.5, 1.5))
+
+            html = await page.content()
+            await browser.close()
             return html
 
     def _random_ua(self) -> str:
