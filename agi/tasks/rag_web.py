@@ -330,7 +330,6 @@ async def index_search_node(state: State,config: RunnableConfig):
 
 async def search_node(state: State, config: RunnableConfig):
     tenant = state.get("user_id")
-    collection_names = state["collection_names"]
     index_docs = state.get("index_search_result")
     questions = state.get("questions")
     pairs = get_clusterid_collection_pair(index_docs)
@@ -352,7 +351,10 @@ async def search_node(state: State, config: RunnableConfig):
                 docs_map[q].extend(parts_map.get(q, []))
     else:
         # 全量检索
+        collection_names = state["collection_names"]
         for collection_name in set(collection_names):
+            if collection_name == "index":
+                continue
             
             parts_map = await collection_manager.embedding_search(
                 texts=questions,
