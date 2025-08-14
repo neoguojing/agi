@@ -130,49 +130,53 @@ class WebScraper(BaseTool):
 
         
         stealth = Stealth()  # 默认 Stealth 设置
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=["--disable-blink-features=AutomationControlled"]
+                )
 
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=["--disable-blink-features=AutomationControlled"]
-            )
+                # 手机 UA + 视口
+                context = await browser.new_context(
+                    user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) "
+                            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
+                    viewport={"width": 375, "height": 812},
+                )
 
-            # 手机 UA + 视口
-            context = await browser.new_context(
-                user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) "
-                        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
-                viewport={"width": 375, "height": 812},
-            )
+                # 应用 stealth 到 context
+                await stealth.apply_stealth_async(context)
 
-            # 应用 stealth 到 context
-            await stealth.apply_stealth_async(context)
+                page = await context.new_page()
 
-            page = await context.new_page()
+                # 打开页面，等待网络空闲
+                await page.goto(url, wait_until="networkidle", timeout=30000)
 
-            # 打开页面，等待网络空闲
-            await page.goto(url, wait_until="networkidle", timeout=30000)
+                # 尝试等待常用正文选择器出现
+                selectors = ["#js_content", ".rich_media_content", "article", "main"]
+                for sel in selectors:
+                    try:
+                        await page.wait_for_selector(sel, state="attached", timeout=10000)
+                        break
+                    except Exception:
+                        log.warning(f"{sel} failed")
+                        continue  # 下一个选择器
 
-            # 尝试等待常用正文选择器出现
-            selectors = ["#js_content", ".rich_media_content", "article", "main"]
-            for sel in selectors:
-                try:
-                    await page.wait_for_selector(sel, state="attached", timeout=10000)
-                    break
-                except Exception:
-                    log.warning(f"{sel} failed")
-                    continue  # 下一个选择器
+                # 如果仍未找到元素，打印警告
+                else:
+                    print(f"Warning: none of the selectors found for {url}")
 
-            # 如果仍未找到元素，打印警告
-            else:
-                print(f"Warning: none of the selectors found for {url}")
+                # 模拟人类浏览延迟
+                await asyncio.sleep(random.uniform(0.5, 1.5))
 
-            # 模拟人类浏览延迟
-            await asyncio.sleep(random.uniform(0.5, 1.5))
-
-            html = await page.content()
-            await browser.close()
-            return html
-
+                html = await page.content()
+                await browser.close()
+                return html
+        except Exception as e:
+            traceback.print_exc()
+            log.warning("_fetch_playwright failed for %s: %s", url, e)
+            return None
+        
     # ------------------- 工具函数 -------------------
     def _random_ua(self) -> str:
         choices = [
