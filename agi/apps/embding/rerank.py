@@ -6,7 +6,7 @@ import time
 import os
 from agi.config import RAG_EMBEDDING_MODEL,MODEL_PATH
 class Reranker:
-    def __init__(self,timeout: int = 300, device=None, max_length=8192):
+    def __init__(self,timeout: int = 300, device=None, max_length=1024):
         self.device = device if device else ("cuda" if torch.cuda.is_available() else "cpu")
         self.model_name = RAG_EMBEDDING_MODEL
         self.timeout = timeout
@@ -110,18 +110,31 @@ class Reranker:
         assert len(queries) == len(documents), "Queries and documents must have the same length."
         scores = None
         self.get_model(model)
-        if model == "qwen":
-            pairs = [self.format_instruction(instruction, q, d) for q, d in zip(queries, documents)]
-            inputs = self.process_inputs(pairs)
-            scores = self.compute_logits(inputs)
-        else:
-            pairs = [[q,d] for q, d in zip(queries, documents)]
-            with torch.no_grad():
-                inputs = self.tokenizer(pairs, padding=True, truncation=True, return_tensors='pt', max_length=self.max_length)
-                print(inputs)
-                inputs = {k: v.to(self.device) for k, v in inputs.items()}
-                scores = self.model(**inputs, return_dict=True).logits.view(-1, ).float().tolist()
-        print(scores,type(scores))
+        for q, doc in zip(queries, documents):
+            # 分块
+            max_len = self.max_length - 32  # 留出一些余量给 query 或 special tokens
+            doc_chunks = [doc[i:i+max_len] for i in range(0, len(doc), max_len)]
+
+            chunk_scores = []
+
+            if model == "qwen":
+                for chunk in doc_chunks:
+                    pair = self.format_instruction(instruction, q, chunk)
+                    inputs = self.process_inputs([pair])
+                    chunk_score = self.compute_logits(inputs)[0]
+                    chunk_scores.append(chunk_score)
+            else:
+                for chunk in doc_chunks:
+                    inputs = self.tokenizer([ [q, chunk] ], padding=True, truncation=True, return_tensors='pt', max_length=self.max_length)
+                    inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                    with torch.no_grad():
+                        logits = self.model(**inputs, return_dict=True).logits.view(-1, ).float().tolist()
+                    chunk_scores.extend(logits)
+
+            # 取每个 document 的平均分作为最终得分
+            doc_score = sum(chunk_scores) / len(chunk_scores)
+            scores.append(doc_score)
+
         return scores
     
     def _unload(self):

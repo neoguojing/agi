@@ -69,7 +69,7 @@ async def rerank_with_batching(
 ) -> List[Document]:
     all_results = []
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             tasks = []
             batches = [(documents[i:i + batch_size], i) for i in range(0, len(documents), batch_size)]
 
