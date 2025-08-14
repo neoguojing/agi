@@ -325,8 +325,8 @@ async def index_search_node(state: State,config: RunnableConfig):
     total_docs = sum(len(docs) for docs in doc_map.values())
     log.info(f"index_search_node:{total_docs}")
     log.info(f"index_search_node:{doc_map}")
-
-    return {"index_search_result":doc_map,"questions":questions} 
+    state["questions"] = questions
+    return {"index_search_result":doc_map} 
 
 async def search_node(state: State, config: RunnableConfig):
     tenant = state.get("user_id")
