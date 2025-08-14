@@ -137,7 +137,7 @@ class KnowledgeManager:
 
                     # If we have a loader, use it to load documents asynchronously
                     if loader:
-                        docs = loader.load()  # Assuming `loader.load()` is async
+                        docs = await loader.aload()  # Assuming `loader.load()` is async
 
                         for doc in docs:
                             doc.metadata["collection_name"] = collection_name

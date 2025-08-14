@@ -197,7 +197,7 @@ async def web_scrape_node(state: State,config: RunnableConfig):
     if urls:
         from agi.utils.scrape import WebScraper
         scraper = WebScraper(web_paths=urls)
-        docs.extend(scraper.load())
+        docs.extend(await scraper.aload())
         log.info(f"web_scrape_node:{len(docs)}")
 
     return {"docs": docs}

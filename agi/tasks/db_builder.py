@@ -60,7 +60,7 @@ async def file_loader_node(state: State, config: RunnableConfig):
         loader,_ = get_file_loader(file_path)
 
     if loader:
-        documents = loader.load()
+        documents = await loader.aload()
         log.info(f"load {len(documents)} pages")
         return {"db_documents": documents}
 
