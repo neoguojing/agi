@@ -28,11 +28,9 @@ milvus.io
 。这种方法无需人工标注样本，但精度依赖提示设计。
 
 
-TOOD: 无法使用
-- https://github.com/datalab-to/marker pdf测试
+TOOD: 
 
-## 模型路径
-- /root/.cache/datalab/models/text_recognition/
-## 依赖模型
-- text_recognition
+# web 的引用无法呈现，open-webui保存
+# rag引用分数为负数
+# 生成的问题出现在前端
 
