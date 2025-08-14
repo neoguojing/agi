@@ -183,7 +183,7 @@ class SearchEngineSelector(BaseTool):
         async def search_single_question(q: str) -> Tuple[str, List[Dict]]:
             """异步处理单个问题的搜索"""
             try:
-                search_results = await self._run(q)  # 注意确保 _run 是异步方法
+                search_results = self._run(q)  # 注意确保 _run 是异步方法
                 if search_results:
                     return q, search_results
             except Exception as e:
