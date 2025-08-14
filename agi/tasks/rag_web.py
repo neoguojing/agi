@@ -199,6 +199,7 @@ async def web_scrape_node(state: State,config: RunnableConfig):
             from agi.utils.scrape import WebScraper
             scraper = WebScraper()
             scape_docs = await scraper.aload(urls)
+            log.info(f"web_scrape_node:{scape_docs}")
             docs.extend(scape_docs)
             log.info(f"web_scrape_node:{len(docs)}")
 
