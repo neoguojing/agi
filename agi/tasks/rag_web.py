@@ -191,15 +191,16 @@ async def web_search_node(state: State,config: RunnableConfig):
 # 网页爬虫节点
 async def web_scrape_node(state: State,config: RunnableConfig):
     urls = state.get("urls")
-    if urls and not state.get("docs"):
+    docs = state.get("docs")
+    if docs is None:
+        docs = []
+    if urls:
         from agi.utils.scrape import WebScraper
         scraper = WebScraper(web_paths=urls)
-        docs = scraper.load()
+        docs.extend(scraper.load())
         log.info(f"web_scrape_node:{len(docs)}")
 
-        return {"docs": docs} 
-
-    return {}
+    return {"docs": docs}
 
 # 适用于web 和 rag的情况，当无法获取有效的上下文信息时，
     # 1.重置feature特性
