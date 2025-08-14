@@ -65,7 +65,7 @@ async def rerank_with_batching(
     endpoint: str = EMBEDDING_BASE_URL,
     model: str = RAG_EMBEDDING_MODEL,
     top_k: Optional[int] = 3,
-    batch_size: int = 10
+    batch_size: int = 5
 ) -> List[Document]:
     all_results = []
     try:
