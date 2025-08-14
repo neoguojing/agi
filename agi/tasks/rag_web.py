@@ -191,23 +191,19 @@ async def web_search_node(state: State,config: RunnableConfig):
 # 网页爬虫节点
 async def web_scrape_node(state: State,config: RunnableConfig):
     urls = state.get("urls")
-    docs = state.get("docs")
-    if docs is None:
-        docs = []
     try:
         if urls:
             from agi.utils.scrape import WebScraper
             scraper = WebScraper()
             scape_docs = await scraper.aload(urls)
             log.info(f"web_scrape_node:{scape_docs}")
-            docs.extend(scape_docs)
-            log.info(f"web_scrape_node:{len(docs)}")
+            log.info(f"web_scrape_node:{len(scape_docs)}")
 
-        return {"docs": docs}
+        return {"docs": scape_docs}
     except Exception as e:
         log.error(f"Error web_scrape_node: {e}")
         print(traceback.format_exc())
-        return {"docs": docs}
+        return {}
 
 # 适用于web 和 rag的情况，当无法获取有效的上下文信息时，
     # 1.重置feature特性
