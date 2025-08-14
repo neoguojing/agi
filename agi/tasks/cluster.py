@@ -49,7 +49,7 @@ summary_template = ChatPromptTemplate.from_messages(
 )
 
 class TextClusterer:
-    def __init__(self, cluster_algo=CLUSTER_ALGO,hnsw_m=32, ef_search=128, distance_threshold=0.5,candidate_k=5,
+    def __init__(self,collection_name, cluster_algo=CLUSTER_ALGO,hnsw_m=32, ef_search=128, distance_threshold=0.5,candidate_k=5,
                  min_cluster_size: int = 2,min_samples: int = 6,
                  use_umap: bool = True,umap_dim: int = 15,umap_n_neighbors: int = 10,umap_min_dist: float = 0.1):
         """
@@ -64,6 +64,7 @@ class TextClusterer:
         """
         self.cluster_top_k_keywords = 10
         self.llm = TaskFactory.get_llm()
+        self.collection_name = collection_name
 
         self.hnsw_m = hnsw_m
         self.ef_search = ef_search
@@ -363,7 +364,8 @@ class TextClusterer:
                     "related_docs": related_doc_ids,
                     "source": source_file,
                     "keywords": keywords,
-                    "cluster_size": len(member_indices)
+                    "cluster_size": len(member_indices),
+                    "collection_name": self.collection_name,
                 }
             )
             final_clusters.append(cluster_doc)
@@ -409,7 +411,7 @@ def get_dpmeans_params(embeddings: np.ndarray):
     
     return search_space
 
-def train(docs: List[Document], embeddings: np.ndarray,cluster_algo=CLUSTER_ALGO):
+def train(collection_name:str,docs: List[Document], embeddings: np.ndarray,cluster_algo=CLUSTER_ALGO):
 
     search_space = None
     if cluster_algo == "dpmeans":
@@ -431,7 +433,7 @@ def train(docs: List[Document], embeddings: np.ndarray,cluster_algo=CLUSTER_ALGO
                 params.pop("umap_n_neighbors", None)
                 params.pop("umap_min_dist", None)
 
-            clusterer = TextClusterer(**params,cluster_algo=cluster_algo)
+            clusterer = TextClusterer(collection_name=collection_name,**params,cluster_algo=cluster_algo)
             labels = clusterer.cluster(embeddings)
 
             if len(set(labels)) <= 2:

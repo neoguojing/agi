@@ -108,26 +108,28 @@ search_engines = SearchEngineSelector()
 
 doc_chain = TaskFactory.create_task(TASK_DOC_CHAT)
 
-def get_cluster_ids(docs: Union[List[Document], Dict[str, List[Document]]]) -> set:
-    cluster_ids = set()
+def get_clusterid_collection_pair(docs: Union[List[Document], Dict[str, List[Document]]]) -> set:
+    pairs = set()
     
     if isinstance(docs, dict):
         # 处理 {question: list[Document]} 的情况
         for doc_list in docs.values():
             for doc in doc_list:
                 cid = doc.metadata.get("cluster_id")
-                if cid is not None:
-                    cluster_ids.add(cid)
+                cname = doc.metadata.get("collection_name")
+                if cid is not None and cname is not None:
+                    pairs.add((cid,cname))
     elif isinstance(docs, list):
         # 处理 list[Document] 的情况
         for doc in docs:
             cid = doc.metadata.get("cluster_id")
-            if cid is not None:
-                cluster_ids.add(cid)
+            cname = doc.metadata.get("collection_name")
+            if cid is not None and cname is not None:
+                pairs.add((cid,cname))
     else:
         raise TypeError(f"Unsupported type for docs: {type(docs)}")
     
-    return cluster_ids
+    return pairs
 
 
 # 产生新的问题
@@ -331,24 +333,27 @@ async def search_node(state: State, config: RunnableConfig):
     collection_names = state["collection_names"]
     index_docs = state.get("index_search_result")
     questions = state.get("questions")
-    cluster_ids = get_cluster_ids(index_docs)
-    
+    pairs = get_clusterid_collection_pair(index_docs)
+    log.info(f"search_node: total pairs={len(pairs)}")
+
     docs_map: Dict[str, List[Document]] = {q: [] for q in questions}
 
-    for collection_name in set(collection_names):
-        if cluster_ids:
-            for cid in cluster_ids:
-                parts_map = await collection_manager.embedding_search(
-                    texts=questions,
-                    collection_name=collection_name,
-                    cluster_id=cid,
-                    tenant=tenant
-                )
-                # 合并到 docs_map
-                for q in questions:
-                    docs_map[q].extend(parts_map.get(q, []))
-        else:
-            # 全量检索
+    # 依据类和collection 检索
+    if pairs:
+        for cid,cname in pairs:
+            parts_map = await collection_manager.embedding_search(
+                texts=questions,
+                collection_name=cname,
+                cluster_id=cid,
+                tenant=tenant
+            )
+            # 合并到 docs_map
+            for q in questions:
+                docs_map[q].extend(parts_map.get(q, []))
+    else:
+        # 全量检索
+        for collection_name in set(collection_names):
+            
             parts_map = await collection_manager.embedding_search(
                 texts=questions,
                 collection_name=collection_name,

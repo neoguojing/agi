@@ -145,8 +145,9 @@ async def doc_keywords_node(state: State, config: RunnableConfig):
 
 async def cluster_train_node(state: State, config: RunnableConfig):
     clusters = None
+    collection_name = state.get("collection_name")
     if len(state["embds"]) > 5:
-        clusters = train(state["db_documents"],state["embds"])
+        clusters = train(collection_name=collection_name,docs=state["db_documents"], embeddings=state["embds"])
     return {"clusters":clusters}
 
 async def store_index_node(state: State, config: RunnableConfig):
