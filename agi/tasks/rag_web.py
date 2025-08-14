@@ -383,7 +383,7 @@ rag_graph_builder.add_conditional_edges(START, route)
 
 rag_graph_builder.add_edge("web","scrape")
 rag_graph_builder.add_conditional_edges("scrape", context_control)
-rag_graph_builder.add_conditional_edges("split", "rerank")
+rag_graph_builder.add_edge("split", "rerank")
 
 
 rag_graph_builder.add_edge("index_search", "search")
