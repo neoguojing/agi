@@ -125,7 +125,7 @@ class WebScraper(BaseTool):
     async def _fetch_playwright(self, url: str) -> str:
         """异步 Playwright 抓取"""
         from playwright.async_api import async_playwright
-        from playwright_stealth import stealth_async
+        from playwright_stealth import stealth
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(
@@ -133,7 +133,7 @@ class WebScraper(BaseTool):
                 args=["--disable-blink-features=AutomationControlled"]
             )
             page = await browser.new_page()
-            await stealth_async(page)
+            await stealth(page)
             await page.goto(url, wait_until="domcontentloaded", timeout=20000)
             await page.wait_for_selector("#js_content", timeout=10000)
             await asyncio.sleep(random.uniform(0.5, 1.5))
