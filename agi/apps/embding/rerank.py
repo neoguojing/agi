@@ -108,7 +108,7 @@ class Reranker:
             scores: List[float] 每个query-doc对的相关度分数，范围0~1
         """
         assert len(queries) == len(documents), "Queries and documents must have the same length."
-        scores = None
+        scores = []
         self.get_model(model)
         for q, doc in zip(queries, documents):
             # 分块
