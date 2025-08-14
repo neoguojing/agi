@@ -237,11 +237,11 @@ async def web_scrape_node(state: State,config: RunnableConfig):
             for q, new_docs in query_doc_map.items():
                 if new_docs:  # 非空才追加
                     docs_map.setdefault(q, []).extend(new_docs)
-            return {"docs_map": docs_map}
         
         total_docs = sum(len(docs) for docs in docs_map.values())
         log.info(f"web_scrape_node:{total_docs}")
 
+        return {"docs_map": docs_map}
     except Exception as e:
         log.error(f"Error web_scrape_node: {e}")
         print(traceback.format_exc())
@@ -355,7 +355,7 @@ async def search_node(state: State, config: RunnableConfig):
         for collection_name in set(collection_names):
             if collection_name == "index":
                 continue
-            
+
             parts_map = await collection_manager.embedding_search(
                 texts=questions,
                 collection_name=collection_name,
