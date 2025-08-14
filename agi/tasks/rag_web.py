@@ -206,7 +206,7 @@ async def web_scrape_node(state: State,config: RunnableConfig):
     except Exception as e:
         log.error(f"Error web_scrape_node: {e}")
         print(traceback.format_exc())
-        return {}
+        return {"docs": docs}
 
 # 适用于web 和 rag的情况，当无法获取有效的上下文信息时，
     # 1.重置feature特性
