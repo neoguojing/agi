@@ -194,13 +194,19 @@ async def web_scrape_node(state: State,config: RunnableConfig):
     docs = state.get("docs")
     if docs is None:
         docs = []
-    if urls:
-        from agi.utils.scrape import WebScraper
-        scraper = WebScraper(web_paths=urls)
-        docs.extend(await scraper.aload())
-        log.info(f"web_scrape_node:{len(docs)}")
+    try:
+        if urls:
+            from agi.utils.scrape import WebScraper
+            scraper = WebScraper()
+            scape_docs = await scraper.aload(urls)
+            docs.extend(scape_docs)
+            log.info(f"web_scrape_node:{len(docs)}")
 
-    return {"docs": docs}
+        return {"docs": docs}
+    except Exception as e:
+        log.error(f"Error web_scrape_node: {e}")
+        print(traceback.format_exc())
+        return {}
 
 # 适用于web 和 rag的情况，当无法获取有效的上下文信息时，
     # 1.重置feature特性
