@@ -124,20 +124,30 @@ class WebScraper(BaseTool):
             return None
 
     async def _fetch_playwright(self, url: str) -> str:
-        """异步 Playwright 抓取"""
+        """异步 Playwright 抓取，支持 2.0.0 stealth"""
         from playwright.async_api import async_playwright
-        from playwright_stealth import stealth
+        from playwright_stealth import Stealth
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(
                 headless=True,
                 args=["--disable-blink-features=AutomationControlled"]
             )
-            page = await browser.new_page()
-            await stealth(page)
+
+            context = await browser.new_context()
+            # 创建 Stealth 实例并注入 context
+            stealth = Stealth()
+            await stealth.apply_stealth_async(context)
+
+            page = await context.new_page()
             await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+
+            # 等待正文加载
             await page.wait_for_selector("#js_content", timeout=10000)
+
+            # 模拟人类浏览延迟
             await asyncio.sleep(random.uniform(0.5, 1.5))
+
             html = await page.content()
             await browser.close()
             return html
