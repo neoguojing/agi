@@ -1,12 +1,10 @@
 import unittest
 from agi.utils.scrape import WebScraper
-from agi.tasks.task_factory import TaskFactory
 
 class TestScrape(unittest.TestCase):
     def setUp(self):
-        self.play_scrape = WebScraper(use_playwright=True)
-        self.scrape = WebScraper()
-
+        self.play_scrape = WebScraper()
+        
     def test_scrape(self):
         # 头条
         ret = self.play_scrape.invoke("https://www.toutiao.com/w/1831910043724936/?log_from=593d5b4b2a1cb_1747288992329")
