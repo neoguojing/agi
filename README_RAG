@@ -31,8 +31,7 @@ milvus.io
 TOOD: 
 
 # web 的引用无法呈现，open-webui保存
-# rag引用分数为负数
-# 生成的问题出现在前端
+# rag引用分数为负数 DONE
+# 生成的问题出现在前端  DONE
 
-# test
 

@@ -246,6 +246,7 @@ class AgiGraph:
                 elif "custom" in stream_mode and event[0] == "custom":
                     # 用户自定义消息
                     # ("custom":())
+                    log.info(f"custom events: {event}")
                     yield event
                 elif "messages" in stream_mode and event[0] == "messages": 
                     # turple 类型的消息 0是AIMessageChunk，2是一个字典

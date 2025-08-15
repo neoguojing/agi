@@ -173,10 +173,21 @@ async def doc_rerank_node(state: State,config: RunnableConfig):
     for question,doc_list in docs_map.items():
         parts = await rerank_with_batching(question,doc_list)
         docs.extend(parts)
-    log.info(f"doc_rerank_node:{len(docs)}")
-    log.info(f"doc_rerank_node:{docs}")
 
-    return {"docs":docs} 
+    # 排序（score 越大越相关）
+    sorted_docs = sorted(
+        docs, 
+        key=lambda d: d.metadata.get("score", float("-inf")), 
+        reverse=True
+    )
+    
+    # 取前 3
+    topk_docs = sorted_docs[:3]
+    
+    log.info(f"doc_rerank_node 3:: {topk_docs}")
+    
+    return {"docs": topk_docs}
+
 
 # 获取指定文件的索引文件
 async def doc_summary_node(state: State,config: RunnableConfig):
