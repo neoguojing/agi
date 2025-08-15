@@ -156,13 +156,13 @@ async def doc_chat_node(state: State,config: RunnableConfig,writer: StreamWriter
 
     citations = build_citations(docs)
     if citations:
-        writer({"citations":citations,"docs":state["docs"]})
+        writer({"citations":citations})
 
     log.info(f"doc_chat_node: citations={len(citations)}")
     result = await doc_chain.ainvoke(state,config=config)
     result["citations"] = citations
     result["docs"] = None
-    result["doc_list_node"] = None
+    result["docs_map"] = None
     result["index_search_result"] = None
 
     return result
