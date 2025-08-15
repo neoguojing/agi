@@ -173,17 +173,19 @@ contextualize_q_template = ChatPromptTemplate.from_messages(
 )
 
 doc_qa_prompt = (
-    "You are an assistant for question-answering tasks. "
-    "Use the following pieces of retrieved context to answer "
-    "the question. If you don't know the answer, say that you "
-    "don't know. Keep the answer concise."
-    "Pay careful attention to indentation for proper rendering of these constructs."
-    "\n\n"
-    "{context}"
-    "\n\n"
-    "Please respond in {language}."
-    "Please respond using Markdown format."
+    "Answer the question using ONLY the context below. "
+    "If the answer is not explicitly in the context, respond 'I don't know'. "
+    "Do not use external knowledge or assumptions. Keep the answer concise and preserve indentation for code or structured data.\n\n"
+    "===== CONTEXT START =====\n"
+    "{context}\n"
+    "===== CONTEXT END =====\n\n"
+    "Self-check before responding:\n"
+    "1. Ensure all answer content is directly supported by the context.\n"
+    "2. If any part is unsupported, output exactly: I don't know.\n"
+    "3. Do not include the self-check steps in the answer.\n\n"
+    "Respond in {language} using Markdown format."
 )
+
 
 doc_qa_template = ChatPromptTemplate.from_messages(
     [
