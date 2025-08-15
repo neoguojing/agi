@@ -131,7 +131,7 @@ class Reranker:
                     with torch.no_grad():
                         logits = self.model(**inputs, return_dict=True).logits.view(-1, ).float()
                         logits = torch.sigmoid(logits)
-                    chunk_scores.extend(logits.tolist())
+                        chunk_scores.extend(logits.tolist())
 
             # 取每个 document 的平均分作为最终得分
             doc_score = sum(chunk_scores) / len(chunk_scores)

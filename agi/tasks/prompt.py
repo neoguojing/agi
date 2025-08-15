@@ -176,6 +176,9 @@ doc_qa_prompt = (
     "Answer the question using ONLY the context below. "
     "If the answer is not explicitly in the context, respond 'I don't know'. "
     "Do not use external knowledge or assumptions. Keep the answer concise and preserve indentation for code or structured data.\n\n"
+    "Use Markdown formatting to make your answer clear and readable. "
+    "You can use headings, bullet points, numbered lists, bold, italics, or code blocks as appropriate, "
+    "but do not add any information not in the context.\n\n"
     "===== CONTEXT START =====\n"
     "{context}\n"
     "===== CONTEXT END =====\n\n"
@@ -185,6 +188,7 @@ doc_qa_prompt = (
     "3. Do not include the self-check steps in the answer.\n\n"
     "Respond in {language} using Markdown format."
 )
+
 
 
 doc_qa_template = ChatPromptTemplate.from_messages(
