@@ -447,7 +447,7 @@ def get_dpmeans_params(embeddings: np.ndarray):
 def train(collection_name:str,docs: List[Document], embeddings: np.ndarray,cluster_algo=CLUSTER_ALGO):
     try:
         if not isinstance(embeddings, np.ndarray):
-            embeddings = np.array(embeddings, dtype=float)
+            embeddings = np.array(embeddings, dtype=np.float32)
 
         search_space = None
         if cluster_algo == "dpmeans":
