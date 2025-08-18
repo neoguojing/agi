@@ -374,7 +374,8 @@ async def search_node(state: State, config: RunnableConfig):
         index_docs = state.get("index_search_result")
         pairs = get_clusterid_collection_pair(index_docs)
         log.info(f"search_node: total pairs={len(pairs)}")
-        questions = set(index_docs.keys())
+        questions = list(index_docs.keys())
+        log.info(f"search_node:{questions}")
         docs_map: Dict[str, List[Document]] = {q: [] for q in questions}
 
         # 依据类和collection 检索
