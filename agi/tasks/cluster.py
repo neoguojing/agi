@@ -128,7 +128,7 @@ class TextClusterer:
                 score -- 综合评分
         """
         try:
-            n_samples = labels.shape[0]
+            n_samples = embeddings.shape[0]
 
             if n_samples > sample_size:
                 rng = np.random.RandomState(random_state)
@@ -143,7 +143,7 @@ class TextClusterer:
             n_clusters = len(unique_labels)
 
             results = {}
-            if n_clusters >= 2:
+            if 2 <= n_clusters <= n_samples - 1:
                 results["silhouette"] = silhouette_score(
                     emb_samp, lab_samp, metric="euclidean", random_state=random_state
                 )
