@@ -206,7 +206,7 @@ class TextClusterer:
         return reducer.fit_transform(vectors)
     
     def do_hdbscan(self,embeddings):
-        try
+        try:
             normed_embeddings = embeddings.copy()
 
             # 3. 标准化
