@@ -10,6 +10,7 @@ from agi.config import MULTI_MODEL_PATH as model_root,FILE_STORAGE_PATH,log,MODE
 from agi.utils.common import path_to_preview_url
 from qwen_omni_utils import process_mm_info
 import traceback
+from agi.apps.utils import pick_free_device
 
 audio_style = "width: 300px; height: 50px;"  # 添加样式
 
@@ -33,6 +34,7 @@ class MultiModel:
         self.monitor_thread = threading.Thread(target=self._monitor, daemon=True)
         self.monitor_thread.start()
         self.save_file = save_file
+        self.device = None
 
     def get_model(self,model:str="gemma"):
         """访问模型，如果未加载则自动加载"""
@@ -50,15 +52,16 @@ class MultiModel:
             return self.model
 
     def _load(self):
+        self.device = pick_free_device()
         if self.model_name == "qwen":
             # GPU 13GB
             self.model_path = os.path.join(MODEL_PATH, "Qwen2.5-Omni-3B")
-            print(f"[Model] Loading model from {self.model_path}")
+            log.info(f"[Model] Loading model from {self.model_path}")
             from transformers import Qwen2_5OmniForConditionalGeneration, Qwen2_5OmniProcessor
             self.model = Qwen2_5OmniForConditionalGeneration.from_pretrained(
                 self.model_path,
                 torch_dtype=self.best_torch_dtype(),
-                device_map="auto",
+                device_map={ "": self.device.index },
                 enable_audio_output=True,
                 attn_implementation="flash_attention_2"
             )
@@ -66,11 +69,12 @@ class MultiModel:
         elif self.model_name == "gemma":
             # GPU 11GB 最高要20GB
             self.model_path = os.path.join(MODEL_PATH, "gemma-3n-E2B-it")
+            log.info(f"[Model] Loading model from {self.model_path}")
             from transformers import AutoProcessor, Gemma3nForConditionalGeneration
             # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             self.model = Gemma3nForConditionalGeneration.from_pretrained(self.model_path,
                                                             torch_dtype=torch.bfloat16,
-                                                            device_map="auto",
+                                                            device_map={ "": self.device.index },
                                                           ).eval()
             self.processor = AutoProcessor.from_pretrained(self.model_path)
 

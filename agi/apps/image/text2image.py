@@ -9,6 +9,7 @@ import torch
 from agi.config import log,MODEL_PATH
 from agi.config import TEXT_TO_IMAGE_MODEL_PATH as model_root,FILE_STORAGE_PATH
 from agi.utils.common import path_to_preview_url
+from agi.apps.utils import pick_free_device
 import random
 import numpy as np
 
@@ -34,6 +35,7 @@ class Text2Image:
         self.monitor_thread.start()
         self.save_image = save_image
         self.file_path = FILE_STORAGE_PATH
+        self.device = None
 
     def get_model(self,model:str):
         """访问模型，如果未加载则自动加载"""
@@ -64,8 +66,8 @@ class Text2Image:
             self.model_path = model_root
             # self.model = StableDiffusion3Pipeline.from_pretrained(self.model_path, torch_dtype=torch.bfloat16)
             self.model = StableDiffusion3Pipeline.from_pretrained(self.model_path, torch_dtype=torch.bfloat16,low_cpu_mem_usage=False,ignore_mismatched_sizes=True)
-
-        self.model = self.model.to("cuda")
+        self.device = pick_free_device()
+        self.model = self.model.to(self.device)
         self.model.enable_model_cpu_offload()
 
     # model: sdxl sd3.5
