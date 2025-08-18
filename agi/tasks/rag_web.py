@@ -361,7 +361,7 @@ async def index_search_node(state: State,config: RunnableConfig):
         doc_map = await collection_manager.embedding_search(questions,"index",tenant=tenant)
         total_docs = sum(len(docs) for docs in doc_map.values())
         log.info(f"index_search_node:{total_docs}")
-        state["questions"] = questions
+        # state["questions"] = questions
         return {"index_search_result":doc_map}
     except Exception as e:
         log.error(f"index_search_node: {e}")
@@ -374,7 +374,7 @@ async def search_node(state: State, config: RunnableConfig):
         index_docs = state.get("index_search_result")
         pairs = get_clusterid_collection_pair(index_docs)
         log.info(f"search_node: total pairs={len(pairs)}")
-        questions = list(index_docs.keys())
+        questions = set(index_docs.keys())
         docs_map: Dict[str, List[Document]] = {q: [] for q in questions}
 
         # 依据类和collection 检索
