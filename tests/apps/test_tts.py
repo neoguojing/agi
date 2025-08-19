@@ -1,15 +1,13 @@
-from agi.apps.tts.fast_api_audio import app
-from agi.apps.tts.tts import SENTINEL
-from fastapi.testclient import TestClient
 import pytest
 import httpx
-import asyncio
 
-client = TestClient(app)
+# 远端服务地址
+REMOTE_BASE_URL = "http://localhost:8002"
 api_key = "123"
-def test_generate_speech():
-    response = client.post(
-        "/v1/audio/speech",
+
+def test_generate_speech_remote():
+    response = httpx.post(
+        f"{REMOTE_BASE_URL}/v1/audio/speech",
         headers={
             "Authorization": f"Bearer {api_key}"
         },
@@ -19,31 +17,38 @@ def test_generate_speech():
             "response_format": "wav",
             "speed": 1.0,
             "user": "test"
-        }
+        },
+        timeout=60.0
     )
-    assert response.status_code == 200
+    assert response.status_code == 200, f"错误返回: {response.text}"
     assert response.headers["content-type"].startswith("audio/wav")
     assert len(response.content) > 100  # 基础校验数据大小
 
+
 @pytest.mark.asyncio
-async def test_generate_speech_streaming():
-    async with httpx.AsyncClient(base_url="http://test", app=app) as client:
+async def test_generate_speech_streaming_remote():
+    async with httpx.AsyncClient(base_url=REMOTE_BASE_URL, timeout=60.0) as client:
         response = await client.post(
             "/v1/audio/speech/streaming",
             headers={
                 "Authorization": f"Bearer {api_key}"
             },
-            json={"input": "测试流式语音", "response_format": "pcm", "user": "test_stream"}
+            json={
+                "input": "测试流式语音",
+                "response_format": "pcm",
+                "user": "test_stream"
+            }
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 200, f"错误返回: {response.text}"
         assert response.headers["content-type"] == "audio/pcm"
+
         # 读取流
         data = b""
         async for chunk in response.aiter_bytes():
-            print(len(chunk))
+            print(f"收到 chunk 大小: {len(chunk)}")
             data += chunk
             if len(data) > 1024:
-                continue
+                break  # 收到足够数据就停止
 
         assert len(data) > 0
