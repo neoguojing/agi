@@ -20,9 +20,10 @@ from typing import Dict, Any, Iterator,Union
 from langchain_core.messages import BaseMessage,AIMessage,HumanMessage,ToolMessage
 from agi.tasks.define import State,Feature,InputType
 from agi.tasks.prompt import (
-    decide_modify_state_messages_runnable
+    decide_modify_state_messages_runnable,
+    tts_modify_state_messages_runnable
 )
-from agi.tasks.utils import split_think_content,graph_print,refine_human_message
+from agi.tasks.utils import split_think_content,graph_print,refine_human_message,graph_response_format_runnable
 from agi.tasks.agent import create_react_agent_as_subgraph,ahuman_feedback_node
 import traceback
 from agi.config import (
@@ -36,7 +37,11 @@ from agi.config import (
 # 4. web检索 流程独立，支持输出检索结果和转向llm done
 # 5. 加入人工check环节，返回结果，提示用户输入 done
 # 7.rag没有检索到合适的内容，则转换到agent模式，解决图片的问题 done
-    
+
+# 定义chain
+decider_chain = decide_modify_state_messages_runnable | TaskFactory.get_llm() | StrOutputParser()
+tts_prepare_chain = tts_modify_state_messages_runnable | TaskFactory.get_llm() | StrOutputParser()
+
 class AgiGraph:
     def __init__(self):
         checkpointer = MemorySaver()
@@ -48,6 +53,7 @@ class AgiGraph:
 
         self.builder.add_node("speech2text", TaskFactory.create_task(TASK_SPEECH_TEXT))
         self.builder.add_node("tts", TaskFactory.create_task(TASK_TTS))
+        self.builder.add_node("tts_prepare", self.tts_prepare_node)
         
         self.builder.add_node("multi_modal", TaskFactory.create_task(TASK_MULTI_MODEL))
         # 用于处理非agent的请求:1.标题生成等用户自定义提示请求；2.作为决策节点，判定用户意图;3.图像识别等 image2text 请求；该请求base64，对上下文影响较大
@@ -61,6 +67,7 @@ class AgiGraph:
         self.builder.add_conditional_edges("agent", self.output_control)
         self.builder.add_conditional_edges("llm_with_history", self.output_control)
         self.builder.add_conditional_edges("rag", self.output_control)
+        self.builder.add_edge("tts_prepare", "tts")
 
         self.builder.add_edge("multi_modal", END)
         self.builder.add_edge("image", END)
@@ -95,8 +102,6 @@ class AgiGraph:
     async def auto_state_machine(self,state: State):
         config={"configurable": {"user_id": "tools", "conversation_id": "",
                                  "thread_id": "tools"}}
-        # 定义状态机chain
-        decider_chain = decide_modify_state_messages_runnable | TaskFactory.get_llm() | StrOutputParser()
         node_list = ["image","llm_with_history","agent","llm","multi_modal",END]
         next_step = await decider_chain.ainvoke(state,config=config)
         # 去除think标签
@@ -167,6 +172,16 @@ class AgiGraph:
         
         return await self.output_control(state)
     
+    async def tts_prepare_node(self,state: State,config: RunnableConfig):
+        try:
+            format_text = tts_prepare_chain.invoke(state)
+            log.info(f"tts_prepare_node:{format_text}")
+            return {"messages": [HumanMessage(content=format_text)]}
+        except Exception as e:
+            log.error(f"tts_prepare_node: {e}")
+            print(traceback.format_exc())
+            return {}
+        
     async def output_control(self,state: State):
         if state["need_speech"]:
 
@@ -175,7 +190,7 @@ class AgiGraph:
             if isinstance(last_message,AIMessage):
                 last_message.response_metadata["finish_reason"] = None
             log.info(f"to tts:{state['messages'][-1]}")
-            return "tts"
+            return "tts_prepare"
         
         return END    
         

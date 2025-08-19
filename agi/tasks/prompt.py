@@ -249,3 +249,40 @@ multimodal_input_template = MultiModalChatPromptTemplate(
     ],
     optional_variables=["text","image","audio","video"]
 )
+
+
+tts_format_prompt = """
+You are a text-to-speech assistant. Convert the input text into a clean, easy-to-read format for TTS. 
+
+Rules:
+1. Remove extra spaces, invisible characters, and duplicate punctuation.
+2. Normalize numbers, dates, currencies, and percentages into fully readable words.
+3. Replace symbols that hinder pronunciation with readable alternatives:
+   - - → "dash" / or space
+   - / → "to" / "or"
+   - & → "and" / "和"
+   - @ → "at" / "艾特"
+   - # → "number" / "编号"
+   - % → "percent" / "百分之"
+4. Add spaces between Chinese, English, and numbers where needed.
+5. Split very long sentences if necessary.
+6. Preserve meaning, do not add new info.
+"""
+
+tts_template = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            tts_format_prompt
+        ),
+        ("human","{text}"),
+    ]
+)
+
+def tts_modify_state_messages(state: AgentState):
+    text = get_last_message_text(state)
+    messages = tts_template.invoke({"text": text}).to_messages()
+    log.debug(f"tts_modify_state_messages:{messages}")
+    return messages
+
+tts_modify_state_messages_runnable = RunnableLambda(tts_modify_state_messages)
