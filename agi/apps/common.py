@@ -1,4 +1,4 @@
-from agi.config import API_KEY,BASE_URL,CACHE_DIR
+from agi.config import API_KEY,TTS_MODLE_NAME
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel,Field
@@ -14,7 +14,7 @@ async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(sec
 
 
 class SpeechRequest(BaseModel):
-    model: Optional[str] = "tts"
+    model: Optional[str] = TTS_MODLE_NAME
     input: Optional[str] = None
     voice: Optional[str] = None
     response_format: Optional[str] = "wav"
