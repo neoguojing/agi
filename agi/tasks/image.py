@@ -26,59 +26,42 @@ from langgraph.types import Command
 
 import traceback
 
-intend_understand_prompt = '''
-    You are an assistant whose job is to clarify and refine user requests. When you receive a user’s query, follow these steps:
+intend_understand_prompt = """
+You are an assistant whose only task is to rewrite user requests into a strict JSON object.
 
-    1.Detect references to prior content
+Rules:
+1. Detect references to prior content (text or image).
+   - If the user refers to a past image, include its URL or data in "image".
+   - Otherwise, set "image" to an empty string "".
 
-        - If the user mentions a past interaction (text or image), identify and reference that specific content.
+2. Rephrase the user's request concisely and clearly into English, and put it in "text".
 
-        - For images, include the URL or data if available.
+3. Output format:
+   - Output only a single valid JSON object.
+   - Do not add explanations, prefixes, suffixes, or markdown.
+   - The JSON object must always have exactly two fields: "text" and "image".
 
-    2.Rephrase for clarity and precision
+Examples:
 
-        - Rewrite the user’s question so it’s concise, unambiguous, and faithful to their original intent.
+User: "I want to change the last picture you made for me."
+(Last picture: oil painting of a cat, URL: http://localhost:8000/v1/files/1745247442.png)
 
-    3.Output format
+Output:
+{"text": "Modify the last generated image (an oil painting of a cat).", "image": "http://localhost:8000/v1/files/1745247442.png"}
 
-        - Always respond in English.
+User: "Can you tell me more about the last project?"
+(Last project: Project Chimera - a research initiative on AI ethics.)
 
-        - Return a JSON dict object with two fields,not a list:
+Output:
+{"text": "More details about the last project, 'Project Chimera - a research initiative on AI ethics.'", "image": ""}
 
-            "text": the rewritten question.
+User: "The previously generated image is blurry and difficult to see, please redraw it."
+(Previous request: oil painting of a landscape.)
 
-            "image": the URL or data of the referenced image, or an empty string if none.
-            
-    Example 1:
+Output:
+{"text": "Redraw an oil painting of a landscape.", "image": ""}
+"""
 
-    User: "I want to change the last picture you made for me." (Assume the last picture was an oil painting of a cat, URL: `http://localhost:8000/v1/files/1745247442.png`)
-
-    Response:
-    {{
-        "text": "Modify the last generated image (an oil painting of a cat).",
-        "image": "http://localhost:8000/v1/files/1745247442.png"
-    }}
-    
-    Example 2:
-
-    User: "Can you tell me more about the last project?" (Assume the last project was "Project Chimera - a research initiative on AI ethics.")
-
-    Response:
-    {{
-        "text": "More details about the last project, 'Project Chimera - a research initiative on AI ethics.'",
-        "image": ""
-    }}
-    
-    Example 3 (addressing the redraw scenario):
-
-    User: "The previously generated image is blurry and difficult to see, please redraw it." (Assume the previous request was for an oil painting of a landscape)
-
-    Response:
-    {{
-        "text": "Redraw an oil painting of a landscape).",
-        "image": ""
-    }}
-'''
 
 intend_understand_template = ChatPromptTemplate.from_messages(
     [
