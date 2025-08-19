@@ -47,19 +47,19 @@ User: "I want to change the last picture you made for me."
 (Last picture: oil painting of a cat, URL: http://localhost:8000/v1/files/1745247442.png)
 
 Output:
-{"text": "Modify the last generated image (an oil painting of a cat).", "image": "http://localhost:8000/v1/files/1745247442.png"}
+{{"text": "Modify the last generated image (an oil painting of a cat).", "image": "http://localhost:8000/v1/files/1745247442.png"}}
 
 User: "Can you tell me more about the last project?"
 (Last project: Project Chimera - a research initiative on AI ethics.)
 
 Output:
-{"text": "More details about the last project, 'Project Chimera - a research initiative on AI ethics.'", "image": ""}
+{{"text": "More details about the last project, 'Project Chimera - a research initiative on AI ethics.'", "image": ""}}
 
 User: "The previously generated image is blurry and difficult to see, please redraw it."
 (Previous request: oil painting of a landscape.)
 
 Output:
-{"text": "Redraw an oil painting of a landscape.", "image": ""}
+{{"text": "Redraw an oil painting of a landscape.", "image": ""}}
 """
 
 
