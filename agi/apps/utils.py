@@ -1,8 +1,8 @@
 
-import torch
 
 def pick_free_device(threshold_ratio: float = 0.6):
     """挑一张空闲卡, threshold_ratio 表示空闲率阈值 (默认显存占用 <90% 才认为是空闲)"""
+    import torch
     num_gpus = torch.cuda.device_count()
     if num_gpus == 0:
         return torch.device("cpu")
