@@ -30,4 +30,4 @@ async def test_transcribe_audio_remote():
             res = response.json()
             print(res)
             assert "text" in res
-            assert "测试" in res["text"]
+            assert "还只有六岁的时候" in res["text"]
