@@ -20,7 +20,7 @@ async def test_transcribe_audio():
         }
 
 
-        async with AsyncClient(app=app, base_url="http://test") as ac:
+        async with AsyncClient(app=app, base_url="http://localhost:8003") as ac:
             response = await ac.post("/v1/audio/transcriptions", data=data, files=files,headers=headers)
             assert response.status_code == 200
             res = response.json()
