@@ -282,7 +282,7 @@ tts_template = ChatPromptTemplate.from_messages(
 def tts_modify_state_messages(state: AgentState):
     text = get_text_from_message(state["messages"][-1])
     messages = tts_template.invoke({"text": text}).to_messages()
-    log.info(f"tts_modify_state_messages:{messages}")
+    log.debug(f"tts_modify_state_messages:{messages}")
     return messages
 
 tts_modify_state_messages_runnable = RunnableLambda(tts_modify_state_messages)

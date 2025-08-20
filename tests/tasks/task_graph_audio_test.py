@@ -37,8 +37,7 @@ class TestGraph(unittest.IsolatedAsyncioTestCase):
         # self.assertIsNotNone(resp["messages"][-1].content[0].get("file_path"))
         self.assertIsNotNone(resp["messages"][-1].content[0].get("text"))
 
-        events = await self.graph.stream(input_example)
-        async for event in events:
+        async for event in self.graph.stream(input_example):
             print(f"******event******{event,type(event)}")
             self.assertIsInstance(event,tuple)
             self.assertIsInstance(event[1][0],AIMessage)
@@ -55,8 +54,7 @@ class TestGraph(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(resp["messages"][-1].content,str)
         self.assertIsNotNone(resp["messages"][-1].content)
         
-        events = await self.graph.stream(input_example)
-        async for event in events:
+        async for event in self.graph.stream(input_example):
             print(f"******event******{event,type(event)}")
             self.assertIsInstance(event,tuple)
             self.assertIsInstance(event[1][0],AIMessage)
@@ -73,8 +71,7 @@ class TestGraph(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(resp["messages"][-1].content,str)
         self.assertEqual(resp["messages"][-1].content,"当我还只有六岁的时候,看到了一幅精彩的插画。")
         
-        events = await self.graph.stream(input_example)
-        async for event in events:
+        async for event in self.graph.stream(input_example):
             print(f"******event******{event,type(event)}")
             self.assertIsInstance(event,tuple)
             self.assertIsInstance(event[1][0],AIMessage)
