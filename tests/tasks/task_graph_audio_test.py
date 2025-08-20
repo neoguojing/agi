@@ -8,10 +8,7 @@ class TestGraph(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):       
         self.graph = AgiGraph()
         self.graph.display()
-    
-    async def test_audio_input(self):
-        # 语音输入，语音输出
-        input_example = {
+        self.input_example = {
             "messages":  [
                 HumanMessage(
                     content=[
@@ -23,7 +20,11 @@ class TestGraph(unittest.IsolatedAsyncioTestCase):
             "need_speech": True,
             "status": "in_progress",
         }
-        resp = await self.graph.invoke(input_example)
+    
+    async def test_audio_input(self):
+        # 语音输入，语音输出
+        
+        resp = await self.graph.invoke(self.input_example)
         print(resp)
         self.assertIsInstance(resp,dict)
         self.assertIsInstance(resp["messages"],list)
@@ -37,14 +38,14 @@ class TestGraph(unittest.IsolatedAsyncioTestCase):
         # self.assertIsNotNone(resp["messages"][-1].content[0].get("file_path"))
         self.assertIsNotNone(resp["messages"][-1].content[0].get("text"))
 
-        async for event in self.graph.stream(input_example):
+        async for event in self.graph.stream(self.input_example):
             print(f"******event******{event,type(event)}")
             self.assertIsInstance(event,tuple)
             self.assertIsInstance(event[1][0],AIMessage)
             self.assertIsInstance(event[1][1],dict)
         
-        input_example["need_speech"] = False
-        resp = await self.graph.invoke(input_example)
+        self.input_example["need_speech"] = False
+        resp = await self.graph.invoke(self.input_example)
         print(resp)
         self.assertIsInstance(resp,dict)
         self.assertIsInstance(resp["messages"],list)
@@ -54,14 +55,15 @@ class TestGraph(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(resp["messages"][-1].content,str)
         self.assertIsNotNone(resp["messages"][-1].content)
         
-        async for event in self.graph.stream(input_example):
+        async for event in self.graph.stream(self.input_example):
             print(f"******event******{event,type(event)}")
             self.assertIsInstance(event,tuple)
             self.assertIsInstance(event[1][0],AIMessage)
             self.assertIsInstance(event[1][1],dict)
-            
-        input_example["feature"] = "speech"
-        resp = await self.graph.invoke(input_example)
+
+    async def test_speech(self):       
+        self.input_example["feature"] = "speech"
+        resp = await self.graph.invoke(self.input_example)
         print(resp)
         self.assertIsInstance(resp,dict)
         self.assertIsInstance(resp["messages"],list)
@@ -71,7 +73,7 @@ class TestGraph(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(resp["messages"][-1].content,str)
         self.assertEqual(resp["messages"][-1].content,"当我还只有六岁的时候,看到了一幅精彩的插画。")
         
-        async for event in self.graph.stream(input_example):
+        async for event in self.graph.stream(self.input_example):
             print(f"******event******{event,type(event)}")
             self.assertIsInstance(event,tuple)
             self.assertIsInstance(event[1][0],AIMessage)
