@@ -6,7 +6,7 @@ from langchain_core.messages import HumanMessage, BaseMessage,SystemMessage,AIMe
 from langchain.output_parsers.boolean import BooleanOutputParser
 from agi.tasks.agi_prompt import MultiModalChatPromptTemplate
 from agi.tasks.define import AgentState
-from agi.tasks.utils import get_last_message_text
+from agi.tasks.utils import get_last_message_text,get_text_from_message
 from agi.config import log
 import json
 
@@ -280,7 +280,7 @@ tts_template = ChatPromptTemplate.from_messages(
 )
 
 def tts_modify_state_messages(state: AgentState):
-    text = get_last_message_text(state)
+    text = get_text_from_message(state["messages"][-1])
     messages = tts_template.invoke({"text": text}).to_messages()
     log.info(f"tts_modify_state_messages:{messages}")
     return messages
