@@ -48,7 +48,7 @@ class AgiGraph:
 
         self.builder = StateGraph(State)
         self.builder.add_node("image", image_as_graph)
-        self.builder.add_node("rag", rag_as_subgraph)
+        self.builder.add_node("rag_web", rag_as_subgraph)
         self.builder.add_node("agent", create_react_agent_as_subgraph(TaskFactory.get_llm()))
 
         self.builder.add_node("speech2text", TaskFactory.create_task(TASK_SPEECH_TEXT))
@@ -66,7 +66,7 @@ class AgiGraph:
         self.builder.add_conditional_edges("human_feedback", self.human_feedback_control)
         self.builder.add_conditional_edges("agent", self.output_control)
         self.builder.add_conditional_edges("llm_with_history", self.output_control)
-        self.builder.add_conditional_edges("rag", self.output_control)
+        self.builder.add_conditional_edges("rag_web", self.output_control)
         self.builder.add_edge("tts_prepare", "tts")
 
         self.builder.add_edge("multi_modal", END)
@@ -152,9 +152,9 @@ class AgiGraph:
         if feature == Feature.AGENT:
             return "agent"
         elif feature == Feature.RAG:
-            return "rag"
+            return "rag_web"
         elif feature == Feature.WEB:
-            return "rag"
+            return "rag_web"
         elif feature == Feature.TTS:   #文字转语音
             return "tts"
         elif feature == Feature.SPEECH:  #语音转文字，直接输出
@@ -184,7 +184,6 @@ class AgiGraph:
         
     async def output_control(self,state: State):
         if state["need_speech"]:
-
             last_message = state["messages"][-1]
             # 修复 tts之前finish_reson = stop的问题
             if isinstance(last_message,AIMessage):
@@ -277,9 +276,7 @@ class AgiGraph:
                     # TODO decide chain 和 tranlate chain 以及 web search chain会输出中间结果,需要想办法处理
                     if (isinstance(event[1][0],AIMessage)) and event[1][0].content:
                         meta = event[1][1]
-                        if meta.get("langgraph_node") in ["web","__start__","rag",'user_understand',"compress","intend","index_search","web","tts_prepare"]:
-                            continue
-                        else:
+                        if meta.get("langgraph_node") in ["multi_modal","image","tts",'llm',"rag_web","llm_with_history","agent","human_feedback"]:
                             # 某些场景下，如agent，返回消息非流式返回，整体作为一个返回：
                             # 1.finish_reason一定等于stop
                             # 2.在包含think的场景下，think的内容一起返回，导致出现问题
