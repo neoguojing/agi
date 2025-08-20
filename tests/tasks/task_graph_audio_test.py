@@ -63,6 +63,8 @@ class TestGraph(unittest.IsolatedAsyncioTestCase):
 
     async def test_speech(self):       
         self.input_example["feature"] = "speech"
+        self.input_example["need_speech"] = False
+
         resp = await self.graph.invoke(self.input_example)
         print(resp)
         self.assertIsInstance(resp,dict)
