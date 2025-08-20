@@ -44,7 +44,7 @@ class TestGraph(unittest.IsolatedAsyncioTestCase):
             self.assertIsInstance(event[1][1],dict)
         
         input_example["need_speech"] = False
-        resp = self.graph.invoke(input_example)
+        resp = await self.graph.invoke(input_example)
         print(resp)
         self.assertIsInstance(resp,dict)
         self.assertIsInstance(resp["messages"],list)
