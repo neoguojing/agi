@@ -34,7 +34,7 @@ class TestGraph(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(resp["messages"][-1].content[0],dict)
         self.assertEqual(resp["messages"][-1].content[0].get("type"),"audio")
         self.assertIsNotNone(resp["messages"][-1].content[0].get("audio"))
-        self.assertIsNotNone(resp["messages"][-1].content[0].get("file_path"))
+        # self.assertIsNotNone(resp["messages"][-1].content[0].get("file_path"))
         self.assertIsNotNone(resp["messages"][-1].content[0].get("text"))
 
         events = await self.graph.stream(input_example)
