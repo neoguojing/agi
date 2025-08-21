@@ -276,13 +276,12 @@ class AgiGraph:
                     # TODO decide chain 和 tranlate chain 以及 web search chain会输出中间结果,需要想办法处理
                     if (isinstance(event[1][0],AIMessage)) and event[1][0].content:
                         meta = event[1][1]
+                        log.debug(f"stream-event-message:{event}")
                         if meta.get("langgraph_node") in ["multi_modal","image","tts",'llm',"rag_web","llm_with_history","agent","human_feedback"]:
                             # 某些场景下，如agent，返回消息非流式返回，整体作为一个返回：
                             # 1.finish_reason一定等于stop
                             # 2.在包含think的场景下，think的内容一起返回，导致出现问题
                             # 3.此处将该类消息拆为两条,分别发送
-                            log.debug(f"stream-event-message:{event}")
-
                             last_message = event[1][0]
                             if last_message.response_metadata.get("finish_reason","") in ["stop","tool_calls"] and last_message.content:
                                 think_content,other_content = split_think_content(last_message.content)
