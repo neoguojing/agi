@@ -216,6 +216,7 @@ class AgiGraph:
         
         events = None        
         try:
+            import pdb;pdb.set_trace()
             state = self.graph.get_state(config)
             log.debug(state)
             if state.tasks and state.tasks[0].interrupts:

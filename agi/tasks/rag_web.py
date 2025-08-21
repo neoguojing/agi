@@ -156,6 +156,8 @@ async def doc_chat_node(state: State,config: RunnableConfig,writer: StreamWriter
         log.info(f"doc_chat_node:{len(docs)}")
 
         citations = build_citations(docs)
+        import pdb;pdb.set_trace()
+
         if citations:
             writer({"citations":citations})
 
