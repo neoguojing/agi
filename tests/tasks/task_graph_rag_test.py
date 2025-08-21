@@ -15,7 +15,7 @@ class TestGraph(unittest.IsolatedAsyncioTestCase):
         input_example = {
             "messages":  [
                 HumanMessage(
-                    content="今天上海天气如何？"
+                    content="俄乌战争消息"
                 )
             ],
             "input_type": "text",
