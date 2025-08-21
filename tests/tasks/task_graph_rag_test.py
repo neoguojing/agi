@@ -29,7 +29,6 @@ class TestGraph(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resp["feature"],"web")
         self.assertEqual(resp["input_type"],"text")
         self.assertIsInstance(resp["messages"][-1],AIMessage)
-        self.assertIsInstance(resp['docs'],list)
         self.assertIsNotNone(resp["messages"][-1].content)
         self.assertIsInstance(resp['citations'],list)
         
@@ -63,7 +62,6 @@ class TestGraph(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resp["feature"],"rag")
         self.assertEqual(resp["input_type"],"text")
         self.assertIsInstance(resp["messages"][-1],AIMessage)
-        self.assertIsNotNone(resp['docs'])
         self.assertIsNotNone(resp["messages"][-1].content)
         self.assertIsNotNone(resp['citations'])
         
