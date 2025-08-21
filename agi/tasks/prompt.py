@@ -9,6 +9,7 @@ from agi.tasks.define import AgentState
 from agi.tasks.utils import get_last_message_text,get_text_from_message
 from agi.config import log
 import json
+from datetime import datetime
 
 english_traslate_template = ChatPromptTemplate.from_messages([
     ("human", "Translate the following into English and only return the translation result: {text}"),
@@ -177,6 +178,7 @@ contextualize_q_template = ChatPromptTemplate.from_messages(
 )
 
 doc_qa_prompt = (
+    "Current time is {date}."
     "Answer the question using ONLY the context below. "
     "Do not assume the current date or time; always rely on the temporal information explicitly provided in the question or context."
     "If the answer is not explicitly in the context, respond 'I don't know'. "
@@ -208,7 +210,8 @@ doc_qa_template = ChatPromptTemplate.from_messages(
 )
 
 def docqa_modify_state_messages(state: AgentState):
-    messages = doc_qa_template.invoke({"messages": [state["messages"][-1]],"context":state["context"],"language":"chinese"}).to_messages()
+    messages = doc_qa_template.invoke({"messages": [state["messages"][-1]],"context":state["context"],
+                                       "language":"chinese","date":datetime.now().strftime("%Y-%m-%d %H:%M:%S")}).to_messages()
     log.debug(f"docqa_modify_state_messages:{messages}")
     return messages
 
