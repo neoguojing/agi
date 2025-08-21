@@ -8,7 +8,7 @@ from agi.config import log
 class TestGraph(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):       
         self.graph = AgiGraph()
-        await self.graph.display()
+        self.graph.display()
     
     async def test_text_image_gene(self):
         # 使用agent，由agent决策是否调用图片生成工具

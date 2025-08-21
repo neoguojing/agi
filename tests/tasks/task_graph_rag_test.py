@@ -8,7 +8,7 @@ from agi.config import log
 class TestGraph(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):       
         self.graph = AgiGraph()
-        await self.graph.display()
+        self.graph.display()
    
     async def test_web(self):
         # TODO 引用无法返回给用户
