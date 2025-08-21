@@ -178,6 +178,7 @@ contextualize_q_template = ChatPromptTemplate.from_messages(
 
 doc_qa_prompt = (
     "Answer the question using ONLY the context below. "
+    "Do not assume the current date or time; always rely on the temporal information explicitly provided in the question or context."
     "If the answer is not explicitly in the context, respond 'I don't know'. "
     "Do not use external knowledge or assumptions. Keep the answer concise and preserve indentation for code or structured data.\n\n"
     "Use Markdown formatting to make your answer clear and readable. "
@@ -190,6 +191,7 @@ doc_qa_prompt = (
     "1. Ensure all answer content is directly supported by the context.\n"
     "2. If any part is unsupported, output exactly: I don't know.\n"
     "3. Do not include the self-check steps in the answer.\n\n"
+    "4. Never invent or assume a current date/time.\n\n"
     "Respond in {language} using Markdown format."
 )
 
