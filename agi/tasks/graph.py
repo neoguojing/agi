@@ -216,7 +216,6 @@ class AgiGraph:
         
         events = None        
         try:
-            import pdb;pdb.set_trace()
             state = self.graph.get_state(config)
             log.debug(state)
             if state.tasks and state.tasks[0].interrupts:
@@ -228,7 +227,8 @@ class AgiGraph:
                 events = self.graph.astream(input, config=config, stream_mode=stream_mode)
 
             async for event in events:
-                log.debug(f"stream-event:{event}")
+                log.info(f"stream-event:{event}")
+
                 if not isinstance(event,tuple):
                     continue
                 # 返回非HumanMessage
