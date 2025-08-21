@@ -226,7 +226,8 @@ class WebScraper(BaseTool):
 
                 if not has_main_content(html):
                     # 高优先级并行等待
-                    tasks = [page.wait_for_selector(sel, state="attached", timeout=10000) for sel in high_priority]
+                    tasks = [asyncio.create_task(page.wait_for_selector(sel, state="attached", timeout=10000))
+                            for sel in high_priority]
                     done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
                     for t in pending:
                         t.cancel()
