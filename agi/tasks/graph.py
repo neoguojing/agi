@@ -102,7 +102,7 @@ class AgiGraph:
     async def auto_state_machine(self,state: State):
         config={"configurable": {"user_id": "tools", "conversation_id": "",
                                  "thread_id": "tools"}}
-        node_list = ["image","llm_with_history","agent","llm","multi_modal",END]
+        node_list = ["image","llm_with_history","agent","llm","multi_modal","rag_web",END]
         next_step = await decider_chain.ainvoke(state,config=config)
         # 去除think标签
         _,next_step = split_think_content(next_step)

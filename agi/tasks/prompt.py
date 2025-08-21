@@ -49,11 +49,12 @@ decider_prompt = (
 
     '- If the input type is "text":'
     '    - If the question indicates a request to generate or create an image (e.g., "Draw a cat", "Generate a futuristic cityscape"), output: "image". '
-    '    - If the question requires current or external information (e.g., latest news, real-time data, factual verification, Wikipedia, Wikidata, Python code execution, arXiv papers, weather, or stock market data), output: "agent".'
+    '    - If the question requires latest news, real-time data, or factual verification from the internet, output: "rag_web".'
+    '    - If a request involves reasoning, decision making, tool use, or multi-step interaction, output "agent".'
     '    - If the input is nonsensical, meaningless, or just gibberish, output: "llm_with_history"'
     '    - Otherwise, for typical text-based inquiries that do not require external data retrieval, output: "llm_with_history".'
 
-    'Your output should be a single command chosen from: "image", "agent","multi_modal" or "llm_with_history". Do not include any additional explanation or details.'
+    'Your output should be a single command chosen from: "image", "agent","multi_modal","rag_web" or "llm_with_history". Do not include any additional explanation or details.'
 
     'Examples:'
     '1. Input Type: "image"; Question: "Can you read the text in this photo?" '
@@ -62,13 +63,16 @@ decider_prompt = (
     '2. Input Type: "image"; Question: "Please convert this image into a watercolor painting." '
     '-> Output: "image"'
 
-    '3. Input Type: "text"; Question: "What is the latest update on the stock market?" '
+    '3. Input Type: "text"; Question: "What is the latest news ?"' 
+    '-> Output: "rag_web"'
+
+    '4. Input Type: "text"; Question: "Summarize the key points from Wikipedia about quantum computing."' 
     '-> Output: "agent"'
 
-    '4. Input Type: "text"; Question: "Tell me about the history of the Eiffel Tower." '
+    '5. Input Type: "text"; Question: "Tell me about the history of the Eiffel Tower." '
     '-> Output: "llm_with_history"'
     
-    '5. Input Type: "text"; Question: "这个安装什么东西来着安装那个啊也出现自在它与晏斗是数学天文学" '
+    '6. Input Type: "text"; Question: "这个安装什么东西来着安装那个啊也出现自在它与晏斗是数学天文学" '
     '-> Output: "llm_with_history"'
 )
 
