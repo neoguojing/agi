@@ -353,27 +353,44 @@ class TextClusterer:
             final_clusters: List[Document] = []
             for label, member_indices in clustered_indices.items():
                 cluster_id = str(uuid.uuid4())
-                context_texts = ""
                 all_keywords = []
                 source_file = None
                 related_doc_ids = []
+                batch_summaries = []
 
-                for idx in member_indices:
-                    doc = docs[idx] 
-                    doc_id = str(uuid.uuid4())
-                    doc.metadata["doc_id"] = doc_id
-                    doc.metadata["cluster_id"] = cluster_id
-                    # 确保source字段存在且是文件名
-                    if "source" in doc.metadata and doc.metadata["source"]:
-                        doc.metadata["source"] = os.path.basename(doc.metadata["source"])
-                        if source_file is None:
-                            source_file = doc.metadata["source"]
+                # === 分批收集文本 ===
+                batch_size = 5  # 可以根据模型上下文大小调整
+                for i in range(0, len(member_indices), batch_size):
+                    batch_indices = member_indices[i:i + batch_size]
+                    batch_texts = []
 
-                    related_doc_ids.append(doc_id)
-                    context_texts += "\n\n" + doc.page_content
-                    all_keywords.extend(doc.metadata.get("keywords", []))
-                
-                summary = self.summary(context_texts.strip())
+                    for idx in batch_indices:
+                        doc = docs[idx]
+                        doc_id = str(uuid.uuid4())
+                        doc.metadata["doc_id"] = doc_id
+                        doc.metadata["cluster_id"] = cluster_id
+
+                        # 确保 source 字段存在且是文件名
+                        if "source" in doc.metadata and doc.metadata["source"]:
+                            doc.metadata["source"] = os.path.basename(doc.metadata["source"])
+                            if source_file is None:
+                                source_file = doc.metadata["source"]
+
+                        related_doc_ids.append(doc_id)
+                        batch_texts.append(doc.page_content)
+                        all_keywords.extend(doc.metadata.get("keywords", []))
+
+                    # === 小批摘要 ===
+                    batch_text = "\n\n".join(batch_texts).strip()
+                    if batch_text:
+                        batch_summary = self.summary(batch_text)
+                        batch_summaries.append(batch_summary)
+
+                # === 二次聚合摘要 ===
+                summary = ""
+                if batch_summaries:
+                    summary = self.summary("\n\n".join(batch_summaries))
+
                 keywords = self.combined_keywords(all_keywords)
                 log.info(f"cluster summary result:{summary} \n keywords={keywords}\n,related_doc_ids={len(related_doc_ids)}")
                 cluster_doc = Document(
