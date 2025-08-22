@@ -156,9 +156,8 @@ class WebScraper(BaseTool):
 
         if not result:
             return None
-
-        doc, html = result
-        return doc
+        
+        return result
 
 
 
