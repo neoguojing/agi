@@ -140,7 +140,7 @@ class WebScraper(BaseTool):
                 doc = self._parse_local(html, url)
                 if not doc or len(doc.page_content.strip()) < 50:
                     return None
-                return doc, html
+                return doc
             except Exception as e:
                 traceback.print_exc()
                 log.warning("Fetch failed for %s: %s", url, e)
