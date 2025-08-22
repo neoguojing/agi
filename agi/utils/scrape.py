@@ -50,7 +50,7 @@ class WLInput(BaseModel):
 
 class WebScraper(BaseTool):
     name: str = "web_scraper"
-    description: str = "Simple web scraper"
+    description: str = "Web scraper that takes one or more URLs as input and extracts web page content such as text, links, and metadata."
     args_schema: Type[BaseModel] = WLInput
 
     web_paths: Optional[List[str]] = None
