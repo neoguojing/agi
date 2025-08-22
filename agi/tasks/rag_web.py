@@ -339,6 +339,8 @@ async def route(state: State):
         feature = state.get("feature","")
         if feature == Feature.RAG:
             return await rag_auto_route(state)
+        elif feature == Feature.SCRAPE:
+            return "scrape"
         else:
             state["feature"] = feature = "web"
             return "web"

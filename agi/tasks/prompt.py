@@ -55,7 +55,7 @@ decider_prompt = (
     '    - If the input is nonsensical, meaningless, or just gibberish, output: "llm_with_history"'
     '    - Otherwise, for typical text-based inquiries that do not require external data retrieval, output: "llm_with_history".'
 
-    'Your output should be a single command chosen from: "image", "agent","multi_modal","web_search" or "llm_with_history". Do not include any additional explanation or details.'
+    'Your output should be a single command chosen from: "image", "agent","multi_modal","web_search","web_scrape" or "llm_with_history". Do not include any additional explanation or details.'
 
     'Examples:'
     '1. Input Type: "image"; Question: "Can you read the text in this photo?" '
@@ -75,6 +75,9 @@ decider_prompt = (
     
     '6. Input Type: "text"; Question: "这个安装什么东西来着安装那个啊也出现自在它与晏斗是数学天文学" '
     '-> Output: "llm_with_history"'
+
+    '7. Input Type: "text"; Question: "Provide one or more URLs to scrape content from."'
+    '-> Output: "web_scrape"'
 )
 
 decide_template = ChatPromptTemplate.from_messages(

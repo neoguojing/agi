@@ -24,6 +24,7 @@ class Feature:
     AGENT = "agent"
     RAG = "rag"
     WEB = "web"
+    SCRAPE = "scrape"
     LLM = "llm"
     HUMAN = "human"
     TTS = "tts"

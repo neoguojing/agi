@@ -50,6 +50,8 @@ class AgiGraph:
         self.builder.add_node("image", image_as_graph)
         self.builder.add_node("rag_search", self.rag_search_node)
         self.builder.add_node("web_search", self.web_search_node)
+        self.builder.add_node("web_scrape", self.web_scrape_node)
+
 
         self.builder.add_node("agent", create_react_agent_as_subgraph(TaskFactory.get_llm()))
 
@@ -70,6 +72,8 @@ class AgiGraph:
         self.builder.add_conditional_edges("llm_with_history", self.output_control)
         self.builder.add_conditional_edges("rag_search", self.output_control)
         self.builder.add_conditional_edges("web_search", self.output_control)
+        self.builder.add_conditional_edges("web_scrape", self.output_control)
+
 
         self.builder.add_edge("tts_prepare", "tts")
 
@@ -106,7 +110,7 @@ class AgiGraph:
     async def auto_state_machine(self,state: State):
         config={"configurable": {"user_id": "tools", "conversation_id": "",
                                  "thread_id": "tools"}}
-        node_list = ["image","llm_with_history","agent","llm","multi_modal","rag_search","web_search",END]
+        node_list = ["image","llm_with_history","agent","llm","multi_modal","rag_search","web_search","web_scrape",END]
         next_step = await decider_chain.ainvoke(state,config=config)
         # 去除think标签
         _,next_step = split_think_content(next_step)
@@ -159,6 +163,8 @@ class AgiGraph:
             return "rag_search"
         elif feature == Feature.WEB:
             return "web_search"
+        elif feature == Feature.SCRAPE:   #网页爬虫
+            return "web_scrape"
         elif feature == Feature.TTS:   #文字转语音
             return "tts"
         elif feature == Feature.SPEECH:  #语音转文字，直接输出
@@ -207,6 +213,17 @@ class AgiGraph:
             log.error(f"rag_search_node: {e}")
             print(traceback.format_exc())
             return {}
+
+    async def web_scrape_node(self,state: State,config: RunnableConfig):
+        try:
+            state["feature"] = Feature.SCRAPE
+            ret = await rag_as_subgraph.ainvoke(state)
+            log.info(f"web_scrape_node:{ret}")
+            return ret
+        except Exception as e:
+            log.error(f"web_scrape_node: {e}")
+            print(traceback.format_exc())
+            return {}  
         
     async def output_control(self,state: State):
         if state["need_speech"]:
@@ -304,7 +321,7 @@ class AgiGraph:
                     if (isinstance(event[1][0],AIMessage)) and event[1][0].content:
                         meta = event[1][1]
                         log.debug(f"stream-event-message:{event}")
-                        if meta.get("langgraph_node") in ["multi_modal","image","tts",'llm',"rag_search","web_search",
+                        if meta.get("langgraph_node") in ["multi_modal","image","tts",'llm',"rag_search","web_search","web_scrape",
                                                           "llm_with_history","agent","human_feedback","doc_chat","image_gen"]:
                             # 某些场景下，如agent，返回消息非流式返回，整体作为一个返回：
                             # 1.finish_reason一定等于stop
