@@ -242,7 +242,6 @@ async def web_search_node(state: State,config: RunnableConfig):
 
         total_docs = sum(len(docs) for docs in docs_map.values())
         log.info(f"web_search_node:{total_docs}")
-        log.info(docs_map)
         return {"docs_map": docs_map}
     
     except Exception as e:
@@ -268,8 +267,6 @@ async def web_scrape_node(state: State,config: RunnableConfig):
         
         total_docs = sum(len(docs) for docs in docs_map.values())
         log.info(f"web_scrape_node:{total_docs}")
-        log.info(docs_map)
-
         return {"docs_map": docs_map}
     except Exception as e:
         log.error(f"web_scrape_node: {e}")
@@ -324,8 +321,9 @@ async def rag_auto_route(state: State):
     if "summary" in result and state["collection_names"]:
         return "summary"
     elif "rag" in result:
-        collection_names = collection_manager.list_collections(tenant=tenant)
-        state["collection_names"] = collection_names
+        if not state.get("collection_names"):
+            collection_names = collection_manager.list_collections(tenant=tenant)
+            state["collection_names"] = collection_names
         return "index_search"
     log.info(f"collection_names for {tenant} are {state['collection_names']}")
 
@@ -339,10 +337,6 @@ async def route(state: State):
         state["citations"] = None
 
         feature = state.get("feature","")
-
-        if state.get("collection_names"):
-            feature = "rag"
-
         if feature == Feature.RAG:
             return await rag_auto_route(state)
         else:
