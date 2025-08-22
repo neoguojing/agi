@@ -224,6 +224,7 @@ async def web_search_node(state: State,config: RunnableConfig):
         
         docs_map = {}
         raw_results_map = await search_engines.batch_search(questions)
+        log.info(raw_results_map)
         for q,raw_search_results in raw_results_map.items():
             raw_docs = []
             for source in raw_search_results:
