@@ -252,14 +252,22 @@ async def web_search_node(state: State,config: RunnableConfig):
 # 网页爬虫节点
 async def web_scrape_node(state: State,config: RunnableConfig):
     docs_map = state.get("docs_map")
-    if docs_map is None:
-        return {}
+    
     try:
+        from agi.utils.scrape import WebScraper
+        scraper = WebScraper()
+        if docs_map is None:
+            # 处理直接输入url解析的场景
+            import re
+            text = get_last_message_text(state)
+            url_pattern = r'https?://[^\s"\'<>]+'
+            urls = re.findall(url_pattern, text)
+            docs = await scraper.aload(urls)
+            return {"docs_map": {text:docs}}
+    
         query_url_map = {k: [doc.metadata["link"] for doc in v if doc.metadata.get("link")] for k, v in docs_map.items()}
         log.info(f"web_scrape_node:{len(query_url_map)}")
         if query_url_map:
-            from agi.utils.scrape import WebScraper
-            scraper = WebScraper()
             query_doc_map = await scraper.aload2(query_url_map)
             for q, new_docs in query_doc_map.items():
                 if new_docs:  # 非空才追加
