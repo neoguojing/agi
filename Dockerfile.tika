@@ -7,5 +7,3 @@ RUN apt-get update && \
     tesseract-ocr-chi-sim \
     tesseract-ocr-chi-tra && \
     rm -rf /var/lib/apt/lists/*
-
-USER tika
