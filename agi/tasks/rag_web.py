@@ -242,6 +242,7 @@ async def web_search_node(state: State,config: RunnableConfig):
 
         total_docs = sum(len(docs) for docs in docs_map.values())
         log.info(f"web_search_node:{total_docs}")
+        log.info(docs_map)
         return {"docs_map": docs_map}
     
     except Exception as e:
@@ -267,6 +268,7 @@ async def web_scrape_node(state: State,config: RunnableConfig):
         
         total_docs = sum(len(docs) for docs in docs_map.values())
         log.info(f"web_scrape_node:{total_docs}")
+        log.info(docs_map)
 
         return {"docs_map": docs_map}
     except Exception as e:
