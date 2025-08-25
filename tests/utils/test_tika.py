@@ -11,10 +11,11 @@ def test_extract_metadata(file_path):
     """
     测试从真实 Tika Server 获取 Metadata
     """
-    
+
     extractor = TikaExtractor("http://localhost:9998")
     meta = extractor.extract_metadata(str(file_path))
 
+    print(meta)
     # 确认返回是 dict
     assert isinstance(meta, dict)
 
@@ -43,6 +44,7 @@ def test_extract_text(output, accept):
     extractor = TikaExtractor("http://localhost:9998")
     text = extractor.extract_text(TEST_FILE, output=output, accept=accept)
 
+    print(text)
     # 返回必须是 str
     assert isinstance(text, str)
     assert len(text) > 0
