@@ -1,10 +1,11 @@
 import requests
 from pathlib import Path
-from typing import Union, Optional,Dict,List
+from typing import Union, Optional,Dict,List,Iterator
+from langchain_community.document_loaders.base import BaseLoader
 from langchain_core.documents import Document
 import os
 
-class TikaExtractor:
+class TikaExtractor(BaseLoader):
     """
     Tika 文件提取工具
     支持文本、HTML 或 JSON 元数据输出
@@ -20,10 +21,11 @@ class TikaExtractor:
         self.tika_url = tika_url.rstrip("/")
         self.file_path = file_path
 
-    def load(self) -> List[Document]:
+    def lazy_load(self) -> Iterator[Document]:
+        """Load and return documents from the JSON file."""
         meta = self.extract_metadata(self.file_path)
-        content = self.extract_text(self.extract_text)
-        return [Document(page_content=content,metadata=meta)]
+        content = self.extract_text(self.file_path)
+        yield Document(page_content=content,metadata=meta)
     # -----------------------------
     # 文本提取
     # -----------------------------
@@ -69,7 +71,7 @@ class TikaExtractor:
 
         # 如果是 html 输出且需要转换文本
         if output == "html" and html_to_text:
-            import BeautifulSoup
+            from bs4 import BeautifulSoup
             soup = BeautifulSoup(content, "html.parser")
             # 获取纯文本，保留换行
             text = "\n".join([line.strip() for line in soup.stripped_strings])
