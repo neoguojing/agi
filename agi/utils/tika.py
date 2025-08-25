@@ -39,7 +39,7 @@ class TikaExtractor:
             else:
                 accept = "text/plain"
 
-        url = f"{self.tika_url}/tika/{output}" if output != "text" else f"{self.tika_url}/tika"
+        url = f"{self.tika_url}/tika/{output}" if output != "html" else f"{self.tika_url}/tika"
         with open(file_path, "rb") as f:
             headers = {"Accept": accept, "Content-Type": self._guess_content_type(file_path)}
             resp = requests.put(url, data=f, headers=headers, timeout=60)

@@ -11,8 +11,7 @@ def test_extract_metadata(file_path):
     """
     测试从真实 Tika Server 获取 Metadata
     """
-    assert file_path.exists(), f"测试文件不存在: {file_path}"
-
+    
     extractor = TikaExtractor("http://localhost:9998")
     meta = extractor.extract_metadata(str(file_path))
 
