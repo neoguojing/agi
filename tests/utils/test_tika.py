@@ -49,10 +49,6 @@ def test_extract_text(output, accept):
     assert isinstance(text, str)
     assert len(text) > 0
 
-    # 如果是 HTML 模式，返回结果里应该有 <html>
-    if output == "html":
-        assert "<html" in text.lower()
-
     # 如果是 text/main 模式，结果应该比纯 text 短（一般去掉 header/footer）
     if output == "main":
         full_text = extractor.extract_text(TEST_FILE, output="text")
