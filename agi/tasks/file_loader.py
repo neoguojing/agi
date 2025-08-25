@@ -21,6 +21,7 @@ from typing import Any,List,Dict,Iterator, Optional, Sequence, Union, Tuple, Set
 import validators
 import socket
 import urllib.parse
+from agi.utils.tika import TikaExtractor
 
 def get_file_loader(file_path: str, file_content_type: str = None):
     from pathlib import Path
@@ -75,7 +76,7 @@ def get_file_loader(file_path: str, file_content_type: str = None):
     elif file_ext in known_source_ext or (file_content_type and file_content_type.startswith("text/")):
         loader = TextLoader(file_path, autodetect_encoding=True)
     else:
-        loader = TextLoader(file_path, autodetect_encoding=True)
+        loader = TikaExtractor(file_path)
         known_type = False
 
     return loader, known_type

@@ -1,7 +1,9 @@
 import requests
 from pathlib import Path
-from typing import Union, Optional,Dict
-import chardet
+from typing import Union, Optional,Dict,List
+from langchain_core.documents import Document
+import os
+
 class TikaExtractor:
     """
     Tika 文件提取工具
@@ -14,22 +16,28 @@ class TikaExtractor:
         "language", "Keywords", "subject", "Producer", "Page-Count"
     ]
 
-    def __init__(self, tika_url: str = "http://localhost:9998"):
+    def __init__(self,file_path: Union[str, Path], tika_url: str = os.getenv("TIKA_URL","http://localhost:9998")):
         self.tika_url = tika_url.rstrip("/")
+        self.file_path = file_path
 
+    def load(self) -> List[Document]:
+        meta = self.extract_metadata(self.file_path)
+        content = self.extract_text(self.extract_text)
+        return [Document(page_content=content,metadata=meta)]
     # -----------------------------
     # 文本提取
     # -----------------------------
     def extract_text(
         self,
         file_path: Union[str, Path],
-        output: str = "text",  # text / main / html
-        accept: Optional[str] = None
+        output: str = "html",  # text / main / html
+        accept: Optional[str] = None,
+        html_to_text: bool = True,  # 是否把 html 转成纯文本
     ) -> str:
         file_path = Path(file_path)
         if not file_path.exists():
             raise FileNotFoundError(f"{file_path} not found")
-
+        import chardet
         # 自动设置 Accept header
         if not accept:
             if output in ("text", "main"):
@@ -39,21 +47,36 @@ class TikaExtractor:
             else:
                 accept = "text/plain; charset=UTF-8"
 
-        url = f"{self.tika_url}/tika/{output}" if output != "html" and output != "text" else f"{self.tika_url}/tika"
+        url = f"{self.tika_url}/tika/{output}" if output not in ("text", "html") else f"{self.tika_url}/tika"
+
         with open(file_path, "rb") as f:
-            headers = {"Accept": accept, "Content-Type": self._guess_content_type(file_path)}
+            headers = {
+                "Accept": accept,
+                "Content-Type": self._guess_content_type(file_path)
+            }
             resp = requests.put(url, data=f, headers=headers, timeout=60)
         resp.raise_for_status()
-        # 先尝试 UTF-8
+
+        # 尝试 UTF-8 解码
         try:
-            return resp.content.decode("utf-8")
+            content = resp.content.decode("utf-8")
         except UnicodeDecodeError:
-            # fallback 用 chardet 检测编码
             detected = chardet.detect(resp.content)
             encoding = detected.get("encoding") or "utf-8"
             confidence = detected.get("confidence", 0)
             print(f"[WARN] UTF-8 解码失败，尝试 {encoding} (confidence={confidence:.2f})")
-            return resp.content.decode(encoding, errors="replace")
+            content = resp.content.decode(encoding, errors="replace")
+
+        # 如果是 html 输出且需要转换文本
+        if output == "html" and html_to_text:
+            import BeautifulSoup
+            soup = BeautifulSoup(content, "html.parser")
+            # 获取纯文本，保留换行
+            text = "\n".join([line.strip() for line in soup.stripped_strings])
+            return text
+        else:
+            # 返回原始 html
+            return content
 
     # -----------------------------
     # Metadata 获取
