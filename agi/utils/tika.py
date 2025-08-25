@@ -1,7 +1,7 @@
 import requests
 from pathlib import Path
 from typing import Union, Optional,Dict
-
+import chardet
 class TikaExtractor:
     """
     Tika 文件提取工具
@@ -33,18 +33,27 @@ class TikaExtractor:
         # 自动设置 Accept header
         if not accept:
             if output in ("text", "main"):
-                accept = "text/plain"
+                accept = "text/plain; charset=UTF-8"
             elif output == "html":
-                accept = "text/html"
+                accept = "text/html; charset=UTF-8"
             else:
-                accept = "text/plain"
+                accept = "text/plain; charset=UTF-8"
 
         url = f"{self.tika_url}/tika/{output}" if output != "html" and output != "text" else f"{self.tika_url}/tika"
         with open(file_path, "rb") as f:
             headers = {"Accept": accept, "Content-Type": self._guess_content_type(file_path)}
             resp = requests.put(url, data=f, headers=headers, timeout=60)
         resp.raise_for_status()
-        return resp.text
+        # 先尝试 UTF-8
+        try:
+            return resp.content.decode("utf-8")
+        except UnicodeDecodeError:
+            # fallback 用 chardet 检测编码
+            detected = chardet.detect(resp.content)
+            encoding = detected.get("encoding") or "utf-8"
+            confidence = detected.get("confidence", 0)
+            print(f"[WARN] UTF-8 解码失败，尝试 {encoding} (confidence={confidence:.2f})")
+            return resp.content.decode(encoding, errors="replace")
 
     # -----------------------------
     # Metadata 获取
