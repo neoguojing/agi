@@ -16,7 +16,7 @@ EMBD_TARGET = agi.apps.embding.fast_api_embding:app
 
 
 REGISTRY = "docker.io"
-# 可选值: tts 或 cosyvoice
+# 可选值: tts 或 cosyvoice,vibevoice
 TTS_TYPE ?= cosyvoice
 # 可选值sdxl
 IMAGE_GEN_VERION ?= "sd3.5"
