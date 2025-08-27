@@ -68,7 +68,7 @@ class TTS:
                     self._load()
 
             return self.model
-
+    # vibevoice:6GB
     def _load(self):
         if self.tts is None or self.model is None:
             # GPU：2739MB
