@@ -1,0 +1,13 @@
+# 使用官方 Python 3.11 slim 作为基础镜像
+# FROM python:3.11-slim
+FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel
+# FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04
+# FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
+# FROM pytorch/pytorch:2.3.1-cuda12.1-cudnn8-runtime
+# FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime
+RUN git clone https://github.com/microsoft/VibeVoice.git
+WORKDIR /VibeVoice
+
+RUN pip install --upgrade pip && \
+    pip install -e . -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host=mirrors.aliyun.com && \
+    rm -rf /root/.cache/pip /root/.cache /tmp/*
