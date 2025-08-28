@@ -63,7 +63,7 @@ TTS_MODEL_DIR = os.getenv("TTS_MODEL_DIR", os.path.join(MODEL_PATH,"cosyvoice/Co
 TTS_GPU_ENABLE = os.getenv("TTS_GPU_ENABLE", "True").lower() == "true"
 if not TTS_GPU_ENABLE:
     TTS_MODEL_DIR = os.getenv("TTS_MODEL_DIR", os.path.join(MODEL_PATH,"tts_models--zh-CN--baker--tacotron2-DDC-GST"))
-TTS_MODLE_NAME = os.getenv("TTS_MODLE_NAME","cosyvoice") #xtts  dag
+TTS_MODLE_NAME = os.getenv("TTS_MODLE_NAME","cosyvoice") #xtts  dag vibevoice
 TTS_BASE_URL = os.getenv("TTS_BASE_URL", "http://localhost:8002/v1/")
 
 ## image 
