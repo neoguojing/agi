@@ -106,6 +106,8 @@ class TTS:
                 elif "vibevoice" == self.model_name:
                     from vibevoice.modular.modeling_vibevoice_inference import VibeVoiceForConditionalGenerationInference
                     from vibevoice.processor.vibevoice_processor import VibeVoiceProcessor
+                    self.model_path = os.path.join(MODEL_PATH,"VibeVoice-1.5B")
+
                     self.processor = VibeVoiceProcessor.from_pretrained(self.model_path)
                     try:
                         self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
