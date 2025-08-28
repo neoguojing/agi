@@ -19,3 +19,19 @@ def pick_free_device(threshold_ratio: float = 0.6):
     if best_device is None:  # 没找到合适的，退回 cuda:0
         best_device = 0
     return torch.device(f"cuda:{best_device}")
+
+def best_torch_dtype():
+    import torch
+
+    if not torch.cuda.is_available():
+        return torch.float32  # CPU 上只能用 float32
+
+    device = torch.cuda.current_device()
+    major, _ = torch.cuda.get_device_capability(device)
+
+    if major >= 8:
+        return torch.bfloat16  # Ampere及以上，支持 BF16，优先使用
+    elif major >= 7:
+        return torch.float16   # Volta/Turing 支持 FP16
+    else:
+        return torch.float32   # 老架构，回退到 FP32

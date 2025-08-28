@@ -15,6 +15,7 @@ from pydub import AudioSegment
 from threading import Lock
 import traceback
 from agi.utils.common import path_to_preview_url
+from agi.apps.utils import pick_free_device,best_torch_dtype
 from agi.config import TTS_SPEAKER_WAV,TTS_GPU_ENABLE,log,COMPUTE_TYPE,MODEL_PATH
 from agi.config import TTS_MODEL_DIR as model_root,FILE_STORAGE_PATH
 cn_points = ['。', '！', '？']
@@ -106,21 +107,17 @@ class TTS:
                     from vibevoice.modular.modeling_vibevoice_inference import VibeVoiceForConditionalGenerationInference
                     from vibevoice.processor.vibevoice_processor import VibeVoiceProcessor
                     self.processor = VibeVoiceProcessor.from_pretrained(self.model_path)
-                    is_float16 = COMPUTE_TYPE == "float16"
-                    torch_dtype = torch.bfloat16
-                    if is_float16:
-                        torch_dtype = torch.float16
                     try:
                         self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
                             self.model_path,
-                            torch_dtype=torch_dtype,
+                            torch_dtype=best_torch_dtype(),
                             device_map='cuda',
                             attn_implementation='flash_attention_2'
                         )
-                    except:
+                    except Exception as e:
                         self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
                             self.model_path,
-                            torch_dtype=torch_dtype,
+                            torch_dtype=best_torch_dtype(),
                             device_map='cuda',
                             attn_implementation='sdpa'
                         )

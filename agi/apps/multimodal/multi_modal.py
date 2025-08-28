@@ -10,7 +10,7 @@ from agi.config import MULTI_MODEL_PATH as model_root,FILE_STORAGE_PATH,log,MODE
 from agi.utils.common import path_to_preview_url
 from qwen_omni_utils import process_mm_info
 import traceback
-from agi.apps.utils import pick_free_device
+from agi.apps.utils import pick_free_device,best_torch_dtype
 
 audio_style = "width: 300px; height: 50px;"  # 添加样式
 
@@ -60,7 +60,7 @@ class MultiModel:
             from transformers import Qwen2_5OmniForConditionalGeneration, Qwen2_5OmniProcessor
             self.model = Qwen2_5OmniForConditionalGeneration.from_pretrained(
                 self.model_path,
-                torch_dtype=self.best_torch_dtype(),
+                torch_dtype=best_torch_dtype(),
                 device_map={ "": self.device.index },
                 enable_audio_output=True,
                 attn_implementation="flash_attention_2"
@@ -73,7 +73,7 @@ class MultiModel:
             from transformers import AutoProcessor, Gemma3nForConditionalGeneration
             # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             self.model = Gemma3nForConditionalGeneration.from_pretrained(self.model_path,
-                                                            torch_dtype=torch.bfloat16,
+                                                            torch_dtype=best_torch_dtype(),
                                                             device_map={ "": self.device.index },
                                                           ).eval()
             self.processor = AutoProcessor.from_pretrained(self.model_path)
@@ -172,20 +172,6 @@ class MultiModel:
         except Exception as e:
             log.error(e)
             print(traceback.format_exc())
-
-    def best_torch_dtype(self):
-        if not torch.cuda.is_available():
-            return torch.float32  # CPU 上只能用 float32
-
-        device = torch.cuda.current_device()
-        major, _ = torch.cuda.get_device_capability(device)
-
-        if major >= 8:
-            return torch.bfloat16  # Ampere及以上，支持 BF16，优先使用
-        elif major >= 7:
-            return torch.float16   # Volta/Turing 支持 FP16
-        else:
-            return torch.float32   # 老架构，回退到 FP32
         
     def _unload(self):
         print(f"[Model] Unloading model from {self.model_path}")
