@@ -65,7 +65,7 @@ class TextToSpeech(CustomerLLM):
     def stream(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any):
         
         user_id = "default"
-        model_name = "cosyvoice"
+        model_name = TTS_MODLE_NAME
         if config:
             user_id = config.get("configurable").get("user_id")
 
