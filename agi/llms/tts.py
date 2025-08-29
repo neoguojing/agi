@@ -38,7 +38,7 @@ class TextToSpeech(CustomerLLM):
         else:
             _,input_str,_ = parse_input_messages(input)
             
-        log.info(f"tts input: {input_str}")
+        log.info(f"tts input: {input_str},model name: {model_name}")
         response = self.client.audio.speech.create(
             model=model_name,                     # 或 "tts-1-hd"
             voice="alloy",                    # 支持 alloy, echo, fable, onyx, nova, shimmer
@@ -75,7 +75,7 @@ class TextToSpeech(CustomerLLM):
         else:
             _,input_str,_ = parse_input_messages(input)
             
-        log.info(f"tts input: {input_str}")
+        log.info(f"tts input: {input_str},model name: {model_name}")
         totol_receive = 0
         with self.client.audio.speech.with_streaming_response.create(
             model=model_name,
