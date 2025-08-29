@@ -31,8 +31,6 @@ class Speech2Text(CustomerLLM):
     ) -> AIMessage:
         """Process the input, transcribe audio, and return the output message."""
         model_name = "large"
-        if config:
-            model_name = config.get("configurable",{}).get("model","large")
 
         audio_input,_,_ = parse_input_messages(input)
         

@@ -1,5 +1,5 @@
 
-from agi.config import API_KEY,TTS_BASE_URL,TTS_MODLE_NAME
+from agi.config import API_KEY,TTS_BASE_URL
 from agi.llms.base import CustomerLLM,parse_input_messages
 from langchain_core.runnables import RunnableConfig,run_in_executor
 from typing import Any, Optional,Union,ClassVar
@@ -10,6 +10,7 @@ from pydantic import  Field,ConfigDict
 import tempfile
 import base64
 import re
+import os
 
 class TextToSpeech(CustomerLLM):
     client: OpenAI = Field(None, alias='client')
@@ -28,7 +29,7 @@ class TextToSpeech(CustomerLLM):
         """Generate speech audio from input text."""
 
         user_id = "default"
-        model_name = TTS_MODLE_NAME
+        model_name = os.getenv("TTS_MODLE_NAME","cosyvoice")
         if config:
             user_id = config.get("configurable").get("user_id")
 
@@ -65,7 +66,7 @@ class TextToSpeech(CustomerLLM):
     def stream(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any):
         
         user_id = "default"
-        model_name = TTS_MODLE_NAME
+        model_name = os.getenv("TTS_MODLE_NAME","cosyvoice")
         if config:
             user_id = config.get("configurable").get("user_id")
 
