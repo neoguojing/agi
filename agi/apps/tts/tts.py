@@ -193,7 +193,7 @@ class TTS:
                 elif "vibevoice" == self.model_name:
                     for sentence in self.sentence_segmenter(text):
                         inputs = self.processor(
-                            text=[sentence],
+                            text=sentence,
                             voice_samples=[self.speaker_wav],
                             padding=True,
                             return_tensors="pt",
@@ -231,7 +231,7 @@ class TTS:
                     torchaudio.save(file_path, data['tts_speech'], self.tts.sample_rate)
             if "vibevoice" == self.model_name:
                 inputs = self.processor(
-                    text=[text],
+                    text=text,
                     voice_samples=[self.speaker_wav],
                     padding=True,
                     return_tensors="pt",
