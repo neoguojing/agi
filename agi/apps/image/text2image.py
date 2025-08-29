@@ -8,7 +8,7 @@ from typing import Any
 import torch
 from agi.config import log,MODEL_PATH
 from agi.config import TEXT_TO_IMAGE_MODEL_PATH as model_root,FILE_STORAGE_PATH
-from agi.utils.common import path_to_preview_url
+from agi.utils.common import path_to_preview_url,Timer
 from agi.apps.utils import pick_free_device
 import random
 import numpy as np
@@ -98,15 +98,16 @@ class Text2Image:
             height = MAX_IMAGE_SIZE
         
         log.debug(f"n_steps:{self.n_steps},guidance_scale:{self.guidance_scale},{width}x{height}")
-        image = self.model(
-            prompt=input, 
-            negative_prompt=negative_prompt,
-            num_inference_steps=self.n_steps, 
-            guidance_scale=self.guidance_scale,
-            width=width,
-            height=height,
-            generator=generator,
-            ).images[0]
+        with Timer():
+            image = self.model(
+                prompt=input, 
+                negative_prompt=negative_prompt,
+                num_inference_steps=self.n_steps, 
+                guidance_scale=self.guidance_scale,
+                width=width,
+                height=height,
+                generator=generator,
+                ).images[0]
         
         if resp_format == "b64_json":
             self.save_image = False

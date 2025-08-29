@@ -7,7 +7,7 @@ from typing import Any
 import torch
 from agi.config import IMAGE_TO_IMAGE_MODEL_PATH as model_root,FILE_STORAGE_PATH
 from agi.config import log
-from agi.utils.common import path_to_preview_url
+from agi.utils.common import path_to_preview_url,Timer
 from agi.apps.utils import pick_free_device
 from PIL import Image as PILImage
 import numpy as np
@@ -68,12 +68,13 @@ class Image2Image:
         input_image = input_image.resize((512, 512))
         
         # Generate the image using the model
-        generated_image = self.model(input,
-                                      image=input_image, 
-                                      num_inference_steps=self.n_steps, 
-                                      strength=0.5, 
-                                      guidance_scale=self.guidance_scale
-                                ).images[0]
+        with Timer():
+            generated_image = self.model(input,
+                                        image=input_image, 
+                                        num_inference_steps=self.n_steps, 
+                                        strength=0.5, 
+                                        guidance_scale=self.guidance_scale
+                                    ).images[0]
         
         if resp_format == "b64_json":
             self.save_image = False

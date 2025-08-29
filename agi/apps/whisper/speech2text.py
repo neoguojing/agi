@@ -5,7 +5,7 @@ from typing import Union
 import numpy as np
 from agi.config import WHISPER_GPU_ENABLE,log,COMPUTE_TYPE,MODEL_PATH
 from agi.config import WHISPER_MODEL_DIR as model_root
-from agi.utils.common import Media
+from agi.utils.common import Media,Timer
 from dataclasses import asdict
 from io import BytesIO
 
@@ -82,13 +82,13 @@ class Speech2Text:
         
         if audio_input is None:
             return "No valid audio input found."
-        
-        # Transcribe the audio input
-        segments, info = self.whisper.transcribe(audio_input.data, beam_size=self.beam_size)
-        content = "".join(segment.text for segment in segments)
+        with Timer():
+            # Transcribe the audio input
+            segments, info = self.whisper.transcribe(audio_input.data, beam_size=self.beam_size)
+            content = "".join(segment.text for segment in segments)
 
-        log.info(f"speech to text:{content}")
-        return content, asdict(info)
+            log.info(f"speech to text:{content}")
+            return content, asdict(info)
 
     def _unload(self):
         print(f"[Model] Unloading model from {self.model_size}")

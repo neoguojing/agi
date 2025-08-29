@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 import torch
 from agi.config import MULTI_MODEL_PATH as model_root,FILE_STORAGE_PATH,log,MODEL_PATH
-from agi.utils.common import path_to_preview_url
+from agi.utils.common import path_to_preview_url,Timer
 from qwen_omni_utils import process_mm_info
 import traceback
 from agi.apps.utils import pick_free_device,best_torch_dtype
@@ -110,64 +110,65 @@ class MultiModel:
             text_output = ""
             file_path = ""
             audio_source = ""
-            if self.model_name == "qwen":
-                text = self.processor.apply_chat_template(conversation, add_generation_prompt=True, tokenize=False)
-                print(conversation)
-                print(text)
-                audios, images, videos = process_mm_info(conversation, use_audio_in_video=True)
-                inputs = self.processor(text=text, audio=audios, images=images, videos=videos, return_tensors="pt", padding=True, use_audio_in_video=True)
-                inputs = inputs.to(self.model.device).to(self.model.dtype)
-                
+            with Timer():
+                if self.model_name == "qwen":
+                    text = self.processor.apply_chat_template(conversation, add_generation_prompt=True, tokenize=False)
+                    print(conversation)
+                    print(text)
+                    audios, images, videos = process_mm_info(conversation, use_audio_in_video=True)
+                    inputs = self.processor(text=text, audio=audios, images=images, videos=videos, return_tensors="pt", padding=True, use_audio_in_video=True)
+                    inputs = inputs.to(self.model.device).to(self.model.dtype)
+                    
 
-                text_ids = None
-                audio = None
-                if return_audio:
-                    text_ids, audio = self.model.generate(**inputs, return_audio=return_audio,speaker=self.speaker_wav)
-                else:
-                    text_ids = self.model.generate(**inputs, return_audio=return_audio)
-
-                text = self.processor.batch_decode(text_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
-
-                for t in text:
-                    text_output = t.split("assistant\n")[-1]
+                    text_ids = None
+                    audio = None
                     if return_audio:
-                        file_path = f'{FILE_STORAGE_PATH}/{int(time.time())}.wav'
-                        Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+                        text_ids, audio = self.model.generate(**inputs, return_audio=return_audio,speaker=self.speaker_wav)
+                    else:
+                        text_ids = self.model.generate(**inputs, return_audio=return_audio)
 
-                        sf.write(
-                            file_path,
-                            audio.reshape(-1).detach().cpu().numpy(),
-                            samplerate=24000,
-                        )
+                    text = self.processor.batch_decode(text_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
 
-                        audio_source = path_to_preview_url(file_path)
-                        if return_fmt == "base64":
-                            with open(file_path, 'rb') as audio_file:
-                                audio_bytes = audio_file.read()
-                            audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
-                            audio_source = f"data:audio/wav;base64,{audio_base64}"
+                    for t in text:
+                        text_output = t.split("assistant\n")[-1]
+                        if return_audio:
+                            file_path = f'{FILE_STORAGE_PATH}/{int(time.time())}.wav'
+                            Path(file_path).parent.mkdir(parents=True, exist_ok=True)
 
-                        # 是否需要编码html
-                        if return_fmt == "html":
-                            audio_source = f'<audio src="{audio_source}" {audio_style} controls></audio>\n'
-            elif self.model_name == "gemma":
-                inputs = self.processor.apply_chat_template(
-                    conversation,
-                    add_generation_prompt=True,
-                    tokenize=True,
-                    return_dict=True,
-                    return_tensors="pt",
-                ).to(self.model.device, dtype=torch.bfloat16)
+                            sf.write(
+                                file_path,
+                                audio.reshape(-1).detach().cpu().numpy(),
+                                samplerate=24000,
+                            )
 
-                input_len = inputs["input_ids"].shape[-1]
-                generation = None
-                with torch.inference_mode():
-                    generation = self.model.generate(**inputs, do_sample=False)
-                    generation = generation[0][input_len:]
+                            audio_source = path_to_preview_url(file_path)
+                            if return_fmt == "base64":
+                                with open(file_path, 'rb') as audio_file:
+                                    audio_bytes = audio_file.read()
+                                audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+                                audio_source = f"data:audio/wav;base64,{audio_base64}"
 
-                text_output = self.processor.decode(generation, skip_special_tokens=True)
+                            # 是否需要编码html
+                            if return_fmt == "html":
+                                audio_source = f'<audio src="{audio_source}" {audio_style} controls></audio>\n'
+                elif self.model_name == "gemma":
+                    inputs = self.processor.apply_chat_template(
+                        conversation,
+                        add_generation_prompt=True,
+                        tokenize=True,
+                        return_dict=True,
+                        return_tensors="pt",
+                    ).to(self.model.device, dtype=torch.bfloat16)
 
-            return text_output,file_path,audio_source
+                    input_len = inputs["input_ids"].shape[-1]
+                    generation = None
+                    with torch.inference_mode():
+                        generation = self.model.generate(**inputs, do_sample=False)
+                        generation = generation[0][input_len:]
+
+                    text_output = self.processor.decode(generation, skip_special_tokens=True)
+
+                return text_output,file_path,audio_source
                         
         except Exception as e:
             log.error(e)

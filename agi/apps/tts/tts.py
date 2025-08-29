@@ -14,7 +14,7 @@ from queue import Queue,Full
 from pydub import AudioSegment
 from threading import Lock
 import traceback
-from agi.utils.common import path_to_preview_url
+from agi.utils.common import path_to_preview_url,Timer
 from agi.apps.utils import pick_free_device,best_torch_dtype
 from agi.config import TTS_SPEAKER_WAV,TTS_GPU_ENABLE,log,COMPUTE_TYPE,MODEL_PATH
 from agi.config import TTS_MODEL_DIR as model_root,FILE_STORAGE_PATH
@@ -179,40 +179,41 @@ class TTS:
     def generate_audio_samples(self, text: str):
         """Generate audio samples from the input text."""
         try:
-            if self.is_gpu:
-                if "cosyvoice" == self.model_name:
-                    # 流式合成，超长文本报错
-                    for sentence in self.sentence_segmenter(text):
-                        for c_idx, data in enumerate(self.tts.inference_cross_lingual(sentence, self.speaker_wav, stream=False)):
-                            tensor_data = data['tts_speech']
-                            print("************",self.tts.sample_rate,tensor_data)
-                            yield tensor_data
-                elif "xtts" == self.model_name:
-                    for sentence in self.sentence_segmenter(text):
-                        yield self.tts.tts(text=sentence, speaker_wav=self.speaker_wav, language=self.language)
-                elif "vibevoice" == self.model_name:
-                    for sentence in self.sentence_segmenter(text):
-                        inputs = self.processor(
-                            text=f"Speaker 1: {sentence}",
-                            voice_samples=[self.speaker_wav],
-                            padding=True,
-                            return_tensors="pt",
-                            return_attention_mask=True,
-                        )
-                        outputs = self.model.generate(
-                            **inputs,
-                            max_new_tokens=None,
-                            cfg_scale=self.cfg_scale,
-                            tokenizer=self.processor.tokenizer,
-                            generation_config={'do_sample': False},
-                            verbose=True,
-                        )
-                        yield outputs.speech_outputs[0]
+            with Timer():
+                if self.is_gpu:
+                    if "cosyvoice" == self.model_name:
+                        # 流式合成，超长文本报错
+                        for sentence in self.sentence_segmenter(text):
+                            for c_idx, data in enumerate(self.tts.inference_cross_lingual(sentence, self.speaker_wav, stream=False)):
+                                tensor_data = data['tts_speech']
+                                print("************",self.tts.sample_rate,tensor_data)
+                                yield tensor_data
+                    elif "xtts" == self.model_name:
+                        for sentence in self.sentence_segmenter(text):
+                            yield self.tts.tts(text=sentence, speaker_wav=self.speaker_wav, language=self.language)
+                    elif "vibevoice" == self.model_name:
+                        for sentence in self.sentence_segmenter(text):
+                            inputs = self.processor(
+                                text=f"Speaker 1: {sentence}",
+                                voice_samples=[self.speaker_wav],
+                                padding=True,
+                                return_tensors="pt",
+                                return_attention_mask=True,
+                            )
+                            outputs = self.model.generate(
+                                **inputs,
+                                max_new_tokens=None,
+                                cfg_scale=self.cfg_scale,
+                                tokenizer=self.processor.tokenizer,
+                                generation_config={'do_sample': False},
+                                verbose=True,
+                            )
+                            yield outputs.speech_outputs[0]
 
-            else:
-                for sentence in self.sentence_segmenter(text):
-                    yield self.tts.tts(text=sentence, speaker_wav=self.speaker_wav)
-            yield SENTINEL
+                else:
+                    for sentence in self.sentence_segmenter(text):
+                        yield self.tts.tts(text=sentence, speaker_wav=self.speaker_wav)
+                yield SENTINEL
         except Exception as e:
             log.error(f"Error generating audio samples: {e}")
             raise RuntimeError("Failed to generate audio samples.")
@@ -226,33 +227,34 @@ class TTS:
             Path(file_path).parent.mkdir(parents=True, exist_ok=True)
         
         try:
-            if "cosyvoice" == self.model_name:
-                for c_idx, data in enumerate(self.tts.inference_cross_lingual(text, self.speaker_wav, stream=False)):
-                    torchaudio.save(file_path, data['tts_speech'], self.tts.sample_rate)
-            if "vibevoice" == self.model_name:
-                inputs = self.processor(
-                    text=f"Speaker 1: {text}",
-                    voice_samples=[self.speaker_wav],
-                    padding=True,
-                    return_tensors="pt",
-                    return_attention_mask=True,
-                )
-                outputs = self.model.generate(
-                    **inputs,
-                    max_new_tokens=None,
-                    cfg_scale=self.cfg_scale,
-                    tokenizer=self.processor.tokenizer,
-                    generation_config={'do_sample': False},
-                    verbose=True,
-                )
-                self.processor.save_audio(outputs.speech_outputs[0], output_path=file_path)
-            else:
-                self.tts.tts_to_file(
-                    text=text,
-                    speaker_wav=self.speaker_wav,
-                    language=self.language if self.is_gpu and self.model_name == "xtts" else None,
-                    file_path=file_path
-                )
+            with Timer():
+                if "cosyvoice" == self.model_name:
+                    for c_idx, data in enumerate(self.tts.inference_cross_lingual(text, self.speaker_wav, stream=False)):
+                        torchaudio.save(file_path, data['tts_speech'], self.tts.sample_rate)
+                if "vibevoice" == self.model_name:
+                    inputs = self.processor(
+                        text=f"Speaker 1: {text}",
+                        voice_samples=[self.speaker_wav],
+                        padding=True,
+                        return_tensors="pt",
+                        return_attention_mask=True,
+                    )
+                    outputs = self.model.generate(
+                        **inputs,
+                        max_new_tokens=None,
+                        cfg_scale=self.cfg_scale,
+                        tokenizer=self.processor.tokenizer,
+                        generation_config={'do_sample': False},
+                        verbose=True,
+                    )
+                    self.processor.save_audio(outputs.speech_outputs[0], output_path=file_path)
+                else:
+                    self.tts.tts_to_file(
+                        text=text,
+                        speaker_wav=self.speaker_wav,
+                        language=self.language if self.is_gpu and self.model_name == "xtts" else None,
+                        file_path=file_path
+                    )
         except Exception as e:
             log.error(f"Error saving audio to file: {e}")
             raise RuntimeError("Failed to save audio to file.")
