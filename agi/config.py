@@ -54,6 +54,7 @@ WHISPER_GPU_ENABLE =os.getenv("WHISPER_GPU_ENABLE", "true").lower() in ("1", "tr
 WHISPER_MODEL_DIR = os.getenv("WHISPER_MODEL_DIR", os.path.join(MODEL_PATH,"wisper-v3-turbo-c2"))
 if not WHISPER_GPU_ENABLE:
     WHISPER_MODEL_DIR = os.getenv("WHISPER_MODEL_DIR", os.path.join(MODEL_PATH,"models--Systran--faster-whisper-base"))
+WHISPER_MODLE_NAME = os.getenv("WHISPER_MODLE_NAME", "large") #base
 WHISPER_BASE_URL = os.getenv("WHISPER_BASE_URL", "http://localhost:8003/v1/")
 ## tts 
 # TTS_SPEAKER_WAV = os.getenv("TTS_SPEAKER_WAV", os.path.join(MODEL_PATH,"XTTS-v2","samples/zh-cn-sample.wav"))
