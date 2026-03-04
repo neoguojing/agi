@@ -1,4 +1,4 @@
-from langchain.tools import tool
+from langchain_core.tools import tool
 from agi.config import log,ALPHAVANTAGE_API_KEY
 import requests
 import json

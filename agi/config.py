@@ -96,7 +96,7 @@ def init_langchain_debug():
     if not get_env_bool("LANGCHAIN_DEBUG"):
         return
 
-    from langchain.globals import set_debug, set_verbose
+    from langchain_core.globals import set_debug, set_verbose
 
     set_debug(True)
     set_verbose(True)

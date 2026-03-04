@@ -1,4 +1,4 @@
 transformers==4.53.2
-langchain_ollama==0.2.0
+langchain_ollama>=1.0.0,<2.0.0
 flash-attn==2.7.4.post1 #需要单独安装
 

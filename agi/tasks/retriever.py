@@ -16,16 +16,16 @@ from langchain_community.document_loaders import (
     YoutubeLoader,
 )
 from langchain_core.documents import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.retrievers.multi_query import MultiQueryRetriever
-from langchain.retrievers import ContextualCompressionRetriever, EnsembleRetriever
-from langchain.retrievers.document_compressors import LLMChainExtractor
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_classic.retrievers.multi_query import MultiQueryRetriever
+from langchain_classic.retrievers import ContextualCompressionRetriever, EnsembleRetriever
+from langchain_classic.retrievers.document_compressors import LLMChainExtractor
 from langchain_community.retrievers import BM25Retriever
 from typing import Any,List,Dict,Iterator, Optional, Sequence, Union, Tuple, Set
 import validators
 import socket
 import urllib.parse
-from langchain.retrievers.document_compressors import DocumentCompressorPipeline,EmbeddingsFilter,LLMListwiseRerank,LLMChainFilter
+from langchain_classic.retrievers.document_compressors import DocumentCompressorPipeline,EmbeddingsFilter,LLMListwiseRerank,LLMChainFilter
 from langchain_community.document_transformers import EmbeddingsRedundantFilter
 from agi.tasks.vectore_store import CollectionManager
 from agi.tasks.prompt import DEFAULT_SEARCH_PROMPT,rag_filter_template

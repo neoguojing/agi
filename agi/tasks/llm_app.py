@@ -14,7 +14,7 @@ from langchain_core.runnables import (
     RunnableBranch,
     RunnableLambda
 )
-from langchain.chains.combine_documents.base import (
+from langchain_classic.chains.combine_documents.base import (
     DEFAULT_DOCUMENT_SEPARATOR,
     DEFAULT_DOCUMENT_PROMPT,
 )
