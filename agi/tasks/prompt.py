@@ -1,15 +1,22 @@
-from langchain.prompts import MessagesPlaceholder,ChatPromptTemplate,PromptTemplate
+from langchain_core.prompts import MessagesPlaceholder,ChatPromptTemplate,PromptTemplate
 from langchain_core.runnables import (
     RunnableLambda
 )
 from langchain_core.messages import HumanMessage, BaseMessage,SystemMessage,AIMessage
-from langchain.output_parsers.boolean import BooleanOutputParser
+from langchain_core.output_parsers import BaseOutputParser
 from agi.tasks.agi_prompt import MultiModalChatPromptTemplate
 from agi.tasks.define import AgentState
 from agi.tasks.utils import get_last_message_text,get_text_from_message
 from agi.config import log
 import json
 from datetime import datetime
+
+
+class YesNoOutputParser(BaseOutputParser[bool]):
+    def parse(self, text: str) -> bool:
+        normalized = text.strip().upper()
+        return normalized.startswith("YES")
+
 
 english_traslate_template = ChatPromptTemplate.from_messages([
     ("human", "Translate the following into English and only return the translation result: {text}"),
@@ -243,7 +250,7 @@ rag_filter_prompt = """Given the following question and context, return YES if t
 rag_filter_template = PromptTemplate(
     template=rag_filter_prompt,
     input_variables=["question", "context"],
-    output_parser=BooleanOutputParser(),
+    output_parser=YesNoOutputParser(),
 )
 
 
