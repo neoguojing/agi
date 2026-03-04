@@ -1,11 +1,12 @@
 from typing import Any, List, Mapping, Optional,Union
 from pydantic import  Field,ConfigDict
 from agi.llms.base import CustomerLLM,parse_input_messages
-from agi.config import API_KEY,IMAGE_GEN_BASE_URL,TEXT_TO_IMAGE_MODEL_NAME
+from agi.config import API_KEY,IMAGE_GEN_BASE_URL
 from langchain_core.runnables import RunnableConfig
 from langchain_core.messages import AIMessage, HumanMessage
 from openai import OpenAI
 from agi.config import log
+import os
 
 
 class Text2Image(CustomerLLM):
@@ -39,9 +40,7 @@ class Text2Image(CustomerLLM):
         if not input_str.strip():
             return AIMessage(content="No prompt provided.")
         
-        model_name = TEXT_TO_IMAGE_MODEL_NAME
-        if config:
-            model_name = config.get("configurable").get("model",TEXT_TO_IMAGE_MODEL_NAME)
+        model_name = os.getenv("TEXT_TO_IMAGE_MODEL_NAME","sdxl")
         
         response = self.client.images.generate(
             model=model_name,  # 可选 "" 或 "dall-e-3"

@@ -3,9 +3,7 @@ from langchain.tools import tool
 from langchain_community.utilities import ArxivAPIWrapper
 from langchain.agents import Tool
 from agi.utils.weather import get_weather_info
-from agi.utils.search_engine import SearchEngineSelector
 from agi.utils.stock_market import get_stock
-from agi.utils.scrape import WebScraper
 from agi.tasks.task_factory import TaskFactory,TASK_IMAGE_GEN,TASK_MULTI_MODEL
 from agi.tasks.rag_web import rag_as_subgraph
 from agi.tasks.define import State
@@ -68,6 +66,17 @@ async def search(query: str):
     )
     return await rag_as_subgraph.ainvoke(state,config=config)
 
+@tool(return_direct=True)
+async def web_scrape(query: str):
+    """Web scraper that takes one or more URLs as input and extracts web page content such as text, links, and metadata."""
+    config={"configurable": {"conversation_id": "agent","thread_id": "agent"}}
+    state = State(
+        messages=[HumanMessage(content=query)],
+        user_id = "agent",
+        feature="scrape"
+    )
+    return await rag_as_subgraph.ainvoke(state,config=config)
+
 tools = [
     AskHuman,
     Tool(
@@ -82,7 +91,7 @@ tools = [
     # TEST FAIED
     # YahooFinanceNewsTool(),
     YouTubeSearchTool(),
-    WebScraper(),
+    web_scrape,
     wikipedia(),
     # wikidata(),
     pythonREPL(),

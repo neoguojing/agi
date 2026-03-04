@@ -1,4 +1,19 @@
 services:
+  tika:
+    image: guojingneo/tika:3.2.2.0-full-zh
+    container_name: tika
+    restart: unless-stopped
+    ports:
+      - "9998:9998"   # 宿主机 9998 访问 Tika Server 9998
+    environment:
+      JAVA_OPTS: "-Xms512m -Xmx2g"  # JVM 内存配置
+      # OCR 默认语言
+      TIKA_OCR_LANGUAGE: "chi_sim+eng"
+    volumes:
+      # 数据目录挂载
+      - /data/agi/tika:/opt/tika-data
+    networks:
+      - agi-net
   yacy:
     image: yacy/yacy_search_server:latest
     container_name: yacy
@@ -107,6 +122,7 @@ services:
       - huggingface
       - embd
       - yacy
+      - tika
     env_file: "docker-compose.env"
     extra_hosts:
       - host.docker.internal:host-gateway

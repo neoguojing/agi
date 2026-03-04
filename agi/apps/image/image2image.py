@@ -7,7 +7,8 @@ from typing import Any
 import torch
 from agi.config import IMAGE_TO_IMAGE_MODEL_PATH as model_root,FILE_STORAGE_PATH
 from agi.config import log
-from agi.utils.common import path_to_preview_url
+from agi.utils.common import path_to_preview_url,Timer
+from agi.apps.utils import pick_free_device
 from PIL import Image as PILImage
 import numpy as np
 style = 'style="width: 100%; max-height: 100vh;"'
@@ -33,6 +34,9 @@ class Image2Image:
         self.save_image = save_image
         self.file_path = FILE_STORAGE_PATH
 
+        self.device = None
+
+
     def get_model(self):
         """访问模型，如果未加载则自动加载"""
         with self.lock:
@@ -48,6 +52,8 @@ class Image2Image:
             self.model_path, torch_dtype=torch.float16
         )
         # Enable CPU offloading for the model (optimize memory usage)
+        self.device = pick_free_device()
+        self.model = self.model.to(self.device)
         self.model.enable_model_cpu_offload()
 
     def invoke(self, input: str,input_image:PILImage.Image,resp_format="url") -> str:
@@ -62,12 +68,13 @@ class Image2Image:
         input_image = input_image.resize((512, 512))
         
         # Generate the image using the model
-        generated_image = self.model(input,
-                                      image=input_image, 
-                                      num_inference_steps=self.n_steps, 
-                                      strength=0.5, 
-                                      guidance_scale=self.guidance_scale
-                                ).images[0]
+        with Timer():
+            generated_image = self.model(input,
+                                        image=input_image, 
+                                        num_inference_steps=self.n_steps, 
+                                        strength=0.5, 
+                                        guidance_scale=self.guidance_scale
+                                    ).images[0]
         
         if resp_format == "b64_json":
             self.save_image = False

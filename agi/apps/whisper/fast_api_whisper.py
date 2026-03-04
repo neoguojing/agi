@@ -3,7 +3,7 @@ import os
 from agi.apps.common import verify_api_key
 from agi.utils.file_storage import default_file_service,default_storage
 from agi.apps.whisper.speech2text import Speech2Text
-from agi.config import log
+from agi.config import log,WHISPER_MODLE_NAME
 from pydub import AudioSegment
 import uuid
 import traceback
@@ -16,7 +16,7 @@ whisper = Speech2Text()
 @app.post("/v1/audio/transcriptions")
 async def transcribe_audio(
     file: UploadFile = File(...),
-    model: str = Form("large"),  # 必须是 "whisper-1"，但你可以忽略它
+    model: str = Form(WHISPER_MODLE_NAME),  # 必须是 "whisper-1"，但你可以忽略它
     prompt: str = Form(None),
     language: str = Form(None),
     response_format: str = Form("json"),

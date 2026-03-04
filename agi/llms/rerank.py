@@ -5,6 +5,7 @@ from langchain_core.documents import Document
 from agi.config import EMBEDDING_BASE_URL,RAG_EMBEDDING_MODEL,log
 from urllib.parse import urljoin
 import traceback
+import os
 
 class RerankItem:
     def __init__(self, object: str, index: int, document: str, score: float):
@@ -69,6 +70,7 @@ async def rerank_with_batching(
 ) -> List[Document]:
     all_results = []
     try:
+        model = os.environ.get("RAG_EMBEDDING_MODEL", "bge") 
         async with httpx.AsyncClient(timeout=10.0) as client:
             tasks = []
             batches = [(documents[i:i + batch_size], i) for i in range(0, len(documents), batch_size)]

@@ -19,7 +19,7 @@ from langchain.prompts import ChatPromptTemplate
 from agi.tasks.task_factory import (
     TaskFactory
 )
-import random
+import traceback
 from skopt import gp_minimize
 from skopt.space import Integer, Real, Categorical
 from skopt.utils import use_named_args
@@ -127,60 +127,70 @@ class TextClusterer:
                 n_clusters
                 score -- 综合评分
         """
-        n_samples = labels.shape[0]
+        try:
+            n_samples = embeddings.shape[0]
 
-        if n_samples > sample_size:
-            rng = np.random.RandomState(random_state)
-            idx = rng.choice(n_samples, size=sample_size, replace=False)
-            emb_samp = embeddings[idx]
-            lab_samp = labels[idx]
-        else:
-            emb_samp = embeddings
-            lab_samp = labels
+            if n_samples > sample_size:
+                rng = np.random.RandomState(random_state)
+                idx = rng.choice(n_samples, size=sample_size, replace=False)
+                emb_samp = embeddings[idx]
+                lab_samp = labels[idx]
+            else:
+                emb_samp = embeddings
+                lab_samp = labels
 
-        unique_labels = set(lab_samp)
-        n_clusters = len(unique_labels)
+            unique_labels = set(lab_samp)
+            n_clusters = len(unique_labels)
 
-        results = {}
-        if n_clusters >= 2:
-            results["silhouette"] = silhouette_score(
-                emb_samp, lab_samp, metric="euclidean", random_state=random_state
-            )
-            results["davies_bouldin"] = davies_bouldin_score(emb_samp, lab_samp)
-            results["calinski_harabasz"] = calinski_harabasz_score(emb_samp, lab_samp)
-        else:
-            results["silhouette"] = float("nan")
-            results["davies_bouldin"] = float("nan")
-            results["calinski_harabasz"] = float("nan")
+            results = {}
+            if 2 <= n_clusters <= n_samples - 1:
+                results["silhouette"] = silhouette_score(
+                    emb_samp, lab_samp, metric="euclidean", random_state=random_state
+                )
+                results["davies_bouldin"] = davies_bouldin_score(emb_samp, lab_samp)
+                results["calinski_harabasz"] = calinski_harabasz_score(emb_samp, lab_samp)
+            else:
+                results["silhouette"] = float("nan")
+                results["davies_bouldin"] = float("nan")
+                results["calinski_harabasz"] = float("nan")
 
-        results["n_clusters"] = n_clusters
+            results["n_clusters"] = n_clusters
 
-        if cluster_penalty is None:
-            cluster_penalty = self.cluster_range_reward(n_clusters, n_samples)
-        
-        # 综合评分
-        if all(np.isfinite([results["silhouette"], results["davies_bouldin"], results["calinski_harabasz"]])):
-            results["score"] = (
-                results["silhouette"]
-                - 0.2 * results["davies_bouldin"]
-                + 0.001 * results["calinski_harabasz"]
-                - cluster_penalty
-            )
-        else:
-            results["score"] = float("nan")
+            if cluster_penalty is None:
+                cluster_penalty = self.cluster_range_reward(n_clusters, n_samples)
+            
+            # 综合评分
+            if all(np.isfinite([results["silhouette"], results["davies_bouldin"], results["calinski_harabasz"]])):
+                results["score"] = (
+                    results["silhouette"]
+                    - 0.2 * results["davies_bouldin"]
+                    + 0.001 * results["calinski_harabasz"]
+                    - cluster_penalty
+                )
+            else:
+                results["score"] = float("nan")
 
-        return results
+            return results
+        except Exception as e:
+            log.error(f"evaluate_clusters: {e}")
+            print(traceback.format_exc())
+            return {}
     
     def combined_keywords(self,all_keywords:list):
-        # 3.3 加权统计关键词
-        keyword_weights = defaultdict(float)
-        for kw, weight in all_keywords:
-            keyword_weights[kw] += weight
+        try:
+            # 3.3 加权统计关键词
+            keyword_weights = defaultdict(float)
+            for kw, weight in all_keywords:
+                keyword_weights[kw] += weight
 
-        # 3.4 选择top-k关键词
-        sorted_keywords = sorted(keyword_weights.items(), key=lambda x: x[1], reverse=True)
-        combined_keywords = [(kw,weight) for kw, weight in sorted_keywords[:self.cluster_top_k_keywords]]
-        return combined_keywords
+            # 3.4 选择top-k关键词
+            sorted_keywords = sorted(keyword_weights.items(), key=lambda x: x[1], reverse=True)
+            combined_keywords = [(kw,weight) for kw, weight in sorted_keywords[:self.cluster_top_k_keywords]]
+            return combined_keywords
+        except Exception as e:
+            log.error(f"combined_keywords: {e}")
+            print(traceback.format_exc())
+            return []
 
     def _reduce_dim(self, vectors: np.ndarray) -> np.ndarray:
         # 先PCA降维至50维，再UMAP降至目标维度，减少大规模时的计算压力
@@ -196,111 +206,121 @@ class TextClusterer:
         return reducer.fit_transform(vectors)
     
     def do_hdbscan(self,embeddings):
-        normed_embeddings = embeddings.copy()
+        try:
+            normed_embeddings = embeddings.copy()
 
-        # 3. 标准化
-        # scaler = StandardScaler()
-        # normed_embeddings = scaler.fit_transform(normed_embeddings)
+            # 3. 标准化
+            # scaler = StandardScaler()
+            # normed_embeddings = scaler.fit_transform(normed_embeddings)
 
-        # 4. 降维
-        if self.use_umap:
-            normed_embeddings = self._reduce_dim(normed_embeddings)
+            # 4. 降维
+            if self.use_umap:
+                normed_embeddings = self._reduce_dim(normed_embeddings)
 
-        # 5. 聚类
-        clusterer = hdbscan.HDBSCAN(
-            min_cluster_size=self.min_cluster_size,
-            min_samples=self.min_samples
-        )
-        labels = clusterer.fit_predict(normed_embeddings)
-        
-        print(f"Clustering with hdbscan created {len(set(labels))} clusters.")
-        return labels
+            # 5. 聚类
+            clusterer = hdbscan.HDBSCAN(
+                min_cluster_size=self.min_cluster_size,
+                min_samples=self.min_samples
+            )
+            labels = clusterer.fit_predict(normed_embeddings)
+            
+            print(f"Clustering with hdbscan created {len(set(labels))} clusters.")
+            return labels
+        except Exception as e:
+            log.error(f"combined_keywords: {e}")
+            print(traceback.format_exc())
+            return []
     
     def do_dpmeans(self,embeddings):
-        import faiss
-        n_samples, dim = embeddings.shape
-        if n_samples == 0:
+        try:
+            import faiss
+            n_samples, dim = embeddings.shape
+            if n_samples == 0:
+                return []
+
+            # (可选但推荐) 随机打乱输入顺序，减轻顺序敏感性
+            # indices = list(range(n_samples))
+            # random.shuffle(indices)
+            # docs = [docs[i] for i in indices]
+            # embeddings = embeddings[indices, :]
+
+            # 1. 归一化嵌入向量
+            normed_embeddings = embeddings.copy()
+            faiss.normalize_L2(normed_embeddings)
+
+            # 2. 初始化聚类所需的数据结构
+            labels = -np.ones(n_samples, dtype=int)
+            
+            # faiss索引只存储每个簇的“种子”向量，用于快速筛选
+            index = faiss.IndexHNSWFlat(int(dim), int(self.hnsw_m))
+            index.hnsw.efSearch = int(self.ef_search)
+            
+            # 核心数据结构，用于维护动态质心
+            index_to_label: Dict[int, int] = {}       # faiss内部索引 -> 自定义簇标签
+            cluster_centroids: Dict[int, np.ndarray] = {} # 簇标签 -> 质心向量
+            cluster_members_count: Dict[int, int] = {}    # 簇标签 -> 成员数量
+
+            next_cluster_label = 0
+
+            # 3. 遍历所有文档进行在线聚类
+            for i, vec in enumerate(normed_embeddings):
+                vec = vec.reshape(1, -1)
+                
+                # 如果还没有任何簇，创建第一个
+                if index.ntotal == 0:
+                    labels[i] = next_cluster_label
+                    index.add(vec)
+                    index_to_label[0] = next_cluster_label
+                    cluster_centroids[next_cluster_label] = vec.copy()
+                    cluster_members_count[next_cluster_label] = 1
+                    next_cluster_label += 1
+                    continue
+
+                # --- 混合搜索策略 ---
+                # 步骤 A: 使用faiss快速筛选出k个候选簇
+                k = min(index.ntotal, int(self.candidate_k))
+                _, I_cand = index.search(vec, k)
+                
+                # 步骤 B: 精确计算与候选簇真实质心的距离
+                min_dist_sq = float('inf')
+                best_label = -1
+                for faiss_idx in I_cand[0]:
+                    label = index_to_label[faiss_idx]
+                    centroid = cluster_centroids[label]
+                    dist_sq = np.sum((vec - centroid) ** 2)
+                    if dist_sq < min_dist_sq:
+                        min_dist_sq = dist_sq
+                        best_label = label
+                
+                # 步骤 C: 根据精确距离决策
+                if min_dist_sq > float(self.distance_threshold):
+                    # 创建新簇
+                    new_label = next_cluster_label
+                    labels[i] = new_label
+                    index.add(vec)
+                    new_faiss_index = index.ntotal - 1
+                    index_to_label[new_faiss_index] = new_label
+                    cluster_centroids[new_label] = vec.copy()
+                    cluster_members_count[new_label] = 1
+                    next_cluster_label += 1
+                else:
+                    # 分配到现有簇，并动态更新质心
+                    labels[i] = best_label
+                    
+                    # 增量式更新质心，高效且精确
+                    old_size = cluster_members_count[best_label]
+                    old_centroid = cluster_centroids[best_label]
+                    new_centroid = (old_centroid * old_size + vec) / (old_size + 1)
+                    
+                    cluster_centroids[best_label] = new_centroid
+                    cluster_members_count[best_label] += 1
+            
+            print(f"Clustering with dynamic centroids created {next_cluster_label} clusters.")
+            return labels
+        except Exception as e:
+            log.error(f"do_dpmeans: {e}")
+            print(traceback.format_exc())
             return []
-
-        # (可选但推荐) 随机打乱输入顺序，减轻顺序敏感性
-        # indices = list(range(n_samples))
-        # random.shuffle(indices)
-        # docs = [docs[i] for i in indices]
-        # embeddings = embeddings[indices, :]
-
-        # 1. 归一化嵌入向量
-        normed_embeddings = embeddings.copy()
-        faiss.normalize_L2(normed_embeddings)
-
-        # 2. 初始化聚类所需的数据结构
-        labels = -np.ones(n_samples, dtype=int)
-        
-        # faiss索引只存储每个簇的“种子”向量，用于快速筛选
-        index = faiss.IndexHNSWFlat(int(dim), int(self.hnsw_m))
-        index.hnsw.efSearch = int(self.ef_search)
-        
-        # 核心数据结构，用于维护动态质心
-        index_to_label: Dict[int, int] = {}       # faiss内部索引 -> 自定义簇标签
-        cluster_centroids: Dict[int, np.ndarray] = {} # 簇标签 -> 质心向量
-        cluster_members_count: Dict[int, int] = {}    # 簇标签 -> 成员数量
-
-        next_cluster_label = 0
-
-        # 3. 遍历所有文档进行在线聚类
-        for i, vec in enumerate(normed_embeddings):
-            vec = vec.reshape(1, -1)
-            
-            # 如果还没有任何簇，创建第一个
-            if index.ntotal == 0:
-                labels[i] = next_cluster_label
-                index.add(vec)
-                index_to_label[0] = next_cluster_label
-                cluster_centroids[next_cluster_label] = vec.copy()
-                cluster_members_count[next_cluster_label] = 1
-                next_cluster_label += 1
-                continue
-
-            # --- 混合搜索策略 ---
-            # 步骤 A: 使用faiss快速筛选出k个候选簇
-            k = min(index.ntotal, int(self.candidate_k))
-            _, I_cand = index.search(vec, k)
-            
-            # 步骤 B: 精确计算与候选簇真实质心的距离
-            min_dist_sq = float('inf')
-            best_label = -1
-            for faiss_idx in I_cand[0]:
-                label = index_to_label[faiss_idx]
-                centroid = cluster_centroids[label]
-                dist_sq = np.sum((vec - centroid) ** 2)
-                if dist_sq < min_dist_sq:
-                    min_dist_sq = dist_sq
-                    best_label = label
-            
-            # 步骤 C: 根据精确距离决策
-            if min_dist_sq > float(self.distance_threshold):
-                # 创建新簇
-                new_label = next_cluster_label
-                labels[i] = new_label
-                index.add(vec)
-                new_faiss_index = index.ntotal - 1
-                index_to_label[new_faiss_index] = new_label
-                cluster_centroids[new_label] = vec.copy()
-                cluster_members_count[new_label] = 1
-                next_cluster_label += 1
-            else:
-                # 分配到现有簇，并动态更新质心
-                labels[i] = best_label
-                
-                # 增量式更新质心，高效且精确
-                old_size = cluster_members_count[best_label]
-                old_centroid = cluster_centroids[best_label]
-                new_centroid = (old_centroid * old_size + vec) / (old_size + 1)
-                
-                cluster_centroids[best_label] = new_centroid
-                cluster_members_count[best_label] += 1
-        
-        print(f"Clustering with dynamic centroids created {next_cluster_label} clusters.")
-        return labels
 
     def cluster(self,embeddings: np.ndarray):
         """
@@ -317,60 +337,82 @@ class TextClusterer:
         return labels
         
     def post_processor(self, docs: List[Document], labels: np.ndarray):
-        # 4. 根据最终标签聚合文档
-        # 按标签分组，提高效率
-        clustered_docs_num = 0
-        clustered_indices: Dict[int, List[int]] = {}
-        for i, label in enumerate(labels):
-            if label == -1: 
-                continue
-            clustered_docs_num += 1
-            if label not in clustered_indices:
-                clustered_indices[label] = []
-            clustered_indices[label].append(i)
+        try:
+            # 4. 根据最终标签聚合文档
+            # 按标签分组，提高效率
+            clustered_docs_num = 0
+            clustered_indices: Dict[int, List[int]] = {}
+            for i, label in enumerate(labels):
+                if label == -1: 
+                    continue
+                clustered_docs_num += 1
+                if label not in clustered_indices:
+                    clustered_indices[label] = []
+                clustered_indices[label].append(i)
 
-        final_clusters: List[Document] = []
-        for label, member_indices in clustered_indices.items():
-            cluster_id = str(uuid.uuid4())
-            context_texts = ""
-            all_keywords = []
-            source_file = None
-            related_doc_ids = []
+            final_clusters: List[Document] = []
+            for label, member_indices in clustered_indices.items():
+                cluster_id = str(uuid.uuid4())
+                all_keywords = []
+                source_file = None
+                related_doc_ids = []
+                batch_summaries = []
 
-            for idx in member_indices:
-                doc = docs[idx] 
-                doc_id = str(uuid.uuid4())
-                doc.metadata["doc_id"] = doc_id
-                doc.metadata["cluster_id"] = cluster_id
-                # 确保source字段存在且是文件名
-                if "source" in doc.metadata and doc.metadata["source"]:
-                    doc.metadata["source"] = os.path.basename(doc.metadata["source"])
-                    if source_file is None:
-                        source_file = doc.metadata["source"]
+                # === 分批收集文本 ===
+                batch_size = 5  # 可以根据模型上下文大小调整
+                for i in range(0, len(member_indices), batch_size):
+                    batch_indices = member_indices[i:i + batch_size]
+                    batch_texts = []
 
-                related_doc_ids.append(doc_id)
-                context_texts += "\n\n" + doc.page_content
-                all_keywords.extend(doc.metadata.get("keywords", []))
-            
-            summary = self.summary(context_texts.strip())
-            keywords = self.combined_keywords(all_keywords)
-            log.info(f"cluster summary result:{summary} \n keywords={keywords}\n,related_doc_ids={len(related_doc_ids)}")
-            cluster_doc = Document(
-                page_content=summary,
-                metadata={
-                    "doc_id": cluster_id,
-                    "cluster_id": cluster_id,
-                    "label": int(label),
-                    "related_docs": related_doc_ids,
-                    "source": source_file,
-                    "keywords": keywords,
-                    "cluster_size": len(member_indices),
-                    "collection_name": self.collection_name,
-                }
-            )
-            final_clusters.append(cluster_doc)
-        print(f"total docs:{len(docs)},clusted docs:{clustered_docs_num},cluster num:{len(final_clusters)}")
-        return final_clusters
+                    for idx in batch_indices:
+                        doc = docs[idx]
+                        doc_id = str(uuid.uuid4())
+                        doc.metadata["doc_id"] = doc_id
+                        doc.metadata["cluster_id"] = cluster_id
+
+                        # 确保 source 字段存在且是文件名
+                        if "source" in doc.metadata and doc.metadata["source"]:
+                            doc.metadata["source"] = os.path.basename(doc.metadata["source"])
+                            if source_file is None:
+                                source_file = doc.metadata["source"]
+
+                        related_doc_ids.append(doc_id)
+                        batch_texts.append(doc.page_content)
+                        all_keywords.extend(doc.metadata.get("keywords", []))
+
+                    # === 小批摘要 ===
+                    batch_text = "\n\n".join(batch_texts).strip()
+                    if batch_text:
+                        batch_summary = self.summary(batch_text)
+                        batch_summaries.append(batch_summary)
+
+                # === 二次聚合摘要 ===
+                summary = ""
+                if batch_summaries:
+                    summary = self.summary("\n\n".join(batch_summaries))
+
+                keywords = self.combined_keywords(all_keywords)
+                log.info(f"cluster summary result:{summary} \n keywords={keywords}\n,related_doc_ids={len(related_doc_ids)}")
+                cluster_doc = Document(
+                    page_content=summary,
+                    metadata={
+                        "doc_id": cluster_id,
+                        "cluster_id": cluster_id,
+                        "label": int(label),
+                        "related_docs": related_doc_ids,
+                        "source": source_file,
+                        "keywords": keywords,
+                        "cluster_size": len(member_indices),
+                        "collection_name": self.collection_name,
+                    }
+                )
+                final_clusters.append(cluster_doc)
+            print(f"total docs:{len(docs)},clusted docs:{clustered_docs_num},cluster num:{len(final_clusters)}")
+            return final_clusters
+        except Exception as e:
+            log.error(f"post_processor: {e}")
+            print(traceback.format_exc())
+            return []
 
 
 def get_hdbscan_params(embeddings: np.ndarray):
@@ -395,78 +437,93 @@ def get_dpmeans_params(embeddings: np.ndarray):
     embeddings = np.array(embeddings, dtype=np.float32) if isinstance(embeddings, list) else embeddings
     n_samples, n_features = embeddings.shape
 
-    search_space = [
-        # hnsw_m: HNSW 索引的 M 参数，通常 5-48，取样本数约束
-        Integer(5, min(48, max(5, n_samples - 1)), name='hnsw_m'),
-        
-        # ef_search: 搜索时的 ef 参数，通常 10-200，取样本数约束
-        Integer(10, min(200, max(10, n_samples)), name='ef_search'),
-        
-        # distance_threshold: DP-Means 的半径阈值，通常小于 1
-        Real(0.01, 1.0, name='distance_threshold'),
-        
-        # candidate_k: 候选邻居数，固定 5
-        Categorical([5], name='candidate_k'),
-    ]
+    search_space = []
+
+    # hnsw_m: HNSW 索引的 M 参数，通常 5-48，取样本数约束
+    low_m, high_m = 5, min(48, max(5, n_samples - 1))
+    if low_m == high_m:
+        search_space.append(Categorical([low_m], name='hnsw_m'))
+    else:
+        search_space.append(Integer(low_m, high_m, name='hnsw_m'))
+
+    # ef_search: 搜索时的 ef 参数，通常 10-200，取样本数约束
+    low_ef, high_ef = 10, min(200, max(10, n_samples))
+    if low_ef == high_ef:
+        search_space.append(Categorical([low_ef], name='ef_search'))
+    else:
+        search_space.append(Integer(low_ef, high_ef, name='ef_search'))
+
+    # distance_threshold: DP-Means 的半径阈值，通常小于 1
+    search_space.append(Real(0.01, 1.0, name='distance_threshold'))
+
+    # candidate_k: 候选邻居数，固定 5
+    search_space.append(Categorical([5], name='candidate_k'))
     
     return search_space
 
 def train(collection_name:str,docs: List[Document], embeddings: np.ndarray,cluster_algo=CLUSTER_ALGO):
+    try:
+        if not isinstance(embeddings, np.ndarray):
+            embeddings = np.array(embeddings, dtype=np.float32)
 
-    search_space = None
-    if cluster_algo == "dpmeans":
-        search_space = get_dpmeans_params(embeddings)
-    else:
-        search_space = get_dpmeans_params(embeddings)
+        search_space = None
+        if cluster_algo == "dpmeans":
+            search_space = get_dpmeans_params(embeddings)
+        else:
+            search_space = get_dpmeans_params(embeddings)
 
-    best_score = float("inf")
-    best_labels = None
-    best_params = None
-    best_clusterer = None
+        best_score = float("inf")
+        best_labels = None
+        best_params = None
+        best_clusterer = None
 
-    @use_named_args(search_space)
-    def objective(**params):
-        nonlocal best_score, best_labels, best_params, best_clusterer
-        try:
-            if not params.get("use_umap"):
-                params.pop("umap_dim", None)
-                params.pop("umap_n_neighbors", None)
-                params.pop("umap_min_dist", None)
+        @use_named_args(search_space)
+        def objective(**params):
+            nonlocal best_score, best_labels, best_params, best_clusterer
+            try:
+                if not params.get("use_umap"):
+                    params.pop("umap_dim", None)
+                    params.pop("umap_n_neighbors", None)
+                    params.pop("umap_min_dist", None)
 
-            clusterer = TextClusterer(collection_name=collection_name,**params,cluster_algo=cluster_algo)
-            labels = clusterer.cluster(embeddings)
+                clusterer = TextClusterer(collection_name=collection_name,**params,cluster_algo=cluster_algo)
+                labels = clusterer.cluster(embeddings)
 
-            if len(set(labels)) <= 2:
+                if len(set(labels)) <= 2:
+                    return 1e6
+
+                results = clusterer.evaluate_clusters(embeddings, labels)
+                score = -results["score"]
+
+                if not np.isfinite(score):
+                    return 1e6
+
+                if score < best_score:
+                    best_score = score
+                    best_labels = labels
+                    best_params = params.copy()
+                    best_clusterer = clusterer
+
+                return score
+            except Exception as e:
+                print(f"Error: {e}")
                 return 1e6
 
-            results = clusterer.evaluate_clusters(embeddings, labels)
-            score = -results["score"]
+        res = gp_minimize(objective, search_space, n_calls=30, random_state=42)
 
-            if not np.isfinite(score):
-                return 1e6
+        final_clusters = None
+        if best_clusterer:
+            final_clusters = best_clusterer.post_processor(docs, labels=best_labels)
 
-            if score < best_score:
-                best_score = score
-                best_labels = labels
-                best_params = params.copy()
-                best_clusterer = clusterer
+        # 最佳参数和分数
+        print(f"Best parameters: {res.x}")
+        print(f"Best score: {-res.fun}")
 
-            return score
-        except Exception as e:
-            print(f"Error: {e}")
-            return 1e6
-
-    res = gp_minimize(objective, search_space, n_calls=30, random_state=42)
-
-    final_clusters = None
-    if best_clusterer:
-        final_clusters = best_clusterer.post_processor(docs, labels=best_labels)
-
-    # 最佳参数和分数
-    print(f"Best parameters: {res.x}")
-    print(f"Best score: {-res.fun}")
-
-    return final_clusters
+        return final_clusters
+    except Exception as e:
+        log.error(f"post_processor: {e}")
+        print(traceback.format_exc())
+        return []
     
 
 

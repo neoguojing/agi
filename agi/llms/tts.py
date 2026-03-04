@@ -1,5 +1,5 @@
 
-from agi.config import API_KEY,TTS_BASE_URL,TTS_MODLE_NAME
+from agi.config import API_KEY,TTS_BASE_URL
 from agi.llms.base import CustomerLLM,parse_input_messages
 from langchain_core.runnables import RunnableConfig,run_in_executor
 from typing import Any, Optional,Union,ClassVar
@@ -10,6 +10,7 @@ from pydantic import  Field,ConfigDict
 import tempfile
 import base64
 import re
+import os
 
 class TextToSpeech(CustomerLLM):
     client: OpenAI = Field(None, alias='client')
@@ -28,10 +29,9 @@ class TextToSpeech(CustomerLLM):
         """Generate speech audio from input text."""
 
         user_id = "default"
-        model_name = TTS_MODLE_NAME
+        model_name = os.getenv("TTS_MODLE_NAME","cosyvoice")
         if config:
             user_id = config.get("configurable").get("user_id")
-            model_name = config.get("configurable").get("model",TTS_MODLE_NAME)
 
         input_str = None
         if isinstance(input,str):
@@ -39,7 +39,7 @@ class TextToSpeech(CustomerLLM):
         else:
             _,input_str,_ = parse_input_messages(input)
             
-        log.info(f"tts input: {input_str}")
+        log.info(f"tts input: {input_str},model name: {model_name}")
         response = self.client.audio.speech.create(
             model=model_name,                     # 或 "tts-1-hd"
             voice="alloy",                    # 支持 alloy, echo, fable, onyx, nova, shimmer
@@ -66,10 +66,9 @@ class TextToSpeech(CustomerLLM):
     def stream(self, input: Union[list[HumanMessage],HumanMessage,str], config: Optional[RunnableConfig] = None, **kwargs: Any):
         
         user_id = "default"
-        model_name = "cosyvoice"
+        model_name = os.getenv("TTS_MODLE_NAME","cosyvoice")
         if config:
             user_id = config.get("configurable").get("user_id")
-            model_name = config.get("configurable").get("model","cosyvoice")
 
         input_str = None
         if isinstance(input,str):
@@ -77,7 +76,7 @@ class TextToSpeech(CustomerLLM):
         else:
             _,input_str,_ = parse_input_messages(input)
             
-        log.info(f"tts input: {input_str}")
+        log.info(f"tts input: {input_str},model name: {model_name}")
         totol_receive = 0
         with self.client.audio.speech.with_streaming_response.create(
             model=model_name,

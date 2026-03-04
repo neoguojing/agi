@@ -265,6 +265,7 @@ async def generate_stream_response(state_data: State,web: bool= False) -> AsyncG
                     else:
                         continue
                 elif event[0] == "custom":
+                    log.debug(f"custom event:{event}")
                     citations = event[1].get("citations")
                     if citations:
                         chunk["choices"][0]["delta"] = {"role": "assistant", "content": [{"citations":citations}]}

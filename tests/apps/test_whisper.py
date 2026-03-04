@@ -6,10 +6,10 @@ api_key = "123"
 headers={
     "Authorization": f"Bearer {api_key}"
 }
+REMOTE_BASE_URL = "http://localhost:8003"
 @pytest.mark.asyncio
-async def test_transcribe_audio():
-    # 构造上传文件
-    audio_path = "tests/zh-cn-sample.wav"  # 准备一段小音频
+async def test_transcribe_audio_remote():
+    audio_path = "tests/zh-cn-sample.wav"  # 本地准备好的测试音频
     assert os.path.exists(audio_path), "测试音频不存在"
 
     with open(audio_path, "rb") as f:
@@ -19,11 +19,15 @@ async def test_transcribe_audio():
             "response_format": "json"
         }
 
-
-        async with AsyncClient(app=app, base_url="http://test") as ac:
-            response = await ac.post("/v1/audio/transcriptions", data=data, files=files,headers=headers)
-            assert response.status_code == 200
+        async with AsyncClient(base_url=REMOTE_BASE_URL, timeout=60.0) as ac:
+            response = await ac.post(
+                "/v1/audio/transcriptions",
+                data=data,
+                files=files,
+                headers=headers
+            )
+            assert response.status_code == 200, f"服务返回错误: {response.text}"
             res = response.json()
             print(res)
             assert "text" in res
-            assert "测试" in res["text"]
+            assert "还只有六岁的时候" in res["text"]

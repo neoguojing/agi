@@ -7,7 +7,7 @@ from agi.llms.base import CustomerLLM,parse_input_messages
 from langchain_core.runnables import RunnableConfig
 from pydantic import ConfigDict, Field
 from langchain_core.messages import AIMessage, HumanMessage
-from agi.config import log
+from agi.config import log,WHISPER_MODLE_NAME
 from openai import OpenAI
 import os
 from pathlib import Path
@@ -30,9 +30,7 @@ class Speech2Text(CustomerLLM):
         self, input: Union[HumanMessage,list[HumanMessage]], config: Optional[RunnableConfig] = None, **kwargs: Any
     ) -> AIMessage:
         """Process the input, transcribe audio, and return the output message."""
-        model_name = "large"
-        if config:
-            model_name = config.get("configurable",{}).get("model","large")
+        model_name = WHISPER_MODLE_NAME
 
         audio_input,_,_ = parse_input_messages(input)
         

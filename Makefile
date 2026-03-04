@@ -16,7 +16,7 @@ EMBD_TARGET = agi.apps.embding.fast_api_embding:app
 
 
 REGISTRY = "docker.io"
-# 可选值: tts 或 cosyvoice
+# 可选值: tts 或 cosyvoice,vibevoice
 TTS_TYPE ?= cosyvoice
 # 可选值sdxl
 IMAGE_GEN_VERION ?= "sd3.5"
@@ -148,3 +148,9 @@ image_embd:
 	--build-arg COMMIT_HASH=$$(git rev-parse HEAD) \
 	--build-arg BRANCH_NAME=$$(git rev-parse --abbrev-ref HEAD) \
 	-t $(REGISTRY)/guojingneo/agi-fastapi-embd:$$(git rev-parse --short HEAD)-$$(git rev-parse --abbrev-ref HEAD) .
+
+.PHONY: image_tika
+image_tika:
+	docker build \
+	-f ./Dockerfile.tika \
+	-t $(REGISTRY)/guojingneo/tika:3.2.2.0-full-zh .

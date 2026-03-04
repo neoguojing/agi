@@ -59,18 +59,23 @@ def split_think_content(content):
 
     return think_content,other_content
 
+def get_text_from_message(message: BaseMessage):
+    text = ""
+    if isinstance(message.content,str):
+        text = message.content
+    elif isinstance(message.content,list):
+        for item in message.content:
+            if item["type"] == "text":
+                text = item["text"]
+    return text.removesuffix("/no_think").strip()
+
 def get_last_message_text(state: AgentState):
     last_message = state["messages"][-1]
     text = ""
     if isinstance(last_message,HumanMessage):
-        if isinstance(last_message.content,str):
-            text = last_message.content
-        elif isinstance(last_message.content,list):
-            for item in last_message.content:
-                if item["type"] == "text":
-                    text = item["text"]
+        text = get_text_from_message(last_message)
 
-    return text.removesuffix("/no_think").strip()
+    return text
 
 def refine_human_message(
     state: AgentState,

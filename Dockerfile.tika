@@ -1,0 +1,9 @@
+FROM apache/tika:3.2.2.0-full
+
+# 安装中文语言包（简体 + 繁体）
+USER root
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    tesseract-ocr-chi-sim \
+    tesseract-ocr-chi-tra && \
+    rm -rf /var/lib/apt/lists/*

@@ -151,41 +151,68 @@ def refine_query(feature:str,query: str):
 # NODE
 # 文档对话
 async def doc_chat_node(state: State,config: RunnableConfig,writer: StreamWriter):
-    docs = state.get("docs")
-    log.info(f"doc_chat_node:{len(docs)}")
+    try:
+        docs = state.get("docs")
+        log.info(f"doc_chat_node:{len(docs)}")
 
-    citations = build_citations(docs)
-    if citations:
-        writer({"citations":citations,"docs":state["docs"]})
+        citations = build_citations(docs)
+        if citations:
+            writer({"citations":citations})
 
-    log.info(f"doc_chat_node: citations={len(citations)}")
-    result = await doc_chain.ainvoke(state,config=config)
-    result["citations"] = citations
-    result["docs"] = None
-    result["doc_list_node"] = None
-    result["index_search_result"] = None
+        log.info(f"doc_chat_node: citations={len(citations)}")
+        result = await doc_chain.ainvoke(state,config=config)
+        result["citations"] = citations
+        result["docs"] = None
+        result["docs_map"] = None
+        result["index_search_result"] = None
 
-    return result
+        return result
+    except Exception as e:
+        log.error(f"doc_chat_node: {e}")
+        print(traceback.format_exc())
+        return {}
 
 async def doc_rerank_node(state: State,config: RunnableConfig):
-    docs = []
-    docs_map = state.get("docs_map")
-    for question,doc_list in docs_map.items():
-        parts = await rerank_with_batching(question,doc_list)
-        docs.extend(parts)
-    log.info(f"doc_rerank_node:{len(docs)}")
-    log.info(f"doc_rerank_node:{docs}")
+    try:
+        docs = []
+        docs_map = state.get("docs_map")
+        for question,doc_list in docs_map.items():
+            parts = await rerank_with_batching(question,doc_list)
+            docs.extend(parts)
 
-    return {"docs":docs} 
+        # 排序（score 越大越相关）
+        sorted_docs = sorted(
+            docs, 
+            key=lambda d: d.metadata.get("score", float("-inf")), 
+            reverse=True
+        )
+        
+        # 取前 3
+        topk_docs = sorted_docs[:3]
+        
+        log.info(f"doc_rerank_node 3:: {topk_docs}")
+        
+        return {"docs": topk_docs}
+    except Exception as e:
+        log.error(f"doc_rerank_node: {e}")
+        print(traceback.format_exc())
+        return {}
+    
+
 
 # 获取指定文件的索引文件
 async def doc_summary_node(state: State,config: RunnableConfig):
-    tenant = state.get("user_id")
-    source = state.get("file_path")
-    state["docs"] = []
-    docs = collection_manager.get_documents("index",source=source,tenant=tenant)
-    log.info(f"doc_list_node:{len(docs)}")
-    return {"docs":docs}
+    try:
+        tenant = state.get("user_id")
+        source = state.get("file_path")
+        state["docs"] = []
+        docs = collection_manager.get_documents("index",source=source,tenant=tenant)
+        log.info(f"doc_list_node:{len(docs)}")
+        return {"docs":docs}
+    except Exception as e:
+        log.error(f"doc_summary_node: {e}")
+        print(traceback.format_exc())
+        return {}
 
 async def web_search_node(state: State,config: RunnableConfig):
     try:
@@ -218,21 +245,29 @@ async def web_search_node(state: State,config: RunnableConfig):
         return {"docs_map": docs_map}
     
     except Exception as e:
-        log.error(f"Error search: {e}")
+        log.error(f"web_search_node: {e}")
         print(traceback.format_exc())
         return {}
 
 # 网页爬虫节点
 async def web_scrape_node(state: State,config: RunnableConfig):
     docs_map = state.get("docs_map")
-    if docs_map is None:
-        return {}
+    
     try:
+        from agi.utils.scrape import WebScraper
+        scraper = WebScraper()
+        if docs_map is None:
+            # 处理直接输入url解析的场景
+            import re
+            text = get_last_message_text(state)
+            url_pattern = r'https?://[^\s"\'<>]+'
+            urls = re.findall(url_pattern, text)
+            docs = await scraper.aload(urls)
+            return {"docs_map": {text:docs}}
+    
         query_url_map = {k: [doc.metadata["link"] for doc in v if doc.metadata.get("link")] for k, v in docs_map.items()}
         log.info(f"web_scrape_node:{len(query_url_map)}")
         if query_url_map:
-            from agi.utils.scrape import WebScraper
-            scraper = WebScraper()
             query_doc_map = await scraper.aload2(query_url_map)
             for q, new_docs in query_doc_map.items():
                 if new_docs:  # 非空才追加
@@ -240,36 +275,39 @@ async def web_scrape_node(state: State,config: RunnableConfig):
         
         total_docs = sum(len(docs) for docs in docs_map.values())
         log.info(f"web_scrape_node:{total_docs}")
-
         return {"docs_map": docs_map}
     except Exception as e:
-        log.error(f"Error web_scrape_node: {e}")
+        log.error(f"web_scrape_node: {e}")
         print(traceback.format_exc())
         return {"docs_map": docs_map}
 
 async def doc_split_node(state: State, config: RunnableConfig):
-    text_splitter = RecursiveCharacterTextSplitter(separators=[
-                                                    "\n\n",
-                                                    "\n",
-                                                    " ",
-                                                    ".",
-                                                    ",",
-                                                    "\u200b",  # Zero-width space
-                                                    "\uff0c",  # Fullwidth comma
-                                                    "\u3001",  # Ideographic comma
-                                                    "\uff0e",  # Fullwidth full stop
-                                                    "\u3002",  # Ideographic full stop
-                                                ],
-                                                chunk_size=3000, chunk_overlap=300,add_start_index=True)
-    docs_map = state["docs_map"]
-    for q,docs in docs_map.items():
-        documents = await text_splitter.atransform_documents(docs)
-        docs_map[q] =  documents
-    
-    total_docs = sum(len(docs) for docs in docs_map.values())
-    log.info(f"split {total_docs} docs")
-
-    return {"docs_map": docs_map}
+    try:
+        text_splitter = RecursiveCharacterTextSplitter(separators=[
+                                                        "\n\n",
+                                                        "\n",
+                                                        " ",
+                                                        ".",
+                                                        ",",
+                                                        "\u200b",  # Zero-width space
+                                                        "\uff0c",  # Fullwidth comma
+                                                        "\u3001",  # Ideographic comma
+                                                        "\uff0e",  # Fullwidth full stop
+                                                        "\u3002",  # Ideographic full stop
+                                                    ],
+                                                    chunk_size=3000, chunk_overlap=300,add_start_index=True)
+        docs_map = state["docs_map"]
+        for q,docs in docs_map.items():
+            documents = await text_splitter.atransform_documents(docs)
+            docs_map[q] =  documents
+        
+        total_docs = sum(len(docs) for docs in docs_map.values())
+        log.info(f"split {total_docs} docs")
+        return {"docs_map": docs_map}
+    except Exception as e:
+        log.error(f"doc_split_node: {e}")
+        print(traceback.format_exc())
+        return {"docs_map": docs_map}
 
 # 适用于web 和 rag的情况，当无法获取有效的上下文信息时，
     # 1.重置feature特性
@@ -291,82 +329,95 @@ async def rag_auto_route(state: State):
     if "summary" in result and state["collection_names"]:
         return "summary"
     elif "rag" in result:
-        collection_names = collection_manager.list_collections(tenant=tenant)
-        state["collection_names"] = collection_names
+        if not state.get("collection_names"):
+            collection_names = collection_manager.list_collections(tenant=tenant)
+            state["collection_names"] = collection_names
         return "index_search"
     log.info(f"collection_names for {tenant} are {state['collection_names']}")
 
     return "llm_with_history"
     
 async def route(state: State):
-    # 状态初始化
-    state["context"] = None
-    state["docs"] = None
-    state["citations"] = None
+    try:
+        # 状态初始化
+        state["context"] = None
+        state["docs"] = None
+        state["citations"] = None
 
-    feature = state.get("feature","")
-
-    if state.get("collection_names"):
-        feature = "rag"
-
-    if feature == Feature.RAG:
-        return await rag_auto_route(state)
-    else:
-        state["feature"] = feature = "web"
-        return "web"
+        feature = state.get("feature","")
+        if feature == Feature.RAG:
+            return await rag_auto_route(state)
+        elif feature == Feature.SCRAPE:
+            return "scrape"
+        else:
+            state["feature"] = feature = "web"
+            return "web"
+    except Exception as e:
+        log.error(f"route: {e}")
+        print(traceback.format_exc())
+        return END
 
 async def index_search_node(state: State,config: RunnableConfig):
-    tenant = state.get("user_id")
-    feature = state.get("feature")
-    question = get_last_message_text(state)
-    questions = refine_query(feature,query=question)
+    try:
+        tenant = state.get("user_id")
+        feature = state.get("feature")
+        question = get_last_message_text(state)
+        questions = refine_query(feature,query=question)
 
-    doc_map = await collection_manager.embedding_search(questions,"index",tenant=tenant)
-    total_docs = sum(len(docs) for docs in doc_map.values())
-    log.info(f"index_search_node:{total_docs}")
-    log.info(f"index_search_node:{doc_map}")
-    state["questions"] = questions
-    return {"index_search_result":doc_map} 
+        doc_map = await collection_manager.embedding_search(questions,"index",tenant=tenant)
+        total_docs = sum(len(docs) for docs in doc_map.values())
+        log.info(f"index_search_node:{total_docs}")
+        # state["questions"] = questions
+        return {"index_search_result":doc_map}
+    except Exception as e:
+        log.error(f"index_search_node: {e}")
+        print(traceback.format_exc())
+        return {}
 
 async def search_node(state: State, config: RunnableConfig):
-    tenant = state.get("user_id")
-    index_docs = state.get("index_search_result")
-    questions = state.get("questions")
-    pairs = get_clusterid_collection_pair(index_docs)
-    log.info(f"search_node: total pairs={len(pairs)}")
+    try:
+        tenant = state.get("user_id")
+        index_docs = state.get("index_search_result")
+        pairs = get_clusterid_collection_pair(index_docs)
+        log.info(f"search_node: total pairs={len(pairs)}")
+        questions = list(index_docs.keys())
+        log.info(f"search_node:{questions}")
+        docs_map: Dict[str, List[Document]] = {q: [] for q in questions}
 
-    docs_map: Dict[str, List[Document]] = {q: [] for q in questions}
+        # 依据类和collection 检索
+        if pairs:
+            for cid,cname in pairs:
+                parts_map = await collection_manager.embedding_search(
+                    texts=questions,
+                    collection_name=cname,
+                    cluster_id=cid,
+                    tenant=tenant
+                )
+                # 合并到 docs_map
+                for q in questions:
+                    docs_map[q].extend(parts_map.get(q, []))
+        else:
+            # 全量检索
+            collection_names = state["collection_names"]
+            for collection_name in set(collection_names):
+                if collection_name == "index":
+                    continue
 
-    # 依据类和collection 检索
-    if pairs:
-        for cid,cname in pairs:
-            parts_map = await collection_manager.embedding_search(
-                texts=questions,
-                collection_name=cname,
-                cluster_id=cid,
-                tenant=tenant
-            )
-            # 合并到 docs_map
-            for q in questions:
-                docs_map[q].extend(parts_map.get(q, []))
-    else:
-        # 全量检索
-        collection_names = state["collection_names"]
-        for collection_name in set(collection_names):
-            if collection_name == "index":
-                continue
+                parts_map = await collection_manager.embedding_search(
+                    texts=questions,
+                    collection_name=collection_name,
+                    tenant=tenant
+                )
+                for q in questions:
+                    docs_map[q].extend(parts_map.get(q, []))
 
-            parts_map = await collection_manager.embedding_search(
-                texts=questions,
-                collection_name=collection_name,
-                tenant=tenant
-            )
-            for q in questions:
-                docs_map[q].extend(parts_map.get(q, []))
-
-    total_docs = sum(len(docs) for docs in docs_map.values())
-    log.info(f"search_node: total_docs={total_docs}")
-    return {"docs_map": docs_map}
+        total_docs = sum(len(docs) for docs in docs_map.values())
+        log.info(f"search_node: total_docs={total_docs}")
+        return {"docs_map": docs_map}
+    except Exception as e:
+        log.error(f"search_node: {e}")
+        print(traceback.format_exc())
+        return {}
 # graph
 checkpointer = MemorySaver()
 

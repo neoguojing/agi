@@ -37,7 +37,7 @@ class MultiModel(CustomerLLM):
                 media = path_to_preview_url(media)
                 
             response = self.client.chat.completions.create(
-                model=MULTI_MODEL_NAME,
+                model = os.environ.get("MULTI_MODEL_NAME", "gemma") ,
                 extra_body={"need_speech": return_audio},
                 messages=[
                     {

@@ -20,9 +20,10 @@ from typing import Dict, Any, Iterator,Union
 from langchain_core.messages import BaseMessage,AIMessage,HumanMessage,ToolMessage
 from agi.tasks.define import State,Feature,InputType
 from agi.tasks.prompt import (
-    decide_modify_state_messages_runnable
+    decide_modify_state_messages_runnable,
+    tts_modify_state_messages_runnable
 )
-from agi.tasks.utils import split_think_content,graph_print,refine_human_message
+from agi.tasks.utils import split_think_content,graph_print,refine_human_message,graph_response_format_runnable
 from agi.tasks.agent import create_react_agent_as_subgraph,ahuman_feedback_node
 import traceback
 from agi.config import (
@@ -36,18 +37,27 @@ from agi.config import (
 # 4. web检索 流程独立，支持输出检索结果和转向llm done
 # 5. 加入人工check环节，返回结果，提示用户输入 done
 # 7.rag没有检索到合适的内容，则转换到agent模式，解决图片的问题 done
-    
+
+# 定义chain
+decider_chain = decide_modify_state_messages_runnable | TaskFactory.get_llm() | StrOutputParser()
+tts_prepare_chain = tts_modify_state_messages_runnable | TaskFactory.get_llm() | StrOutputParser()
+
 class AgiGraph:
     def __init__(self):
         checkpointer = MemorySaver()
 
         self.builder = StateGraph(State)
         self.builder.add_node("image", image_as_graph)
-        self.builder.add_node("rag", rag_as_subgraph)
+        self.builder.add_node("rag_search", self.rag_search_node)
+        self.builder.add_node("web_search", self.web_search_node)
+        self.builder.add_node("web_scrape", self.web_scrape_node)
+
+
         self.builder.add_node("agent", create_react_agent_as_subgraph(TaskFactory.get_llm()))
 
         self.builder.add_node("speech2text", TaskFactory.create_task(TASK_SPEECH_TEXT))
         self.builder.add_node("tts", TaskFactory.create_task(TASK_TTS))
+        self.builder.add_node("tts_prepare", self.tts_prepare_node)
         
         self.builder.add_node("multi_modal", TaskFactory.create_task(TASK_MULTI_MODEL))
         # 用于处理非agent的请求:1.标题生成等用户自定义提示请求；2.作为决策节点，判定用户意图;3.图像识别等 image2text 请求；该请求base64，对上下文影响较大
@@ -60,7 +70,12 @@ class AgiGraph:
         self.builder.add_conditional_edges("human_feedback", self.human_feedback_control)
         self.builder.add_conditional_edges("agent", self.output_control)
         self.builder.add_conditional_edges("llm_with_history", self.output_control)
-        self.builder.add_conditional_edges("rag", self.output_control)
+        self.builder.add_conditional_edges("rag_search", self.output_control)
+        self.builder.add_conditional_edges("web_search", self.output_control)
+        self.builder.add_conditional_edges("web_scrape", self.output_control)
+
+
+        self.builder.add_edge("tts_prepare", "tts")
 
         self.builder.add_edge("multi_modal", END)
         self.builder.add_edge("image", END)
@@ -95,9 +110,7 @@ class AgiGraph:
     async def auto_state_machine(self,state: State):
         config={"configurable": {"user_id": "tools", "conversation_id": "",
                                  "thread_id": "tools"}}
-        # 定义状态机chain
-        decider_chain = decide_modify_state_messages_runnable | TaskFactory.get_llm() | StrOutputParser()
-        node_list = ["image","llm_with_history","agent","llm","multi_modal",END]
+        node_list = ["image","llm_with_history","agent","llm","multi_modal","rag_search","web_search","web_scrape",END]
         next_step = await decider_chain.ainvoke(state,config=config)
         # 去除think标签
         _,next_step = split_think_content(next_step)
@@ -147,9 +160,11 @@ class AgiGraph:
         if feature == Feature.AGENT:
             return "agent"
         elif feature == Feature.RAG:
-            return "rag"
+            return "rag_search"
         elif feature == Feature.WEB:
-            return "rag"
+            return "web_search"
+        elif feature == Feature.SCRAPE:   #网页爬虫
+            return "web_scrape"
         elif feature == Feature.TTS:   #文字转语音
             return "tts"
         elif feature == Feature.SPEECH:  #语音转文字，直接输出
@@ -167,15 +182,57 @@ class AgiGraph:
         
         return await self.output_control(state)
     
+    async def tts_prepare_node(self,state: State,config: RunnableConfig):
+        try:
+            format_text = tts_prepare_chain.invoke(state)
+            log.info(f"tts_prepare_node:{format_text}")
+            return {"messages": [HumanMessage(content=format_text)]}
+        except Exception as e:
+            log.error(f"tts_prepare_node: {e}")
+            print(traceback.format_exc())
+            return {}
+    
+    async def web_search_node(self,state: State,config: RunnableConfig):
+        try:
+            state["feature"] = Feature.WEB
+            ret = await rag_as_subgraph.ainvoke(state)
+            log.info(f"web_search_node:{ret}")
+            return ret
+        except Exception as e:
+            log.error(f"web_search_node: {e}")
+            print(traceback.format_exc())
+            return {}
+    
+    async def rag_search_node(self,state: State,config: RunnableConfig):
+        try:
+            state["feature"] = Feature.RAG
+            ret = await rag_as_subgraph.ainvoke(state)
+            log.info(f"rag_search_node:{ret}")
+            return ret
+        except Exception as e:
+            log.error(f"rag_search_node: {e}")
+            print(traceback.format_exc())
+            return {}
+
+    async def web_scrape_node(self,state: State,config: RunnableConfig):
+        try:
+            state["feature"] = Feature.SCRAPE
+            ret = await rag_as_subgraph.ainvoke(state)
+            log.info(f"web_scrape_node:{ret}")
+            return ret
+        except Exception as e:
+            log.error(f"web_scrape_node: {e}")
+            print(traceback.format_exc())
+            return {}  
+        
     async def output_control(self,state: State):
         if state["need_speech"]:
-
             last_message = state["messages"][-1]
             # 修复 tts之前finish_reson = stop的问题
             if isinstance(last_message,AIMessage):
                 last_message.response_metadata["finish_reason"] = None
             log.info(f"to tts:{state['messages'][-1]}")
-            return "tts"
+            return "tts_prepare"
         
         return END    
         
@@ -214,6 +271,7 @@ class AgiGraph:
 
             async for event in events:
                 log.debug(f"stream-event:{event}")
+
                 if not isinstance(event,tuple):
                     continue
                 # 返回非HumanMessage
@@ -246,6 +304,7 @@ class AgiGraph:
                 elif "custom" in stream_mode and event[0] == "custom":
                     # 用户自定义消息
                     # ("custom":())
+                    log.info(f"custom events: {event}")
                     yield event
                 elif "messages" in stream_mode and event[0] == "messages": 
                     # turple 类型的消息 0是AIMessageChunk，2是一个字典
@@ -261,15 +320,13 @@ class AgiGraph:
                     # TODO decide chain 和 tranlate chain 以及 web search chain会输出中间结果,需要想办法处理
                     if (isinstance(event[1][0],AIMessage)) and event[1][0].content:
                         meta = event[1][1]
-                        if meta.get("langgraph_node") in ["web","__start__","rag",'user_understand',"compress","intend"]:
-                            continue
-                        else:
+                        log.debug(f"stream-event-message:{event}")
+                        if meta.get("langgraph_node") in ["multi_modal","image","tts",'llm',"rag_search","web_search","web_scrape",
+                                                          "llm_with_history","agent","human_feedback","doc_chat","image_gen"]:
                             # 某些场景下，如agent，返回消息非流式返回，整体作为一个返回：
                             # 1.finish_reason一定等于stop
                             # 2.在包含think的场景下，think的内容一起返回，导致出现问题
                             # 3.此处将该类消息拆为两条,分别发送
-                            log.debug(f"stream-event-message:{event}")
-
                             last_message = event[1][0]
                             if last_message.response_metadata.get("finish_reason","") in ["stop","tool_calls"] and last_message.content:
                                 think_content,other_content = split_think_content(last_message.content)

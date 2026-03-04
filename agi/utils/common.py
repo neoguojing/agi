@@ -19,7 +19,6 @@ from pathlib import Path
 import urllib.parse
 from agi.config import BASE_URL,CACHE_DIR,FILE_STORAGE_PATH
 
-import magic  # pip install python-magic
 
 class Timer:
     def __enter__(self):
@@ -210,6 +209,7 @@ def download_file(url,target_path: str):
     return file_path
 
 def save_base64_to_file(b64_data,target_path:str):
+    import magic  # pip install python-magic
     try:
         binary = base64.b64decode(b64_data)
         # guess mime
@@ -227,6 +227,7 @@ def guess_extension(mime_type):
     return ext or ".bin"
 
 def guess_type(filepath):
+    import magic  # pip install python-magic
     return magic.from_file(filepath, mime=True)
 
 def classify_mime(mime_type):

@@ -6,9 +6,10 @@ from langchain_core.messages import HumanMessage, BaseMessage,SystemMessage,AIMe
 from langchain.output_parsers.boolean import BooleanOutputParser
 from agi.tasks.agi_prompt import MultiModalChatPromptTemplate
 from agi.tasks.define import AgentState
-from agi.tasks.utils import get_last_message_text
+from agi.tasks.utils import get_last_message_text,get_text_from_message
 from agi.config import log
 import json
+from datetime import datetime
 
 english_traslate_template = ChatPromptTemplate.from_messages([
     ("human", "Translate the following into English and only return the translation result: {text}"),
@@ -49,11 +50,12 @@ decider_prompt = (
 
     '- If the input type is "text":'
     '    - If the question indicates a request to generate or create an image (e.g., "Draw a cat", "Generate a futuristic cityscape"), output: "image". '
-    '    - If the question requires current or external information (e.g., latest news, real-time data, factual verification, Wikipedia, Wikidata, Python code execution, arXiv papers, weather, or stock market data), output: "agent".'
-    '    - If the input is nonsensical, meaningless, or just gibberish, output: "__end__"'
+    '    - If the question requires latest news, real-time data, or factual verification from the internet, output: "web_search".'
+    '    - If a request involves reasoning, decision making, tool use, or multi-step interaction, output "agent".'
+    '    - If the input is nonsensical, meaningless, or just gibberish, output: "llm_with_history"'
     '    - Otherwise, for typical text-based inquiries that do not require external data retrieval, output: "llm_with_history".'
 
-    'Your output should be a single command chosen from: "image", "agent","multi_modal","__end__" or "llm_with_history". Do not include any additional explanation or details.'
+    'Your output should be a single command chosen from: "image", "agent","multi_modal","web_search","web_scrape" or "llm_with_history". Do not include any additional explanation or details.'
 
     'Examples:'
     '1. Input Type: "image"; Question: "Can you read the text in this photo?" '
@@ -62,14 +64,20 @@ decider_prompt = (
     '2. Input Type: "image"; Question: "Please convert this image into a watercolor painting." '
     '-> Output: "image"'
 
-    '3. Input Type: "text"; Question: "What is the latest update on the stock market?" '
+    '3. Input Type: "text"; Question: "What is the latest news ?"' 
+    '-> Output: "web_search"'
+
+    '4. Input Type: "text"; Question: "Summarize the key points from Wikipedia about quantum computing."' 
     '-> Output: "agent"'
 
-    '4. Input Type: "text"; Question: "Tell me about the history of the Eiffel Tower." '
+    '5. Input Type: "text"; Question: "Tell me about the history of the Eiffel Tower." '
     '-> Output: "llm_with_history"'
     
-    '5. Input Type: "text"; Question: "这个安装什么东西来着安装那个啊也出现自在它与晏斗是数学天文学" '
-    '-> Output: "__end__"'
+    '6. Input Type: "text"; Question: "这个安装什么东西来着安装那个啊也出现自在它与晏斗是数学天文学" '
+    '-> Output: "llm_with_history"'
+
+    '7. Input Type: "text"; Question: "Provide one or more URLs to scrape content from."'
+    '-> Output: "web_scrape"'
 )
 
 decide_template = ChatPromptTemplate.from_messages(
@@ -173,17 +181,26 @@ contextualize_q_template = ChatPromptTemplate.from_messages(
 )
 
 doc_qa_prompt = (
-    "You are an assistant for question-answering tasks. "
-    "Use the following pieces of retrieved context to answer "
-    "the question. If you don't know the answer, say that you "
-    "don't know. Keep the answer concise."
-    "Pay careful attention to indentation for proper rendering of these constructs."
-    "\n\n"
-    "{context}"
-    "\n\n"
-    "Please respond in {language}."
-    "Please respond using Markdown format."
+    "Current time is {date}."
+    "Answer the question using ONLY the context below. "
+    "Do not assume the current date or time; always rely on the temporal information explicitly provided in the question or context."
+    "If the answer is not explicitly in the context, respond 'I don't know'. "
+    "Do not use external knowledge or assumptions. Keep the answer concise and preserve indentation for code or structured data.\n\n"
+    "Use Markdown formatting to make your answer clear and readable. "
+    "You can use headings, bullet points, numbered lists, bold, italics, or code blocks as appropriate, "
+    "but do not add any information not in the context.\n\n"
+    "===== CONTEXT START =====\n"
+    "{context}\n"
+    "===== CONTEXT END =====\n\n"
+    "Self-check before responding:\n"
+    "1. Ensure all answer content is directly supported by the context.\n"
+    "2. If any part is unsupported, output exactly: I don't know.\n"
+    "3. Do not include the self-check steps in the answer.\n\n"
+    "4. Never invent or assume a current date/time.\n\n"
+    "Respond in {language} using Markdown format."
 )
+
+
 
 doc_qa_template = ChatPromptTemplate.from_messages(
     [
@@ -196,8 +213,9 @@ doc_qa_template = ChatPromptTemplate.from_messages(
 )
 
 def docqa_modify_state_messages(state: AgentState):
-    messages = doc_qa_template.invoke({"messages": [state["messages"][-1]],"context":state["context"],"language":"chinese"}).to_messages()
-    log.info(f"docqa_modify_state_messages:{messages}")
+    messages = doc_qa_template.invoke({"messages": [state["messages"][-1]],"context":state["context"],
+                                       "language":"chinese","date":datetime.now().strftime("%Y-%m-%d %H:%M:%S")}).to_messages()
+    log.debug(f"docqa_modify_state_messages:{messages}")
     return messages
 
 docqa_modify_state_messages_runnable = RunnableLambda(docqa_modify_state_messages)
@@ -243,3 +261,40 @@ multimodal_input_template = MultiModalChatPromptTemplate(
     ],
     optional_variables=["text","image","audio","video"]
 )
+
+
+tts_format_prompt = """
+You are a text-to-speech assistant. Convert the input text into a clean, easy-to-read format for TTS. 
+
+Rules:
+1. Remove extra spaces, invisible characters, and duplicate punctuation.
+2. Normalize numbers, dates, currencies, and percentages into fully readable words.
+3. Replace symbols that hinder pronunciation with readable alternatives:
+   - - → "dash" / or space
+   - / → "to" / "or"
+   - & → "and" / "和"
+   - @ → "at" / "艾特"
+   - # → "number" / "编号"
+   - % → "percent" / "百分之"
+4. Add spaces between Chinese, English, and numbers where needed.
+5. Split very long sentences if necessary.
+6. Preserve meaning, do not add new info.
+"""
+
+tts_template = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            tts_format_prompt
+        ),
+        ("human","{text}"),
+    ]
+)
+
+def tts_modify_state_messages(state: AgentState):
+    text = get_text_from_message(state["messages"][-1])
+    messages = tts_template.invoke({"text": text}).to_messages()
+    log.debug(f"tts_modify_state_messages:{messages}")
+    return messages
+
+tts_modify_state_messages_runnable = RunnableLambda(tts_modify_state_messages)

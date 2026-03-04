@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 from transformers import AutoModelForCausalLM, AutoTokenizer,AutoModelForSequenceClassification
 from typing import List, Tuple
 import threading
@@ -128,8 +129,9 @@ class Reranker:
                     inputs = self.tokenizer([ [q, chunk] ], padding=True, truncation=True, return_tensors='pt', max_length=self.max_length)
                     inputs = {k: v.to(self.device) for k, v in inputs.items()}
                     with torch.no_grad():
-                        logits = self.model(**inputs, return_dict=True).logits.view(-1, ).float().tolist()
-                    chunk_scores.extend(logits)
+                        logits = self.model(**inputs, return_dict=True).logits.view(-1, ).float()
+                        logits = torch.sigmoid(logits)
+                        chunk_scores.extend(logits.tolist())
 
             # 取每个 document 的平均分作为最终得分
             doc_score = sum(chunk_scores) / len(chunk_scores)

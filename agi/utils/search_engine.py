@@ -1,5 +1,4 @@
 import random
-import json
 import asyncio
 from collections import defaultdict
 from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
@@ -119,7 +118,7 @@ class SearchEngineSelector(BaseTool):
                     )
                     for r in resp.results:
                         search_results.append({
-                            "snippet": json.dumps(r.text),
+                            "snippet": r.text,
                             "title": r.title,
                             "link": r.url,
                             "date": r.published_date,
@@ -142,7 +141,7 @@ class SearchEngineSelector(BaseTool):
                     resp = search.invoke({"query": query})
                     for r in resp.get("results",[]):
                         search_results.append({
-                            "snippet": json.dumps(r.get("content","")),
+                            "snippet": r.get("content",""),
                             "title": r.get("content",""),
                             "link": r.get("url",""),
                             "date": "",
