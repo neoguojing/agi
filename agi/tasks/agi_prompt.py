@@ -9,7 +9,7 @@ from typing import (
     TypedDict
 )
 
-from langchain.prompts.chat import (
+from langchain_core.prompts.chat import (
     MessageLikeRepresentation,
     BaseMessagePromptTemplate,
     HumanMessagePromptTemplate,

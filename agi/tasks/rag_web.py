@@ -10,11 +10,11 @@ from langchain_core.runnables import (
     RunnableConfig
 )
 from langchain_core.messages import SystemMessage
-from langchain.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
 from langgraph.types import StreamWriter
 from langgraph.graph import END, StateGraph, START
 from langgraph.checkpoint.memory import MemorySaver
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.retrievers.web_research import QuestionListOutputParser
 from agi.tasks.llm_app import build_citations
 from agi.tasks.utils import get_last_message_text,split_think_content,graph_print,refine_last_message_runnable

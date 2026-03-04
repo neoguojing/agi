@@ -1,7 +1,7 @@
 import os
-from langchain.tools import tool
+from langchain_core.tools import tool
 from langchain_community.utilities import ArxivAPIWrapper
-from langchain.agents import Tool
+from langchain_core.tools import Tool
 from agi.utils.weather import get_weather_info
 from agi.utils.stock_market import get_stock
 from agi.tasks.task_factory import TaskFactory,TASK_IMAGE_GEN,TASK_MULTI_MODEL

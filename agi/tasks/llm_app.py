@@ -14,10 +14,6 @@ from langchain_core.runnables import (
     RunnableBranch,
     RunnableLambda
 )
-from langchain.chains.combine_documents.base import (
-    DEFAULT_DOCUMENT_SEPARATOR,
-    DEFAULT_DOCUMENT_PROMPT,
-)
 from langchain_core.output_parsers import StrOutputParser,BaseOutputParser
 from agi.tasks.prompt import doc_qa_template,docqa_modify_state_messages_runnable,default_modify_state_messages_runnable
 from agi.tasks.retriever import KnowledgeManager
@@ -38,6 +34,9 @@ from typing import (
     Optional,
     Union
 )
+
+DEFAULT_DOCUMENT_SEPARATOR = "\n\n"
+DEFAULT_DOCUMENT_PROMPT = ChatPromptTemplate.from_template("{page_content}")
 
 def is_valid_url(url):
     return validators.url(url)
@@ -378,4 +377,3 @@ def build_citations(documents: list):
         print(traceback.format_exc())
         
     return citations
-

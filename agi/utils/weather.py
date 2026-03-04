@@ -7,7 +7,7 @@ import os
 import difflib
 from agi.config import CACHE_DIR
 import jieba.posseg as pseg
-from langchain.tools import tool
+from langchain_core.tools import tool
 
 class WeatherAPIError(Exception):
     """自定义异常：天气接口调用或解析失败"""

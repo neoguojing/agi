@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock
 from agi.tasks.vectore_store import CollectionManager
-from langchain.schema import Document
+from langchain_core.documents import Document
 from agi.tasks.task_factory import TaskFactory
 class DummyEmbedding:
     def embed_query(self, text):

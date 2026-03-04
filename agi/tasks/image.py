@@ -17,7 +17,7 @@ from langchain_core.runnables import (
     RunnableConfig
 )
 from langchain_core.messages import SystemMessage,HumanMessage
-from langchain.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
 from langgraph.pregel import RetryPolicy
 from langgraph.graph import END, StateGraph, START
 from langgraph.checkpoint.memory import MemorySaver
