@@ -14,6 +14,10 @@ from langchain_core.runnables import (
     RunnableBranch,
     RunnableLambda
 )
+from langchain_classic.chains.combine_documents.base import (
+    DEFAULT_DOCUMENT_SEPARATOR,
+    DEFAULT_DOCUMENT_PROMPT,
+)
 from langchain_core.output_parsers import StrOutputParser,BaseOutputParser
 from agi.tasks.prompt import doc_qa_template,docqa_modify_state_messages_runnable,default_modify_state_messages_runnable
 from agi.tasks.retriever import KnowledgeManager

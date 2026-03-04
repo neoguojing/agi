@@ -2,6 +2,7 @@ langchain==1.2.16
 langsmith==1.0.10
 langchain-core>=1.0.0,<2.0.0
 langchain-text-splitters>=1.0.0,<2.0.0
+langchain-classic>=1.0.0,<2.0.0
 langchain-chroma==0.2.4
 chromadb==1.0.10
 chroma-hnswlib==0.7.6
