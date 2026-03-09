@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from agi.config import OLLAMA_DEFAULT_MODE
-
 from .types import AgentRuntimeConfig
 
 
@@ -33,6 +31,9 @@ def _import_deepagents() -> dict[str, Any]:
 
 def build_deep_agent(config: AgentRuntimeConfig):
     dep = _import_deepagents()
+
+    # lazy import to avoid importing agi.config when users only use lightweight modules
+    from agi.config import OLLAMA_DEFAULT_MODE
 
     backend_type = dep["LocalShellBackend"] if config.backend == "local_shell" else dep["FilesystemBackend"]
     middleware = []

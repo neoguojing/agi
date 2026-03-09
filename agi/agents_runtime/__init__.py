@@ -2,6 +2,9 @@
 
 from .context_engine import get_context_engine
 from .memory_engine import MemorySearchManager, create_default_memory_manager
+from .multimodal import Modality, MultiModalRequest, MultiModalRouter
+from .skills import Skill, SkillRegistry
+from .tools import ToolRegistry, ToolSpec
 from .types import AgentRuntimeConfig
 
 __all__ = [
@@ -9,4 +12,11 @@ __all__ = [
     "MemorySearchManager",
     "create_default_memory_manager",
     "get_context_engine",
+    "Modality",
+    "MultiModalRequest",
+    "MultiModalRouter",
+    "ToolSpec",
+    "ToolRegistry",
+    "Skill",
+    "SkillRegistry",
 ]
