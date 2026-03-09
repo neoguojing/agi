@@ -1,16 +1,16 @@
 """新的 Agent Runtime 框架（基于 docs 设计目标 + DeepAgents）。"""
 
-from .backend_factory import BackendBuildResult, BackendFactoryError, PolicyWrapper, build_backend
-from .context_engine import get_context_engine
-from .harness import TodoItem, TodoManager
-from .hitl import InterruptAction, build_resume_payload, extract_interrupt_actions
-from .memory_engine import MemorySearchManager, create_default_memory_manager
-from .multimodal import Modality, MultiModalRequest, MultiModalRouter
-from .session_context import SessionContextManager, SessionState
-from .skills import Skill, SkillRegistry
-from .subagents import SubAgentSpec, build_default_subagents
-from .tools import ToolRegistry, ToolSpec
-from .types import AgentRuntimeConfig
+from .integration.backend_factory import BackendBuildResult, BackendFactoryError, PolicyWrapper, build_backend
+from .engines.context_engine import get_context_engine
+from .orchestration.harness import TodoItem, TodoManager
+from .orchestration.hitl import InterruptAction, build_resume_payload, extract_interrupt_actions
+from .engines.memory_engine import MemorySearchManager, create_default_memory_manager
+from .engines.multimodal import Modality, MultiModalRequest, MultiModalRouter
+from .orchestration.session_context import SessionContextManager, SessionState
+from .core.skills import Skill, SkillRegistry
+from .core.subagents import SubAgentSpec, build_default_subagents
+from .core.tools import ToolRegistry, ToolSpec
+from .core.types import AgentRuntimeConfig
 
 __all__ = [
     "AgentRuntimeConfig",
