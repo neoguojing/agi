@@ -7,7 +7,9 @@ from .deepagent_builder import build_deep_agent
 from .knowledge import KnowledgeFusionService
 from .legacy_adapters import LegacyKnowledgeAdapter, LegacyTaskAdapter
 from .memory_engine import MemorySearchManager, create_default_memory_manager
+from .messages import MediaInput, create_multimodal_human_message, message_to_payload
 from .multimodal import Modality, MultiModalExecutor, MultiModalRequest, MultiModalRouter
+from .session_context import SessionContextManager
 from .types import AgentRuntimeConfig
 
 
@@ -22,11 +24,13 @@ class AgentRuntimeService:
         memory_manager: MemorySearchManager | None = None,
         legacy_task_adapter: LegacyTaskAdapter | None = None,
         knowledge_adapter: LegacyKnowledgeAdapter | None = None,
+        session_manager: SessionContextManager | None = None,
     ) -> None:
         self.config = config
         self.context_engine = get_context_engine(context_engine_id)
         self.memory_manager = memory_manager or create_default_memory_manager()
         self.agent = build_deep_agent(config)
+        self.session_manager = session_manager or SessionContextManager()
 
         self.legacy_task_adapter = legacy_task_adapter or LegacyTaskAdapter()
         kb_adapter = knowledge_adapter or LegacyKnowledgeAdapter()
@@ -45,6 +49,29 @@ class AgentRuntimeService:
             }
         )
 
+    @staticmethod
+    def _to_human_payload(request: MultiModalRequest) -> dict[str, Any]:
+        msg = create_multimodal_human_message(
+            text=request.text,
+            image=MediaInput(url=request.image, base64=request.image_base64, mime_type=request.image_mime_type),
+            audio=MediaInput(url=request.audio, base64=request.audio_base64, mime_type=request.audio_mime_type),
+        )
+        return message_to_payload(msg)
+
+    def _build_memory_layout_prompt(self) -> dict[str, str] | None:
+        if not self.config.enable_long_term_memory:
+            return None
+        prefix = self.config.long_term_memory_prefix
+        content = (
+            "持久化记忆目录约定:\n"
+            f"- 长期记忆路径前缀: {prefix}\n"
+            f"- 用户偏好: {prefix}preferences.txt\n"
+            f"- 研究资料: {prefix}research/notes.txt\n"
+            f"- 项目知识: {prefix}project/knowledge.md\n"
+            "当用户要求长期保存时，优先写入上述长期记忆目录。"
+        )
+        return {"role": "system", "content": content}
+
     async def run_auto(
         self,
         session_id: str,
@@ -53,22 +80,36 @@ class AgentRuntimeService:
         token_budget: int = 40,
         collection: str | list[str] | None = None,
         tenant_id: str | None = None,
+        thread_id: str | None = None,
     ) -> dict[str, Any]:
         route, legacy_result = self.executor.invoke(request, self.router)
 
+        state = self.session_manager.get_or_create(session_id, thread_id=thread_id)
+
         content = request.text or ""
-        self.context_engine.ingest(session_id, [{"role": "user", "content": content}])
+        human_payload = self._to_human_payload(request)
+        self.context_engine.ingest(session_id, [human_payload])
         self.memory_manager.index(session_id, content, metadata={"role": "user", "modality": route.modality.value})
 
         assembled = self.context_engine.assemble(session_id, token_budget=token_budget)
+        memory_layout_prompt = self._build_memory_layout_prompt()
+        if memory_layout_prompt:
+            assembled.messages = [memory_layout_prompt] + assembled.messages
 
         kb_hits = []
         if collection and content:
             kb_hits = await self.knowledge_service.search(collection, content, tenant_id=tenant_id, top_k=4)
             assembled.messages = self.knowledge_service.inject_to_messages(assembled.messages, kb_hits)
 
+        run_config = self.session_manager.to_run_config(state)
+
         if route.modality == Modality.TEXT:
-            response = self.agent.invoke({"messages": assembled.messages})
+            if kb_hits:
+                assembled.messages = [{
+                    "role": "system",
+                    "content": "若任务复杂请优先委派给 knowledge-researcher 子代理做检索与总结，再返回精简答案。",
+                }] + assembled.messages
+            response = self.agent.invoke({"messages": assembled.messages}, config=run_config)
         else:
             response = {
                 "modality": route.modality.value,
@@ -86,6 +127,7 @@ class AgentRuntimeService:
 
         compact_result = self.context_engine.compact(session_id, reason="turn_end")
         return {
+            "session": state,
             "route": route,
             "response": response,
             "assembled": assembled,

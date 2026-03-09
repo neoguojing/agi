@@ -18,8 +18,15 @@ class Modality(str, Enum):
 @dataclass(slots=True)
 class MultiModalRequest:
     text: str | None = None
+
     image: str | None = None
+    image_base64: str | None = None
+    image_mime_type: str | None = None
+
     audio: str | None = None
+    audio_base64: str | None = None
+    audio_mime_type: str | None = None
+
     target: str | None = None
     metadata: dict[str, Any] | None = None
 
@@ -35,8 +42,8 @@ class MultiModalRouter:
 
     def route(self, request: MultiModalRequest) -> RouteResult:
         text = (request.text or "").lower()
-        has_image = bool(request.image)
-        has_audio = bool(request.audio)
+        has_image = bool(request.image or request.image_base64)
+        has_audio = bool(request.audio or request.audio_base64)
 
         if has_audio and request.target == "text":
             return RouteResult(Modality.AUDIO_TRANSCRIBE, "audio file provided and target=text")

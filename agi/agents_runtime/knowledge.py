@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .messages import create_knowledge_system_message, message_to_payload
 from .types import MemorySearchResult
 
 
@@ -64,16 +65,13 @@ class KnowledgeFusionService:
         return out
 
     @staticmethod
-    def inject_to_messages(messages: list[dict[str, str]], chunks: list[KnowledgeChunk]) -> list[dict[str, str]]:
+    def inject_to_messages(messages: list[dict[str, Any]], chunks: list[KnowledgeChunk]) -> list[dict[str, Any]]:
         if not chunks:
             return messages
 
         cite = "\n\n".join([f"[{idx+1}] {c.content}" for idx, c in enumerate(chunks)])
-        knowledge_message = {
-            "role": "system",
-            "content": "以下是可用知识库检索结果，请优先参考：\n" + cite,
-        }
-        return [knowledge_message] + messages
+        knowledge_msg = create_knowledge_system_message("以下是可用知识库检索结果，请优先参考：\n" + cite)
+        return [message_to_payload(knowledge_msg)] + messages
 
     @staticmethod
     def to_memory_hits(chunks: list[KnowledgeChunk]) -> list[MemorySearchResult]:

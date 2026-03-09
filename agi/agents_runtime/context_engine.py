@@ -17,9 +17,9 @@ class LegacyContextEngine:
     """兼容旧流程的上下文引擎：按会话保存消息并裁剪。"""
 
     def __init__(self) -> None:
-        self._sessions: dict[str, list[dict[str, str]]] = defaultdict(list)
+        self._sessions: dict[str, list[dict[str, object]]] = defaultdict(list)
 
-    def ingest(self, session_id: str, messages: list[dict[str, str]]) -> None:
+    def ingest(self, session_id: str, messages: list[dict[str, object]]) -> None:
         self._sessions[session_id].extend(messages)
 
     def assemble(self, session_id: str, *, token_budget: int | None = None) -> ContextAssembleResult:

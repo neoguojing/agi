@@ -1,4 +1,9 @@
+import pytest
+
+pytest.importorskip("langchain_core")
+
 from agi.agents_runtime.knowledge import KnowledgeChunk, KnowledgeFusionService
+from agi.agents_runtime.messages import MediaInput, create_multimodal_human_message, message_to_payload
 from agi.agents_runtime.multimodal import Modality, MultiModalRequest, MultiModalRouter
 from agi.agents_runtime.skills import SkillRegistry
 from agi.agents_runtime.tools import ToolRegistry, ToolSpec
@@ -11,6 +16,22 @@ def test_multimodal_router_auto_switch():
     assert router.route(MultiModalRequest(text="请识别图里内容", image="a.png")).modality == Modality.IMAGE_UNDERSTAND
     assert router.route(MultiModalRequest(text="请修改这个图", image="a.png")).modality == Modality.IMAGE_EDIT
     assert router.route(MultiModalRequest(audio="a.wav", target="text")).modality == Modality.AUDIO_TRANSCRIBE
+    assert router.route(MultiModalRequest(text="看图", image_base64="abc")).modality == Modality.IMAGE_UNDERSTAND
+
+
+def test_multimodal_human_message_blocks():
+    msg = create_multimodal_human_message(
+        text="describe image",
+        image=MediaInput(url="https://img.local/cat.png", mime_type="image/png"),
+        audio=MediaInput(base64="YWJj", mime_type="audio/wav"),
+    )
+    payload = message_to_payload(msg)
+
+    assert payload["role"] == "user"
+    assert isinstance(payload["content"], list)
+    assert payload["content"][0]["type"] == "text"
+    assert payload["content"][1]["type"] == "image"
+    assert payload["content"][2]["type"] == "audio"
 
 
 def test_knowledge_inject_to_messages():

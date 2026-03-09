@@ -42,13 +42,22 @@ class LegacyTaskAdapter:
         if modality in {Modality.TEXT, Modality.IMAGE_GENERATE, Modality.IMAGE_EDIT}:
             return request.text or ""
         if modality == Modality.AUDIO_TRANSCRIBE:
-            return {"audio": request.audio, "text": request.text}
+            return {
+                "audio": request.audio,
+                "audio_base64": request.audio_base64,
+                "audio_mime_type": request.audio_mime_type,
+                "text": request.text,
+            }
         if modality == Modality.AUDIO_GENERATE:
             return request.text or ""
         return {
             "text": request.text,
             "audio": request.audio,
+            "audio_base64": request.audio_base64,
+            "audio_mime_type": request.audio_mime_type,
             "image": request.image,
+            "image_base64": request.image_base64,
+            "image_mime_type": request.image_mime_type,
             "metadata": request.metadata or {},
         }
 
