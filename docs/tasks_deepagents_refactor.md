@@ -255,6 +255,23 @@ def build_main_agent(model, backend, skills=None, memory=None):
 
 ---
 
+
+### 8.1 模块迁移与兼容层（实现补充）
+
+为降低耦合、提升可读性，建议（并已落地）将历史“大而全”模块拆分为领域模块：
+
+- `agi/tasks/runtime/task_factory.py`：任务工厂运行时模块
+- `agi/tasks/chat/chains.py`：原 `llm_app` 的对话/文档链路
+- `agi/tasks/rag/knowledge.py`：原 `retriever` 的知识检索实现
+
+并保留薄兼容层文件：
+
+- `agi/tasks/task_factory.py`
+- `agi/tasks/llm_app.py`
+- `agi/tasks/retriever.py`
+
+兼容层仅做 re-export，避免一次性改动导致外部调用中断。
+
 ## 9. 分阶段迁移计划（建议 4 个里程碑）
 
 ### M1：抽象与兼容

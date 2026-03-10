@@ -4,7 +4,7 @@ from typing import Any
 
 from langchain.tools import tool
 
-from agi.tasks.retriever import FilterType, SourceType
+from agi.tasks.rag.knowledge import FilterType, SourceType
 from agi.tasks.rag.service import get_rag_service
 
 

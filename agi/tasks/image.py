@@ -7,7 +7,7 @@ from agi.tasks.utils import split_think_content,graph_print
 from agi.tasks.define import State
 import json
 import os
-from agi.tasks.task_factory import (
+from agi.tasks.runtime.task_factory import (
     TaskFactory,
     TASK_IMAGE_GEN,
     TASK_LLM_WITH_HISTORY

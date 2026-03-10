@@ -5,7 +5,7 @@ from typing import Any, Sequence
 
 from langchain_core.documents import Document
 
-from agi.tasks.retriever import FilterType, KnowledgeManager, SimAlgoType, SourceType
+from agi.tasks.rag.knowledge import FilterType, KnowledgeManager, SimAlgoType, SourceType
 
 
 @dataclass(slots=True)
@@ -89,6 +89,6 @@ class RagService:
 
 def get_rag_service() -> RagService:
     # local import to avoid heavy factory import at module import time
-    from agi.tasks.task_factory import TaskFactory
+    from agi.tasks.runtime.task_factory import TaskFactory
 
     return RagService(km=TaskFactory.get_knowledge_manager())

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agi.tasks.task_factory import TASK_IMAGE_GEN, TASK_MULTI_MODEL, TaskFactory
+from agi.tasks.runtime.task_factory import TASK_IMAGE_GEN, TASK_MULTI_MODEL, TaskFactory
 
 
 image_gen_tool = TaskFactory.create_task(TASK_IMAGE_GEN).as_tool(

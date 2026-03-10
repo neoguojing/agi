@@ -6,7 +6,7 @@ from langchain.tools import tool
 from langchain_core.messages import HumanMessage
 
 from agi.tasks.define import State
-from agi.tasks.task_factory import TASK_SPEECH_TEXT, TASK_TTS, TaskFactory
+from agi.tasks.runtime.task_factory import TASK_SPEECH_TEXT, TASK_TTS, TaskFactory
 
 
 @tool(return_direct=True)

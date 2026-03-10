@@ -1,5 +1,5 @@
 from agi.tasks.define import State,InputType,Feature
-from agi.tasks.task_factory import (
+from agi.tasks.runtime.task_factory import (
     TaskFactory,
     TASK_DOC_CHAT,
     TASK_LLM_WITH_HISTORY
@@ -16,7 +16,7 @@ from langgraph.graph import END, StateGraph, START
 from langgraph.checkpoint.memory import MemorySaver
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.retrievers.web_research import QuestionListOutputParser
-from agi.tasks.llm_app import build_citations
+from agi.tasks.chat.chains import build_citations
 from agi.tasks.utils import get_last_message_text,split_think_content,graph_print,refine_last_message_runnable
 from agi.config import log,CACHE_DIR
 from agi.tasks.vectore_store import CollectionManager

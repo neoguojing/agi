@@ -6,7 +6,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from agi.config import log
 from agi.tasks.define import Feature, State
-from agi.tasks.task_factory import TASK_DEEPAGENT, TASK_SPEECH_TEXT, TASK_TTS, TaskFactory
+from agi.tasks.runtime.task_factory import TASK_DEEPAGENT, TASK_SPEECH_TEXT, TASK_TTS, TaskFactory
 from agi.tasks.session import SessionIdentity, to_configurable
 from agi.tasks.utils import graph_print
 

@@ -1,5 +1,5 @@
 from agi.tasks.define import State,InputType,Feature
-from agi.tasks.task_factory import (
+from agi.tasks.runtime.task_factory import (
     TaskFactory
 )
 from agi.tasks.cluster import train

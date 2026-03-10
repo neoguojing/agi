@@ -4,7 +4,7 @@ from langchain_community.utilities import ArxivAPIWrapper
 from langchain.agents import Tool
 from agi.utils.weather import get_weather_info
 from agi.utils.stock_market import get_stock
-from agi.tasks.task_factory import TaskFactory,TASK_IMAGE_GEN,TASK_MULTI_MODEL
+from agi.tasks.runtime.task_factory import TaskFactory,TASK_IMAGE_GEN,TASK_MULTI_MODEL
 from agi.tasks.rag_web import rag_as_subgraph
 from agi.tasks.define import State
 from agi.config import log
