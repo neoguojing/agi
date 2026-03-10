@@ -7,21 +7,9 @@ from langgraph.store.base import BaseStore
 from langgraph.store.memory import InMemoryStore
 
 from agi.config import AGI_LONG_TERM_MEMORY_ENABLED, AGI_MEMORY_PATH_PREFIX
-from agi.deepagents.backends import CompositeBackend, StateBackend, StoreBackend
-from agi.deepagents.backends.store import BackendContext
 
 
-def make_store_namespace(ctx: BackendContext[Any, Any]) -> tuple[str, ...]:
-    """Namespace strategy for persistent filesystem storage.
-
-    Order of identity resolution (first non-empty):
-    - tenant_id (from runtime context or configurable)
-    - assistant_id (from runtime context or configurable)
-    - user_id (from runtime context or configurable)
-
-    Returns a stable namespace tuple for cross-thread persistence.
-    """
-
+def make_store_namespace(ctx: Any) -> tuple[str, ...]:
     runtime = ctx.runtime
     configurable = runtime.config.get("configurable", {})
     runtime_context = getattr(runtime, "context", None)
@@ -34,7 +22,7 @@ def make_store_namespace(ctx: BackendContext[Any, Any]) -> tuple[str, ...]:
 
 
 def make_session_backend(runtime: Any):
-    """Hybrid backend: transient state + persistent memory route."""
+    from agi.deepagents.backends import CompositeBackend, StateBackend, StoreBackend
 
     memory_prefix = AGI_MEMORY_PATH_PREFIX
     if not memory_prefix.endswith("/"):
@@ -42,21 +30,15 @@ def make_session_backend(runtime: Any):
 
     return CompositeBackend(
         default=StateBackend(runtime),
-        routes={
-            memory_prefix: StoreBackend(runtime, namespace=make_store_namespace),
-        },
+        routes={memory_prefix: StoreBackend(runtime, namespace=make_store_namespace)},
     )
 
 
 def default_store() -> BaseStore:
-    """Default store for local/dev usage."""
-
     return InMemoryStore()
 
 
 def default_checkpointer() -> MemorySaver:
-    """Default checkpointer for thread state recovery."""
-
     return MemorySaver()
 
 
@@ -67,8 +49,6 @@ def resolve_session_components(
     checkpointer: Any = None,
     enable_long_term_memory: bool | None = None,
 ) -> tuple[Any, BaseStore | None, Any]:
-    """Resolve backend/store/checkpointer from policy + explicit overrides."""
-
     enabled = AGI_LONG_TERM_MEMORY_ENABLED if enable_long_term_memory is None else enable_long_term_memory
 
     resolved_backend = backend

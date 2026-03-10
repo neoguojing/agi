@@ -1,9 +1,8 @@
-from typing import Any,Union
+from typing import Union
 import threading
 from agi.tasks.agent import create_react_agent_task
 from langchain_core.embeddings import Embeddings
 from langchain_core.runnables import Runnable
-from urllib.parse import urljoin
 from agi.config import (
     OLLAMA_API_BASE_URL,
     RAG_EMBEDDING_MODEL,
@@ -12,7 +11,6 @@ from agi.config import (
     OLLAMA_THINKING_MODE
 )
 from langchain_ollama import OllamaEmbeddings,ChatOllama
-from langchain_openai import OpenAIEmbeddings
 from agi.tasks.llm_app import (
     create_chat,
     create_chat_with_history,

@@ -4,7 +4,7 @@ from typing import Any, Sequence
 
 from agi.deepagents.graph import create_deep_agent
 from agi.tasks.orchestration.registry import get_registered_skills, get_registered_tools
-from agi.tasks.orchestration.session_backend import resolve_session_components
+from agi.tasks.session import resolve_session_components
 from agi.tasks.subagents.audio_specialist import audio_subagent
 from agi.tasks.subagents.image_specialist import image_subagent
 from agi.tasks.subagents.rag_specialist import rag_subagent

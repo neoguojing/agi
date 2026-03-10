@@ -1,4 +1,5 @@
-from .deepagent_builder import build_main_agent
+from __future__ import annotations
+
 from .registry import (
     clear_external_skills,
     clear_external_tools,
@@ -13,6 +14,15 @@ from .registry import (
     unregister_external_skill,
     unregister_external_tool,
 )
+from agi.tasks.session import make_session_backend, resolve_session_components
+
+
+def build_main_agent(*args, **kwargs):
+    """Lazy import to avoid heavy deepagents dependency at package import time."""
+    from .deepagent_builder import build_main_agent as _build_main_agent
+
+    return _build_main_agent(*args, **kwargs)
+
 
 __all__ = [
     "build_main_agent",
@@ -31,5 +41,3 @@ __all__ = [
     "make_session_backend",
     "resolve_session_components",
 ]
-
-from .session_backend import make_session_backend, resolve_session_components

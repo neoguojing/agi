@@ -99,18 +99,44 @@ class ToolSkillRegistry:
 _registry = ToolSkillRegistry()
 
 
-register_builtin_tool = lambda tool: _registry.register_tool(tool, builtin=True)
-register_external_tool = lambda tool: _registry.register_tool(tool, builtin=False)
-unregister_builtin_tool = lambda tool: _registry.unregister_tool(tool, builtin=True)
-unregister_external_tool = lambda tool: _registry.unregister_tool(tool, builtin=False)
+def register_builtin_tool(tool: Any) -> None:
+    _registry.register_tool(tool, builtin=True)
 
-register_builtin_skill = lambda source: _registry.register_skill(source, builtin=True)
-register_external_skill = lambda source: _registry.register_skill(source, builtin=False)
-unregister_builtin_skill = lambda source: _registry.unregister_skill(source, builtin=True)
-unregister_external_skill = lambda source: _registry.unregister_skill(source, builtin=False)
 
-clear_external_tools = _registry.clear_external_tools
-clear_external_skills = _registry.clear_external_skills
+def register_external_tool(tool: Any) -> None:
+    _registry.register_tool(tool, builtin=False)
+
+
+def unregister_builtin_tool(tool: Any) -> None:
+    _registry.unregister_tool(tool, builtin=True)
+
+
+def unregister_external_tool(tool: Any) -> None:
+    _registry.unregister_tool(tool, builtin=False)
+
+
+def register_builtin_skill(source: str) -> None:
+    _registry.register_skill(source, builtin=True)
+
+
+def register_external_skill(source: str) -> None:
+    _registry.register_skill(source, builtin=False)
+
+
+def unregister_builtin_skill(source: str) -> None:
+    _registry.unregister_skill(source, builtin=True)
+
+
+def unregister_external_skill(source: str) -> None:
+    _registry.unregister_skill(source, builtin=False)
+
+
+def clear_external_tools() -> None:
+    _registry.clear_external_tools()
+
+
+def clear_external_skills() -> None:
+    _registry.clear_external_skills()
 
 
 def get_registered_tools(
