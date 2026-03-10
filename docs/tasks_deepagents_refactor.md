@@ -280,7 +280,65 @@ def build_main_agent(model, backend, skills=None, memory=None):
 
 ---
 
-## 11. 风险与对策
+
+## 11. 编码任务中的上下文压缩与共享设计（补充）
+
+### 11.1 问题
+
+在编码任务中，主问题不是“能否调用工具”，而是：
+- 文件多、上下文长，token 快速膨胀；
+- 多 subagent 并行后，重复传递相同代码片段；
+- 跨线程时缺乏可复用的项目记忆。
+
+### 11.2 解决框架
+
+采用“Working Set + Session Digest + Project Memory”三层：
+
+1. Working Set（短期）
+   - 当前任务涉及文件与最近消息，保留在短期状态。
+2. Session Digest（中期）
+   - 每轮阶段性总结：目标、已改文件、未完成事项、风险。
+3. Project Memory（长期）
+   - 跨线程共享的架构与规范，写入 `/memories/projects/*`。
+
+### 11.3 SubAgent 共享协议
+
+主代理给子代理不传全量历史，而传结构化 context bundle：
+
+- 任务目标
+- working set 文件列表
+- 每个文件的摘要卡片
+- 约束与验收条件
+
+这样可减少重复 token，并避免不同子代理各自重读全仓。
+
+### 11.4 压缩触发点（建议）
+
+- context 使用率 > 70%：轻压缩（裁剪工具参数/中间输出）
+- context 使用率 > 85%：强压缩（只保留 session digest + working set）
+- 消息数 > 40：强制生成阶段摘要
+
+### 11.5 持久化策略（与 session 文档对齐）
+
+仅将可复用上下文写入长期记忆：
+- 项目约束
+- 架构决策
+- 文件索引摘要
+
+临时上下文不落长期：
+- 中间思维过程
+- 一次性命令输出
+- 短期调试日志
+
+### 11.6 验收标准补充
+
+- 同一编码任务在 3 个线程中可复用项目记忆，不重复全量解释代码结构。
+- 子代理平均上下文 token 占用较基线降低（建议目标 30%+）。
+- 在超长会话下仍可保持规划-执行-验证闭环，不因上下文溢出中断。
+
+---
+
+## 12. 风险与对策
 
 - **风险 1：SubAgent 边界定义不清导致重复实现**
   - 对策：先制定“复杂=SubAgent，简单=Tool”判定清单并固化到代码评审模板。
@@ -293,7 +351,7 @@ def build_main_agent(model, backend, skills=None, memory=None):
 
 ---
 
-## 12. 最小实施清单（可执行）
+## 13. 最小实施清单（可执行）
 
 1. 新增 `orchestration/deepagent_builder.py`。
 2. 新增 4 个复杂域 subagent（RAG/Web/Image/Audio）。
