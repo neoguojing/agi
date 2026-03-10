@@ -9,7 +9,7 @@ from agi.tasks.rag_web import rag_as_subgraph
 
 from agi.tasks.task_factory import (
     TaskFactory,
-    TASK_AGENT,
+    TASK_DEEPAGENT,
     TASK_SPEECH_TEXT,
     TASK_TTS,
     TASK_LLM,
@@ -24,7 +24,7 @@ from agi.tasks.prompt import (
     tts_modify_state_messages_runnable
 )
 from agi.tasks.utils import split_think_content,graph_print,refine_human_message,graph_response_format_runnable
-from agi.tasks.agent import create_react_agent_as_subgraph,ahuman_feedback_node
+from agi.tasks.agent import ahuman_feedback_node
 import traceback
 from agi.config import (
     log
@@ -53,7 +53,7 @@ class AgiGraph:
         self.builder.add_node("web_scrape", self.web_scrape_node)
 
 
-        self.builder.add_node("agent", create_react_agent_as_subgraph(TaskFactory.get_llm()))
+        self.builder.add_node("agent", TaskFactory.create_task(TASK_DEEPAGENT))
 
         self.builder.add_node("speech2text", TaskFactory.create_task(TASK_SPEECH_TEXT))
         self.builder.add_node("tts", TaskFactory.create_task(TASK_TTS))

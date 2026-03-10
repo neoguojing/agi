@@ -40,6 +40,7 @@ TASK_RAG = "custom_rag"
 TASK_WEB_SEARCH = "web_search"
 TASK_DOC_CHAT = "doc_chat"
 TASK_MULTI_MODEL = "multimodel"
+TASK_DEEPAGENT = "deepagent"
 
 def create_llm_chat_task(**kwargs):
     return create_chat(TaskFactory._llm)
@@ -80,6 +81,10 @@ def create_agent_task(**kwargs):
     # llm_with_history = create_llm_with_history(TaskFactory._llm)
     return create_react_agent_task(TaskFactory._llm)
 
+
+def create_deepagent_task(**kwargs):
+    return create_react_agent_task(TaskFactory._llm)
+
 class TaskFactory:
     _instances = {}
     _lock = threading.Lock()  # 异步锁
@@ -110,6 +115,7 @@ class TaskFactory:
         TASK_LLM_WITH_HISTORY: create_llm_with_history_task,
         
         TASK_AGENT: create_agent_task,
+        TASK_DEEPAGENT: create_deepagent_task,
         
         TASK_RAG: create_rag_task,
         TASK_WEB_SEARCH: create_web_search_task,
