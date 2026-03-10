@@ -1,64 +1,62 @@
-from typing import Union
+from __future__ import annotations
+
 import threading
-import gc
-from agi.llms.image2image import Image2Image
-from agi.llms.text2image import Text2Image
-from agi.llms.tts import TextToSpeech
-from agi.llms.speech2text import Speech2Text
-from agi.llms.multimodel import MultiModel
-from agi.llms.base import CustomerLLM
 from collections import OrderedDict
+from typing import Callable, Union
+
 from langchain_core.runnables import Runnable
 
 from agi.config import log
+from agi.llms.base import CustomerLLM
+from agi.llms.image2image import Image2Image
+from agi.llms.multimodel import MultiModel
+from agi.llms.speech2text import Speech2Text
+from agi.llms.text2image import Text2Image
+from agi.llms.tts import TextToSpeech
+
+ModelInstance = Union[CustomerLLM, Runnable]
+
 
 class ModelFactory:
-    _instances =  OrderedDict()
+    """Thread-safe model factory with in-memory singleton caching."""
+
+    _instances: OrderedDict[str, ModelInstance] = OrderedDict()
     _lock = threading.Lock()
-    max_models = 1
-    
+
+    _registry: dict[str, Callable[[], ModelInstance]] = {
+        "text2image": Text2Image,
+        "image2image": Image2Image,
+        "speech2text": Speech2Text,
+        "text2speech": TextToSpeech,
+        "multimodel": MultiModel,
+    }
+
     @staticmethod
-    def get_model(model_type: str) -> CustomerLLM:
-        """Retrieve and cache the model instance."""
+    def get_model(model_type: str) -> ModelInstance:
+        """Retrieve and cache a model instance by model type."""
         with ModelFactory._lock:
-            if model_type not in ModelFactory._instances or ModelFactory._instances[model_type] is None:
+            if model_type not in ModelFactory._instances:
                 ModelFactory._instances[model_type] = ModelFactory._load_model(model_type)
-            #     # 超出容量：弹出最久未使用
-            #     while len(ModelFactory._instances) > ModelFactory.max_models:
-            #         old_key, old_inst = ModelFactory._instances.popitem(last=False)
-            #         log.info(f"Unloading model {old_key}: {old_inst}")
-            #         try:
-            #             old_inst.destroy()
-            #         except Exception as e:
-            #             log.warning(f"Error destroying model {old_key}: {e}")
-            # else:
-            #     ModelFactory._instances.move_to_end(model_type)
-                
             return ModelFactory._instances[model_type]
 
     @staticmethod
-    def _load_model(model_type: str) -> Union[CustomerLLM,Runnable]:
-        """Load the model based on the model type."""
-        log.info(f"createt the: {model_type}...")
-        model = None
-        
-        if model_type == "text2image":
-            model = Text2Image()
-        
-        elif model_type == "image2image":
-            model = Image2Image()
-        
-        elif model_type == "speech2text":
-            model = Speech2Text()
-        
-        elif model_type == "text2speech":
-            model = TextToSpeech()
-        
-        elif model_type == "multimodel":
-            model = MultiModel()
-                
-        if not model:
+    def _load_model(model_type: str) -> ModelInstance:
+        factory = ModelFactory._registry.get(model_type)
+        if factory is None:
             raise ValueError(f"Invalid model type: {model_type}")
 
-        return model
+        log.info(f"create model instance: {model_type}")
+        return factory()
 
+    @staticmethod
+    def reset() -> None:
+        """Destroy and clear all cached model instances."""
+        with ModelFactory._lock:
+            for key, instance in list(ModelFactory._instances.items()):
+                destroy = getattr(instance, "destroy", None)
+                if callable(destroy):
+                    try:
+                        destroy()
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning(f"Error destroying model {key}: {exc}")
+            ModelFactory._instances.clear()
