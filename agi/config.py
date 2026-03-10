@@ -112,6 +112,12 @@ def init_langchain_debug():
 logging.getLogger("cosyvoice_tts").setLevel(logging.ERROR)
 AGI_DEBUG = get_env_bool("AGI_DEBUG")
 
+# session / memory persistence
+AGI_LONG_TERM_MEMORY_ENABLED = get_env_bool("AGI_LONG_TERM_MEMORY_ENABLED", True)
+AGI_MEMORY_PATH_PREFIX = os.getenv("AGI_MEMORY_PATH_PREFIX", "/memories/")
+AGI_ASSISTANT_ID = os.getenv("AGI_ASSISTANT_ID", "deepagent_main")
+AGI_TENANT_ID = os.getenv("AGI_TENANT_ID", "default_tenant")
+
 def init_logger() -> logging.Logger:
     log = logging.getLogger()
 

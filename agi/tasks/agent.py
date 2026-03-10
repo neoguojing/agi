@@ -7,7 +7,6 @@ from langchain.agents.middleware.types import AgentMiddleware
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import CompiledGraph
 from langgraph.prebuilt.tool_node import ToolNode
 from langgraph.types import Checkpointer, interrupt
@@ -107,9 +106,6 @@ def create_react_agent(
     )
 
 
-memory = MemorySaver()
-
-
 def _build_agent_executor(llm, *, checkpointer: Optional[Checkpointer] = None):
     return create_react_agent(
         llm,
@@ -120,5 +116,5 @@ def _build_agent_executor(llm, *, checkpointer: Optional[Checkpointer] = None):
     )
 
 
-def create_react_agent_task(llm):
-    return _build_agent_executor(llm, checkpointer=memory)
+def create_react_agent_task(llm, *, checkpointer: Optional[Checkpointer] = None):
+    return _build_agent_executor(llm, checkpointer=checkpointer)

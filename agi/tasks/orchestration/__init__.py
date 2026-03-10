@@ -28,4 +28,8 @@ __all__ = [
     "clear_external_skills",
     "get_registered_tools",
     "get_registered_skills",
+    "make_session_backend",
+    "resolve_session_components",
 ]
+
+from .session_backend import make_session_backend, resolve_session_components

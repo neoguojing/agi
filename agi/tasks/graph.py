@@ -5,7 +5,7 @@ from typing import Any, Iterator, Union
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
-from agi.config import log
+from agi.config import AGI_ASSISTANT_ID, AGI_TENANT_ID, log
 from agi.tasks.define import Feature, State
 from agi.tasks.task_factory import TASK_DEEPAGENT, TASK_SPEECH_TEXT, TASK_TTS, TaskFactory
 from agi.tasks.utils import graph_print
@@ -30,9 +30,11 @@ class AgiGraph:
         conversation_id = state.get("conversation_id", "")
         return {
             "configurable": {
+                "tenant_id": state.get("tenant_id", AGI_TENANT_ID),
+                "assistant_id": state.get("assistant_id", AGI_ASSISTANT_ID),
                 "user_id": state.get("user_id", "default_tenant"),
                 "conversation_id": conversation_id,
-                "thread_id": conversation_id or str(uuid.uuid4()),
+                "thread_id": state.get("thread_id") or conversation_id or str(uuid.uuid4()),
                 "need_speech": state.get("need_speech", False),
             }
         }

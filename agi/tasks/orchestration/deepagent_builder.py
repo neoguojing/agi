@@ -4,6 +4,7 @@ from typing import Any, Sequence
 
 from agi.deepagents.graph import create_deep_agent
 from agi.tasks.orchestration.registry import get_registered_skills, get_registered_tools
+from agi.tasks.orchestration.session_backend import resolve_session_components
 from agi.tasks.subagents.audio_specialist import audio_subagent
 from agi.tasks.subagents.image_specialist import image_subagent
 from agi.tasks.subagents.rag_specialist import rag_subagent
@@ -31,6 +32,7 @@ def build_main_agent(
     include_external_tools: bool = True,
     include_builtin_skills: bool = True,
     include_external_skills: bool = True,
+    enable_long_term_memory: bool | None = None,
 ):
     resolved_tools = (
         get_registered_tools(
@@ -48,6 +50,13 @@ def build_main_agent(
         extra_skills=skills,
     )
 
+    resolved_backend, resolved_store, resolved_checkpointer = resolve_session_components(
+        backend=backend,
+        store=store,
+        checkpointer=checkpointer,
+        enable_long_term_memory=enable_long_term_memory,
+    )
+
     return create_deep_agent(
         model=model,
         tools=resolved_tools,
@@ -57,9 +66,9 @@ def build_main_agent(
         memory=memory,
         response_format=response_format,
         context_schema=context_schema,
-        checkpointer=checkpointer,
-        store=store,
-        backend=backend,
+        checkpointer=resolved_checkpointer,
+        store=resolved_store,
+        backend=resolved_backend,
         interrupt_on=interrupt_on,
         debug=debug,
         name=name,
