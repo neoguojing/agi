@@ -4,7 +4,6 @@ from langchain_core.runnables import (
 )
 from langchain_core.messages import HumanMessage, BaseMessage,SystemMessage,AIMessage
 from langchain.output_parsers.boolean import BooleanOutputParser
-from agi.tasks.agi_prompt import MultiModalChatPromptTemplate
 from agi.tasks.define import AgentState
 from agi.tasks.utils import get_last_message_text,get_text_from_message
 from agi.config import log
@@ -247,19 +246,77 @@ rag_filter_template = PromptTemplate(
 )
 
 
-# 用于llm模块，多模态消息的渲染
-multimodal_input_template = MultiModalChatPromptTemplate(
+def _build_media_block(
+    media_type: str,
+    *,
+    url: str | None = None,
+    base64_data: str | None = None,
+    file_id: str | None = None,
+    mime_type: str | None = None,
+):
+    if url:
+        return {"type": media_type, "url": url}
+    if base64_data:
+        block = {"type": media_type, "base64": base64_data}
+        if mime_type:
+            block["mime_type"] = mime_type
+        return block
+    if file_id:
+        return {"type": media_type, "file_id": file_id}
+    return None
+
+
+def build_multimodal_user_message(
+    *,
+    text: str | None = None,
+    image_url: str | None = None,
+    image_base64: str | None = None,
+    image_file_id: str | None = None,
+    image_mime_type: str | None = None,
+    file_url: str | None = None,
+    file_base64: str | None = None,
+    file_file_id: str | None = None,
+    file_mime_type: str | None = None,
+    audio_base64: str | None = None,
+    audio_file_id: str | None = None,
+    audio_mime_type: str | None = None,
+    video_base64: str | None = None,
+    video_file_id: str | None = None,
+    video_mime_type: str | None = None,
+) -> HumanMessage:
+    """构造 LangChain 原生多模态用户消息（text/image/file/audio/video）。"""
+    content = []
+    if text:
+        content.append({"type": "text", "text": text})
+
+    for block in (
+        _build_media_block("image", url=image_url, base64_data=image_base64, file_id=image_file_id, mime_type=image_mime_type),
+        _build_media_block("file", url=file_url, base64_data=file_base64, file_id=file_file_id, mime_type=file_mime_type),
+        _build_media_block("audio", base64_data=audio_base64, file_id=audio_file_id, mime_type=audio_mime_type),
+        _build_media_block("video", base64_data=video_base64, file_id=video_file_id, mime_type=video_mime_type),
+    ):
+        if block:
+            content.append(block)
+
+    if not content:
+        content.append({"type": "text", "text": ""})
+    return HumanMessage(content=content)
+
+
+# 用于llm模块，多模态消息的渲染（langchain 内置 content block 格式）
+multimodal_input_template = ChatPromptTemplate.from_messages(
     [
         (
-            "human", [
+            "human",
+            [
                 {"type": "text", "text": "{text}"},
-                {"type": "image", "image": "{image}"},
-                {"type": "audio", "audio": "{audio}"},
-                {"type": "video", "video": "{video}"},
-            ]
+                {"type": "image", "url": "{image_url}"},
+                {"type": "file", "url": "{file_url}"},
+                {"type": "audio", "base64": "{audio_base64}", "mime_type": "{audio_mime_type}"},
+                {"type": "video", "base64": "{video_base64}", "mime_type": "{video_mime_type}"},
+            ],
         )
-    ],
-    optional_variables=["text","image","audio","video"]
+    ]
 )
 
 
