@@ -15,9 +15,9 @@ from agi.config import (
     OPENAI_API_KEY,
     OLLAMA_DEFAULT_MODE,
 )
-from langchain_openai import ChatOpenAI
 from langchain_ollama import OllamaEmbeddings,ChatOllama
 from urllib.parse import urljoin
+from agi.llms import create_chat_model
 from agi.tasks.utils import split_think_content
 from agi.config import log
 
@@ -133,13 +133,14 @@ def create_llm_task(**kwargs):
         llm = ChatOllama(
             model=model_name,
             base_url=OLLAMA_API_BASE_URL,
-            num_ctx=32768
+            num_ctx=32768,
         )
     else:
-        llm = ChatOpenAI(
+        llm = create_chat_model(
             model=model_name,
-            openai_api_key=OPENAI_API_KEY,
-            base_url=urljoin(OLLAMA_API_BASE_URL, "/v1/")
+            model_provider="openai",
+            api_key=OPENAI_API_KEY,
+            base_url=urljoin(OLLAMA_API_BASE_URL, "/v1/"),
         )
         
     return llm
