@@ -16,8 +16,7 @@ from deepagents.middleware.subagents import CompiledSubAgent, SubAgent
 
 from agi.config import AGI_DEBUG
 from agi.tasks.define import AskHuman, State
-from agi.tasks.orchestration import build_main_agent
-from agi.tasks.simple_tools import simple_tools
+from agi.tasks.orchestration import build_main_agent, get_registered_tools
 
 
 @dataclass(slots=True)
@@ -33,6 +32,8 @@ class DeepAgentOptions:
     store: Any = None
     cache: Any = None
     context_schema: type[Any] | None = State
+    include_external_tools: bool = True
+    include_external_skills: bool = True
 
 
 def _normalize_tools(tools: Union[Sequence[Union[BaseTool, Any]], ToolNode]) -> Sequence[Union[BaseTool, Any]]:
@@ -73,14 +74,15 @@ def create_react_agent(
     deepagent_options: Optional[DeepAgentOptions] = None,
     **_: Any,
 ) -> CompiledGraph:
-    """Build main agent via deepagents with subagents for complex domains and tools for simple functions."""
+    """Build main agent via deepagents with dynamic tools/skills registration."""
     options = deepagent_options or DeepAgentOptions()
     extra_tools = _normalize_tools(tools)
 
-    merged_tools = list(simple_tools)
-    for t in extra_tools:
-        if t not in merged_tools:
-            merged_tools.append(t)
+    merged_tools = get_registered_tools(
+        include_builtin=True,
+        include_external=options.include_external_tools,
+        extra_tools=extra_tools,
+    )
 
     return build_main_agent(
         model,
@@ -98,6 +100,10 @@ def create_react_agent(
         cache=options.cache,
         debug=debug,
         name=name,
+        include_builtin_tools=False,
+        include_external_tools=False,
+        include_builtin_skills=True,
+        include_external_skills=options.include_external_skills,
     )
 
 
@@ -107,7 +113,7 @@ memory = MemorySaver()
 def _build_agent_executor(llm, *, checkpointer: Optional[Checkpointer] = None):
     return create_react_agent(
         llm,
-        simple_tools,
+        [],
         checkpointer=checkpointer,
         debug=AGI_DEBUG,
         name="agent",
@@ -116,7 +122,3 @@ def _build_agent_executor(llm, *, checkpointer: Optional[Checkpointer] = None):
 
 def create_react_agent_task(llm):
     return _build_agent_executor(llm, checkpointer=memory)
-
-
-def create_react_agent_as_subgraph(llm):
-    return _build_agent_executor(llm)

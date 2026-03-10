@@ -118,6 +118,15 @@
 
 ### 5.2 主 Agent + 子 Agent 划分
 
+#### 动态注册机制（新增）
+
+- tools 与 skills 统一通过注册中心动态维护，不在构建函数中写死。
+- 分为两类：
+  - **内建（builtin）**：项目默认可用能力（如天气、股票、时间等 simple tools，以及项目内置 skills）。
+  - **外部（external）**：运行时按租户/场景注入的 tools 与 skills（如三方服务插件、业务域技能目录）。
+- 构建主代理时可按开关选择是否加载 external 能力（例如生产环境只允许 builtin）。
+
+
 建议最小 5 个 agent：
 
 1. `coordinator`（主代理）
