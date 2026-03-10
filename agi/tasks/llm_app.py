@@ -39,6 +39,9 @@ from typing import (
     Union
 )
 
+DEFAULT_DOCUMENT_SEPARATOR = "\n\n"
+DEFAULT_DOCUMENT_PROMPT = ChatPromptTemplate.from_template("{page_content}")
+
 def is_valid_url(url):
     return validators.url(url)
 import traceback
@@ -378,4 +381,3 @@ def build_citations(documents: list):
         print(traceback.format_exc())
         
     return citations
-

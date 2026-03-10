@@ -170,28 +170,51 @@ class KnowledgeManager:
             log.error(e)
             return collection_name, known_type, raw_docs
 
-    def get_compress_retriever(self,filter_type:FilterType):
-        relevant_filter = None
-        # 关联性检查
+    async def _apply_doc_filter(self, query: str, docs: List[Document], filter_type: FilterType, k: int) -> List[Document]:
+        if not docs:
+            return docs
+
         if filter_type == FilterType.LLM_FILTER:
-            relevant_filter = LLMChainFilter.from_llm(self.llm,prompt=rag_filter_template)
-        # 结果重排
-        elif filter_type == FilterType.LLM_RERANK:
-            relevant_filter = LLMListwiseRerank.from_llm(self.llm, top_n=1)
-        # 相似度检查
-        elif filter_type == FilterType.RELEVANT_FILTER:
-            relevant_filter = EmbeddingsFilter(embeddings=self.embedding, similarity_threshold=0.76)
-        elif filter_type == FilterType.LLM_EXTRACT:
-            relevant_filter = LLMChainExtractor.from_llm(self.llm)
+            chain = rag_filter_template | self.llm
+            kept: List[Document] = []
+            for doc in docs:
+                result = await chain.ainvoke({"question": query, "context": doc.page_content})
+                if isinstance(result, bool):
+                    ok = result
+                else:
+                    ok = str(result).strip().upper().startswith("YES")
+                if ok:
+                    kept.append(doc)
+            return kept
 
-        # 通过embding，去除相似内容
-        redundant_filter = EmbeddingsRedundantFilter(embeddings=self.embedding)
-        
-        pipeline_compressor = DocumentCompressorPipeline(
-            transformers=[redundant_filter, relevant_filter]
-        )
+        if filter_type == FilterType.LLM_RERANK:
+            # 使用 LLM 相关性过滤后保留 top1
+            reranked = await self._apply_doc_filter(query, docs, FilterType.LLM_FILTER, k)
+            return reranked[:1]
 
-        return pipeline_compressor
+        if filter_type == FilterType.RELEVANT_FILTER:
+            query_embedding = self.embedding.embed_query(query)
+            doc_embeddings = self.embedding.embed_documents([d.page_content for d in docs])
+
+            def cosine(a, b):
+                from math import sqrt
+
+                dot = sum(x * y for x, y in zip(a, b))
+                na = sqrt(sum(x * x for x in a))
+                nb = sqrt(sum(y * y for y in b))
+                return dot / (na * nb + 1e-12)
+
+            scored = []
+            for doc, emb in zip(docs, doc_embeddings):
+                score = cosine(query_embedding, emb)
+                if score >= 0.76:
+                    doc.metadata["score"] = score
+                    scored.append(doc)
+            scored.sort(key=lambda x: x.metadata.get("score", 0), reverse=True)
+            return scored
+
+        # LLM_EXTRACT 暂不做文本抽取，保持原文
+        return docs
     
     def bm25_retriever(self,docs:List[Document],k=1):
         try:
@@ -205,7 +228,7 @@ class KnowledgeManager:
     
     def get_retriever(self,collection_names="all",tenant=None,k: int=3,bm25: bool=False,filter_type=None,
                       sim_algo:SimAlgoType = SimAlgoType.SST):
-        retriever = None
+        retriever_from_llm = None
         try:
             # all的情况下，获取用户自己的collection_names
             if collection_names == "all":
@@ -238,20 +261,33 @@ class KnowledgeManager:
             if bm25 and len(docs) > 0:
                 retrievers.append(self.bm25_retriever(docs,k))
                 
-            retriever = EnsembleRetriever(
-                retrievers=retrievers
-            )
-            
-            if filter_type is not None:
-                pipeline_compressor = self.get_compress_retriever(filter_type)
-                retriever = ContextualCompressionRetriever(
-                    base_compressor=pipeline_compressor, base_retriever=retriever
-                )
-            
-            # 生成3个问题，增加检索的多样性
-            retriever_from_llm = MultiQueryRetriever.from_llm(
-                retriever=retriever, llm=self.llm
-            )
+            async def retrieve(query: str):
+                merged_docs: List[Document] = []
+
+                for r in retrievers:
+                    try:
+                        docs = await r.ainvoke(query)
+                        if docs:
+                            merged_docs.extend(docs)
+                    except Exception as exc:
+                        log.warning(f"retriever invoke failed: {exc}")
+
+                if filter_type is not None:
+                    merged_docs = await self._apply_doc_filter(query, merged_docs, filter_type, k)
+
+                # 去重
+                unique_docs: List[Document] = []
+                seen = set()
+                for doc in merged_docs:
+                    key = (doc.metadata.get("source"), doc.page_content)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    unique_docs.append(doc)
+
+                return unique_docs[:k]
+
+            retriever_from_llm = RunnableLambda(retrieve)
         except Exception as e:
             log.error(e)
         return retriever_from_llm
