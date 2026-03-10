@@ -1,0 +1,476 @@
+import threading
+import time
+import os
+import re
+import numpy as np
+import base64
+import io
+from pathlib import Path
+from typing import Any
+from collections import defaultdict
+import torch
+import torchaudio
+from queue import Queue,Full
+from pydub import AudioSegment
+from threading import Lock
+import traceback
+from agi.utils.common import path_to_preview_url,Timer
+from agi.apps.utils import pick_free_device,best_torch_dtype
+from agi.config import TTS_SPEAKER_WAV,TTS_GPU_ENABLE,log,COMPUTE_TYPE,MODEL_PATH
+from agi.config import TTS_MODEL_DIR as model_root,FILE_STORAGE_PATH
+cn_points = ['。', '！', '？']
+en_points = ['.', '!', '?']
+
+SENTINEL = b"byte!?!"
+
+class TTS:
+    speaker_wav: Any = TTS_SPEAKER_WAV
+    is_gpu: bool = TTS_GPU_ENABLE
+    language: str = "zh-cn"
+    save_file: bool = False
+    output_rate: int = 16000
+    cfg_scale: float = 1.3
+
+    _queues: dict[str, Queue] = {}
+    _lock: Lock = Lock()
+    def __init__(self, model_path: str=model_root, timeout: int = 300):
+        """
+        model_path: 模型本地路径或 huggingface 名称
+        timeout: 超过多少秒未使用就自动卸载（默认10分钟）
+        """
+        self.model_path = model_path
+        self.model_name = "cosyvoice"
+        self.timeout = timeout
+        self.model = None
+        self.tts = None
+        self.processor = None
+        self.last_used = 0
+        self.lock = threading.Lock()
+        self.monitor_thread = threading.Thread(target=self._monitor, daemon=True)
+        self.monitor_thread.start()
+
+    @classmethod
+    def get_queue(cls, tenant_id: str="default") -> Queue:
+        if tenant_id not in cls._queues:
+            with cls._lock:  # 确保线程安全
+                if tenant_id not in cls._queues:
+                    cls._queues[tenant_id] = Queue(maxsize=3000)
+        return cls._queues[tenant_id]
+    
+    def get_model(self,model_name:str = "cosyvoice"):
+        """访问模型，如果未加载则自动加载"""
+        with self.lock:
+            self.last_used = time.time()
+            if self.model is None:
+                self.model_name = model_name
+                self._load()
+            else:
+                if self.model_name != model_name:
+                    self.model_name = model_name
+                    self._unload()
+                    self._load()
+
+            return self.model
+    # vibevoice:6GB
+    def _load(self):
+        if self.tts is None or self.model is None:
+            if self.is_gpu:
+                # GPU：2739MB
+                if "cosyvoice" == self.model_name:
+                    from cosyvoice.cli.cosyvoice import CosyVoice2
+                    from cosyvoice.utils.file_utils import load_wav
+                    
+                    self.model_path = os.path.join(MODEL_PATH,"cosyvoice/CosyVoice2-0.5B")
+                    log.info(f"loading TextToSpeech model(GPU) {self.model_path}")
+
+                    self.speaker_wav = load_wav(TTS_SPEAKER_WAV, 16000)
+                    is_float16 = COMPUTE_TYPE == "float16"
+                    self.tts = CosyVoice2(self.model_path, load_jit=True, load_trt=False, fp16=is_float16,use_flow_cache=False)
+                    self.model = self.tts.model
+                    self.output_rate = self.tts.sample_rate
+                elif "xtts" == self.model_name:
+                    from TTS.utils.radam import RAdam 
+                    from TTS.tts.configs.xtts_config import XttsConfig 
+                    from TTS.tts.models.xtts import XttsAudioConfig,XttsArgs
+                    from TTS.config.shared_configs import BaseDatasetConfig
+                    from TTS.api import TTS
+                    # for torch 2.6
+                    from torch.serialization import add_safe_globals
+                    add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
+                    self.model_path = os.path.join(MODEL_PATH,"tts_models--multilingual--multi-dataset--xtts_v2")
+                    log.info(f"loading TextToSpeech model(GPU) {self.model_path}")
+                    config_path = os.path.join(self.model_path, "config.json")
+                    log.info("use ts_models--multilingual--multi-dataset--xtts_v2")
+                    self.tts = TTS(model_path=self.model_path, config_path=config_path).to(torch.device("cuda"))
+                    self.model = self.tts.synthesizer
+                elif "vibevoice" == self.model_name:
+                    from vibevoice.modular.modeling_vibevoice_inference import VibeVoiceForConditionalGenerationInference
+                    from vibevoice.processor.vibevoice_processor import VibeVoiceProcessor
+                    self.model_path = os.path.join(MODEL_PATH,"VibeVoice-1.5B")
+
+                    self.processor = VibeVoiceProcessor.from_pretrained(self.model_path)
+                    try:
+                        self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+                            self.model_path,
+                            torch_dtype=best_torch_dtype(),
+                            device_map='cuda',
+                            attn_implementation='flash_attention_2'
+                        )
+                    except Exception as e:
+                        self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+                            self.model_path,
+                            torch_dtype=best_torch_dtype(),
+                            device_map='cuda',
+                            attn_implementation='sdpa'
+                        )
+                    self.model.eval()
+                    self.model.set_ddpm_inference_steps(num_steps=10)
+                    self.tts = self.model
+            else:
+                from TTS.utils.radam import RAdam 
+                from TTS.tts.configs.xtts_config import XttsConfig 
+                from TTS.tts.models.xtts import XttsAudioConfig,XttsArgs
+                from TTS.config.shared_configs import BaseDatasetConfig
+                # for torch 2.6
+                from torch.serialization import add_safe_globals
+                add_safe_globals([RAdam,defaultdict,dict,XttsConfig,XttsAudioConfig,BaseDatasetConfig,XttsArgs])
+                from TTS.api import TTS
+                self.model_path = os.path.join(MODEL_PATH,"tts_models--zh-CN--baker--tacotron2-DDC-GST")
+                log.info(f"loading TextToSpeech model(CPU) {self.model_path}")
+                config_path = os.path.join(self.model_path, "config.json")
+                self.tts = TTS(model_path=os.path.join(self.model_path,"model_file.pth"),config_path=config_path).to(torch.device("cpu"))
+                self.model = self.tts.synthesizer
+
+    def invoke(self, input_str: str,user_id="default",save_file=False,model_name="cosyvoice"):
+        """Generate an image from the input text."""
+        try:
+            self.get_model(model_name)
+            log.info(f"tts input: {input_str}")
+            final_np_pcm = np.array([], dtype=np.int16)
+            file_path = None
+            self.save_file = save_file
+            if self.save_file:
+                file_path = self.save_audio_to_file(text=input_str)
+                audio_source = path_to_preview_url(file_path)
+                return audio_source,file_path
+            
+            # Generate audio samples and return as ByteIO
+            # 原始音频需要编码，不方便使用
+            for sample in self.generate_audio_samples(input_str):
+                if sample is SENTINEL:
+                    self.send_pcm(user_id,sample)
+                else:
+                    list_pcm = self.uniform_model_output(sample)
+                    np_pcm = self.list_pcm_normalization_int16(list_pcm)
+                    self.send_pcm(user_id,np_pcm)
+                    final_np_pcm = np.append(final_np_pcm,np_pcm)
+
+            # 默认返回路径
+            audio_source,file_path = self.np_pcm_to_wave(final_np_pcm)
+            return audio_source,file_path
+
+        except Exception as e:
+            log.error(f"TTS invoke error:{e}")
+            print(traceback.format_exc())
+
+
+    
+    # 流式返回生成数据
+    def generate_audio_samples(self, text: str):
+        """Generate audio samples from the input text."""
+        try:
+            with Timer():
+                if self.is_gpu:
+                    if "cosyvoice" == self.model_name:
+                        # 流式合成，超长文本报错
+                        for sentence in self.sentence_segmenter(text):
+                            for c_idx, data in enumerate(self.tts.inference_cross_lingual(sentence, self.speaker_wav, stream=False)):
+                                tensor_data = data['tts_speech']
+                                print("************",self.tts.sample_rate,tensor_data)
+                                yield tensor_data
+                    elif "xtts" == self.model_name:
+                        for sentence in self.sentence_segmenter(text):
+                            yield self.tts.tts(text=sentence, speaker_wav=self.speaker_wav, language=self.language)
+                    elif "vibevoice" == self.model_name:
+                        for sentence in self.sentence_segmenter(text):
+                            inputs = self.processor(
+                                text=f"Speaker 1: {sentence}",
+                                voice_samples=[self.speaker_wav],
+                                padding=True,
+                                return_tensors="pt",
+                                return_attention_mask=True,
+                            )
+                            outputs = self.model.generate(
+                                **inputs,
+                                max_new_tokens=None,
+                                cfg_scale=self.cfg_scale,
+                                tokenizer=self.processor.tokenizer,
+                                generation_config={'do_sample': False},
+                                verbose=True,
+                            )
+                            yield outputs.speech_outputs[0]
+
+                else:
+                    for sentence in self.sentence_segmenter(text):
+                        yield self.tts.tts(text=sentence, speaker_wav=self.speaker_wav)
+                yield SENTINEL
+        except Exception as e:
+            log.error(f"Error generating audio samples: {e}")
+            raise RuntimeError("Failed to generate audio samples.")
+
+    # 将数据保存到文件,返回文件的链接
+    def save_audio_to_file(self, text: str, file_path: str = "") -> str:
+        """Save the generated audio to a file and return the file path."""
+        if not file_path:
+            # file_name = f'audio/{date.today().strftime("%Y_%m_%d")}/{int(time.time())}.wav'
+            file_path = f'{FILE_STORAGE_PATH}/{int(time.time())}.wav'
+            Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+        
+        try:
+            with Timer():
+                if "cosyvoice" == self.model_name:
+                    for c_idx, data in enumerate(self.tts.inference_cross_lingual(text, self.speaker_wav, stream=False)):
+                        torchaudio.save(file_path, data['tts_speech'], self.tts.sample_rate)
+                if "vibevoice" == self.model_name:
+                    inputs = self.processor(
+                        text=f"Speaker 1: {text}",
+                        voice_samples=[self.speaker_wav],
+                        padding=True,
+                        return_tensors="pt",
+                        return_attention_mask=True,
+                    )
+                    outputs = self.model.generate(
+                        **inputs,
+                        max_new_tokens=None,
+                        cfg_scale=self.cfg_scale,
+                        tokenizer=self.processor.tokenizer,
+                        generation_config={'do_sample': False},
+                        verbose=True,
+                    )
+                    self.processor.save_audio(outputs.speech_outputs[0], output_path=file_path)
+                else:
+                    self.tts.tts_to_file(
+                        text=text,
+                        speaker_wav=self.speaker_wav,
+                        language=self.language if self.is_gpu and self.model_name == "xtts" else None,
+                        file_path=file_path
+                    )
+        except Exception as e:
+            log.error(f"Error saving audio to file: {e}")
+            raise RuntimeError("Failed to save audio to file.")
+        
+        return file_path
+
+    # 将模型输出，统一转换为list
+    def uniform_model_output(self,obj):
+        if isinstance(obj, torch.Tensor) or isinstance(obj, np.ndarray):
+            ndim = obj.ndim
+            if ndim == 2:
+                obj = obj[0].tolist()
+            else:
+                obj = obj.tolist()
+
+        else:
+            print(f"是其他类型: {type(obj)}")
+        return obj
+
+    # 将np格式的pcm转换为wav格式，然后内存编码为base64或者文件
+    def np_pcm_to_wave(self,audio_array: np.ndarray, sample_rate: int=24000,to_base64=False) -> str:
+        # 创建音频段（单声道，int16格式）
+        audio_segment = AudioSegment(
+            audio_array.tobytes(),
+            frame_rate=sample_rate,
+            sample_width=2,  # int16 = 2 bytes
+            channels=1
+        )
+
+        audio_source = None
+        file_path = None
+        if to_base64:
+            # 写入内存中的 BytesIO
+            mp3_io = io.BytesIO()
+            audio_segment.export(mp3_io, format="wav")
+            mp3_io.seek(0)
+
+            # Base64 编码
+            mp3_base64 = base64.b64encode(mp3_io.read()).decode("utf-8")
+            audio_source = f"data:audio/wav;base64,{mp3_base64}"
+        else:
+            file_path = f'{FILE_STORAGE_PATH}/{int(time.time())}.wav'
+            audio_segment.export(file_path, format="wav")
+
+        if file_path:
+            audio_source = path_to_preview_url(file_path)
+
+        return audio_source,file_path
+    
+    # 列表格式的pcm数据归一化，转换为int16
+    # 输出： np.array
+    def list_pcm_normalization_int16(self,audio_data):
+        """
+        将音频数据转换为 int16 格式，尽量减少音质损失，通过归一化和缩放。
+        
+        :param audio_data: 输入的音频数据，可以是 list、ndarray 或其他类型
+        :return: 转换后的 int16 格式的音频数据
+        """
+        # 将输入数据转换为 numpy 数组
+        audio_array = np.array(audio_data)
+        
+        # 如果音频数据已经是 int16 类型，直接返回
+        if audio_array.dtype == np.int16:
+            print("音频数据已经是 int16 格式，无需转换。")
+            return audio_array
+        
+        # 如果是浮动类型（如 float32），先缩放到 [-32768, 32767] 范围
+        if np.issubdtype(audio_array.dtype, np.floating):
+            # print("检测到浮动类型音频数据，正在进行归一化并转换为 int16。")
+            # 将浮动数值缩放到 int16 范围
+            audio_array = np.clip(audio_array, -1.0, 1.0)  # 防止溢出
+            audio_array = np.int16(audio_array * 32767)  # 缩放到 int16 范围
+            return audio_array
+        
+        # 如果是其他整数类型（如 int32），首先缩放到 int16 范围
+        if np.issubdtype(audio_array.dtype, np.integer):
+            print(f"检测到整数类型音频数据（{audio_array.dtype}），正在进行缩放并转换为 int16。")
+            # 如果数据是 int32，可以通过其最大值和最小值来进行缩放
+            max_val = np.max(audio_array)
+            min_val = np.min(audio_array)
+            
+            # 根据 int32 的范围缩放到 int16 的范围
+            if max_val != min_val:  # 防止除以零
+                scaling_factor = 32767.0 / max(abs(max_val), abs(min_val))  # 计算缩放因子
+                audio_array = np.int16(audio_array * scaling_factor)
+            else:
+                audio_array = np.int16(audio_array)  # 如果数据范围很小，直接转换
+            
+            return audio_array
+    
+    # 中文判断
+    def is_chinese_text(self,text: str) -> bool:
+        """
+        简单判断文本中是否含有中文汉字字符，
+        若含有，则认为是中文文本；否则认为非中文文本。
+        """
+        # 常用汉字范围：\u4e00-\u9fff；如果想扩大，也可包括扩展区，但通常基础范围足够
+        return bool(re.search(r'[\u4e00-\u9fff]', text))
+
+    # 句子分割
+    def sentence_segmenter(self,text, min_length=30, max_length=50):
+        if len(text) < max_length:
+            log.info(f"sentence_segmenter:{text}")
+            # yield text
+            return [text]
+        is_cn = self.is_chinese_text(text)
+        sentence_endings = r'(?<=[.!?])\s+'
+        if is_cn:
+            # 中文分割：匹配 “。”、“！”、“？” 作为断句符号
+            # (?<=[。！？]) 表示在这些标点之后进行分割，\s* 可以吃掉分割符后面的空白或换行
+            sentence_endings = r'(?<=[。！？])\s*'
+        sentences = re.split(sentence_endings, text)
+        
+        # 移除空的句子
+        sentences = [sentence.strip() for sentence in sentences if sentence.strip()]
+        
+        # 合并小于 min_length 的句子
+        i = 0
+        while i < len(sentences) - 1:
+            if len(sentences[i]) + len(sentences[i + 1]) < min_length:
+                sentences[i] = sentences[i] + " " + sentences[i + 1]
+                sentences.pop(i + 1)
+            else:
+                i += 1
+        
+        # 拆分大于 max_length 的句子
+        result = []
+        for sentence in sentences:
+            if len(sentence) <= max_length:
+                result.append(sentence)  # 如果句子长度小于或等于 max_length，直接添加
+                # log.info(f"sentence_segmenter:{sentence}")
+                # yield sentence
+            
+            else:
+                while len(sentence) > max_length:
+                    # 优先在较大的标点符号后拆分，如：句号（。）、问号（？）等
+                    target_points = en_points
+                    if is_cn:
+                        target_points = cn_points
+                    split_point = max(sentence.rfind(p, 0, max_length) for p in target_points)
+                    
+                    if split_point == -1:  # 如果找不到大的标点符号，则尝试更小的标点符号（如逗号）
+                        # 在中英文逗号、分号、冒号后拆分
+                        split_point = max(sentence.rfind(p, 0, max_length) for p in [',', '，', ';', '；', ':', '：'])
+                        
+                        if split_point == -1:  # 如果没有找到标点符号，则直接按 max_length 截取
+                            split_point = max_length
+                    
+                    # 分割句子
+                    result.append(sentence[:split_point + 1].strip())
+                    # log.info(f"sentence_segmenter:{sentence[:split_point + 1].strip()}")
+                    # yield sentence[:split_point + 1].strip()
+                    sentence = sentence[split_point + 1:].strip()
+                
+                # 添加剩余的部分
+                if sentence:
+                    result.append(sentence)
+                    # log.info(f"sentence_segmenter:{sentence}")
+                    # yield sentence
+        log.debug(f"sentence_segmenter out:{result}")
+        return result
+    
+    def send_pcm(self, tenant_id: str, pcm_np: np.ndarray, chunk_size: int = 480):
+        queue = self.get_queue(tenant_id)
+        
+        if pcm_np is SENTINEL:
+            queue.put(pcm_np, block=False)
+            return
+        
+        if self.output_rate == 16000:
+            chunk_size = 320
+            
+        buffer = np.array([], dtype=np.int16)
+        offset = 0
+        total_len = len(pcm_np)
+
+        while offset < total_len:
+            end = min(offset + chunk_size, total_len)
+            chunk = pcm_np[offset:end]
+            buffer = np.concatenate([buffer, chunk])
+            offset += chunk_size
+
+            while len(buffer) >= chunk_size:
+                to_send = buffer[:chunk_size]
+
+                try:
+                    queue.put(to_send.tobytes(), block=False)
+                    time.sleep(0.01)
+                except Full:
+                    log.warning("Queue full, dropping PCM chunk.")
+                    # 不推进 expected_next_time
+                    buffer = buffer[chunk_size:]
+                    continue
+                
+                buffer = buffer[chunk_size:]
+
+        # 发送剩余帧（不足 chunk_size）
+        if len(buffer) > 0:
+            final_chunk = buffer
+            try:
+                queue.put(final_chunk.tobytes(), block=False)
+                log.debug(f"send_pcm (final): {len(final_chunk)} samples, {len(final_chunk.tobytes())} bytes")
+            except Full:
+                log.warning("Queue full, dropping final PCM chunk.")
+
+    def _unload(self):
+        print(f"[Model] Unloading model from {self.model_path}")
+        del self.model
+        self.model = None
+        self.tts = None
+        torch.cuda.empty_cache()
+
+    def _monitor(self):
+        """后台线程定期检查是否应卸载模型"""
+        while True:
+            time.sleep(30)
+            with self.lock:
+                if self.model and (time.time() - self.last_used > self.timeout):
+                    self._unload()
