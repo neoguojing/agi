@@ -11,10 +11,6 @@ from agi.config import (
     OLLAMA_THINKING_MODE
 )
 from langchain_ollama import OllamaEmbeddings,ChatOllama
-from agi.tasks.chat.chains import (
-    create_chat,
-    create_chat_with_history,
-)
 from agi.tasks.multi_model_app import (
     create_image_gen_chain,
     create_translate_chain,
@@ -40,23 +36,32 @@ TASK_DOC_CHAT = "doc_chat"
 TASK_MULTI_MODEL = "multimodel"
 TASK_DEEPAGENT = "deepagent"
 
+from agi.tasks.runtime.tool_runnables import (
+    doc_chat_runnable,
+    llm_with_history_runnable,
+    rag_retrieve_runnable,
+    web_search_runnable,
+)
+
+
 def create_llm_chat_task(**kwargs):
-    return create_chat(TaskFactory._llm)
+    return create_deepagent_task(**kwargs)
+
 
 def create_llm_with_history_task(**kwargs):
-    return create_chat_with_history(TaskFactory._llm_thinking)
+    return llm_with_history_runnable
+
 
 def create_rag_task(**kwargs):
-    from agi.tasks.chat.chains import create_rag
-    return create_rag(TaskFactory._knowledge_manager)
+    return rag_retrieve_runnable
+
 
 def create_web_search_task(**kwargs):
-    from agi.tasks.chat.chains import create_websearch
-    return create_websearch(TaskFactory._knowledge_manager)
+    return web_search_runnable
+
 
 def create_docchain_task(**kwargs):
-    from agi.tasks.chat.chains import create_stuff_documents_chain
-    return create_stuff_documents_chain(TaskFactory._llm)
+    return doc_chat_runnable
 
 def create_translate_task(**kwargs):
     return create_translate_chain(TaskFactory._llm)
