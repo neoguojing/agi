@@ -3,6 +3,7 @@ from __future__ import annotations
 from threading import RLock
 from typing import Any, Iterable
 
+from agi.tasks.rag import rag_builtin_tools
 from agi.tasks.simple_tools import simple_tools
 
 
@@ -15,7 +16,7 @@ class ToolSkillRegistry:
 
     def __init__(self):
         self._lock = RLock()
-        self._builtin_tools: list[Any] = list(simple_tools)
+        self._builtin_tools: list[Any] = [*simple_tools, *rag_builtin_tools]
         self._external_tools: list[Any] = []
         self._builtin_skills: list[str] = []
         self._external_skills: list[str] = []

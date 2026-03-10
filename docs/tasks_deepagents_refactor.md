@@ -182,6 +182,18 @@
 - 将天气、股票、时间、计算等轻量函数直接注册到主代理 tools。
 - 不创建专门 subagent，减少开销。
 
+
+### 6.6 RAG 模块整合（实现补充）
+
+为提升可复用性，RAG 相关代码建议（并已落地）统一收敛到 `agi/tasks/rag/`：
+
+- `service.py`：统一封装向量库管理、知识上传、检索查询接口（对 `KnowledgeManager` 做领域层适配）。
+- `tools.py`：暴露内置 RAG 工具（`rag_upload_documents` / `rag_query` / `rag_list_collections`）。
+- `__init__.py`：统一导出 service 与工具清单（`rag_builtin_tools`）。
+
+这样 `rag_specialist` 与 orchestration registry 只依赖 `rag_builtin_tools`，避免在多个模块重复拼装 RAG 逻辑。
+
+
 ---
 
 ## 7. 路由重构：从“手写状态机”到“主代理自动路由”
