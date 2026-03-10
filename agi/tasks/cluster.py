@@ -16,7 +16,7 @@ from typing import List,Dict,Optional
 from agi.config import log,CLUSTER_ALGO
 from agi.tasks.utils import get_last_message_text,split_think_content,graph_print
 from langchain.prompts import ChatPromptTemplate
-from agi.tasks.task_factory import (
+from agi.tasks.runtime.task_factory import (
     TaskFactory
 )
 import traceback
