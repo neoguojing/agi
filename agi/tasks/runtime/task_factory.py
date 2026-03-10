@@ -11,78 +11,12 @@ from agi.config import (
     OLLAMA_THINKING_MODE
 )
 from langchain_ollama import OllamaEmbeddings,ChatOllama
-from agi.tasks.multi_model_app import (
-    create_image_gen_chain,
-    create_translate_chain,
-    create_text2speech_chain,
-    create_speech2text_chain,
-    create_llm_task,
-    create_multimodel_chain,
-)
+
 from agi.tasks.rag.knowledge import KnowledgeManager
 from agi.tasks.utils import refine_last_message_runnable
 
 TASK_LLM = "llm"
-TASK_LLM_WITH_HISTORY = "llm_with_history"
 TASK_AGENT = "agent"
-TASK_TRANSLATE = "translate"
-TASK_IMAGE_GEN = "image_gen"
-TASK_TTS = "tts"
-TASK_SPEECH_TEXT = "speech2text"
-TASK_RETRIEVER = "rag"
-TASK_RAG = "custom_rag"
-TASK_WEB_SEARCH = "web_search"
-TASK_DOC_CHAT = "doc_chat"
-TASK_MULTI_MODEL = "multimodel"
-TASK_DEEPAGENT = "deepagent"
-
-from agi.tasks.runtime.tool_runnables import (
-    doc_chat_runnable,
-    llm_with_history_runnable,
-    rag_retrieve_runnable,
-    web_search_runnable,
-)
-
-
-def create_llm_chat_task(**kwargs):
-    return create_deepagent_task(**kwargs)
-
-
-def create_llm_with_history_task(**kwargs):
-    return llm_with_history_runnable
-
-
-def create_rag_task(**kwargs):
-    return rag_retrieve_runnable
-
-
-def create_web_search_task(**kwargs):
-    return web_search_runnable
-
-
-def create_docchain_task(**kwargs):
-    return doc_chat_runnable
-
-def create_translate_task(**kwargs):
-    return create_translate_chain(TaskFactory._llm)
-
-def create_image_gen_task(**kwargs):
-    return create_image_gen_chain(TaskFactory._llm)
-
-def create_tts_task(**kwargs):
-    return create_text2speech_chain()
-
-def create_speech_text_task(**kwargs):
-    return create_speech2text_chain()
-
-def create_multimodel_task(**kwargs):
-    return create_multimodel_chain()
-
-# agent with history
-# TODO agent support history
-def create_agent_task(**kwargs):
-    # llm_with_history = create_llm_with_history(TaskFactory._llm)
-    return create_react_agent_task(TaskFactory._llm)
 
 
 def create_deepagent_task(**kwargs):
@@ -91,8 +25,7 @@ def create_deepagent_task(**kwargs):
 class TaskFactory:
     _instances = {}
     _lock = threading.Lock()  # 异步锁
-    _llm = create_llm_task()
-    _llm_thinking = ChatOllama(
+    _llm = ChatOllama(
             model=OLLAMA_THINKING_MODE,
             base_url=OLLAMA_API_BASE_URL,
             num_ctx=4096,
@@ -112,26 +45,7 @@ class TaskFactory:
             model="qwen",
             base_url=EMBEDDING_BASE_URL
         )
-    
-    task_creators = {
-        TASK_LLM: create_llm_chat_task,
-        TASK_LLM_WITH_HISTORY: create_llm_with_history_task,
-        
-        TASK_AGENT: create_agent_task,
-        TASK_DEEPAGENT: create_deepagent_task,
-        
-        TASK_RAG: create_rag_task,
-        TASK_WEB_SEARCH: create_web_search_task,
-        TASK_DOC_CHAT: create_docchain_task,
-        
-        TASK_TRANSLATE: create_translate_task,
-        TASK_IMAGE_GEN: create_image_gen_task,
-        TASK_TTS: create_tts_task,
-        TASK_SPEECH_TEXT: create_speech_text_task,
 
-        TASK_MULTI_MODEL: create_multimodel_task
-        
-    }
     
     _knowledge_manager = KnowledgeManager(CACHE_DIR,_llm,ollama_embedding)
     @staticmethod
@@ -147,18 +61,7 @@ class TaskFactory:
     @staticmethod
     def get_llm():
         return TaskFactory._llm
-    
-    @staticmethod
-    def get_thinking_llm():
-        return TaskFactory._llm_thinking
-    
-    @staticmethod
-    def get_llm_with_output_format(debug=False):
-        chain = TaskFactory._llm | refine_last_message_runnable
-        if debug:
-            from agi.tasks.utils import debug_tool
-            chain = debug_tool | TaskFactory._llm | debug_tool| refine_last_message_runnable
-        return chain
+
     
     @staticmethod
     def create_task(task_type,**kwargs) -> Union[Runnable,Embeddings,KnowledgeManager]:

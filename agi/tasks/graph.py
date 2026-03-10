@@ -6,9 +6,10 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from agi.config import log
 from agi.tasks.define import Feature, State
-from agi.tasks.runtime.task_factory import TASK_DEEPAGENT, TASK_SPEECH_TEXT, TASK_TTS, TaskFactory
+from agi.tasks.runtime.task_factory import  TaskFactory
 from agi.tasks.session import SessionIdentity, to_configurable
 from agi.tasks.utils import graph_print
+from agi.tasks.agent import create_react_agent
 
 
 class AgiGraph:
@@ -21,48 +22,19 @@ class AgiGraph:
     """
 
     def __init__(self):
-        self.agent = TaskFactory.create_task(TASK_DEEPAGENT)
-        self.speech2text = TaskFactory.create_task(TASK_SPEECH_TEXT)
-        self.tts = TaskFactory.create_task(TASK_TTS)
+        self.agent = create_react_agent(TaskFactory.get_llm(),[])
 
     @staticmethod
     def _build_config(state: State) -> dict[str, Any]:
         identity = SessionIdentity.from_state(state)
         return {"configurable": to_configurable(identity, need_speech=state.get("need_speech", False))}
 
-    async def _run_tts_if_needed(self, state: State, config: dict[str, Any]) -> State:
-        if not state.get("need_speech"):
-            return state
-
-        if not state.get("messages"):
-            return state
-
-        last_msg = state["messages"][-1]
-        if not isinstance(last_msg, AIMessage):
-            return state
-
-        tts_input: State = {
-            **state,
-            "feature": Feature.TTS,
-            "messages": [HumanMessage(content=str(last_msg.content))],
-        }
-        tts_output = await self.tts.ainvoke(tts_input, config=config)
-        if isinstance(tts_output, dict):
-            return {**state, **tts_output}
-        return state
 
     async def invoke(self, input: State) -> State:
         config = self._build_config(input)
 
-        # keep explicit speech-only path for backward compatibility
-        if input.get("feature") == Feature.SPEECH:
-            return await self.speech2text.ainvoke(input, config=config)
-
         output = await self.agent.ainvoke(input, config=config)
-        if not isinstance(output, dict):
-            return input
 
-        output = await self._run_tts_if_needed(output, config)
         return output
 
     async def stream(

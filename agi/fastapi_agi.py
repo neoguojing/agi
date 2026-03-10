@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 import json
 import time
 from langchain_core.messages import HumanMessage,BaseMessage
-from agi.tasks.task_factory import TaskFactory
 from fastapi.middleware.cors import CORSMiddleware
 # 假设的 AgiGraph 模块（需要根据实际情况调整）
 from agi.tasks.graph import AgiGraph, State

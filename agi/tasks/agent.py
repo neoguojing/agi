@@ -105,16 +105,3 @@ def create_react_agent(
         include_external_skills=options.include_external_skills,
     )
 
-
-def _build_agent_executor(llm, *, checkpointer: Optional[Checkpointer] = None):
-    return create_react_agent(
-        llm,
-        [],
-        checkpointer=checkpointer,
-        debug=AGI_DEBUG,
-        name="agent",
-    )
-
-
-def create_react_agent_task(llm, *, checkpointer: Optional[Checkpointer] = None):
-    return _build_agent_executor(llm, checkpointer=checkpointer)
