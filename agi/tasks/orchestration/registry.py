@@ -18,7 +18,7 @@ class ToolSkillRegistry:
         self._lock = RLock()
         self._builtin_tools: list[Any] = [*simple_tools, *rag_builtin_tools]
         self._external_tools: list[Any] = []
-        self._builtin_skills: list[str] = []
+        self._builtin_skills: list[str] = ["skills/deepagents-migration"]
         self._external_skills: list[str] = []
 
     @staticmethod
