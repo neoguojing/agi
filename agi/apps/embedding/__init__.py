@@ -1,1 +1,0 @@
-"""Embedding application package."""
