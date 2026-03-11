@@ -8,7 +8,8 @@ from langchain_community.retrievers import BM25Retriever
 from langchain.retrievers import EnsembleRetriever, ContextualCompressionRetriever
 from langchain.retrievers.document_compressors import DocumentCompressorPipeline, EmbeddingsFilter
 from langchain_community.document_transformers import EmbeddingsRedundantFilter
-
+import os
+import hashlib
 # 核心内部依赖
 from agi.rag.file_loader import LoaderFactory
 from agi.rag.spliter import CustomDocumentSplitter
@@ -26,70 +27,111 @@ class KnowledgeManager:
 
     # --- 1. 存储模块：默认处理文件，支持幂等 ---
 
-    async def store(self, collection_name: str, source: Union[str, List[str]], tenant=None, **kwargs):
+    async def store(
+        self, 
+        collection_name: str, 
+        content: Union[str, List[str], Document, List[Document]], 
+        tenant: Optional[str] = None,
+        source_name: Optional[str] = None, # 如果是纯文本，建议提供一个标识名
+        **kwargs
+    ):
         """
-        入库流程：
-        1. 自动过滤库中已存在的 source 记录。
-        2. 异步并行加载与切分。
+        统一入库接口，支持文件路径、纯字符串和 LangChain Document。
         """
-        sources = [source] if isinstance(source, str) else source
         handle = self.collection_manager.get_handle(collection_name, tenant=tenant)
         
-        # 只处理尚未入库的文件
-        new_sources = [s for s in sources if not self._is_file_indexed(handle, s)]
+        # 1. 统一转化为 List[Document]
+        docs = self._to_documents(content, source_name)
         
-        if not new_sources:
-            log.info(f"All sources already indexed in {collection_name}.")
+        # 2. 幂等性过滤：根据 metadata 中的 source 检查是否已存在
+        new_docs = []
+        seen_sources = set()
+        for doc in docs:
+            src = doc.metadata.get("source")
+            if src not in seen_sources and not self._is_indexed(handle, src):
+                new_docs.append(doc)
+                seen_sources.add(src)
+
+        if not new_docs:
+            log.info(f"All provided content already indexed in {collection_name}.")
             return collection_name
 
-        tasks = [self._ingest_file(s, handle, collection_name, tenant) for s in new_sources]
+        # 3. 并行处理切分与入库
+        tasks = [self._process_and_upsert(doc, handle, collection_name, tenant) for doc in new_docs]
         await asyncio.gather(*tasks)
         
-        log.info(f"Successfully indexed {len(tasks)} new files into {collection_name}")
+        log.info(f"Successfully indexed {len(new_docs)} sources into {collection_name}")
         return collection_name
 
-    def _is_file_indexed(self, handle, file_path: str) -> bool:
-        """快速检查元数据，判断文件是否已存在"""
-        try:
-            # 仅检索元数据索引，不拉取向量或内容，耗时极低
-            res = handle.collection.get(where={"source": file_path}, include=[], limit=1)
-            return len(res['ids']) > 0
-        except Exception:
-            return False
+    def _to_documents(self, content, source_name) -> List[Document]:
+        """将各种输入格式归一化为 Document 对象"""
+        if isinstance(content, Document):
+            return [content]
+        if isinstance(content, list) and len(content) > 0 and isinstance(content[0], Document):
+            return content
 
-    async def _ingest_file(self, file_path, handle: CollectionHandle, collection_name, tenant):
-        """单文件处理核心流水线"""
+        # 处理字符串或字符串列表
+        raw_list = [content] if isinstance(content, str) else content
+        docs = []
+        for i, text in enumerate(raw_list):
+            # 如果是路径则保留路径，否则生成 Hash 标识
+            is_file = os.path.exists(text) if isinstance(text, str) and len(text) < 255 else False
+            
+            if is_file:
+                # 暂时只记录路径，由 _process_and_upsert 中的 Loader 处理
+                docs.append(Document(page_content="", metadata={"source": text, "is_file": True}))
+            else:
+                # 纯文本输入
+                # 如果没有提供 source_name，则根据内容生成哈希作为唯一标识
+                uid = source_name or f"txt_{hashlib.md5(text.encode()).hexdigest()[:12]}"
+                docs.append(Document(page_content=text, metadata={"source": uid, "is_file": False}))
+        return docs
+
+    async def _process_and_upsert(self, doc, handle, collection_name, tenant):
+        """处理 Document（包括文件加载和文本切分）"""
         try:
-            # 1. 自动根据后缀获取 Loader
-            loader = LoaderFactory.get_loader(file_path, source_type=None) # 内部默认处理文件
-            raw_docs = await asyncio.to_thread(loader.load)
+            source = doc.metadata["source"]
             
-            file_ext = file_path.split(".")[-1].lower() if "." in file_path else "txt"
-            final_docs = []
-            
-            for doc in raw_docs:
-                # 规范化元数据：source 是后续核对和删除的核心依据
-                doc.metadata.update({
-                    "source": file_path,
+            # 如果是文件路径，需要加载内容
+            if doc.metadata.get("is_file"):
+                loader = LoaderFactory.get_loader(source)
+                raw_docs = await asyncio.to_thread(loader.load)
+            else:
+                raw_docs = [doc]
+
+            final_splits = []
+            for d in raw_docs:
+                # 补充基础元数据
+                d.metadata.update({
+                    "source": source,
                     "tenant": tenant,
                     "collection_name": collection_name,
                     "ingest_at": datetime.now().isoformat()
                 })
-                # 结构化切分
+                
+                # 执行切分
+                file_ext = source.split(".")[-1].lower() if "." in source else "txt"
                 splits = self.splitter.split_text(
-                    text=doc.page_content,
+                    text=d.page_content,
                     file_type=file_ext,
-                    file_name=file_path,
-                    metadata=doc.metadata
+                    file_name=source,
+                    metadata=d.metadata
                 )
-                final_docs.extend(splits)
+                final_splits.extend(splits)
 
-            if final_docs:
-                # 批量 Upsert
-                await handle.upsert(final_docs)
+            if final_splits:
+                await handle.upsert(final_splits)
+                
         except Exception as e:
-            log.error(f"Failed to ingest {file_path}: {e}")
-            log.debug(traceback.format_exc())
+            log.error(f"Failed to process source {doc.metadata.get('source')}: {e}")
+
+    def _is_indexed(self, handle, source_id: str) -> bool:
+        """检查标识是否已存在"""
+        try:
+            res = handle.collection.get(where={"source": source_id}, include=[], limit=1)
+            return len(res['ids']) > 0
+        except Exception:
+            return False
 
     # --- 2. 检索模块：纯算法混合检索 ---
 
