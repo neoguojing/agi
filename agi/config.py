@@ -81,7 +81,7 @@ MULTI_MODEL_NAME = os.getenv("MULTI_MODEL_NAME","gemma")  #qwen
 ## web
 EXA_API_KEY = os.getenv("EXA_API_KEY","")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY","")
-
+SEARXNG_BASE_URL = os.getenv("SEARXNG_BASE_URL","http://localhost:8091")
 ## stock
 ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY","")
 

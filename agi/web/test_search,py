@@ -1,0 +1,78 @@
+import asyncio
+import pytest
+from unittest.mock import MagicMock, AsyncMock, patch
+from typing import List, Dict
+
+# 假设你的类在 agi.tools.search 中
+from agi.web.search import SearchEngineSelector
+
+@pytest.fixture
+def selector():
+    """初始化一个测试用的 Selector 实例"""
+    with patch('agi.config.EXA_API_KEY', 'test_exa_key'), \
+         patch('agi.config.TAVILY_API_KEY', 'test_tavily_key'), \
+         patch('agi.config.SEARXNG_BASE_URL', 'http://localhost:8091'):
+        
+        # 拦截初始化过程，防止去真的加载各 SDK
+        with patch.object(SearchEngineSelector, '_init_engines'):
+            sel = SearchEngineSelector()
+            # 手动注入 Mock 引擎
+            sel._engines = {
+                "Tavily": MagicMock(),
+                "Exa": MagicMock(),
+                "SearXNG": MagicMock()
+            }
+            return sel
+
+@pytest.mark.asyncio
+async def test_engine_selection_distribution(selector):
+    """测试汤普森采样：成功率高的引擎应该被选中更多次"""
+    # 模拟 Tavily 成功率 100%, Exa 成功率 0%
+    selector._stats["Tavily"] = {'success': 100, 'total': 100}
+    selector._stats["Exa"] = {'success': 0, 'total': 100}
+    
+    selected_counts = {"Tavily": 0, "Exa": 0}
+    for _ in range(100):
+        name = selector._select_engine_name()
+        if name in selected_counts:
+            selected_counts[name] += 1
+            
+    print(f"\n分布统计: {selected_counts}")
+    assert selected_counts["Tavily"] > selected_counts["Exa"]
+
+@pytest.mark.asyncio
+async def test_batch_search_concurrency(selector):
+    """测试批量并发搜索及结果去重"""
+    # 模拟引擎返回
+    mock_results = [
+        {"title": "Result 1", "link": "http://a.com", "content": "text", "score": 0.9},
+        {"title": "Result 2", "link": "http://b.com", "content": "text", "score": 0.8},
+    ]
+    
+    # 模拟异步执行
+    with patch.object(selector, '_execute_engine_api', new_callable=AsyncMock) as mock_api:
+        mock_api.return_value = mock_results
+        
+        questions = ["What is AI?", "Who is Gemini?"]
+        results_map = await selector.batch_search(questions)
+        
+        # 验证
+        assert len(results_map) == 2
+        assert "What is AI?" in results_map
+        assert len(results_map["What is AI?"]) == 2
+        assert mock_api.call_count == 2
+
+@pytest.mark.asyncio
+async def test_engine_fallback_on_failure(selector):
+    """测试当主选引擎失败时，是否能触发重试并切换引擎"""
+    questions = ["Test Query"]
+    
+    # 第一次调用抛出异常，第二次成功
+    with patch.object(selector, '_execute_engine_api', new_callable=AsyncMock) as mock_api:
+        mock_api.side_effect = [Exception("Network Error"), [{"title": "Success", "link": "ok"}]]
+        
+        result = await selector._arun("Test Query")
+        
+        assert len(result) == 1
+        assert result[0]["title"] == "Success"
+        assert mock_api.call_count == 2

@@ -1,0 +1,145 @@
+import asyncio
+import traceback
+from datetime import datetime
+from typing import List, Union, Optional
+from langchain_core.documents import Document
+from langchain_community.vectorstores import Chroma
+from langchain_community.retrievers import BM25Retriever
+from langchain.retrievers import EnsembleRetriever, ContextualCompressionRetriever
+from langchain.retrievers.document_compressors import DocumentCompressorPipeline, EmbeddingsFilter
+from langchain_community.document_transformers import EmbeddingsRedundantFilter
+
+# 核心内部依赖
+from agi.rag.file_loader import LoaderFactory
+from agi.rag.spliter import CustomDocumentSplitter
+from agi.rag.chroma import CollectionManager, ChromaClientFactory,CollectionHandle
+
+from agi.config import log
+
+class KnowledgeManager:
+    def __init__(self, data_path, embedding):
+        self.embedding = embedding
+        self.factory = ChromaClientFactory(data_path)
+        self.collection_manager = CollectionManager(self.factory, embedding)
+        # 统一分块策略
+        self.splitter = CustomDocumentSplitter(chunk_size=1000, chunk_overlap=150)
+
+    # --- 1. 存储模块：默认处理文件，支持幂等 ---
+
+    async def store(self, collection_name: str, source: Union[str, List[str]], tenant=None, **kwargs):
+        """
+        入库流程：
+        1. 自动过滤库中已存在的 source 记录。
+        2. 异步并行加载与切分。
+        """
+        sources = [source] if isinstance(source, str) else source
+        handle = self.collection_manager.get_handle(collection_name, tenant=tenant)
+        
+        # 只处理尚未入库的文件
+        new_sources = [s for s in sources if not self._is_file_indexed(handle, s)]
+        
+        if not new_sources:
+            log.info(f"All sources already indexed in {collection_name}.")
+            return collection_name
+
+        tasks = [self._ingest_file(s, handle, collection_name, tenant) for s in new_sources]
+        await asyncio.gather(*tasks)
+        
+        log.info(f"Successfully indexed {len(tasks)} new files into {collection_name}")
+        return collection_name
+
+    def _is_file_indexed(self, handle, file_path: str) -> bool:
+        """快速检查元数据，判断文件是否已存在"""
+        try:
+            # 仅检索元数据索引，不拉取向量或内容，耗时极低
+            res = handle.collection.get(where={"source": file_path}, include=[], limit=1)
+            return len(res['ids']) > 0
+        except Exception:
+            return False
+
+    async def _ingest_file(self, file_path, handle: CollectionHandle, collection_name, tenant):
+        """单文件处理核心流水线"""
+        try:
+            # 1. 自动根据后缀获取 Loader
+            loader = LoaderFactory.get_loader(file_path, source_type=None) # 内部默认处理文件
+            raw_docs = await asyncio.to_thread(loader.load)
+            
+            file_ext = file_path.split(".")[-1].lower() if "." in file_path else "txt"
+            final_docs = []
+            
+            for doc in raw_docs:
+                # 规范化元数据：source 是后续核对和删除的核心依据
+                doc.metadata.update({
+                    "source": file_path,
+                    "tenant": tenant,
+                    "collection_name": collection_name,
+                    "ingest_at": datetime.now().isoformat()
+                })
+                # 结构化切分
+                splits = self.splitter.split_text(
+                    text=doc.page_content,
+                    file_type=file_ext,
+                    file_name=file_path,
+                    metadata=doc.metadata
+                )
+                final_docs.extend(splits)
+
+            if final_docs:
+                # 批量 Upsert
+                await handle.upsert(final_docs)
+        except Exception as e:
+            log.error(f"Failed to ingest {file_path}: {e}")
+            log.debug(traceback.format_exc())
+
+    # --- 2. 检索模块：纯算法混合检索 ---
+
+    def get_retriever(self, collection_names="all", tenant=None, k=4):
+        """
+        构造高性能检索器：向量(60%) + 关键词(40%)
+        """
+        import jieba
+        
+        if collection_names == "all":
+            collection_names = self.collection_manager.list_collections(tenant=tenant)
+        
+        names = [collection_names] if isinstance(collection_names, str) else collection_names
+        v_retrievers = []
+        all_docs = []
+
+        for name in names:
+            handle = self.collection_manager.get_handle(name, tenant=tenant)
+            
+            # 使用 LangChain Chroma 包装底层 Client
+            vectorstore = Chroma(
+                client=self.factory.get_client(tenant=tenant),
+                collection_name=name,
+                embedding_function=self.embedding
+            )
+            v_retrievers.append(vectorstore.as_retriever(search_kwargs={"k": k}))
+            
+            # 收集文档用于 BM25 (限制最大拉取量以保证速度)
+            all_docs.extend(handle.get_documents(limit=5000))
+
+        # 构造融合检索
+        if all_docs:
+            bm25_r = BM25Retriever.from_documents(all_docs, preprocess_func=jieba.lcut, k=k)
+            base_retriever = EnsembleRetriever(
+                retrievers=v_retrievers + [bm25_r],
+                weights=[0.6 / len(v_retrievers)] * len(v_retrievers) + [0.4]
+            )
+        else:
+            base_retriever = EnsembleRetriever(retrievers=v_retrievers)
+
+        # 纯数学过滤链 (无 LLM 介入)
+        pipeline = DocumentCompressorPipeline(transformers=[
+            EmbeddingsRedundantFilter(embeddings=self.embedding),
+            EmbeddingsFilter(embeddings=self.embedding, similarity_threshold=0.65)
+        ])
+        
+        return ContextualCompressionRetriever(base_compressor=pipeline, base_retriever=base_retriever)
+
+    async def query_doc(self, collection_name, query, tenant=None, k=4):
+        """极速异步检索接口"""
+        if not query.strip(): return []
+        retriever = self.get_retriever(collection_name, tenant=tenant, k=k)
+        return await retriever.ainvoke(query)
