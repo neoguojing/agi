@@ -58,7 +58,9 @@ def blackboard_orchestrator_middleware(state: DeepOrchestratorState, runtime: Ru
             view.append(f"\n[User Style Preferences]: {user_pref}")
 
     # 4. 合并并重写 System Message
-    original_sys = state["messages"][0].content
+    messages = list(state["messages"])
+    original_sys = messages[0].content
     enriched_content = f"{original_sys}\n--- IDENTITY: {u_id} | THREAD: {t_id} ---\n" + "".join(view)
-    
-    return {"messages": [SystemMessage(content=enriched_content)]}
+
+    messages[0] = SystemMessage(content=enriched_content)
+    return {"messages": messages}

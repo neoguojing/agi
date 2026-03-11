@@ -1,4 +1,4 @@
-from typing import List, Union, Dict, Any
+from typing import List
 from langchain.tools import tool, ToolRuntime
 from langgraph.types import Command
 from langchain.messages import ToolMessage
@@ -11,6 +11,31 @@ from dataclasses import dataclass
 class TenantContext:
     tenant_id: str
     collection_name: str
+
+
+
+def _run_sync(coro):
+    import asyncio
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    # Called from an active event loop (e.g. notebook/framework runtime).
+    # Run in a dedicated loop to keep the sync tool interface.
+    import threading
+
+    result = {}
+
+    def _runner():
+        result["value"] = asyncio.run(coro)
+
+    t = threading.Thread(target=_runner, daemon=True)
+    t.start()
+    t.join()
+    return result.get("value")
+
 
 class KnowledgeTools:
     def __init__(self, manager: KnowledgeManager):
@@ -32,12 +57,7 @@ class KnowledgeTools:
         tenant = runtime.context.tenant_id
         collection = runtime.context.collection_name
         
-        # 异步执行存储（注意：Tool 内部如果是同步定义，框架会自动处理）
-        import asyncio
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(
-            self.manager.store(collection, file_paths, tenant=tenant)
-        )
+        _run_sync(self.manager.store(collection, file_paths, tenant=tenant))
 
         return Command(
             update={
@@ -66,11 +86,7 @@ class KnowledgeTools:
         tenant = runtime.context.tenant_id
         collection = runtime.context.collection_name
         
-        import asyncio
-        loop = asyncio.get_event_loop()
-        docs = loop.run_until_complete(
-            self.manager.query_doc(collection, query, tenant=tenant, k=4)
-        )
+        docs = _run_sync(self.manager.query_doc(collection, query, tenant=tenant, k=4))
         
         if not docs:
             return "No relevant information found in the knowledge base."
