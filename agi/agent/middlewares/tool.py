@@ -6,11 +6,11 @@ from langchain_core.tools import BaseTool
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse, before_agent
 from langchain.messages import SystemMessage
 
-from agi.rag.tool_retreiver import ToolRegistryManager 
+from agi.rag.retriever import MultiCollectionRAGManager 
 from watchdog.events import FileSystemEventHandler
 
 class CapabilityRegistry:
-    def __init__(self, tools_dir: str, skills_dir: str, manager: ToolRegistryManager):
+    def __init__(self, tools_dir: str, skills_dir: str, manager: MultiCollectionRAGManager):
         self.tools_dir = tools_dir
         self.skills_dir = skills_dir
         self.manager = manager
@@ -37,7 +37,7 @@ class CapabilityRegistry:
 
             # 2. 同步至向量管理器 (异步任务通常建议放入事件循环，这里简化处理)
             import asyncio
-            asyncio.run(self.manager.register_tools(new_tools))
+            asyncio.run(self.manager.ingest_text("tools",new_tools))
 
             # 3. 加载技能 .md
             skills_text = []

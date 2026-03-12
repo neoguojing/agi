@@ -13,6 +13,8 @@ from llama_index.core.node_parser import SentenceSplitter
 from llama_index.vector_stores.qdrant import QdrantVectorStore
 from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.core.retrievers import QueryFusionRetriever
+from langchain_core.documents import Document as LangchainDocument
+
 
 
 
@@ -207,7 +209,17 @@ class QdrantRAGManager:
 
         response = engine.query(question)
 
-        return response
+        docs = []
+
+        for node in response.source_nodes:
+            docs.append(
+                LangchainDocument(
+                    page_content=node.node.text,
+                    metadata=node.node.metadata or {},
+                )
+            )
+
+        return docs
 
     # --------------------------------
     # Retriever
@@ -239,7 +251,7 @@ class MultiCollectionRAGManager:
     def __init__(
         self,
         qdrant_url: str = "http://localhost:6333",
-        ollama_embedding_model: Optional[str] = None,
+        ollama_embedding_model: Optional[str] = "bge:m3",
         ollama_base_url: str = "http://localhost:11434",
         embed_model=None,
     ):

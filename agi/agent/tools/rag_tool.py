@@ -2,7 +2,7 @@ from typing import List
 from langchain.tools import tool, ToolRuntime
 from langgraph.types import Command
 from langchain.messages import ToolMessage
-from agi.rag.retriever import QdrantRAGManager  # 假设原始逻辑已封装在此
+from agi.rag.retriever import MultiCollectionRAGManager  # 假设原始逻辑已封装在此
 from agi.config import log
 
 # 假设定义的上下文 Schema
@@ -10,8 +10,6 @@ from dataclasses import dataclass
 @dataclass
 class TenantContext:
     tenant_id: str
-    collection_name: str
-
 
 
 def _run_sync(coro):
@@ -38,7 +36,7 @@ def _run_sync(coro):
 
 
 class KnowledgeTools:
-    def __init__(self, manager: QdrantRAGManager):
+    def __init__(self, manager: MultiCollectionRAGManager):
         self.manager = manager
 
     @tool
@@ -55,15 +53,14 @@ class KnowledgeTools:
         """
         # 从 Runtime Context 自动获取租户和集合信息，无需 LLM 传入
         tenant = runtime.context.tenant_id
-        collection = runtime.context.collection_name
         
-        _run_sync(self.manager.ingest_files(collection, file_paths, tenant=tenant))
+        _run_sync(self.manager.ingest_files(tenant, file_paths))
 
         return Command(
             update={
                 "messages": [
                     ToolMessage(
-                        content=f"Successfully indexed {len(file_paths)} files to {collection}.",
+                        content=f"Successfully indexed {len(file_paths)} files to {tenant}.",
                         tool_call_id=runtime.tool_call_id
                     )
                 ],
@@ -84,9 +81,8 @@ class KnowledgeTools:
             query: The natural language question or search terms to look up in the indexed documents.
         """
         tenant = runtime.context.tenant_id
-        collection = runtime.context.collection_name
         
-        docs = _run_sync(self.manager.query_doc(collection, query, tenant=tenant, k=4))
+        docs = _run_sync(self.manager.query(collection_name=tenant,question=query,top_k=3))
         
         if not docs:
             return "No relevant information found in the knowledge base."

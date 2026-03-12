@@ -1,8 +1,7 @@
 import os
 from typing import List, Optional, Dict, Any
 from watchdog.observers import Observer
-from agi.rag.retriever import KnowledgeManager
-from agi.rag.tool_retreiver import ToolRegistryManager
+from agi.rag.retriever import MultiCollectionRAGManager
 from agi.agent.models import ModelProvider
 from agi.agent.middlewares.tool import CapabilityRegistry,ToolReloaderHandler,JITOrchestratorMiddleware
 from deepagents import create_deep_agent
@@ -70,17 +69,13 @@ class DeepAgentBuilder:
             raise ValueError("Embedding model (set_embd) is required before building KM.")
         
         # 实例化 KM：将 Embedding 模型注入其中
-        km = KnowledgeManager(
-            data_path="/data/my_agents/km/",
-            embedding=self._embd
-        )
+        km = MultiCollectionRAGManager()
 
         # B. 初始化 JIT 体系
-        tm = ToolRegistryManager(km, collection_name=self._km_tool_collection)
         reg = CapabilityRegistry(
             tools_dir=self._tools_dir, 
             skills_dir=self._skills_dir, 
-            manager=tm
+            manager=km
         )
 
         # C. 启动物理监听
