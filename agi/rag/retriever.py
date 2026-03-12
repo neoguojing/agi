@@ -1,187 +1,367 @@
-import asyncio
-import traceback
-from datetime import datetime
-from typing import List, Union, Optional
-from langchain_core.documents import Document
-from langchain_community.vectorstores import Chroma
-from langchain_community.retrievers import BM25Retriever
-from langchain.retrievers import EnsembleRetriever, ContextualCompressionRetriever
-from langchain.retrievers.document_compressors import DocumentCompressorPipeline, EmbeddingsFilter
-from langchain_community.document_transformers import EmbeddingsRedundantFilter
-import os
-import hashlib
-# 核心内部依赖
-from agi.rag.file_loader import LoaderFactory
-from agi.rag.spliter import CustomDocumentSplitter
-from agi.rag.vector_store import CollectionManager, ChromaClientFactory,CollectionHandle
+import threading
+from typing import List, Optional,Dict
+from qdrant_client import QdrantClient
 
-from agi.config import log
+from llama_index.core import (
+    VectorStoreIndex,
+    StorageContext,
+    SimpleDirectoryReader,
+    Document,
+)
 
-class KnowledgeManager:
-    def __init__(self, data_path, embedding):
-        self.embedding = embedding
-        self.factory = ChromaClientFactory(data_path)
-        self.collection_manager = CollectionManager(self.factory, embedding)
-        # 统一分块策略
-        self.splitter = CustomDocumentSplitter(chunk_size=1000, chunk_overlap=150)
+from llama_index.core.node_parser import SentenceSplitter
+from llama_index.vector_stores.qdrant import QdrantVectorStore
+from llama_index.embeddings.ollama import OllamaEmbedding
+from llama_index.core.retrievers import QueryFusionRetriever
 
-    # --- 1. 存储模块：默认处理文件，支持幂等 ---
 
-    async def store(
-        self, 
-        collection_name: str, 
-        content: Union[str, List[str], Document, List[Document]], 
-        tenant: Optional[str] = None,
-        source_name: Optional[str] = None, # 如果是纯文本，建议提供一个标识名
-        **kwargs
+
+class QdrantRAGManager:
+
+    def __init__(
+        self,
+        collection_name: str,
+        qdrant_url: str = "http://localhost:6333",
+        ollama_embedding_model: Optional[str] = None,
+        ollama_base_url: str = "http://localhost:11434",
+        embed_model=None,
+        chunk_size: int = 512,
+        chunk_overlap: int = 50,
     ):
         """
-        统一入库接口，支持文件路径、纯字符串和 LangChain Document。
+        Parameters
+        ----------
+        collection_name : Qdrant collection
+        qdrant_url : Qdrant server url
+        ollama_embedding_model : 使用 Ollama embedding
+        embed_model : 自定义 embedding
         """
-        handle = self.collection_manager.get_handle(collection_name, tenant=tenant)
-        
-        # 1. 统一转化为 List[Document]
-        docs = self._to_documents(content, source_name)
-        
-        # 2. 幂等性过滤：根据 metadata 中的 source 检查是否已存在
-        new_docs = []
-        seen_sources = set()
-        for doc in docs:
-            src = doc.metadata.get("source")
-            if src not in seen_sources and not self._is_indexed(handle, src):
-                new_docs.append(doc)
-                seen_sources.add(src)
 
-        if not new_docs:
-            log.info(f"All provided content already indexed in {collection_name}.")
-            return collection_name
+        self._lock = threading.Lock()
 
-        # 3. 并行处理切分与入库
-        tasks = [self._process_and_upsert(doc, handle, collection_name, tenant) for doc in new_docs]
-        await asyncio.gather(*tasks)
-        
-        log.info(f"Successfully indexed {len(new_docs)} sources into {collection_name}")
-        return collection_name
+        # -----------------------------
+        # Qdrant Client
+        # -----------------------------
 
-    def _to_documents(self, content, source_name) -> List[Document]:
-        """将各种输入格式归一化为 Document 对象"""
-        if isinstance(content, Document):
-            return [content]
-        if isinstance(content, list) and len(content) > 0 and isinstance(content[0], Document):
-            return content
+        self.client = QdrantClient(url=qdrant_url)
 
-        # 处理字符串或字符串列表
-        raw_list = [content] if isinstance(content, str) else content
-        docs = []
-        for i, text in enumerate(raw_list):
-            # 如果是路径则保留路径，否则生成 Hash 标识
-            is_file = os.path.exists(text) if isinstance(text, str) and len(text) < 255 else False
-            
-            if is_file:
-                # 暂时只记录路径，由 _process_and_upsert 中的 Loader 处理
-                docs.append(Document(page_content="", metadata={"source": text, "is_file": True}))
-            else:
-                # 纯文本输入
-                # 如果没有提供 source_name，则根据内容生成哈希作为唯一标识
-                uid = source_name or f"txt_{hashlib.md5(text.encode()).hexdigest()[:12]}"
-                docs.append(Document(page_content=text, metadata={"source": uid, "is_file": False}))
-        return docs
+        self.vector_store = QdrantVectorStore(
+            client=self.client,
+            collection_name=collection_name,
+        )
 
-    async def _process_and_upsert(self, doc, handle, collection_name, tenant):
-        """处理 Document（包括文件加载和文本切分）"""
-        try:
-            source = doc.metadata["source"]
-            
-            # 如果是文件路径，需要加载内容
-            if doc.metadata.get("is_file"):
-                loader = LoaderFactory.get_loader(source)
-                raw_docs = await asyncio.to_thread(loader.load)
-            else:
-                raw_docs = [doc]
+        self.storage_context = StorageContext.from_defaults(
+            vector_store=self.vector_store
+        )
 
-            final_splits = []
-            for d in raw_docs:
-                # 补充基础元数据
-                d.metadata.update({
-                    "source": source,
-                    "tenant": tenant,
-                    "collection_name": collection_name,
-                    "ingest_at": datetime.now().isoformat()
-                })
-                
-                # 执行切分
-                file_ext = source.split(".")[-1].lower() if "." in source else "txt"
-                splits = self.splitter.split_text(
-                    text=d.page_content,
-                    file_type=file_ext,
-                    file_name=source,
-                    metadata=d.metadata
-                )
-                final_splits.extend(splits)
+        # -----------------------------
+        # Embedding Model
+        # -----------------------------
 
-            if final_splits:
-                await handle.upsert(final_splits)
-                
-        except Exception as e:
-            log.error(f"Failed to process source {doc.metadata.get('source')}: {e}")
+        if embed_model:
+            self.embed_model = embed_model
 
-    def _is_indexed(self, handle, source_id: str) -> bool:
-        """检查标识是否已存在"""
-        try:
-            res = handle.collection.get(where={"source": source_id}, include=[], limit=1)
-            return len(res['ids']) > 0
-        except Exception:
-            return False
-
-    # --- 2. 检索模块：纯算法混合检索 ---
-
-    def get_retriever(self, collection_names="all", tenant=None, k=4):
-        """
-        构造高性能检索器：向量(60%) + 关键词(40%)
-        """
-        import jieba
-        
-        if collection_names == "all":
-            collection_names = self.collection_manager.list_collections(tenant=tenant)
-        
-        names = [collection_names] if isinstance(collection_names, str) else collection_names
-        v_retrievers = []
-        all_docs = []
-
-        for name in names:
-            handle = self.collection_manager.get_handle(name, tenant=tenant)
-            
-            # 使用 LangChain Chroma 包装底层 Client
-            vectorstore = Chroma(
-                client=self.factory.get_client(tenant=tenant),
-                collection_name=name,
-                embedding_function=self.embedding
+        elif ollama_embedding_model:
+            self.embed_model = OllamaEmbedding(
+                model_name=ollama_embedding_model,
+                base_url=ollama_base_url,
             )
-            v_retrievers.append(vectorstore.as_retriever(search_kwargs={"k": k}))
-            
-            # 收集文档用于 BM25 (限制最大拉取量以保证速度)
-            all_docs.extend(handle.get_documents(limit=5000))
 
-        # 构造融合检索
-        if all_docs:
-            bm25_r = BM25Retriever.from_documents(all_docs, preprocess_func=jieba.lcut, k=k)
-            base_retriever = EnsembleRetriever(
-                retrievers=v_retrievers + [bm25_r],
-                weights=[0.6 / len(v_retrievers)] * len(v_retrievers) + [0.4]
-            )
         else:
-            base_retriever = EnsembleRetriever(retrievers=v_retrievers)
+            raise ValueError(
+                "必须提供 embed_model 或 ollama_embedding_model"
+            )
 
-        # 纯数学过滤链 (无 LLM 介入)
-        pipeline = DocumentCompressorPipeline(transformers=[
-            EmbeddingsRedundantFilter(embeddings=self.embedding),
-            EmbeddingsFilter(embeddings=self.embedding, similarity_threshold=0.65)
-        ])
-        
-        return ContextualCompressionRetriever(base_compressor=pipeline, base_retriever=base_retriever)
+        # -----------------------------
+        # Node Parser
+        # -----------------------------
 
-    async def query_doc(self, collection_name, query, tenant=None, k=4):
-        """极速异步检索接口"""
-        if not query.strip(): return []
-        retriever = self.get_retriever(collection_name, tenant=tenant, k=k)
-        return await retriever.ainvoke(query)
+        self.node_parser = SentenceSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
+
+        self._index: Optional[VectorStoreIndex] = None
+
+    # --------------------------------
+    # 初始化 Index
+    # --------------------------------
+
+    def _ensure_index(self):
+
+        if self._index is None:
+
+            self._index = VectorStoreIndex.from_vector_store(
+                vector_store=self.vector_store,
+                storage_context=self.storage_context,
+                embed_model=self.embed_model,
+            )
+
+    # --------------------------------
+    # 文本入库
+    # --------------------------------
+
+    def ingest_text(
+        self,
+        text: str,
+        metadata: Optional[dict] = None,
+    ):
+
+        doc = Document(
+            text=text,
+            metadata=metadata or {},
+        )
+
+        self._add_to_index([doc])
+
+    # --------------------------------
+    # 文件入库
+    # --------------------------------
+
+    def ingest_files(self, file_paths: List[str]):
+
+        reader = SimpleDirectoryReader(
+            input_files=file_paths
+        )
+
+        documents = reader.load_data()
+
+        self._add_to_index(documents)
+
+    # --------------------------------
+    # 目录入库
+    # --------------------------------
+
+    def ingest_directory(self, path: str):
+
+        reader = SimpleDirectoryReader(
+            input_dir=path,
+            recursive=True,
+        )
+
+        documents = reader.load_data()
+
+        self._add_to_index(documents)
+
+    # --------------------------------
+    # 入库核心逻辑
+    # --------------------------------
+
+    def _add_to_index(self, documents: List[Document]):
+
+        if not documents:
+            return
+
+        self._ensure_index()
+
+        nodes = self.node_parser.get_nodes_from_documents(
+            documents
+        )
+
+        with self._lock:
+            self._index.insert_nodes(nodes)
+
+        print(f"✅ 成功入库 {len(nodes)} 个节点")
+
+    # --------------------------------
+    # Query Engine
+    # --------------------------------
+
+    def get_query_engine(
+        self,
+        mode: str = "default",
+        top_k: int = 5,
+        alpha: float = 0.5,
+    ):
+
+        self._ensure_index()
+
+        query_mode = "default"
+
+        if mode == "hybrid":
+            query_mode = "hybrid"
+
+        query_engine = self._index.as_query_engine(
+            similarity_top_k=top_k,
+            vector_store_query_mode=query_mode,
+            alpha=alpha,
+        )
+
+        return query_engine
+
+    # --------------------------------
+    # 查询
+    # --------------------------------
+
+    def query(
+        self,
+        question: str,
+        mode: str = "default",
+        top_k: int = 5,
+    ):
+
+        engine = self.get_query_engine(
+            mode=mode,
+            top_k=top_k,
+        )
+
+        response = engine.query(question)
+
+        return response
+
+    # --------------------------------
+    # Retriever
+    # --------------------------------
+
+    def get_retriever(
+        self,
+        mode: str = "default",
+        top_k: int = 5,
+    ):
+
+        self._ensure_index()
+
+        query_mode = "default"
+
+        if mode == "hybrid":
+            query_mode = "hybrid"
+
+        retriever = self._index.as_retriever(
+            similarity_top_k=top_k,
+            vector_store_query_mode=query_mode,
+        )
+
+        return retriever
+    
+
+class MultiCollectionRAGManager:
+
+    def __init__(
+        self,
+        qdrant_url: str = "http://localhost:6333",
+        ollama_embedding_model: Optional[str] = None,
+        ollama_base_url: str = "http://localhost:11434",
+        embed_model=None,
+    ):
+
+        self.qdrant_url = qdrant_url
+        self.ollama_embedding_model = ollama_embedding_model
+        self.ollama_base_url = ollama_base_url
+        self.embed_model = embed_model
+
+        self._collections: Dict[str, QdrantRAGManager] = {}
+
+    # -----------------------------
+    # 获取 collection manager
+    # -----------------------------
+
+    def get_collection(self, collection_name: str) -> QdrantRAGManager:
+
+        if collection_name not in self._collections:
+
+            self._collections[collection_name] = QdrantRAGManager(
+                collection_name=collection_name,
+                qdrant_url=self.qdrant_url,
+                ollama_embedding_model=self.ollama_embedding_model,
+                ollama_base_url=self.ollama_base_url,
+                embed_model=self.embed_model,
+            )
+
+        return self._collections[collection_name]
+
+    # -----------------------------
+    # 文本入库
+    # -----------------------------
+
+    def ingest_text(
+        self,
+        collection_name: str,
+        text: str,
+        metadata: Optional[dict] = None,
+    ):
+
+        manager = self.get_collection(collection_name)
+
+        manager.ingest_text(
+            text=text,
+            metadata=metadata,
+        )
+
+    # -----------------------------
+    # 文件入库
+    # -----------------------------
+
+    def ingest_files(
+        self,
+        collection_name: str,
+        files,
+    ):
+
+        manager = self.get_collection(collection_name)
+
+        manager.ingest_files(files)
+
+    # -----------------------------
+    # 查询
+    # -----------------------------
+
+    def query(
+        self,
+        collection_name: str,
+        question: str,
+        mode: str = "default",
+        top_k: int = 5,
+    ):
+
+        manager = self.get_collection(collection_name)
+
+        return manager.query(
+            question=question,
+            mode=mode,
+            top_k=top_k,
+        )
+
+    # -----------------------------
+    # 删除collection
+    # -----------------------------
+
+    def drop_collection(self, collection_name: str):
+
+        if collection_name in self._collections:
+
+            manager = self._collections[collection_name]
+
+            manager.client.delete_collection(
+                collection_name
+            )
+
+            del self._collections[collection_name]
+
+
+    def multi_query(
+        self,
+        collections: list,
+        question: str,
+        top_k: int = 5,
+    ):
+
+        retrievers = []
+
+        for c in collections:
+
+            retriever = self.get_collection(c).get_retriever(
+                top_k=top_k
+            )
+
+            retrievers.append(retriever)
+
+        fusion = QueryFusionRetriever(
+            retrievers=retrievers,
+            similarity_top_k=top_k,
+            num_queries=1,   # 不做query expansion
+            mode="reciprocal_rerank",
+        )
+
+        nodes = fusion.retrieve(question)
+
+        return nodes

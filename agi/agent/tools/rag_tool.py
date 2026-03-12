@@ -2,7 +2,7 @@ from typing import List
 from langchain.tools import tool, ToolRuntime
 from langgraph.types import Command
 from langchain.messages import ToolMessage
-from agi.rag.retriever import KnowledgeManager  # 假设原始逻辑已封装在此
+from agi.rag.retriever import QdrantRAGManager  # 假设原始逻辑已封装在此
 from agi.config import log
 
 # 假设定义的上下文 Schema
@@ -38,7 +38,7 @@ def _run_sync(coro):
 
 
 class KnowledgeTools:
-    def __init__(self, manager: KnowledgeManager):
+    def __init__(self, manager: QdrantRAGManager):
         self.manager = manager
 
     @tool
@@ -57,7 +57,7 @@ class KnowledgeTools:
         tenant = runtime.context.tenant_id
         collection = runtime.context.collection_name
         
-        _run_sync(self.manager.store(collection, file_paths, tenant=tenant))
+        _run_sync(self.manager.ingest_files(collection, file_paths, tenant=tenant))
 
         return Command(
             update={

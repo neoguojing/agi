@@ -135,11 +135,31 @@ class QdrantCustomStore(VectorStore):
 
     # --- 核心搜索方法 ---
 
+    def _build_filter(self, filter: Optional[Union[dict, Filter]]) -> Optional[Filter]:
+        if filter is None:
+            return None
+
+        if isinstance(filter, Filter):
+            return filter
+
+        if isinstance(filter, dict):
+            conditions = [
+                FieldCondition(
+                    key=k,
+                    match=MatchValue(value=v)
+                )
+                for k, v in filter.items()
+            ]
+
+            return Filter(must=conditions)
+
+        raise ValueError("Unsupported filter type")
+
     def _search(
         self,
         vector: List[float],
         k: int,
-        filter: Optional[Filter] = None,
+        filter: Optional[Union[dict, Filter]] = None,
         with_vectors: bool = False,
         **kwargs
     ):
@@ -148,6 +168,8 @@ class QdrantCustomStore(VectorStore):
         kwargs.pop("query_vector", None)
         kwargs.pop("query_filter", None)
         kwargs.pop("limit", None)
+
+        filter = self._build_filter(filter)
         
         return self._client.search(
             collection_name=self._collection_name,
@@ -193,7 +215,7 @@ class QdrantCustomStore(VectorStore):
     ) -> List[Document]:
         query_vector = self._embeddings.embed_query(query)
         
-        results = self._search(query_vector, k, filter)
+        results = self._search(vector=query_vector,k=k,filter=filter,**kwargs)
 
         return [self._point_to_document(r) for r in results]
 
@@ -212,7 +234,7 @@ class QdrantCustomStore(VectorStore):
         # 允许用户通过 kwargs 传递 search_params (如 hnsw_ef)
         
 
-        results = self._search(embedding, k, search_filter)
+        results = self._search(vector= embedding, k=k, filter=search_filter,**kwargs)
 
         return [self._point_to_document(r) for r in results]
     
