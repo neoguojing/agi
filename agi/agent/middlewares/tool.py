@@ -98,3 +98,4 @@ class ToolReloaderHandler(FileSystemEventHandler):
         if not event.is_directory and (event.src_path.endswith(".py") or event.src_path.endswith(".md")):
             print(f"✨ File {event.src_path} changed, reloading registry...")
             self.registry.reload()
+            

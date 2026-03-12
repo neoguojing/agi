@@ -13,7 +13,7 @@ import hashlib
 # 核心内部依赖
 from agi.rag.file_loader import LoaderFactory
 from agi.rag.spliter import CustomDocumentSplitter
-from agi.rag.chroma import CollectionManager, ChromaClientFactory,CollectionHandle
+from agi.rag.vector_store import CollectionManager, ChromaClientFactory,CollectionHandle
 
 from agi.config import log
 

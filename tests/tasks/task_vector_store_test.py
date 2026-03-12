@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
-from agi.tasks.vectore_store import CollectionManager
+from agi.tasks.rag.vectore_storetore import CollectionManager
 from langchain_core.documents import Document
 from agi.tasks.task_factory import TaskFactory
 class DummyEmbedding:

@@ -9,7 +9,7 @@ from agi.config import log
 from agi.tasks.define import State
 from agi.tasks.rag import rag_query
 from agi.tasks.utils import get_last_message_text
-from agi.utils.search_engine import SearchEngineSelector
+from agi.web.search_engine import SearchEngineSelector
 
 
 def _ensure_messages(state: State, text: str) -> State:

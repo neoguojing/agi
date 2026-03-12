@@ -1,5 +1,5 @@
 import unittest
-from agi.utils.search_engine import SearchEngineSelector
+from agi.web.search_engine import SearchEngineSelector
 
 
 class TestSearchEngine(unittest.TestCase):
