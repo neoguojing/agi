@@ -1,5 +1,5 @@
 import unittest
-from agi.utils.weather import get_weather_info,search_list,find_best_match
+from agi.agent.tools.weather import get_weather_info,search_list,find_best_match
 from agi.config import CACHE_DIR
 import os
 

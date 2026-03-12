@@ -16,6 +16,11 @@ from llama_index.core.retrievers import QueryFusionRetriever
 from langchain_core.documents import Document as LangchainDocument
 
 
+import hashlib
+
+def build_node_id(text: str, metadata: dict):
+    raw = text + str(sorted(metadata.items()))
+    return hashlib.md5(raw.encode()).hexdigest()
 
 
 class QdrantRAGManager:
@@ -95,7 +100,6 @@ class QdrantRAGManager:
 
             self._index = VectorStoreIndex.from_vector_store(
                 vector_store=self.vector_store,
-                storage_context=self.storage_context,
                 embed_model=self.embed_model,
             )
 
@@ -156,9 +160,12 @@ class QdrantRAGManager:
 
         self._ensure_index()
 
-        nodes = self.node_parser.get_nodes_from_documents(
-            documents
-        )
+        nodes = self.node_parser.get_nodes_from_documents(documents)
+        for node in nodes:
+            node.node_id = build_node_id(
+                node.text,
+                node.metadata or {}
+            )
 
         with self._lock:
             self._index.insert_nodes(nodes)

@@ -4,12 +4,10 @@ from watchdog.observers import Observer
 from agi.rag.retriever import MultiCollectionRAGManager
 from agi.agent.models import ModelProvider
 from agi.agent.middlewares.tool_inject_middleware import CapabilityRegistry,ToolReloaderHandler,JITOrchestratorMiddleware
-from agi.agent.tools import buildin_tools
 from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend
 
-
-class DeepAgentBuilder:
+class CoderAgentBuilder:
     def __init__(self, name: str = "main"):
         self.name = name
         # 模型配置
@@ -107,7 +105,7 @@ class DeepAgentBuilder:
 if __name__ == '__main__':
     # 使用 Builder 完成全流程组装
     agent = (
-        DeepAgentBuilder()
+        CoderAgentBuilder()
         # 4. 配置插件与热更新
         .set_system_prompt("你是一个全栈工程师，擅长利用动态工具解决问题。")
         # 5. 构建

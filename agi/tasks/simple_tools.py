@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from agi.tasks.define import AskHuman
-from agi.utils.stock_market import get_stock
-from agi.utils.weather import get_weather_info
+from agi.agent.tools.stock_market import get_stock
+from agi.agent.tools.weather import get_weather_info
 
 
 def get_time(timezone: str = "UTC") -> str:
