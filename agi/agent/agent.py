@@ -1,12 +1,13 @@
 import os
 from typing import List, Optional, Dict, Any
-from watchdog.observers import Observer
 from agi.rag.retriever import MultiCollectionRAGManager
 from agi.agent.models import ModelProvider
-from agi.agent.middlewares.tool_inject_middleware import CapabilityRegistry,ToolReloaderHandler,JITOrchestratorMiddleware
+from agi.agent.middlewares.tool_inject_middleware import JITOrchestratorMiddleware
 from agi.agent.tools import buildin_tools
+from langgraph.checkpoint.sqlite import SqliteSaver
 from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend
+
 
 
 class DeepAgentBuilder:
@@ -30,7 +31,9 @@ class DeepAgentBuilder:
         self._middleware = []
         
         # 基础设施
-        self._checkpointer = None
+        with SqliteSaver.from_conn_string("checkpoints.sqlite")as checkpointer:
+            checkpointer.setup()
+            self._checkpointer = checkpointer
         self._store = None
         self._interrupt_on = {}
 
@@ -73,20 +76,8 @@ class DeepAgentBuilder:
         # 实例化 KM：将 Embedding 模型注入其中
         km = MultiCollectionRAGManager()
 
-        # B. 初始化 JIT 体系
-        reg = CapabilityRegistry(
-            tools_dir=self._tools_dir, 
-            skills_dir=self._skills_dir, 
-            manager=km
-        )
-
-        # C. 启动物理监听
-        observer = Observer()
-        observer.schedule(ToolReloaderHandler(reg), path=self._tools_dir)
-        observer.start()
-
         # D. 组装中间件
-        jit_mw = JITOrchestratorMiddleware(reg)
+        jit_mw = JITOrchestratorMiddleware(buildin_tools,km)
         final_middleware = [jit_mw] + self._middleware
 
         # E. 调用 create_deep_agent (符合你提供的源码定义)
@@ -108,9 +99,6 @@ if __name__ == '__main__':
     # 使用 Builder 完成全流程组装
     agent = (
         DeepAgentBuilder()
-        # 4. 配置插件与热更新
-        .set_system_prompt("你是一个全栈工程师，擅长利用动态工具解决问题。")
-        # 5. 构建
         .build()
     )
 
