@@ -4,6 +4,7 @@ from agi.rag.retriever import MultiCollectionRAGManager
 from agi.agent.models import ModelProvider
 from agi.agent.middlewares.tool_inject_middleware import JITOrchestratorMiddleware
 from agi.agent.tools import buildin_tools
+from agi.agent.subagents import buildin_agents
 from langgraph.checkpoint.sqlite import SqliteSaver
 from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend
@@ -26,8 +27,8 @@ class DeepAgentBuilder:
         self._tools_dir = "/data/my_agent/hot_tools"
         self._skills_dir = "/data/my_agent/hot_skills"
         self._memory_paths = []
-        self._basic_tools = []
-        self._subagents = []
+        self._basic_tools = buildin_tools
+        self._subagents = buildin_agents
         self._middleware = []
         
         # 基础设施
@@ -77,9 +78,9 @@ class DeepAgentBuilder:
         km = MultiCollectionRAGManager()
 
         # D. 组装中间件
-        jit_mw = JITOrchestratorMiddleware(buildin_tools,km)
-        final_middleware = [jit_mw] + self._middleware
-
+        # jit_mw = JITOrchestratorMiddleware(buildin_tools,km)
+        # final_middleware = [jit_mw] + self._middleware
+        final_middleware = self._middleware
         # E. 调用 create_deep_agent (符合你提供的源码定义)
         return create_deep_agent(
             name=self.name,
