@@ -26,7 +26,7 @@ class DeepAgentBuilder:
         # 路径与插件
         self._tools_dir = "/data/my_agent/hot_tools"
         self._skills_dir = "/data/my_agent/hot_skills"
-        self._memory_paths = []
+        self._memory_paths = ["./memories/AGENT.md"]
         self._basic_tools = buildin_tools
         self._subagents = buildin_agents
         self._middleware = []

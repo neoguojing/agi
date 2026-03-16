@@ -1,299 +1,243 @@
 import asyncio
 import random
 import traceback
-from typing import List, Optional, Union, Any, Type,Dict
+import re
+from typing import List, Optional, Union, Any, Type, Dict
+
 import requests
 from bs4 import BeautifulSoup
 from pydantic import Field, BaseModel
 from langchain_core.tools import BaseTool
 from langchain_core.documents import Document
-from agi.config import log
+from playwright.async_api import async_playwright, Browser, BrowserContext
 
+from agi.config import log  # 假设你的配置路径
+
+# --- 常量定义 ---
 USER_AGENTS = [
-    # 苹果设备
-    {
-        "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
-        "viewport": {"width": 375, "height": 812}
-    },
-    {
-        "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Mobile/15E148 Safari/604.1",
-        "viewport": {"width": 390, "height": 844}
-    },
-    {
-        "ua": "Mozilla/5.0 (iPad; CPU OS 16_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Mobile/15E148 Safari/604.1",
-        "viewport": {"width": 768, "height": 1024}
-    },
+    {"ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1", "viewport": {"width": 375, "height": 812}},
+    {"ua": "Mozilla/5.0 (Linux; Android 12; HUAWEI P50) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36", "viewport": {"width": 390, "height": 844}},
+    {"ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36", "viewport": {"width": 1920, "height": 1080}},
+]
 
-
-    # 安卓国产设备
-    {
-        "ua": "Mozilla/5.0 (Linux; Android 12; HUAWEI P50) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36",
-        "viewport": {"width": 390, "height": 844}
-    },
-    {
-        "ua": "Mozilla/5.0 (Linux; Android 13; MI 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36",
-        "viewport": {"width": 430, "height": 932}
-    },
-    {
-        "ua": "Mozilla/5.0 (Linux; Android 12; OPPO Find X5 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36",
-        "viewport": {"width": 412, "height": 915}
-    },
-    {
-        "ua": "Mozilla/5.0 (Linux; Android 12; VIVO X80) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36",
-        "viewport": {"width": 430, "height": 932}
-    },
+CONTENT_SELECTORS = [
+    "#js_content", ".rich_media_content", "article", "main", ".content", 
+    ".article-content", ".post-content", ".entry-content", ".post-body",
+    ".article-body", "section", "div.article", "div.main-content"
 ]
 
 class WLInput(BaseModel):
-    web_paths: str = Field(description="urls need to be scraped")
-
+    web_paths: Union[str, List[str], Dict[str, Any]] = Field(description="URLs or a dict containing 'urls' key")
 
 class WebScraper(BaseTool):
     name: str = "web_scraper"
     description: str = "Web scraper that takes one or more URLs as input and extracts web page content such as text, links, and metadata."
     args_schema: Type[BaseModel] = WLInput
 
-    web_paths: Optional[List[str]] = None
+    web_paths: List[str] = Field(default_factory=list)
+    concurrency: int = 5  # 控制并发数
 
     def __init__(self, web_paths: Optional[List[str]] = None, **kwargs):
         super().__init__(**kwargs)
-        self.web_paths = list(web_paths) if web_paths else []
+        if web_paths:
+            self.web_paths = list(web_paths)
 
-    # ------------------- 同步接口 -------------------
-    def load(self) -> List[Document]:
-        """同步入口，保留 load 和 _run"""
-        return self._run(self.web_paths)
-
-    def _run(self, web_paths: Union[str, List[str], dict], run_manager: Optional[Any] = None) -> List[Document]:
-        """同步主入口：接受 str / list / dict"""
-        if isinstance(web_paths, str):
-            web_paths = [web_paths]
-        elif isinstance(web_paths, dict):
-            web_paths = web_paths.get("urls") or web_paths.get("url") or []
-
-        docs: List[Document] = []
-
-        # 使用异步函数并阻塞获取结果
-        async def gather_docs():
-            tasks = [self._fetch_and_parse(url) for url in web_paths]
-            return await asyncio.gather(*tasks, return_exceptions=True)
-
+    # ------------------- 同步接口 (LangChain 标准) -------------------
+    def _run(self, web_paths: Union[str, List[str], Dict[str, Any]], run_manager: Optional[Any] = None) -> List[Document]:
+        """同步入口：通过 asyncio 桥接异步实现"""
+        urls = self._normalize_urls(web_paths)
         try:
             loop = asyncio.get_running_loop()
-            results = loop.run_until_complete(gather_docs())
+            return loop.run_until_complete(self.aload(urls))
         except RuntimeError:
-            # 没有运行的 loop
-            results = asyncio.run(gather_docs())
+            return asyncio.run(self.aload(urls))
 
+    # ------------------- 异步接口 -------------------
+    async def aload(self, web_paths: Optional[Union[str, List[str], Dict[str, Any]]] = None) -> List[Document]:
+        """通用异步加载入口"""
+        urls = self._normalize_urls(web_paths or self.web_paths)
+        if not urls:
+            return []
+
+        async with self._managed_browser() as browser:
+            # 限制并发，防止被封 IP 或内存溢出
+            sem = asyncio.Semaphore(self.concurrency)
+            tasks = [self._fetch_and_parse_with_sem(url, browser, sem) for url in urls]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        docs = []
         for res in results:
             if isinstance(res, Exception):
-                log.error("Error processing url: %s", res)
+                log.error(f"Error processing URL: {res}")
                 continue
             if res:
                 docs.append(res)
         return docs
 
-    # ------------------- 异步入口 -------------------
-    async def aload(self, web_paths: Optional[List[str]] = None) -> List[Document]:
-        """异步入口，可并行抓取多个 URL"""
-        web_paths = web_paths or self.web_paths
-        if isinstance(web_paths, str):
-            web_paths = [web_paths]
-        elif isinstance(web_paths, dict):
-            web_paths = web_paths.get("urls") or web_paths.get("url") or []
-
-        tasks = [self._fetch_and_parse(url) for url in web_paths]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        docs: List[Document] = []
-        for res in results:
-            if isinstance(res, Exception):
-                log.error("Error processing url: %s", res)
-                continue
-            if res:
-                docs.append(res)
-        return docs
-    
-    async def aload2(self, question_url_map: Optional[Dict[str, list[str]]] = None) -> Dict[str, list[Document]]:
-        """异步入口，可并行抓取多个 URL，输入是 {question: [url1, url2, ...]}"""
-
-        # 构建 (question, url) 对应列表
+    async def aload2(self, question_url_map: Dict[str, List[str]]) -> Dict[str, List[Document]]:
+        """实现原有的问题-URL 映射抓取"""
+        # 展平任务
         q_u_pairs = [(q, url) for q, urls in question_url_map.items() for url in urls]
-        results = await asyncio.gather(*(self._fetch_and_parse(url) for _, url in q_u_pairs), return_exceptions=True)
-
-        out: Dict[str, list[Document]] = {q: [] for q in question_url_map}
-        for (q, _), res in zip(q_u_pairs, results):
-            if not isinstance(res, Exception) and res is not None:
-                out[q].append(res)
-
+        urls = [pair[1] for pair in q_u_pairs]
+        
+        # 抓取所有内容
+        docs_list = await self.aload(urls)
+        
+        # 将结果映射回 question
+        # 注意：aload 返回的长度可能因为失败而变短，这里需要按顺序重新匹配
+        doc_map = {url: doc for doc in docs_list for url in [doc.metadata["source"]]}
+        
+        out: Dict[str, List[Document]] = {q: [] for q in question_url_map}
+        for q, url in q_u_pairs:
+            if url in doc_map:
+                out[q].append(doc_map[url])
         return out
 
+    # ------------------- 核心逻辑 -------------------
+    async def _fetch_and_parse_with_sem(self, url: str, browser: Browser, sem: asyncio.Semaphore) -> Optional[Document]:
+        async with sem:
+            # 1. 尝试同步 Requests (高效)
+            html = await self._fetch_requests(url)
+            doc = self._parse_local(html, url) if html else None
 
+            # 2. 如果 Requests 失败或内容太少 (可能是动态加载)，回退到 Playwright
+            if not doc or len(doc.page_content) < 200:
+                log.warning(f"Fallback to Playwright for {url}")
+                html = await self._fetch_playwright(url, browser)
+                doc = self._parse_local(html, url) if html else None
 
-    # ------------------- 内部抓取和解析 -------------------
-    async def _fetch_and_parse(self, url: str) -> Optional[Document]:
-        async def try_fetch(fetch_func):
-            try:
-                html = await fetch_func(url)
-                if not html:
-                    return None
-                doc = self._parse_local(html, url)
-                if not doc or len(doc.page_content.strip()) < 50:
-                    return None
-                return doc
-            except Exception as e:
-                traceback.print_exc()
-                log.warning("Fetch failed for %s: %s", url, e)
-                return None
+            return doc
 
-        # 首先尝试 requests（或 _fetch 内封装）
-        result = await try_fetch(self._fetch)
-        
-        # 如果无效且允许 Playwright fallback
-        if not result:
-            log.warning("Fallback to Playwright for %s", url)
-            result = await try_fetch(self._fetch_playwright)
-
-        if not result:
-            return None
-        
-        return result
-
-
-
-    async def _fetch(self, url: str) -> Optional[str]:
-        """优先用 requests，同步方式；失败 fallback Playwright"""
-        ua,_ = self._random_ua()
-        headers = {"User-Agent": ua, "Accept": "text/html"}
+    async def _fetch_requests(self, url: str) -> Optional[str]:
+        ua, _ = self._random_ua()
         try:
-            resp = await asyncio.to_thread(requests.get, url, headers=headers, timeout=15)
+            # 在线程池中执行同步请求，避免阻塞 event loop
+            resp = await asyncio.to_thread(
+                requests.get, url, 
+                headers={"User-Agent": ua, "Accept": "text/html"}, 
+                timeout=15
+            )
             resp.raise_for_status()
             return resp.text
         except Exception as e:
-            log.warning("Requests fetch failed for %s: %s", url, e)
+            log.debug(f"Requests fetch failed for {url}: {e}")
             return None
 
-    async def _fetch_playwright(self, url: str) -> str:
-        """异步 Playwright 抓取，优先获取页面内容，正文未出现时分批等待标签"""
-        from playwright.async_api import async_playwright
-        from playwright_stealth import Stealth
-
-        stealth = Stealth()
-
-        # 全局 selector 列表，中文 + 国际主流网站 + 通用标签
-        selectors = [
-            "#js_content", ".rich_media_content", "article", "main",
-            ".content", ".article-content", ".post-content", ".entry-content",
-            ".news-content", ".blog-post-content", ".post-body", ".post-body-content",
-            ".article-body", ".article-body__content", ".story-body", ".story-content",
-            ".entry-body", ".c-article-body", ".blog-content", ".post-text",
-            ".post-article", ".content-body", ".page-content", ".post-entry",
-            ".news-article-content", ".content-article", "section", "div.article",
-            "div.content", "div.main-content", "div.post"
-        ]
-
-        # 高优先级和低优先级分组
-        high_priority = selectors[:10]  # 最可能匹配正文的前 10 个
-        low_priority = selectors[10:]
-
-        try:
-            async with async_playwright() as p:
-                browser = await p.chromium.launch(
-                    headless=True,
-                    args=["--disable-blink-features=AutomationControlled"]
-                )
-                
-                ua,vp = self._random_ua()
-                context = await browser.new_context(
-                    user_agent=ua,
-                    viewport=vp,
-                )
-
-                await stealth.apply_stealth_async(context)
-
-                page = await context.new_page()
-                await page.goto(url, wait_until="networkidle", timeout=30000)
-
-                # 先获取页面内容
-                html = await page.content()
-
-                # 判断是否有正文（简单文本长度 + 标签匹配）
-                def has_main_content(content: str) -> bool:
-                    if len(content.strip()) < 200:  # 文本太短可能无正文
-                        return False
-                    return any(sel.strip("#.") in content for sel in selectors[:10])
-
-                if not has_main_content(html):
-                    # 高优先级并行等待
-                    tasks = [asyncio.create_task(page.wait_for_selector(sel, state="attached", timeout=10000))
-                            for sel in high_priority]
-                    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-                    for t in pending:
-                        t.cancel()
-
-                    if done:
-                        try:
-                            await list(done)[0]
-                            html = await page.content()
-                        except Exception as e:
-                            log.warning(f"High-priority selector wait failed for {url}: {e}")
-                    else:
-                        # 低优先级顺序等待
-                        for sel in low_priority:
-                            try:
-                                await page.wait_for_selector(sel, state="attached", timeout=5000)
-                                html = await page.content()
-                                break
-                            except Exception:
-                                continue
-                        else:
-                            log.warning(f"No selectors matched for {url}, returning raw page content")
-
-                # 模拟人类浏览延迟
-                await asyncio.sleep(random.uniform(0.5, 1.5))
-
-                await browser.close()
-                return html
-
-        except Exception as e:
-            traceback.print_exc()
-            log.warning("_fetch_playwright failed for %s: %s", url, e)
-            return None
+    async def _fetch_playwright(self, url: str, browser: Browser) -> Optional[str]:
+        from playwright_stealth import stealth_async
+        ua, vp = self._random_ua()
         
+        context = await browser.new_context(user_agent=ua, viewport=vp)
+        page = await context.new_page()
+        await stealth_async(page)
+        
+        try:
+            # 增加对常见正文容器的显式等待
+            await page.goto(url, wait_until="networkidle", timeout=30000)
+            
+            # 模拟原代码中的分批次等待逻辑
+            found = False
+            for sel in CONTENT_SELECTORS[:5]: # 优先检查高频标签
+                try:
+                    await page.wait_for_selector(sel, state="attached", timeout=5000)
+                    found = True
+                    break
+                except: continue
+            
+            if not found:
+                await asyncio.sleep(2) # 兜底等待
+                
+            return await page.content()
+        except Exception as e:
+            log.warning(f"Playwright failed for {url}: {e}")
+            return None
+        finally:
+            await page.close()
+            await context.close()
+
     # ------------------- 工具函数 -------------------
+    @asynccontextmanager
+    async def _managed_browser(self):
+        """确保浏览器资源始终正确关闭"""
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
+            try:
+                yield browser
+            finally:
+                await browser.close()
+
+    def _normalize_urls(self, web_paths: Any) -> List[str]:
+        if isinstance(web_paths, str):
+            return [web_paths]
+        if isinstance(web_paths, list):
+            return web_paths
+        if isinstance(web_paths, dict):
+            return web_paths.get("urls") or web_paths.get("url") or []
+        return []
+
     def _random_ua(self):
-        """
-        随机返回 User-Agent 和对应视口大小
-        """
         choice = random.choice(USER_AGENTS)
         return choice["ua"], choice["viewport"]
 
     def _parse_local(self, html: str, source: str) -> Optional[Document]:
+        """
+        基于文本密度（Text Density）的智能解析，减少对选择器的依赖
+        """
+        if not html: return None
         soup = BeautifulSoup(html, "lxml")
-        node = soup.find("article") or soup.find(role="main") or soup.find("main") or soup.body or soup
-        for tag in node(["script", "style", "nav", "footer", "aside", "form", "iframe"]):
-            tag.decompose()
-        text = node.get_text("\n", strip=True)
-        clean_lines = [ln.strip() for ln in text.splitlines() if len(ln.strip()) > 40 and not self._is_noise(ln)]
-        content = "\n".join(clean_lines).strip()
-        if not content:
-            return None
-        meta = {
-            "source": source,
-            "title": self._safe_text(soup.find("title")),
-            "time": self._safe_text(soup.find("time")) or "",
-            "author": self._safe_text(soup.find(attrs={"class": lambda v: v and "author" in v.lower()})) or "",
-            "likes": 0,
-            "comments": 0,
-        }
-        return Document(page_content=content, metadata=meta)
+        
+        # 移除无意义标签
+        for s in soup(["script", "style", "video", "audio", "input", "button", "header", "footer"]):
+            s.decompose()
 
+        # 1. 尝试元数据：增加对 OpenGraph 标签的支持 (常见于国际网站)
+        title = (
+            soup.find("meta", property="og:title") or 
+            soup.find("h1") or 
+            soup.find("title")
+        )
+        title_text = self._safe_text(title)
+
+        # 2. 文本块识别：基于行长度和标点符号密度
+        # 这种方法比单纯找 <article> 更能应对那些结构混乱的垃圾网页
+        blocks = []
+        for p in soup.find_all(['p', 'div', 'section']):
+            text = p.get_text(strip=True)
+            if len(text) > 30: # 过滤掉掉导航栏碎片
+                # 计算密度：中文标点符号占比
+                punctuation_count = len(re.findall(r'[，。！？、：]', text))
+                if punctuation_count > 0 or len(text) > 100:
+                    blocks.append(text)
+
+        # 去重并合并
+        unique_blocks = []
+        seen = set()
+        for b in blocks:
+            if b not in seen:
+                unique_blocks.append(b)
+                seen.add(b)
+
+        content = "\n\n".join(unique_blocks).strip()
+        
+        if not content:
+            # 如果密度算法失败，回退到父类的基础提取逻辑
+            return super()._parse_local(html, source)
+
+        return Document(
+            page_content=content,
+            metadata={
+                "source": source,
+                "title": title_text,
+                "type": "text_density_v2",
+                "content_hash": hash(content[:100]) # 简单校验码
+            }
+        )
+    
     def _is_noise(self, line: str) -> bool:
-        import re
-        return bool(re.search(r"广告|推荐|相关阅读|copyright", line, re.IGNORECASE))
+        return bool(re.search(r"广告|推荐|相关阅读|copyright|版权所有|扫码关注", line, re.IGNORECASE))
 
     def _safe_text(self, tag):
-        if not tag:
-            return ""
-        return tag.get_text(strip=True) if getattr(tag, "get_text", None) else (tag.get("content") or "")
-
+        if not tag: return ""
+        if hasattr(tag, "get_text"):
+            return tag.get_text(strip=True)
+        return tag.get("content") or ""

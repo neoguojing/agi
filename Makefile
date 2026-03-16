@@ -154,3 +154,8 @@ image_tika:
 	docker build \
 	-f ./Dockerfile.tika \
 	-t $(REGISTRY)/guojingneo/tika:3.2.2.0-full-zh .
+
+
+.PHONY: agent
+agent:
+	python -m agi.agent.agent
