@@ -1,8 +1,6 @@
 
 from agi.agent.tools import RemoteImageEditTool,RemoteImageGenTool,RemoteMultiModalTool,RemoteTranscriptionTool,RemoteTTSTool
-from agi.agent.models import ModelProvider
 
-basic_model = ModelProvider.get_chat_model("ollama")
 
 image_gen_tool = RemoteImageGenTool()
 image_edit_tool = RemoteImageEditTool()
@@ -14,8 +12,7 @@ visual_subagent = {
         "When generating, expand user prompts into high-quality descriptive prompts. "
         "Always return the resulting Image URL to the main agent."
     ),
-    "tools": [image_gen_tool, image_edit_tool],
-    "model": basic_model, # 艺术理解能力强
+    "tools": [image_gen_tool, image_edit_tool]
 }
 
 omni_tool = RemoteMultiModalTool()
@@ -27,8 +24,7 @@ perception_subagent = {
         "see images/videos via Omni models, and speak via TTS. "
         "If a user provides a file path, use the appropriate tool to process it."
     ),
-    "tools": [omni_tool],
-    "model": basic_model # 逻辑推理极强
+    "tools": [omni_tool]
 }
 
 
@@ -47,8 +43,7 @@ stt_subagent = {
         "3. Maintain the original meaning and tone of the speaker.\n"
         "4. If the audio is low quality or the transcription fails, explain the specific reason to the main agent."
     ),
-    "tools": [stt_tool],
-    "model": basic_model
+    "tools": [stt_tool]
 }
 
 # Tools previously defined via HTTPX
@@ -65,6 +60,5 @@ tts_subagent = {
         "3. Ensure the text is sanitized (e.g., expand abbreviations like 'Dr.' to 'Doctor') before synthesis to improve pronunciation.\n"
         "4. Return the final Audio URL or streaming instructions clearly to the main agent."
     ),
-    "tools": [tts_tool],
-    "model": basic_model,
+    "tools": [tts_tool]
 }
