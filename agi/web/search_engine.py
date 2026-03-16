@@ -8,7 +8,6 @@ from langchain_core.callbacks import CallbackManagerForToolRun
 
 # 核心配置与日志
 from agi.config import EXA_API_KEY, log, TAVILY_API_KEY,SEARXNG_BASE_URL
-from agi.web.yacy import YaCySearch
 
 class SearchEngineSelector(BaseTool):
     name: str = "search"
