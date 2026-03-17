@@ -1,4 +1,21 @@
 services:
+  qdrant:
+    image: qdrant/qdrant:v1.17-unprivileged
+    container_name: qdrant
+    restart: always
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      # 数据持久化
+      - /data/agi/qdrant/storage:/qdrant/storage:z
+      # 快照存放路径
+      - /data/agi/qdrant/snapshots:/qdrant/snapshots:z
+      # 自定义配置文件挂载
+      # - ./config/production.yaml:/qdrant/config/production.yaml:ro
+    environment:
+      - QDRANT__LOG_LEVEL=INFO
+
   tika:
     image: guojingneo/tika:3.2.2.0-full-zh
     container_name: tika

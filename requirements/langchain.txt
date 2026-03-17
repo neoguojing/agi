@@ -10,6 +10,8 @@ langchain_ollama==1.0.1
 langchain_openai==1.1.11
 deepagents==0.4.7
 llama-index==0.14.16
-qdrant-client==1.17.0
+qdrant-client==1.17.1
+grpcio==1.78.0
+grpcio-tools==1.78.0
 llama-index-vector-stores-qdrant==0.9.2
 llama-index-embeddings-ollama==0.8.6
