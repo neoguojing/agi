@@ -165,3 +165,5 @@ output_image.jpeg
 tests/snake.jpeg
 tests/test.wav
 test
+checkpoint.db
+checkpoints.sqlite

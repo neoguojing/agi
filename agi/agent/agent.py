@@ -6,9 +6,14 @@ from agi.agent.middlewares import DebugLLMContextMiddleware
 from agi.agent.tools import buildin_tools
 from agi.agent.subagents import buildin_agents
 from langgraph.checkpoint.sqlite import SqliteSaver
+import sqlite3
 from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend
 from agi.agent.context import Context
+from functools import lru_cache
+@lru_cache(maxsize=None)
+def get_connection():
+    return sqlite3.connect("checkpoint.db", check_same_thread=False)
 
 
 class DeepAgentBuilder:
@@ -16,7 +21,7 @@ class DeepAgentBuilder:
         self.name = name
         # 模型配置
         self._llm = ModelProvider.get_chat_model(provider="ollama",model_name="qwen3.5:9b")
-        self._embd = ModelProvider.get_embeddings(provider="ollama",model_name="bge:latest")  # 你的 Embedding 初始化
+        self._embd = ModelProvider.get_embeddings(provider="ollama",model_name="embeddinggemma:latest")  # 你的 Embedding 初始化
         self._system_prompt = "You are a helpful AI assistant."
         self._backend = LocalShellBackend(root_dir=".", env={"PATH": "/usr/bin:/bin"})
         
@@ -30,13 +35,12 @@ class DeepAgentBuilder:
         self._basic_tools = buildin_tools
         self._subagents = buildin_agents
         self._middleware = [
-            DebugLLMContextMiddleware()
+            # DebugLLMContextMiddleware()
         ]
         
         # 基础设施
-        with SqliteSaver.from_conn_string("checkpoints.sqlite")as checkpointer:
-            checkpointer.setup()
-            self._checkpointer = checkpointer
+        self._checkpointer = SqliteSaver(get_connection())
+        
         self._store = None
         self._interrupt_on = {}
 
@@ -110,8 +114,11 @@ if __name__ == '__main__':
     # 运行
     print("🚀 Agent 组装完毕，动态工具监控已启动...")
     config = {"configurable": {"thread_id": "1"}}
-    agent.invoke(
-        {"messages": [{"role": "user", "content": "帮我看看 custom_tools 目录里有什么能用的代码混淆工具？"}]},
+    result = agent.invoke(
+        {"messages": [{"role": "user", "content": "执行ls 命令，并返回结果。"}]},
         config=config,
         context=Context(user_id="1")
     )
+    
+    print(result)
+    print(result["messages"][-1].content)

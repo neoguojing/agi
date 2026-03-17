@@ -52,8 +52,8 @@ class RemoteImageEditTool(BaseTool):
     description: str = "Modify or transform an existing image based on text instructions via a remote API."
     args_schema: Type[BaseModel] = Image2ImageInput
     
-    api_base_url: str = Field(..., exclude=True)
-    api_key: str = Field(..., exclude=True)
+    api_base_url: str = Field(IMAGE_GEN_BASE_URL, exclude=True)
+    api_key: str = Field(API_KEY, exclude=True)
     timeout: float = 60.0
 
     def _run(self, prompt: str, image_url: str) -> str:

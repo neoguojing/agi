@@ -10,7 +10,6 @@ from abc import ABC, abstractmethod
 @dataclass
 class Context:
     user_id: str
-    role: str
 
 
 @tool
