@@ -490,3 +490,25 @@ shell执行	Backend
 子agent	SubAgentMiddleware
 上下文压缩	SummarizationMiddleware
 Prompt缓存	AnthropicPromptCachingMiddleware
+
+
+
+静态注入 (System Prompt):
+
+BASE_AGENT_PROMPT: 定义了 Agent 的核心行为准则（简洁、直接、专业客观、任务导向）。
+
+system_prompt: 用户自定义的初始指令，会与 BASE_AGENT_PROMPT 拼接。
+
+动态中间件注入 (Middleware):
+
+TodoListMiddleware: 注入待办事项列表（Tasks/Todos）。
+
+MemoryMiddleware: 读取指定的 AGENTS.md 文件并将其内容注入系统提示词。
+
+SkillsMiddleware: 加载指定的技能文件（Skills）并注入。
+
+FilesystemMiddleware: 注入文件系统相关的工具描述和当前目录状态。
+
+SubAgentMiddleware: 注入子代理（Sub-agents）的描述和调用工具。
+
+SummarizationMiddleware: 注入对话历史的摘要，以节省 Context Window。

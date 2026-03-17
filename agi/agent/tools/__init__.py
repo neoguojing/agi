@@ -18,7 +18,6 @@ buildin_tools: List[BaseTool] = [
     get_stock
 ]
 
-
 # 导出清单，方便其他模块调用
 __all__ = ["buildin_tools","SearchEngineSelector","RemoteImageGenTool",
            "RemoteImageEditTool","RemoteTTSTool","RemoteTranscriptionTool","RemoteMultiModalTool"]

@@ -14,7 +14,7 @@ from llama_index.vector_stores.qdrant import QdrantVectorStore
 from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.core.retrievers import QueryFusionRetriever
 from langchain_core.documents import Document as LangchainDocument
-
+from concurrent.futures import ThreadPoolExecutor
 
 import hashlib
 
@@ -363,24 +363,35 @@ class MultiCollectionRAGManager:
         question: str,
         top_k: int = 5,
     ):
+        def fetch_from_collection(coll_name):
+            # 获取每个 collection 的 retriever 并检索
+            retriever = self.get_collection(coll_name).get_retriever(top_k=top_k)
+            return retriever.retrieve(question)
 
-        retrievers = []
+        # 使用线程池并发发出请求
+        # max_workers 建议设置为 len(collections) 或 CPU 核心数
+        with ThreadPoolExecutor(max_workers=len(collections)) as executor:
+            # 提交任务并获取结果列表
+            results = list(executor.map(fetch_from_collection, collections))
 
-        for c in collections:
+        # --- 结果融合逻辑 (RRF) ---
+        # 我们可以手动实现一个简单的倒数排名融合 (Reciprocal Rank Fusion)
+        final_scores = {} # node_id -> score
+        node_map = {}     # node_id -> node_object
 
-            retriever = self.get_collection(c).get_retriever(
-                top_k=top_k
-            )
+        for collection_results in results:
+            for rank, node_with_score in enumerate(collection_results):
+                node = node_with_score.node
+                node_id = node.node_id
+                node_map[node_id] = node
+                
+                # RRF 公式: score = sum( 1 / (k + rank) )
+                # k 通常取 60
+                score = 1.0 / (60 + rank + 1)
+                final_scores[node_id] = final_scores.get(node_id, 0) + score
 
-            retrievers.append(retriever)
-
-        fusion = QueryFusionRetriever(
-            retrievers=retrievers,
-            similarity_top_k=top_k,
-            num_queries=1,   # 不做query expansion
-            mode="reciprocal_rerank",
-        )
-
-        nodes = fusion.retrieve(question)
-
-        return nodes
+        # 按融合后的分数排序
+        sorted_ids = sorted(final_scores.items(), key=lambda x: x[1], reverse=True)
+        
+        # 返回前 top_k 个节点
+        return [node_map[nid] for nid, _ in sorted_ids[:top_k]]

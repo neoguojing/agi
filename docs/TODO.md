@@ -4,8 +4,8 @@
 
 ### 一、实现多模态本地模型agent
 
-- 将相关实现改为tool
-- 基于tool，实现不同智能体的subagent
+- 将相关实现改为tool Done
+- 基于tool，实现不同智能体的subagent Done
 - 基于此：验证智能体的执行成功率，观测器执行效率
 
 ### 二、长期code编码智能体的实现

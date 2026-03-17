@@ -2,13 +2,13 @@ import os
 from typing import List, Optional, Dict, Any
 from agi.rag.retriever import MultiCollectionRAGManager
 from agi.agent.models import ModelProvider
-from agi.agent.middlewares.tool_inject_middleware import JITOrchestratorMiddleware
+from agi.agent.middlewares import DebugLLMContextMiddleware
 from agi.agent.tools import buildin_tools
 from agi.agent.subagents import buildin_agents
 from langgraph.checkpoint.sqlite import SqliteSaver
 from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend
-
+from agi.agent.context import Context
 
 
 class DeepAgentBuilder:
@@ -29,7 +29,9 @@ class DeepAgentBuilder:
         self._memory_paths = ["./memories/AGENT.md"]
         self._basic_tools = buildin_tools
         self._subagents = buildin_agents
-        self._middleware = []
+        self._middleware = [
+            DebugLLMContextMiddleware()
+        ]
         
         # 基础设施
         with SqliteSaver.from_conn_string("checkpoints.sqlite")as checkpointer:
@@ -80,6 +82,7 @@ class DeepAgentBuilder:
         # D. 组装中间件
         # jit_mw = JITOrchestratorMiddleware(buildin_tools,km)
         # final_middleware = [jit_mw] + self._middleware
+
         final_middleware = self._middleware
         # E. 调用 create_deep_agent (符合你提供的源码定义)
         return create_deep_agent(
@@ -93,7 +96,8 @@ class DeepAgentBuilder:
             memory=self._memory_paths,
             checkpointer=self._checkpointer,
             store=self._store,
-            interrupt_on=self._interrupt_on
+            interrupt_on=self._interrupt_on,
+            context_schema=Context
         )
     
 if __name__ == '__main__':
@@ -105,4 +109,9 @@ if __name__ == '__main__':
 
     # 运行
     print("🚀 Agent 组装完毕，动态工具监控已启动...")
-    agent.invoke({"messages": [{"role": "user", "content": "帮我看看 custom_tools 目录里有什么能用的代码混淆工具？"}]})
+    config = {"configurable": {"thread_id": "1"}}
+    agent.invoke(
+        {"messages": [{"role": "user", "content": "帮我看看 custom_tools 目录里有什么能用的代码混淆工具？"}]},
+        config=config,
+        context=Context(user_id="1")
+    )
