@@ -28,13 +28,39 @@ class ImageURL(BaseModel):
     url: str
     detail: Optional[Literal["low", "auto", "high"]] = "auto"
 
+
+class FileObject(BaseModel):
+    # 三种来源
+    file_id: Optional[str] = None
+    url: Optional[str] = None
+    base64: Optional[str] = None
+
+    # 可选
+    mime_type: Optional[str] = None
+    filename: Optional[str] = None
+
+
 class MessageContent(BaseModel):
-    type: Literal["text", "image_url","image","video","audio"]
+    type: Literal[
+        "text",
+        "image_url",
+        "file"
+    ]
+
+    # =========================
+    # TEXT
+    # =========================
     text: Optional[str] = None
+
+    # =========================
+    # IMAGE（OpenAI标准）
+    # =========================
     image_url: Optional[ImageURL] = None
-    image: Optional[str] = None
-    video: Optional[str] = None
-    audio: Optional[str] = None
+
+    # =========================
+    # FILE（统一 audio / video / pdf 等）
+    # =========================
+    file: Optional[FileObject] = None
 
 
 # 兼容 OpenAI 的消息格式

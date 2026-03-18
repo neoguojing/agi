@@ -2,14 +2,16 @@ from dataclasses import dataclass
 from langchain.agents.middleware import dynamic_prompt
 from langchain.agents.middleware import wrap_model_call
 from langchain.tools import tool, ToolRuntime
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 import asyncio
-from pydantic import BaseModel, Field
-from typing import List, Dict, Optional
 from abc import ABC, abstractmethod
+from typing import List, Dict, Optional
+from pydantic import BaseModel, Field
 
 @dataclass
 class Context:
     user_id: str
+    conversation_id: str
 
 
 @tool
@@ -65,9 +67,12 @@ class ContextProvider(ABC):
 
 class UserProfileProvider(ContextProvider):
     async def load(self, runtime, state):
+        # 从 Store 中根据 NAMESPACE 获取数据
+        user_id = runtime.context.user_id
+        profile_data = runtime.store.get(NAMESPACE, user_id)
+        
         return {
-            "role": runtime.context.role,
-            "user_id": runtime.context.user_id
+            "user_profile": profile_data.value if profile_data else {}
         }
     
 class KnowledgeProvider(ContextProvider):
@@ -119,19 +124,22 @@ class AsyncContextBuilder:
 class ContextRenderer:
     def render(self, ctx: dict) -> list:
         messages = []
-
+        
+        # Inject RAG / Knowledge
         if ctx.get("knowledge"):
-            messages.append({
-                "role": "system",
-                "content": f"Relevant Knowledge:\n{ctx['knowledge']}"
-            })
+            messages.append(SystemMessage(
+                content=f"### Relevant Knowledge\n{ctx['knowledge']}"
+            ))
 
-        if ctx.get("profile"):
-            messages.append({
-                "role": "system",
-                "content": f"Relevant Knowledge:\n{ctx['knowledge']}"
-            })
-
+        # Inject User Persona / Profile
+        if ctx.get("user_profile"):
+            profile = ctx["user_profile"]
+            # Formatting the dict for better LLM readability
+            profile_str = "\n".join([f"- {k}: {v}" for k, v in profile.items() if v])
+            messages.append(SystemMessage(
+                content=f"### User Persona & Preferences\n{profile_str}"
+            ))
+            
         return messages
 
 
@@ -139,22 +147,46 @@ class ContextRenderer:
 NAMESPACE = ("user_profile",)
 
 class UserPersona(BaseModel):
-    # 静态信息
-    full_name: Optional[str] = None
-    job_role: Optional[str] = None
+    """
+    Represents a persistent profile of the user to tailor AI interactions.
+    This schema is used by the LLM to extract and update user-specific context.
+    """
     
-    # 动态偏好
-    interests: List[str] = Field(default_factory=list, description="用户感兴趣的领域")
-    communication_style: str = Field(default="professional", description="用户偏好的交流风格，如：幽默、严谨、简洁")
+    # --- Static / Demographic Information ---
+    full_name: Optional[str] = Field(
+        None, 
+        description="The user's legal or preferred full name."
+    )
+    job_role: Optional[str] = Field(
+        None, 
+        description="The user's current professional title or primary occupation (e.g., 'Senior DevOps Engineer')."
+    )
     
-    # 技能等级 (决定回复深度)
+    # --- Dynamic Preferences ---
+    interests: List[str] = Field(
+        default_factory=list, 
+        description="A list of topics, industries, or technologies the user shows consistent interest in."
+    )
+    communication_style: str = Field(
+        default="professional", 
+        description="The user's preferred tone and language style (e.g., 'humorous', 'concise', 'academic', 'layman-friendly')."
+    )
+    
+    # --- Competency & Depth Control ---
     technical_level: Dict[str, str] = Field(
         default_factory=dict, 
-        description="用户在特定领域的等级，例如 {'Python': 'beginner'}"
+        description=(
+            "A mapping of specific domains to the user's proficiency level. "
+            "Example: {'Python': 'expert', 'Quantum Physics': 'beginner'}. "
+            "Used to calibrate the technical depth of AI responses."
+        )
     )
 
-    # 长期目标/任务
-    current_goals: List[str] = Field(default_factory=list, description="用户当前正在关注的任务或目标")
+    # --- Temporal Context ---
+    current_goals: List[str] = Field(
+        default_factory=list, 
+        description="Active projects, immediate objectives, or long-term milestones the user is currently working toward."
+    )
 
 class ProfileUpdater:
     def __init__(self, extractor_model):

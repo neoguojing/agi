@@ -1,8 +1,9 @@
 import os
-from typing import List, Optional, Dict, Any
+import uuid
+from typing import List, Optional, Dict, Any,AsyncGenerator
 from agi.rag.retriever import MultiCollectionRAGManager
 from agi.agent.models import ModelProvider
-from agi.agent.middlewares import DebugLLMContextMiddleware
+from agi.agent.middlewares import DebugLLMContextMiddleware,ContextEngineeringMiddleware
 from agi.agent.tools import buildin_tools
 from agi.agent.subagents import buildin_agents
 from langgraph.checkpoint.sqlite import SqliteSaver
@@ -22,6 +23,9 @@ class DeepAgentBuilder:
         # 模型配置
         self._llm = ModelProvider.get_chat_model(provider="ollama",model_name="qwen3.5:9b")
         self._embd = ModelProvider.get_embeddings(provider="ollama",model_name="embeddinggemma:latest")  # 你的 Embedding 初始化
+        # 实例化 KM：将 Embedding 模型注入其中
+        self._km = MultiCollectionRAGManager()
+
         self._system_prompt = "You are a helpful AI assistant."
         self._backend = LocalShellBackend(root_dir=".", env={"PATH": "/usr/bin:/bin"})
         
@@ -35,7 +39,8 @@ class DeepAgentBuilder:
         self._basic_tools = buildin_tools
         self._subagents = buildin_agents
         self._middleware = [
-            # DebugLLMContextMiddleware()
+            DebugLLMContextMiddleware(),
+            ContextEngineeringMiddleware(extractor_model=self._llm)
         ]
         
         # 基础设施
@@ -79,13 +84,6 @@ class DeepAgentBuilder:
         # A. 内部组装 KnowledgeManager (组合 Embd)
         if not self._embd:
             raise ValueError("Embedding model (set_embd) is required before building KM.")
-        
-        # 实例化 KM：将 Embedding 模型注入其中
-        km = MultiCollectionRAGManager()
-
-        # D. 组装中间件
-        # jit_mw = JITOrchestratorMiddleware(buildin_tools,km)
-        # final_middleware = [jit_mw] + self._middleware
 
         final_middleware = self._middleware
         # E. 调用 create_deep_agent (符合你提供的源码定义)
@@ -103,21 +101,76 @@ class DeepAgentBuilder:
             interrupt_on=self._interrupt_on,
             context_schema=Context
         )
-    
-if __name__ == '__main__':
-    # 使用 Builder 完成全流程组装
-    agent = (
-        DeepAgentBuilder()
-        .build()
+
+deep_agent = DeepAgentBuilder().build()
+
+async def invoke_agent(
+    state: Dict[str, Any],
+    config: Optional[Dict[str, Any]] = None,
+    context: Optional[Context] = None,
+    **kwargs
+):
+    if config is None:
+        config = {
+            "configurable": {
+                "thread_id": str(uuid.uuid4())
+            }
+        }
+
+    if context is None:
+        context = Context(
+            user_id=state.get("user_id"),
+            conversation_id=state.get("conversation_id")
+        )
+
+    return await deep_agent.invoke(
+        state,
+        config=config,
+        context=context,
+        **kwargs
     )
+
+async def stream_agent(
+    state: Dict[str, Any],
+    config: Optional[Dict[str, Any]] = None,
+    context: Optional[Context] = None,
+    stream_mode: Optional[list] = None,
+    **kwargs
+) -> AsyncGenerator[Any, None]:
+
+    if config is None:
+        config = {
+            "configurable": {
+                "thread_id": str(uuid.uuid4())
+            }
+        }
+
+    if context is None:
+        context = Context(
+            user_id=state.get("user_id"),
+            conversation_id=state.get("conversation_id")
+        )
+
+    if stream_mode is None:
+        stream_mode = ["messages", "updates", "custom"]
+
+    async for part in deep_agent.stream(
+        state,
+        config=config,
+        context=context,
+        stream_mode=stream_mode,
+        version="v2",
+        **kwargs
+    ):
+        yield part
+
+if __name__ == '__main__':
 
     # 运行
     print("🚀 Agent 组装完毕，动态工具监控已启动...")
-    config = {"configurable": {"thread_id": "1"}}
-    result = agent.invoke(
+    result = invoke_agent(
         {"messages": [{"role": "user", "content": "执行ls 命令，并返回结果。"}]},
-        config=config,
-        context=Context(user_id="1")
+        context=Context(user_id="1",conversation_id="test")
     )
     
     print(result)
