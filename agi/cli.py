@@ -1,9 +1,11 @@
 import asyncio
+from asyncio import sleep
 import uuid
 import os
 import mimetypes
 from typing import List, Dict, Any, Union
 from prompt_toolkit import PromptSession
+from langgraph.types import Overwrite
 from prompt_toolkit.completion import PathCompleter
 from rich.console import Console
 from rich.markdown import Markdown
@@ -28,49 +30,93 @@ class DeepAgentCLI:
     async def handle_stream(self, live: Live):
         full_response = ""
         current_tool = None
+        is_streaming_text = False
         
         config = {"configurable": {"thread_id": self.thread_id}}
         context = Context(user_id=self.user_id, conversation_id=self.conversation_id)
 
         try:
-            async for part in stream_agent(self.state, config=config, context=context):
-                # 1. 解析节点更新 (Updates 模式通常能更早抓到工具调用)
-                if isinstance(part, dict):
-                    # 查找当前活跃的消息数据
-                    node_data = part.get("agent") or part.get("chatbot") or part.get("tools")
+            async for part in stream_agent(
+                self.state, 
+                config=config, 
+                context=context,
+                stream_mode=["messages", "updates"]
+            ):
+                # --- 情况 A: 处理实时消息流 (打字机效果) ---
+                if isinstance(part, dict) and part.get("type") == "messages":
+                    data_tuple = part.get("data")
+                    if data_tuple and len(data_tuple) >= 1:
+                        chunk = data_tuple[0]
+                        content = getattr(chunk, "content", "")
+                        if content:
+                            full_response += content
+                            is_streaming_text = True
+                            live.update(Panel(Markdown(full_response), title="Agent Response", border_style="blue"))
+                
+                # --- 情况 B: 处理节点状态更新 (工具调用/完成) ---
+                elif isinstance(part, dict) and part.get("type") == "updates":
+                    updates_data = part.get("data", {})
                     
-                    if node_data and "messages" in node_data:
-                        last_msg = node_data["messages"][-1]
+                    for node_name, node_output in updates_data.items():
+                        if not isinstance(node_output, dict):
+                            continue
+                            
+                        raw_messages = node_output.get("messages")
                         
-                        # --- 处理工具调用阶段 ---
+                        # 🛠️ 关键修复：处理 Overwrite 对象
+                        if raw_messages is None:
+                            continue
+                        
+                        # 检查是否是 LangGraph 的 Overwrite 包装器
+                        actual_messages = []
+                        if hasattr(raw_messages, 'value'):
+                            # 这是一个 Overwrite 对象，提取真实列表
+                            actual_messages = raw_messages.value
+                        elif isinstance(raw_messages, list):
+                            # 普通列表
+                            actual_messages = raw_messages
+                        else:
+                            # 未知类型，跳过
+                            continue
+
+                        if not actual_messages:
+                            continue
+                            
+                        last_msg = actual_messages[-1]
+                        
+                        # 1. 检测工具调用
                         if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
                             for tc in last_msg.tool_calls:
-                                current_tool = tc['name']
-                                # 在界面上显示正在调用的工具
+                                tool_name = tc.get('name', 'Unknown')
+                                current_tool = tool_name
                                 live.update(Panel(
-                                    Spinner("dots", text=f"正在调用工具: [bold cyan]{current_tool}[/bold cyan]..."),
+                                    Spinner("dots", text=f"正在调用工具: [bold cyan]{tool_name}[/bold cyan]..."),
                                     title="Agent Action", border_style="yellow"
                                 ))
                         
-                        # --- 处理工具返回结果阶段 ---
-                        elif last_msg.role == "tool":
-                            # 工具执行完毕，展示一下状态
+                        # 2. 检测工具返回
+                        elif getattr(last_msg, "role", "") == "tool":
                             live.update(Panel(
-                                f"✅ 工具 [bold cyan]{current_tool}[/bold cyan] 执行完毕，正在整理结果...",
+                                f"✅ 工具 [bold cyan]{current_tool}[/bold cyan] 执行完毕，正在分析结果...",
                                 title="Agent Action", border_style="green"
                             ))
-                            await asyncio.sleep(0.5) # 给用户一点感官停留时间
+                            await asyncio.sleep(0.3)
+                        
+                        # 3. 检测最终回复 (兜底)
+                        elif getattr(last_msg, "role", "") == "assistant":
+                            content = getattr(last_msg, "content", "")
+                            if content and not is_streaming_text:
+                                full_response = content
+                                live.update(Panel(Markdown(full_response), title="Agent Response", border_style="blue"))
 
-                        # --- 处理最终文本回复阶段 ---
-                        elif last_msg.role == "assistant" and last_msg.content:
-                            full_response = last_msg.content
-                            live.update(Panel(Markdown(full_response), title="Agent Response", border_style="blue"))
-                
             return full_response
+
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             console.print(f"\n[bold red]Stream Error: {e}[/bold red]")
             return f"错误: {e}"
-
+    
     def _smart_parse(self, text: str) -> List[Any]:
         """解析输入，支持 img: 和 file: 标签"""
         tokens = text.split()
@@ -109,7 +155,7 @@ class DeepAgentCLI:
                 self.state["messages"].append({"role": "user", "content": processed_content})
 
                 # 流式展示进度和结果
-                with Live(Spinner("pulse", text="Agent 准备中..."), console=console, refresh_per_second=10) as live:
+                with Live(Spinner("dots", text="Agent 准备中..."), console=console, refresh_per_second=10) as live:
                     final_text = await self.handle_stream(live)
 
                 self.state["messages"].append({"role": "assistant", "content": final_text})

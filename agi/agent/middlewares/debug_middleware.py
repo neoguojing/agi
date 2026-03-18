@@ -1,5 +1,5 @@
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
-from typing import Callable
+from typing import Callable, Awaitable
     
 
 class DebugLLMContextMiddleware(AgentMiddleware):
@@ -24,10 +24,10 @@ class DebugLLMContextMiddleware(AgentMiddleware):
         self.show_settings = show_settings
         self.limit = content_limit
 
-    async def wrap_model_call(
+    async def awrap_model_call(
         self,
         request: ModelRequest,
-        handler: Callable[[ModelRequest], ModelResponse],
+        handler: Callable[[ModelRequest], Awaitable[ModelResponse]], 
     ) -> ModelResponse:
         
         print(f"\n{'='*25} 🛠️ LLM DEBUG 仪表盘 {'='*25}")
@@ -64,14 +64,44 @@ class DebugLLMContextMiddleware(AgentMiddleware):
                 role = msg.type.upper()
                 icon = {"SYSTEM": "⚙️", "HUMAN": "👤", "AI": "🤖", "TOOL": "🛠️"}.get(role, "📝")
                 
-                content = msg.content.strip()
-                if len(content) > self.limit:
+                # --- ✅ 修复开始：安全处理 content ---
+                raw_content = msg.content
+                content_str = ""
+
+                if isinstance(raw_content, str):
+                    content_str = raw_content.strip()
+                elif isinstance(raw_content, list):
+                    # 如果 content 是列表 (如多模态或工具参数)，尝试提取文本
+                    text_parts = []
+                    for item in raw_content:
+                        if isinstance(item, dict):
+                            # 处理 [{"type": "text", "text": "..."}] 格式
+                            if item.get("type") == "text":
+                                text_parts.append(str(item.get("text", "")))
+                            else:
+                                # 非文本部分简要标记
+                                text_parts.append(f"[{item.get('type', 'unknown')}]")
+                        else:
+                            text_parts.append(str(item))
+                    content_str = "\n".join(text_parts).strip()
+                else:
+                    # 其他类型直接转字符串
+                    content_str = str(raw_content).strip()
+                # --- ✅ 修复结束 ---
+
+                # 截断长内容
+                if len(content_str) > self.limit:
                     half = self.limit // 2
-                    content = f"{content[:half]}\n... [已省略 {len(content)-self.limit} 字] ...\n{content[-half:]}"
+                    content_str = f"{content_str[:half]}\n... [已省略 {len(content_str)-self.limit} 字] ...\n{content_str[-half:]}"
                 
-                print(f"{icon} [{role:^6}] | {content}")
+                # 如果内容为空，显示占位符
+                if not content_str:
+                    content_str = "[无内容]"
+
+                print(f"{icon} [{role:^6}] | {content_str}")
 
         print(f"{'='*66}\n")
 
         # 继续执行
-        return await handler(request)
+        response = await handler(request)
+        return response

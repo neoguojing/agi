@@ -1,6 +1,7 @@
 import asyncio
 import json
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional,Awaitable
+from venv import logger
 from langchain_core.messages import SystemMessage, BaseMessage
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 
@@ -30,10 +31,10 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         # 显式持有 updater，消除 runtime.extra 依赖
         self.updater = ProfileUpdater(extractor_model=extractor_model)
 
-    async def wrap_model_call(
+    async def awrap_model_call(
         self,
         request: ModelRequest,
-        handler: Callable[[ModelRequest], ModelResponse],
+        handler: Callable[[ModelRequest], Awaitable[ModelResponse]], 
     ) -> ModelResponse:
         
         # 1. 异步并行构建上下文 (RAG + Profile)
@@ -50,17 +51,17 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         self._log_debug_info(ctx_data, len(new_messages))
         response = await handler(request)
 
-        # 5. 后置处理：利用 asyncio.shield 实现安全的“火后即忘”更新
-        # 直接使用 self.updater，逻辑清晰
-        asyncio.create_task(
-            asyncio.shield(
-                self.updater.update(
+        async def update_profile_task():
+            try:
+                await self.updater.update(
                     runtime=request.runtime, 
-                    messages=request.messages, 
-                    ai_response=response.result
+                    messages=new_messages, 
+                    ai_response=response.result if hasattr(response, 'result') else str(response)
                 )
-            )
-        )
+            except Exception as e:
+                logger.error(f"Failed to update user profile: {e}")
+    
+        asyncio.create_task(update_profile_task())
 
         return response
 
