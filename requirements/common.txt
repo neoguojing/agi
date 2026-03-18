@@ -9,3 +9,5 @@ scipy==1.15.2
 nltk==3.9.1
 fsspec
 s3fs
+prompt_toolkit==3.0.52 
+wcwidth==0.6.0

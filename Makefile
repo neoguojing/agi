@@ -159,3 +159,7 @@ image_tika:
 .PHONY: agent
 agent:
 	python -m agi.agent.agent
+
+.PHONY: cli
+cli:
+	python -m agi.cli
