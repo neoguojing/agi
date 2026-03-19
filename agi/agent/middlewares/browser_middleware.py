@@ -203,10 +203,15 @@ class BrowserMiddleware(AgentMiddleware):
             if not img_b64:
                 return {"error": "Failed to take screenshot"}
             
+            # 确保有页面加载后再返回 URL 信息
+            url_info = ""
+            if self._last_result and self._last_result.url:
+                url_info = f" for {self._last_result.url}"
+            
             return {
                 "type": "image",
                 "image_data": img_b64,
-                "text": f"Screenshot captured for {self._last_result.url if self._last_result else 'current page'}"
+                "text": f"Screenshot captured{url_info}"
             }
         except Exception as e:
             return {"error": str(e)}
@@ -285,7 +290,7 @@ class BrowserMiddleware(AgentMiddleware):
                 self._last_result = result
 
                 # Check for errors in result
-                if result.metadata.get("error"):
+                if result.metadata and result.metadata.get("error"):
                     raise Exception(result.metadata["error"])
 
                 # OCR Fallback check
@@ -318,15 +323,20 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _format_result(self, result: PageInfo) -> Dict[str, Any]:
-        if result.metadata.get("error"):
+        if result.metadata and result.metadata.get("error"):
             return {"status": "error", "error": result.metadata["error"]}
+        
+        # 安全地获取文本内容，优先使用 text 属性，如果没有则尝试从 html 提取
+        content = getattr(result, 'text', None) or ""
+        if not content and hasattr(result, 'html'):
+            content = result.html[:500] + "..." if len(result.html) > 500 else result.html
         
         return {
             "status": "success",
-            "url": result.url,
-            "title": result.title,
-            "content_preview": (result.text or result.html or "")[:500] + "...",
-            "metadata": result.metadata
+            "url": getattr(result, 'url', ''),
+            "title": getattr(result, 'title', ''),
+            "content_preview": content,
+            "metadata": getattr(result, 'metadata', {})
         }
 
     # =========================
@@ -377,6 +387,3 @@ class BrowserMiddleware(AgentMiddleware):
     # =========================
     # 如果需要拦截其他非浏览器工具或做全局日志，可在此实现
     # 但核心逻辑已封装在 Tool 中
-    
-    # 这个代码有错误吗? AI!
-
