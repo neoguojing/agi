@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from agi.apps.common import ChatCompletionRequest, verify_api_key
-from agi.agent.agent import invoke_agent
+from agi.agent.agent import invoke_agent_async
 from .stream import stream_response
 from .formatter import format_response
 from .media import process_multimodal_content
@@ -43,5 +43,5 @@ async def chat_completions(request: ChatCompletionRequest, api_key: str = Depend
     if request.stream:
         return StreamingResponse(stream_response(state), media_type="text/event-stream")
 
-    resp = await invoke_agent(state)
+    resp = await invoke_agent_async(state)
     return format_response(resp)

@@ -13,7 +13,7 @@ from rich.live import Live
 from rich.panel import Panel
 from rich.spinner import Spinner
 
-from agi.agent.agent import stream_agent
+from agi.agent.agent import stream_agent_async
 from agi.agent.context import Context
 from agi.apps.common import MessageContent,ImageURL,FileObject
 from agi.api.media import process_multimodal_content
@@ -36,7 +36,7 @@ class DeepAgentCLI:
         context = Context(user_id=self.user_id, conversation_id=self.conversation_id)
 
         try:
-            async for part in stream_agent(
+            async for part in stream_agent_async(
                 self.state, 
                 config=config, 
                 context=context,
