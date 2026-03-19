@@ -13,53 +13,6 @@ class Context:
     user_id: str
     conversation_id: str
 
-
-@tool
-def get_user_profile(runtime: ToolRuntime[Context]) -> str:
-    """Get user profile info"""
-
-    user_id = runtime.context.user_id
-    store = runtime.store
-
-    profile = store.get(("users",), user_id)
-
-    if not profile:
-        return "No profile found"
-
-    return f"User name: {profile.value['name']}"
-
-
-@dynamic_prompt
-def role_prompt(request):
-    role = request.runtime.context.role
-
-    if role == "admin":
-        return "You are an admin assistant."
-    else:
-        return "You are a normal assistant."
-    
-
-@wrap_model_call
-def inject_user_memory(request, handler):
-
-    user_id = request.runtime.context.user_id
-    store = request.runtime.store
-
-    memory = store.get(("memory",), user_id)
-
-    if memory:
-        messages = [
-            *request.messages,
-            {
-                "role": "system",
-                "content": f"User preference: {memory.value}"
-            }
-        ]
-        request = request.override(messages=messages)
-
-    return handler(request)
-
-
 class ContextProvider(ABC):
     @abstractmethod
     async def load(self, runtime, state) -> dict:
