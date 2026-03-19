@@ -38,6 +38,9 @@ class MemgraphDBManager:
         self.url = url
         self.username = username
         self.password = password
+        # 连接池管理
+        self._admin_pool: Optional[List[MemgraphPropertyGraphStore]] = None
+        self._user_pools: Dict[str, List[MemgraphPropertyGraphStore]] = {}
 
     def get_user_db_name(self, user_id: str) -> str:
         # 转换 user_id 为合法的数据库名称（只允许字母数字下划线，且不能以数字开头）
@@ -61,13 +64,44 @@ class MemgraphDBManager:
 
     def get_user_store(self, user_id: str) -> MemgraphPropertyGraphStore:
         db_name = self.get_user_db_name(user_id)
-        self.ensure_database(db_name)
-        return MemgraphPropertyGraphStore(
-            url=self.url,
-            username=self.username,
-            password=self.password,
-            database=db_name
-        )
+        
+        # 初始化连接池（懒加载）
+        if db_name not in self._user_pools:
+            self._user_pools[db_name] = []
+        
+        # 如果连接池为空，创建新数据库并添加初始连接
+        if not self._user_pools[db_name]:
+            self.ensure_database(db_name)
+            # 为每个用户库创建一个连接
+            store = MemgraphPropertyGraphStore(
+                url=self.url,
+                username=self.username,
+                password=self.password,
+                database=db_name
+            )
+            self._user_pools[db_name].append(store)
+        
+        # 从连接池中获取一个可用连接
+        return self._user_pools[db_name][0]
+
+    def get_admin_store(self) -> MemgraphPropertyGraphStore:
+        """获取或创建管理员连接"""
+        if not self._admin_pool:
+            self._admin_pool = [MemgraphPropertyGraphStore(
+                url=self.url, username=self.username, password=self.password, database="memgraph"
+            )]
+        return self._admin_pool[0]
+
+    def close_all(self):
+        """关闭所有连接"""
+        if self._admin_pool:
+            self._admin_pool[0].close()
+            self._admin_pool = None
+        
+        for pool in self._user_pools.values():
+            for store in pool:
+                store.close()
+            pool.clear()
 
 # --- 3. 重构后的组件 ---
 
@@ -124,9 +158,7 @@ class GraphContextProvider(ContextProvider):
         finally:
             store.close()
 
-# 增加连接池管理 AI!
-
-### 4. 关键点说明
+# --- 4. 关键点说明
 
 # 1.  **物理安全隔离**：每个 `user_id` 拥有一个独立的 `db_xxxx`。即使用户通过 Prompt Injection 试图绕过应用层逻辑，他也无法在数据库底层访问到 `db_other_user` 的数据。
 # 2.  **动态连接分配**：在 `load` 和 `persist` 方法中，我们不再预存 `index` 实例，而是通过 `db_manager` 实时获取。这解决了多租户场景下数据库实例切换的问题。
@@ -134,6 +166,7 @@ class GraphContextProvider(ContextProvider):
 #     * **连接泄露**：重构代码在 `finally` 块中显式调用了 `store.close()`。在多用户并发时，这是防止 Memgraph 连接数达到上限的关键。
 #     * **冷启动**：第一次请求时会触发 `CREATE DATABASE`，可能会有秒级的延迟，后续请求将直接命中已有库。
 # 4.  **本体一致性**：虽然数据库隔离了，但所有用户库共享同一套 `validation_schema`。这确保了系统在全局抽象层的一致性。
+# 5.  **连接池优化**：通过 `_user_pools` 字典管理每个用户库的连接池，避免频繁创建和销毁连接，提高并发性能。
 
 # ---
 
