@@ -167,3 +167,6 @@ tests/test.wav
 test
 checkpoint.db
 checkpoints.sqlite
+agent_state.db
+agent_state.db-shm
+agent_state.db-wal

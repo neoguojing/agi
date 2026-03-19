@@ -40,7 +40,7 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         request = request.override(messages=new_messages)
 
         # 4. 执行模型调用
-        self._log_debug_info(injected_messages.content, len(new_messages))
+        self._log_debug_info(injected_messages, len(new_messages))
         response = await handler(request)
 
         async def update_profile_task():
@@ -75,4 +75,4 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         return res[:insert_idx] + injected + res[insert_idx:]
 
     def _log_debug_info(self, ctx_data: dict, total_count: int):
-        print(f"--- [Context Engine] 注入数据: {list(ctx_data.keys())} | 消息流长度: {total_count} ---")
+        print(f"--- [Context Engine] 注入数据: {ctx_data} | 消息流长度: {total_count} ---")
