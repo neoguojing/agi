@@ -204,7 +204,7 @@ class BrowserMiddleware(AgentMiddleware):
                 return {"error": "Failed to take screenshot"}
             
             return {
-                "type": "multimodal",
+                "type": "image",
                 "image_data": img_b64,
                 "text": f"Screenshot captured for {self._last_result.url if self._last_result else 'current page'}"
             }
@@ -257,7 +257,8 @@ class BrowserMiddleware(AgentMiddleware):
 
     async def _execute_with_retry(self, action: str, **kwargs) -> PageInfo:
         last_error = None
-        
+        self._last_result = None
+
         for attempt in range(self.max_retries):
             try:
                 # Anti-bot delay
@@ -295,6 +296,7 @@ class BrowserMiddleware(AgentMiddleware):
                         img_bytes = base64.b64decode(img_b64)
                         ocr_text = await self.ocr.parse(img_bytes)
                         result.text = str(ocr_text)
+                        result.screenshot_path = img_b64 # 确保截图也存在于结果中
                         result.metadata["ocr_applied"] = True
 
                 return result
@@ -311,7 +313,7 @@ class BrowserMiddleware(AgentMiddleware):
             title=None,
             html=None,
             text=None,
-            screenshot_base64=None,
+            screenshot_path=None,
             metadata={"error": f"Failed after {self.max_retries} retries: {last_error}"}
         )
 
@@ -375,3 +377,4 @@ class BrowserMiddleware(AgentMiddleware):
     # =========================
     # 如果需要拦截其他非浏览器工具或做全局日志，可在此实现
     # 但核心逻辑已封装在 Tool 中
+

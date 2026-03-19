@@ -29,7 +29,7 @@ class QdrantRAGManager:
         self,
         collection_name: str,
         qdrant_url: str = "http://localhost:6333",
-        ollama_embedding_model: Optional[str] = None,
+        ollama_embedding_model: Optional[str] = "embeddinggemma:latest",
         ollama_base_url: str = "http://localhost:11434",
         embed_model=None,
         chunk_size: int = 512,

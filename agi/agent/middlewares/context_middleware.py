@@ -5,7 +5,7 @@ from venv import logger
 from langchain_core.messages import SystemMessage, BaseMessage
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 
-from agi.agent.context import UserProfileProvider,KnowledgeProvider,AsyncContextBuilder,ContextRenderer,ProfileUpdater
+from agi.agent.context import create_default_context_manager,UnifiedContextUpdater
 
 class ContextEngineeringMiddleware(AgentMiddleware):
     """
@@ -21,15 +21,10 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         timeout: float = 2.0
     ):
         # --- 内部直接构建，减少外部参数 ---
-        providers = [UserProfileProvider()]
-        if retriever:
-            providers.append(KnowledgeProvider(retriever))
-            
-        self.builder = AsyncContextBuilder(providers, timeout=timeout)
-        self.renderer = ContextRenderer()
+        self.builder = create_default_context_manager(retriever=retriever)
         
         # 显式持有 updater，消除 runtime.extra 依赖
-        self.updater = ProfileUpdater(extractor_model=extractor_model)
+        self.updater = UnifiedContextUpdater(model=extractor_model)
 
     async def awrap_model_call(
         self,
@@ -38,17 +33,14 @@ class ContextEngineeringMiddleware(AgentMiddleware):
     ) -> ModelResponse:
         
         # 1. 异步并行构建上下文 (RAG + Profile)
-        ctx_data = await self.builder.build(request.runtime, request.state)
-
-        # 2. 渲染注入消息
-        injected_messages = self.renderer.render(ctx_data)
+        injected_messages = await self.builder.get_context_message(request.runtime,request.state)
         
         # 3. 智能合并消息 (确保注入内容位于首个 SystemMessage 之后)
         new_messages = self._smart_inject(request.messages, injected_messages)
         request = request.override(messages=new_messages)
 
         # 4. 执行模型调用
-        self._log_debug_info(ctx_data, len(new_messages))
+        self._log_debug_info(injected_messages.content, len(new_messages))
         response = await handler(request)
 
         async def update_profile_task():

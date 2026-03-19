@@ -1,8 +1,10 @@
 import base64
+import uuid
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
-
+from asyncio import Lock
+from pathlib import Path
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
 logger = logging.getLogger(__name__)
@@ -13,7 +15,7 @@ class PageInfo:
     title: Optional[str]
     html: Optional[str]
     text: Optional[str]
-    screenshot_base64: Optional[str]
+    screenshot_path: Optional[str]
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
@@ -30,6 +32,7 @@ class StatefulBrowserBackend:
 
     def __init__(
         self,
+        storage_dir: str,
         headless: bool = True,
         timeout: int = 30_000,
         max_content_length: int = 2_000_000, # 2MB limit for HTML
@@ -38,6 +41,10 @@ class StatefulBrowserBackend:
         self.timeout = timeout
         self.max_content_length = max_content_length
         
+        self.storage_dir = Path(storage_dir)
+        self.storage_dir.mkdir(parents=True, exist_ok=True) # 自动创建目录
+
+        self._init_lock = Lock()
         # 生命周期对象
         self._playwright = None
         self._browser: Optional[Browser] = None
@@ -50,21 +57,22 @@ class StatefulBrowserBackend:
 
     async def initialize(self):
         """启动浏览器实例 (只调用一次)"""
-        if self._browser:
-            return
-        
-        logger.info("Launching browser...")
-        self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(
-            headless=self.headless,
-            args=["--no-sandbox", "--disable-setuid-sandbox"] # Docker 友好
-        )
-        self._context = await self._browser.new_context(
-            viewport={"width": 1280, "height": 720},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        )
-        self._page = await self._context.new_page()
-        logger.info("Browser ready.")
+        async with self._init_lock:
+            if self._browser:
+                return
+            
+            logger.info("Launching browser...")
+            self._playwright = await async_playwright().start()
+            self._browser = await self._playwright.chromium.launch(
+                headless=self.headless,
+                args=["--no-sandbox", "--disable-setuid-sandbox"] # Docker 友好
+            )
+            self._context = await self._browser.new_context(
+                viewport={"width": 1280, "height": 720},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            self._page = await self._context.new_page()
+            logger.info("Browser ready.")
 
     async def close(self):
         """关闭浏览器实例"""
@@ -97,7 +105,7 @@ class StatefulBrowserBackend:
             return await self._capture_page_info(page, url, resp)
         except Exception as e:
             logger.exception(f"Navigation failed: {e}")
-            return PageInfo(url=url, title=None, html=None, text=None, metadata={"error": str(e)})
+            return PageInfo(url=url, title=None, html=None, text=None, screenshot_path=None,metadata={"error": str(e)})
 
     async def click(self, selector: str) -> PageInfo:
         """点击元素 (在当前页面)"""
@@ -106,10 +114,20 @@ class StatefulBrowserBackend:
         
         try:
             await page.click(selector, timeout=5000)
-            await page.wait_for_load_state("networkidle", timeout=5000) # 等待跳转或加载
+            # 注意：这里可能发生页面跳转，所以 capture 里的 url 会自动更新
+            await page.wait_for_load_state("networkidle", timeout=5000)
             return await self._capture_page_info(page, page.url, None)
         except Exception as e:
-            return PageInfo(url=page.url, title=None, html=None, text=None, metadata={"error": f"Click failed: {e}"})
+            # 修复：直接从 page 对象获取当前的 URL
+            current_url = page.url if page else "unknown"
+            return PageInfo(
+                url=current_url, 
+                title=None, 
+                html=None, 
+                text=None, 
+                screenshot_path=None,
+                metadata={"error": f"Click failed: {str(e)}"}
+            )
 
     async def fill(self, selector: str, text: str) -> PageInfo:
         """填充输入框"""
@@ -120,14 +138,29 @@ class StatefulBrowserBackend:
             await page.fill(selector, text, timeout=5000)
             return await self._capture_page_info(page, page.url, None)
         except Exception as e:
-            return PageInfo(url=page.url, title=None, html=None, text=None, metadata={"error": f"Fill failed: {e}"})
-
+            # 修复：同上
+            current_url = page.url if page else "unknown"
+            return PageInfo(
+                url=current_url, 
+                title=None, 
+                html=None, 
+                text=None, 
+                screenshot_path=None,
+                metadata={"error": f"Fill failed: {str(e)}"}
+            )
     async def get_screenshot(self) -> str:
-        """获取当前页面截图 (Base64)"""
+        """获取当前页面截图，保存为文件并返回绝对路径"""
         page = await self.ensure_page()
         try:
-            img = await page.screenshot(full_page=True, type="png")
-            return base64.b64encode(img).decode("utf-8")
+            # 生成唯一文件名
+            filename = f"screenshot_{uuid.uuid4().hex[:8]}.png"
+            file_path = self.storage_dir / filename
+            
+            # Playwright 直接保存到路径
+            await page.screenshot(path=str(file_path), full_page=False)
+            
+            logger.info(f"Screenshot saved to: {file_path}")
+            return str(file_path.absolute())
         except Exception as e:
             logger.exception("Screenshot failed")
             return ""
@@ -153,33 +186,47 @@ class StatefulBrowserBackend:
     # =========================
     # Helpers
     # =========================
-
     async def _capture_page_info(self, page: Page, url: str, resp) -> PageInfo:
-        """捕获当前页面状态"""
+        """
+        捕获当前页面状态，并将截图持久化到文件系统。
+        """
         try:
+            # 1. 提取基础文本内容
             html = await page.content()
             if len(html) > self.max_content_length:
                 html = html[:self.max_content_length] + "\n... [TRUNCATED]"
             
-            text = await page.inner_text("body")
-            title = await page.title()
+            page_text = await page.inner_text("body")
+            page_title = await page.title()
+
+            # 2. 生成唯一的截图文件路径
+            # 假设 self.storage_dir 已经在 __init__ 中初始化为 Path 对象
+            file_name = f"page_{uuid.uuid4().hex[:10]}.png"
+            file_path = self.storage_dir / file_name
             
-            # 截图 (可选，如果太慢可以改为按需调用)
-            # 为了节省带宽，这里不默认生成截图，由 middleware 的 screenshot 工具单独调用
-            # 但如果需要调试，可以开启
-            # img = await page.screenshot() 
-            # b64 = base64.b64encode(img).decode()
-            
+            # 3. 执行截图并保存到磁盘
+            await page.screenshot(path=str(file_path), full_page=False)
+
+            # 4. 返回包含物理路径的 PageInfo
             return PageInfo(
                 url=page.url,
-                title=title,
+                title=page_title,
                 html=html,
-                text=text,
-                screenshot_base64=None, 
+                text=page_text,
+                screenshot_path=str(file_path.absolute()), # 修复：存储绝对路径
                 metadata={
-                    "status": resp.status if resp else None,
-                    "timestamp": str(page.context.browser.version)
+                    "status": resp.status if resp else 200,
+                    "content_length": len(html),
+                    "has_screenshot": True
                 }
             )
         except Exception as e:
-            return PageInfo(url=url, title=None, html=None, text=None, metadata={"error": str(e)})
+            logger.error(f"Failed to capture page info for {url}: {e}")
+            return PageInfo(
+                url=url, 
+                title=None, 
+                html=None, 
+                text=None, 
+                screenshot_path=None, 
+                metadata={"error": str(e)}
+            )
