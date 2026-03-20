@@ -179,11 +179,37 @@ class SearchEngineSelector(BaseTool):
         log.info(f"Batch search complete. Questions: {len(questions)}, Success: {len(final_results)}")
         return final_results
 
-    def _run(self, query: str, **kwargs) -> List[Dict]:
-        """LangChain 同步接口适配"""
+    # --- 完善同步接口 ---
+    def _run(
+        self, 
+        query: str, 
+        run_manager: Optional[CallbackManagerForToolRun] = None
+    ) -> List[Dict]:
+        """LangChain 同步接口：在单独的线程中运行异步逻辑"""
+        import asyncio
         try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
+            # 尝试在现有事件循环中运行（如果是在异步环境中调用同步方法）
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                from concurrent.futures import ThreadPoolExecutor
+                with ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, self._search_single(query))
+                    return future.result()
             return asyncio.run(self._search_single(query))
-        # 已经在 loop 中则需要使用 run_coroutine_threadsafe 等，通常建议直接 arun
-        return []
+        except Exception as e:
+            log.error(f"Sync execution failed: {e}")
+            return []
+
+    # --- 完善异步接口 (LangChain 推荐用法) ---
+    async def _arun(
+        self, 
+        query: str, 
+        run_manager: Optional[CallbackManagerForToolRun] = None
+    ) -> List[Dict]:
+        """LangChain 异步接口：直接调用核心搜索逻辑"""
+        try:
+            results = await self._search_single(query)
+            return results
+        except Exception as e:
+            log.error(f"Async execution failed: {e}")
+            return []

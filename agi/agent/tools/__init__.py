@@ -15,7 +15,8 @@ from agi.web.search_engine import SearchEngineSelector
 # 你可以直接放函数（如果用了 @tool 装饰器），也可以放实例化后的对象
 buildin_tools: List[BaseTool] = [
     get_weather_info,
-    get_stock
+    get_stock,
+    SearchEngineSelector()
 ]
 
 # 导出清单，方便其他模块调用
