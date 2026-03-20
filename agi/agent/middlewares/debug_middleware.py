@@ -7,7 +7,7 @@ class DebugLLMContextMiddleware(AgentMiddleware):
         self, 
         show_messages: bool = True, 
         show_tools: bool = True, 
-        show_state: bool = True,
+        show_state: bool = False,
         show_settings: bool = False,
         content_limit: int = 300
     ):

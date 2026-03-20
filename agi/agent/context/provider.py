@@ -42,7 +42,7 @@ class UserProfileProvider(ContextProvider):
     async def load(self, runtime, state):
         user_id = runtime.context.user_id
         # Assuming USER_PROFILE_CONTEXT is defined in your constants
-        profile_data = runtime.store.get(user_id, USER_PROFILE_CONTEXT)
+        profile_data = await runtime.store.aget(user_id, USER_PROFILE_CONTEXT)
         return {
             ContextKeys.USER: profile_data.value if profile_data else {}
         }
@@ -52,7 +52,7 @@ class SessionContextProvider(ContextProvider):
         user_id = runtime.context.user_id
         session_id = runtime.context.conversation_id
         # get_session_context_id is your helper for namespacing
-        session_meta = runtime.store.get(user_id, get_session_context_id(session_id))
+        session_meta = await runtime.store.aget(user_id, get_session_context_id(session_id))
         
         messages = state.get("messages", [])
         return {
@@ -66,7 +66,7 @@ class EntityContextProvider(ContextProvider):
     async def load(self, runtime, state) -> dict:
         user_id = runtime.context.user_id
         session_id = runtime.context.conversation_id
-        active_entities = runtime.store.get(user_id, get_session_entity_id(session_id))
+        active_entities = await runtime.store.aget(user_id, get_session_entity_id(session_id))
         return {
             ContextKeys.ENTITY: active_entities.value if active_entities else []
         }
@@ -98,7 +98,7 @@ class ContextRenderer:
         }
 
     def render(self, ctx: Dict[str, Any]) -> List[SystemMessage]:
-        core_instruction = "You are a professional AI Assistant. Use the context below to tailor your response."
+        core_instruction = "Use the context below to tailor your response."
         sections = [core_instruction, "---"]
 
         for key, config in self._formatters.items():

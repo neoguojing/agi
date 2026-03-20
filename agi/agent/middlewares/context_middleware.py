@@ -42,13 +42,12 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         # 4. 执行模型调用
         self._log_debug_info(injected_messages, len(new_messages))
         response = await handler(request)
-
         async def update_profile_task():
             try:
                 await self.updater.update(
                     runtime=request.runtime, 
                     messages=new_messages, 
-                    ai_response=response.result if hasattr(response, 'result') else str(response)
+                    ai_response=response.result
                 )
             except Exception as e:
                 logger.error(f"Failed to update user profile: {e}")
@@ -75,4 +74,5 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         return res[:insert_idx] + injected + res[insert_idx:]
 
     def _log_debug_info(self, ctx_data: dict, total_count: int):
-        print(f"--- [Context Engine] 注入数据: {ctx_data} | 消息流长度: {total_count} ---")
+        # print(f"--- [Context Engine] 注入数据: {ctx_data[0].content} | 消息流长度: {total_count} ---")
+        print(f"--- [Context Engine] 注入数据: {ctx_data[0].content}")

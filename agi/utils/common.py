@@ -340,3 +340,63 @@ def path_to_preview_url(file_path: str, base_url: str = BASE_URL) -> str:
     # 构建预览 URL
     preview_url = f"{base_url}/v1/files/{urllib.parse.quote(file_name)}"
     return preview_url
+
+
+from typing import Any, List, Union, overload
+from langchain_core.messages import BaseMessage, AIMessage, ToolMessage
+
+def extract_message_content(msg: BaseMessage) -> str:
+    """从 LangChain 消息中提取纯文本内容（修复 dict 访问）"""
+    
+    # 简单文本（向后兼容）
+    if hasattr(msg, 'content') and msg.content:
+        if isinstance(msg.content, str):
+            return msg.content
+    
+    # content_blocks（dict 格式）
+    if hasattr(msg, 'content_blocks') and msg.content_blocks:
+        parts = []
+        for block in msg.content_blocks:
+            # ✅ 使用 dict 访问 block["type"]
+            block_type = block.get("type")
+            
+            if block_type == "text":
+                parts.append(block.get("text", ""))
+            elif block_type == "reasoning":
+                parts.append(f"[推理] {block.get('reasoning', '')}")
+            elif block_type in ("image", "audio", "video"):
+                source = block.get("url") or block.get("base64", "[:base64:]")[:50] + "..."
+                mime = block.get("mime_type", "")
+                parts.append(f"[{block_type.upper()}] {mime}: {source}")
+            elif block_type == "file":
+                source = block.get("url") or block.get("mime_type", "?")
+                parts.append(f"[文件] {source}")
+            elif block_type == "tool_call":
+                name = block.get("name", "unknown")
+                args = str(block.get("args", {}))
+                parts.append(f"[工具] {name}: {args}")
+            else:
+                # 未知类型，安全处理
+                parts.append(f"[{block_type}] {str(block)}")
+        
+        return "\n".join(parts)
+    
+    # 其他情况
+    if isinstance(msg, AIMessage) and msg.tool_calls:
+        return "\n".join([str(tc["args"]) for tc in msg.tool_calls])
+    if isinstance(msg, ToolMessage):
+        return msg.content or ""
+    
+    return str(msg.content or "")
+
+@overload
+def extract_messages_content(messages: BaseMessage) -> str: ...
+
+@overload
+def extract_messages_content(messages: List[BaseMessage]) -> List[str]: ...
+
+def extract_messages_content(messages: Union[BaseMessage, List[BaseMessage]]) -> Union[str, List[str]]:
+    """从消息（单条/列表）中提取内容，全支持多模态"""
+    if isinstance(messages, BaseMessage):
+        return extract_message_content(messages)
+    return [extract_message_content(msg) for msg in messages]

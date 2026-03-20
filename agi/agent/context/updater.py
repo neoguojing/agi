@@ -1,7 +1,9 @@
 import asyncio
+from asyncio.log import logger
 from typing import List, Dict, Optional,Any
 from pydantic import BaseModel, Field
 from .context import USER_PROFILE_CONTEXT,get_session_context_id,get_session_entity_id
+from agi.utils.common import extract_messages_content
 
 # --- Prompt Constants ---
 
@@ -136,26 +138,32 @@ class UnifiedContextUpdater:
         """
         统一更新入口：并行处理用户画像、Session和实体
         """
-        user_id = runtime.context.user_id
-        session_id = runtime.context.session_id
-        user_msg = messages[-1].content
-        ai_msg = ai_response.content if hasattr(ai_response, 'content') else str(ai_response)
+        try:
+            user_id = runtime.context.user_id
+            session_id = runtime.context.conversation_id
+            user_msg = extract_messages_content(messages[-1])
+            ai_msg = extract_messages_content(ai_response[-1])
+            print(f"--- [Context Engine] 用户消息: {user_msg} | AI响应: {ai_msg} ---")
+            # 过滤过短的噪音消息
+            if len(user_msg) < 3: 
+                print(f"--- [Context Engine] 用户消息过短，跳过更新 ---")
+                return
 
-        # 过滤过短的噪音消息
-        if len(user_msg) < 3: return
-
-        # 定义并行任务
-        tasks = [
-            self._update_user_profile(runtime, user_id, user_msg, ai_msg),
-            self._update_session_context(runtime, user_id, session_id, user_msg),
-            self._update_entities(runtime, user_id, session_id, user_msg, ai_msg)
-        ]
-        
-        await asyncio.gather(*tasks)
+            # 定义并行任务
+            tasks = [
+                self._update_user_profile(runtime, user_id, user_msg, ai_msg),
+                self._update_session_context(runtime, user_id, session_id, user_msg),
+                self._update_entities(runtime, user_id, session_id, user_msg, ai_msg)
+            ]
+            
+            await asyncio.gather(*tasks)
+        except Exception as e:
+            logger.error(f"UnifiedContextUpdater update failed: {e}")
+            return # 如果连消息都提取不了，后续都没法做
 
     async def _update_user_profile(self, runtime, user_id, user_msg, ai_msg):
         # 1. 获取现有数据
-        existing = runtime.store.get(user_id, USER_PROFILE_CONTEXT)
+        existing = await runtime.store.aget(user_id, USER_PROFILE_CONTEXT)
         current_val = existing.value if existing else UserPersona().model_dump()
 
         # 2. LLM 提取补丁
@@ -164,9 +172,11 @@ class UnifiedContextUpdater:
         )
         try:
             patch = await self.user_extractor.ainvoke(prompt)
+            print(f"User Profile Patch: {patch.model_dump(exclude_none=True)}")
             # 3. 智能合并并存入 Store
             updated_val = self._smart_merge_user(current_val, patch.model_dump(exclude_none=True))
-            runtime.store.put(user_id, USER_PROFILE_CONTEXT, updated_val)
+            print(f"Updated User Profile: {updated_val}")
+            await runtime.store.aput(user_id, USER_PROFILE_CONTEXT, updated_val)
         except Exception as e:
             print(f"User Profile Update Error: {e}")
 
@@ -175,7 +185,7 @@ class UnifiedContextUpdater:
         try:
             update = await self.session_extractor.ainvoke(prompt)
             # Session 数据通常直接覆盖或存入时序记录
-            runtime.store.put((user_id, get_session_context_id(session_id)), update.model_dump())
+            await runtime.store.aput((user_id, get_session_context_id(session_id)), update.model_dump())
         except Exception: 
             pass
 
@@ -185,7 +195,7 @@ class UnifiedContextUpdater:
             new_entities = await self.entity_extractor.ainvoke(prompt)
             if new_entities.entities:
                 # 获取旧实体列表并合并
-                existing = runtime.store.get(user_id,get_session_entity_id(session_id))
+                existing = await runtime.store.阿get(user_id,get_session_entity_id(session_id))
                 existing_list = existing.value if existing else []
                 
                 # 简单去重合并 (根据名称)
@@ -194,7 +204,7 @@ class UnifiedContextUpdater:
                     if ent.name not in seen_names:
                         existing_list.append(ent.model_dump())
                 
-                runtime.store.put(user_id,get_session_entity_id, existing_list)
+                await runtime.store.aput(user_id,get_session_entity_id, existing_list)
         except Exception: pass
 
     def _smart_merge_user(self, old: dict, new: dict) -> dict:

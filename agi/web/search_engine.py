@@ -34,9 +34,9 @@ class SearchEngineSelector(BaseTool):
         
         # 引擎定义映射表: {名称: (初始化函数, 依赖项检查)}
         engine_registry = {
-            "YACY": (self._init_yacy, lambda: True),
-            "SearXNG": (self._init_searxng, lambda: bool(SEARXNG_BASE_URL)),
-            "Exa": (self._init_exa, lambda: bool(EXA_API_KEY)),
+            # "YACY": (self._init_yacy, lambda: False),
+            # "SearXNG": (self._init_searxng, lambda: bool(SEARXNG_BASE_URL)),
+            # "Exa": (self._init_exa, lambda: bool(EXA_API_KEY)),
             "Tavily": (self._init_tavily, lambda: bool(TAVILY_API_KEY)),
         }
 

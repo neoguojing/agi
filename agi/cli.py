@@ -40,7 +40,8 @@ class DeepAgentCLI:
                 self.state, 
                 config=config, 
                 context=context,
-                stream_mode=["messages", "updates"]
+                # stream_mode=["messages", "updates"]
+                stream_mode=["messages"]
             ):
                 # --- 情况 A: 处理实时消息流 (打字机效果) ---
                 if isinstance(part, dict) and part.get("type") == "messages":
