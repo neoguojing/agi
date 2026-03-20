@@ -248,8 +248,8 @@ class StatefulBrowserBackend:
             logger.exception("find_elements failed for selector=%s", selector)
             return []
 
-    async def get_screenshot(self, *, full_page: bool = False) -> str:
-        """Capture a screenshot and return the absolute file path."""
+    async def get_screenshot(self, *, full_page: bool = True) -> str:
+        """Capture a screenshot for OCR/inspection and return the absolute file path."""
         page = await self.ensure_page()
         try:
             screenshot_path = await self._take_screenshot(page, prefix="screenshot", full_page=full_page)
@@ -258,8 +258,8 @@ class StatefulBrowserBackend:
             logger.exception("Screenshot failed")
             return ""
 
-    async def read_screenshot_bytes(self, *, full_page: bool = False) -> tuple[str, bytes] | None:
-        """Capture a screenshot and return both path and raw bytes."""
+    async def read_screenshot_bytes(self, *, full_page: bool = True) -> tuple[str, bytes] | None:
+        """Capture a screenshot for OCR/inspection and return both path and raw bytes."""
         screenshot_path = await self.get_screenshot(full_page=full_page)
         if not screenshot_path:
             return None
@@ -329,7 +329,7 @@ class StatefulBrowserBackend:
 
             screenshot_path: str | None = None
             if take_screenshot:
-                screenshot_path = str(await self._take_screenshot(page, prefix="page"))
+                screenshot_path = str(await self._take_screenshot(page, prefix="page", full_page=True))
 
             return PageInfo(
                 url=page.url,
@@ -343,6 +343,7 @@ class StatefulBrowserBackend:
                     "content_length": len(html),
                     "text_length": len(page_text),
                     "has_screenshot": screenshot_path is not None,
+                    "ocr_ready": screenshot_path is not None,
                     "history_length": len(self._history),
                 },
             )

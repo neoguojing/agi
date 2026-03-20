@@ -32,8 +32,8 @@ You have access to a stateful browser session.
 
 - Always navigate before interacting with a new website.
 - Prefer `browser_find` before `browser_click` or `browser_fill` when selectors are uncertain.
-- Use `browser_extract` for page content instead of relying on previews from navigation results.
-- Use `browser_screenshot` for visual debugging, blocked pages, captcha-like flows, or layout verification.
+- Use `browser_extract` as the primary content-reading tool; it prioritizes full-page screenshot OCR before falling back to DOM content.
+- Screenshots are primarily used as OCR input, and secondarily for visual debugging or layout verification.
 - Large HTML responses may be truncated and optionally evicted to disk.
 """
 
@@ -69,20 +69,21 @@ Usage:
 """
 
 BROWSER_EXTRACT_TOOL_DESCRIPTION = """
-Extracts HTML and text content from the current page.
+Extracts page content from the current page, prioritizing OCR.
 
 Usage:
-- If the content is small enough, the full HTML and text are returned.
-- If the content exceeds the limit, only previews are returned.
+- The tool first captures a full-page screenshot and uses OCR to read page content.
+- DOM text and HTML are treated as fallback/reference data when OCR is unavailable or incomplete.
+- If the HTML content exceeds the limit, only previews are returned.
 - When an eviction handler is configured, large HTML is written to disk and the file path is returned.
-- If OCR fallback has been applied, OCR text is included in the metadata.
 """
 
 BROWSER_SCREENSHOT_TOOL_DESCRIPTION = """
 Captures a screenshot of the current browser page.
 
 Usage:
-- Use this for visual debugging and page verification.
+- The screenshot is primarily intended to feed OCR-based page extraction.
+- It can also be used for visual debugging and page verification.
 - Returns a multimodal image content block the model can inspect.
 - The response also includes metadata such as the current URL and saved file path.
 """
@@ -117,6 +118,7 @@ class BrowserToolArtifact(TypedDict):
     html_preview: NotRequired[str]
     history_length: NotRequired[int]
     error: NotRequired[str]
+    ocr_text_preview: NotRequired[str]
 
 
 class BrowserMiddleware(AgentMiddleware):
@@ -253,27 +255,38 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     async def _tool_extract(self) -> BrowserToolArtifact:
-        """Extract HTML/text content from the last successfully loaded page."""
+        """Extract page content from the last successfully loaded page, prioritizing OCR."""
         if self._last_result is None:
             return self._error_artifact("No page loaded. Please navigate first.")
 
         html = self._last_result.html or ""
         text = self._last_result.text or ""
-        if not html and not text:
+        ocr_text, screenshot_path = await self._extract_content_with_ocr()
+        if not ocr_text and not html and not text:
             return self._error_artifact(
-                "Page content is empty.",
+                "Page content is empty and OCR extraction was unavailable.",
                 url=self._last_result.url,
                 metadata=self._last_result.metadata,
+                screenshot_path=screenshot_path,
             )
 
+        primary_content = ocr_text or text or html
         artifact: BrowserToolArtifact = {
             "status": "success",
             "url": self._last_result.url,
             "title": self._last_result.title,
-            "metadata": dict(self._last_result.metadata),
-            "content_preview": self._build_preview(text or html),
+            "metadata": {
+                **dict(self._last_result.metadata),
+                "ocr_priority": True,
+                "ocr_applied": bool(ocr_text),
+            },
+            "content_preview": self._build_preview(primary_content),
             "history_length": len(self.backend.get_history()),
         }
+        if screenshot_path:
+            artifact["screenshot_path"] = screenshot_path
+        if ocr_text:
+            artifact["ocr_text_preview"] = self._build_preview(ocr_text, limit=self.content_limit)
 
         if len(html) > self.content_limit:
             artifact["html_preview"] = self._build_preview(html, limit=self.content_limit)
@@ -310,6 +323,34 @@ class BrowserMiddleware(AgentMiddleware):
             "content_preview": f"Found {len(matches)} element(s) for selector: {selector}",
             "history_length": len(self.backend.get_history()),
         }
+
+    async def _extract_content_with_ocr(self) -> tuple[str, str | None]:
+        """Capture a full-page screenshot and use OCR as the primary extraction path."""
+        if not self.enable_ocr or self.ocr is None:
+            return "", self._last_result.screenshot_path if self._last_result else None
+
+        screenshot = await self.backend.read_screenshot_bytes(full_page=True)
+        if screenshot is None:
+            return "", self._last_result.screenshot_path if self._last_result else None
+
+        screenshot_path, image_bytes = screenshot
+        try:
+            ocr_text = await self.ocr.parse(image_bytes)
+        except Exception:
+            logger.exception("OCR extraction failed for %s", self._last_result.url if self._last_result else "current page")
+            return "", screenshot_path
+
+        normalized_text = str(ocr_text).strip()
+        if self._last_result is not None and normalized_text:
+            self._last_result.text = normalized_text
+            self._last_result.screenshot_path = screenshot_path
+            self._last_result.metadata = {
+                **self._last_result.metadata,
+                "ocr_applied": True,
+                "ocr_text_length": len(normalized_text),
+                "ocr_screenshot_path": screenshot_path,
+            }
+        return normalized_text, screenshot_path
 
     async def _tool_screenshot(self, tool_call_id: str) -> ToolMessage | Command:
         """Capture a screenshot and return a multimodal tool response."""
@@ -400,7 +441,7 @@ class BrowserMiddleware(AgentMiddleware):
         if result.html and len(result.html) >= 100:
             return
 
-        screenshot = await self.backend.read_screenshot_bytes(full_page=False)
+        screenshot = await self.backend.read_screenshot_bytes(full_page=True)
         if screenshot is None:
             return
 
@@ -488,6 +529,8 @@ class BrowserMiddleware(AgentMiddleware):
             lines.append(f"error: {artifact['error']}")
         if artifact.get("screenshot_path"):
             lines.append(f"screenshot_path: {artifact['screenshot_path']}")
+        if artifact.get("ocr_text_preview"):
+            lines.append(f"ocr_text_preview: {artifact['ocr_text_preview']}")
         if artifact.get("full_content_path"):
             lines.append(f"full_content_path: {artifact['full_content_path']}")
         if artifact.get("metadata"):
