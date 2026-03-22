@@ -143,7 +143,7 @@ class UnifiedContextUpdater:
             session_id = runtime.context.conversation_id
             user_msg = extract_messages_content(messages[-1])
             ai_msg = extract_messages_content(ai_response[-1])
-            print(f"--- [Context Engine] 用户消息: {user_msg} | AI响应: {ai_msg} ---")
+            # print(f"--- [Context Engine] 用户消息: {user_msg} | AI响应: {ai_msg} ---")
             # 过滤过短的噪音消息
             if len(user_msg) < 3: 
                 print(f"--- [Context Engine] 用户消息过短，跳过更新 ---")
@@ -162,15 +162,15 @@ class UnifiedContextUpdater:
             return # 如果连消息都提取不了，后续都没法做
 
     async def _update_user_profile(self, runtime, user_id, user_msg, ai_msg):
-        # 1. 获取现有数据
-        existing = await runtime.store.aget(user_id, USER_PROFILE_CONTEXT)
-        current_val = existing.value if existing else UserPersona().model_dump()
-
-        # 2. LLM 提取补丁
-        prompt = PROMPT_USER_PROFILE.format(
-            current_val=current_val, user_msg=user_msg, ai_msg=ai_msg
-        )
         try:
+            # 1. 获取现有数据
+            existing = await runtime.store.aget(user_id, USER_PROFILE_CONTEXT)
+            current_val = existing.value if existing else UserPersona().model_dump()
+            
+            # 2. LLM 提取补丁
+            prompt = PROMPT_USER_PROFILE.format(
+                current_val=current_val, user_msg=user_msg, ai_msg=ai_msg
+            )
             patch = await self.user_extractor.ainvoke(prompt)
             print(f"User Profile Patch: {patch.model_dump(exclude_none=True)}")
             # 3. 智能合并并存入 Store
@@ -185,7 +185,7 @@ class UnifiedContextUpdater:
         try:
             update = await self.session_extractor.ainvoke(prompt)
             # Session 数据通常直接覆盖或存入时序记录
-            await runtime.store.aput((user_id, get_session_context_id(session_id)), update.model_dump())
+            await runtime.store.aput(user_id, get_session_context_id(session_id), update.model_dump())
         except Exception: 
             pass
 
@@ -203,8 +203,8 @@ class UnifiedContextUpdater:
                 for ent in new_entities.entities:
                     if ent.name not in seen_names:
                         existing_list.append(ent.model_dump())
-                
-                await runtime.store.aput(user_id,get_session_entity_id, existing_list)
+
+                await runtime.store.aput(user_id, get_session_entity_id(session_id), existing_list)
         except Exception: pass
 
     def _smart_merge_user(self, old: dict, new: dict) -> dict:

@@ -86,30 +86,39 @@ class DeepAgentManager:
         return self._sync_agent
 
     # --- Asynchronous Logic ---
-    async def _init_async_conn(self):
-        if self._async_conn is None:
-            self._async_conn = await aiosqlite.connect(DB_PATH)
-            await self._async_conn.execute("PRAGMA journal_mode=WAL")
-            await self._async_conn.execute("PRAGMA synchronous=NORMAL")
-            await self._async_conn.commit()
-        return self._async_conn
-
     async def get_async_agent(self):
         if self._async_agent is None:
-            conn = await self._init_async_conn()
-            saver = AsyncSqliteSaver(conn=conn)
-            store = AsyncSqliteStore(conn=conn)
+            # 1. 初始化主连接用于 Saver (检查点通常更关键)
+            conn_saver = await aiosqlite.connect(DB_PATH)
+            await conn_saver.execute("PRAGMA journal_mode=WAL")
+            await conn_saver.execute("PRAGMA synchronous=NORMAL")
+            
+            # 2. 初始化独立连接用于 Store (向量/记忆存储)
+            # 指向同一个文件没问题，WAL 模式下并发安全
+            conn_store = await aiosqlite.connect(DB_PATH)
+            await conn_store.execute("PRAGMA journal_mode=WAL")
+            await conn_store.execute("PRAGMA synchronous=NORMAL")
+
+            saver = AsyncSqliteSaver(conn=conn_saver)
+            store = AsyncSqliteStore(conn=conn_store)
             
             self._async_agent = create_deep_agent(
                 **self.builder.build_options(),
                 checkpointer=saver,
                 store=store
             )
+            
+            # ⚠️ 重要：你需要在程序退出时关闭这两个连接
+            # 可以在 __del__ 或专门的 shutdown 方法中处理
+            self._connections_to_close = [conn_saver, conn_store]
+
         return self._async_agent
 
     async def close(self):
-        if self._async_conn:
-            await self._async_conn.close()
+        if self._async_agent:
+            for conn in getattr(self, "_connections_to_close", []):
+                await conn.close()
+            self._async_agent = None
 
 # --- Global Manager Instance ---
 agent_manager = DeepAgentManager(DeepAgentBuilder())
