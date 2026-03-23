@@ -28,6 +28,10 @@ from agi.web.browser_backend import BrowserBackendPool, PageInfo, UserBrowserSes
 MAX_PROMPT_EVENTS = 8
 
 logger = logging.getLogger(__name__)
+# middleware 的定位：
+# - 对外暴露浏览器工具集；
+# - 在模型调用前，把当前浏览器状态同步到 system prompt；
+# - 把 backend 的状态结果包装成 agent state / tool messages。
 
 BROWSER_SYSTEM_PROMPT = """## Browser Tools
 
@@ -103,6 +107,9 @@ Usage:
 class BrowserState(AgentState):
     """State for browser middleware."""
 
+    # browser_last_result: 最近一次浏览器工具的结构化结果
+    # browser_session_state: 当前用户浏览器会话的序列化状态快照
+
     browser_last_result: NotRequired[dict[str, Any]]
     browser_session_state: NotRequired[dict[str, Any]]
 
@@ -143,6 +150,8 @@ class BrowserToolArtifact(TypedDict):
 class BrowserMiddleware(AgentMiddleware):
     """Stateful browser middleware with filesystem-style tool wrappers."""
 
+    # 这里不直接管理 Playwright 细节，而是通过 BrowserBackendPool 获取“某个用户的当前浏览器会话”。
+
     def __init__(
         self,
         storage_dir: str = BROWSER_STORAGE_PATH,
@@ -178,6 +187,7 @@ class BrowserMiddleware(AgentMiddleware):
             self._create_find_tool(),
         ]
 
+    # 同步模型调用入口：在真正调用模型前，把当前浏览器状态摘要拼到 system prompt。
     def wrap_model_call(
         self,
         request: ModelRequest[ContextT],
@@ -188,6 +198,7 @@ class BrowserMiddleware(AgentMiddleware):
             request = request.override(system_message=append_to_system_message(request.system_message, system_prompt))
         return handler(request)
 
+    # 异步模型调用入口：逻辑和同步版本一致，只是适配异步 handler。
     async def awrap_model_call(
         self,
         request: ModelRequest[ContextT],
@@ -456,6 +467,7 @@ class BrowserMiddleware(AgentMiddleware):
 
     async def _execute_with_retry(self, runtime: ToolRuntime[None, BrowserState], action: str, **kwargs: Any) -> PageInfo:
         """Execute a browser action with retries and optional OCR fallback."""
+        # 所有真正会改变页面状态的原子操作统一走这里：负责重试、OCR 补偿、写回 session.last_result。
         last_error: Exception | None = None
         user_id = self._resolve_user_id(runtime)
 
@@ -604,6 +616,7 @@ class BrowserMiddleware(AgentMiddleware):
         return "default"
 
     def _build_model_system_prompt(self, request: ModelRequest[ContextT]) -> str:
+        # system prompt = 浏览器工具说明 + 当前 live browser state 摘要。
         system_prompt = self._custom_system_prompt or BROWSER_SYSTEM_PROMPT
         session_state = self._resolve_session_state_for_request(request)
         if not session_state:
@@ -611,6 +624,7 @@ class BrowserMiddleware(AgentMiddleware):
         return f"{system_prompt}\n\n{self._format_browser_state_for_prompt(session_state)}"
 
     def _resolve_session_state_for_request(self, request: ModelRequest[ContextT]) -> BrowserSessionState | None:
+        # 优先使用 request.state 里的状态；如果 state 里只有 user_id，则回到 session pool 读取最新 live snapshot。
         state = getattr(request, "state", None) or {}
         if isinstance(state, dict):
             session_state = state.get("browser_session_state")
@@ -650,6 +664,7 @@ class BrowserMiddleware(AgentMiddleware):
         return self._build_session_state(session)
 
     def _format_browser_state_for_prompt(self, session_state: BrowserSessionState) -> str:
+        # 把结构化状态压缩成模型容易理解的文本，避免把完整 JSON 原样塞进 prompt。
         browser = session_state.get("browser", {})
         context = session_state.get("context", {})
         page = session_state.get("page", {})
@@ -712,6 +727,7 @@ class BrowserMiddleware(AgentMiddleware):
         return state if isinstance(state, dict) else None
 
     def _command_for_result(
+        # 把浏览器工具结果统一包装成 LangGraph Command，便于更新 agent state。
         self,
         tool_name: str,
         tool_call_id: str,

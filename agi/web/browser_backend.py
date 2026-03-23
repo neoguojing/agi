@@ -20,6 +20,7 @@ from playwright.async_api import (
 
 logger = logging.getLogger(__name__)
 
+# 默认浏览器配置：尽量模拟真实桌面浏览器，减少被网站识别为自动化环境的概率。
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -34,9 +35,12 @@ DEFAULT_CAPTURE_DELAY_MS = 300
 MAX_FIND_RESULTS = 50
 MAX_BROWSER_EVENTS = 100
 MAX_STATE_MESSAGES = 100
+# 持久化的两个核心文件：一个保存 agent 可消费的状态摘要，一个保存 Playwright 的 cookies/localStorage。
 STATE_SNAPSHOT_FILENAME = "browser_session_state.json"
 PLAYWRIGHT_STORAGE_STATE_FILENAME = "playwright_storage_state.json"
+# 用户直接与页面交互产生的事件类型。
 USER_EVENT_TYPES = {"dom_click", "dom_input", "dom_change", "dom_submit", "page_hashchange", "page_popstate", "page_focusin"}
+# 注入到页面中的监听脚本：把用户在浏览器里的真实操作同步回 Python 后端。
 BROWSER_OBSERVER_SCRIPT = """
 (() => {
   if (window.__agiBrowserObserverInstalled) return;
@@ -102,6 +106,8 @@ class QueryMatch:
 class UserBrowserSession:
     """Browser session state scoped to a single user."""
 
+    # 这里保存的是“会话级”信息：当前用户对应的 backend、最近一次页面结果、活跃操作数等。
+
     user_id: str
     backend: "StatefulBrowserBackend"
     last_result: PageInfo | None = None
@@ -113,6 +119,8 @@ class UserBrowserSession:
 
 class BrowserBackendPool:
     """Manage one browser backend per user with idle-time eviction."""
+
+    # middleware 只需要关心“给我某个 user_id 的会话”；具体创建/复用/空闲回收由这里统一管理。
 
     def __init__(
         self,
@@ -126,6 +134,7 @@ class BrowserBackendPool:
     ) -> None:
         self.storage_dir = Path(storage_dir).resolve()
         self.storage_dir.mkdir(parents=True, exist_ok=True)
+        # 每个用户都有独立目录，用于保存截图、状态快照、storage_state。
         self.idle_timeout_seconds = idle_timeout_seconds
         self.headless = headless
         self.timeout = timeout
@@ -230,6 +239,10 @@ class BrowserBackendPool:
 class StatefulBrowserBackend:
     """Stateful Playwright backend for browser automation."""
 
+    # backend 负责两件事：
+    # 1) 提供 navigate / click / fill / screenshot 等原子操作；
+    # 2) 监听并汇总浏览器、context、page、用户交互产生的状态变化。
+
     def __init__(
         self,
         storage_dir: str,
@@ -245,6 +258,7 @@ class StatefulBrowserBackend:
 
         self.storage_dir = Path(storage_dir).resolve()
         self.storage_dir.mkdir(parents=True, exist_ok=True)
+        # 每个用户都有独立目录，用于保存截图、状态快照、storage_state。
         self._state_snapshot_path = self.storage_dir / STATE_SNAPSHOT_FILENAME
         self._playwright_storage_state_path = self.storage_dir / PLAYWRIGHT_STORAGE_STATE_FILENAME
 
@@ -276,6 +290,7 @@ class StatefulBrowserBackend:
 
     async def initialize(self) -> None:
         """Initialize the shared browser session lazily."""
+        # 懒初始化：只有真正第一次用到浏览器时才启动 Playwright。
         async with self._init_lock:
             if self._browser is not None:
                 return
@@ -286,6 +301,7 @@ class StatefulBrowserBackend:
                 headless=self.headless,
                 args=["--no-sandbox", "--disable-setuid-sandbox"],
             )
+            # 如果之前持久化过 storage_state，则在新建 context 时恢复 cookies/localStorage。
             context_kwargs: dict[str, Any] = {
                 "viewport": DEFAULT_VIEWPORT,
                 "user_agent": DEFAULT_USER_AGENT,
@@ -544,6 +560,10 @@ class StatefulBrowserBackend:
 
     def get_state_snapshot(self, *, user_id: str | None = None, last_result: PageInfo | None = None) -> dict[str, Any]:
         """Return the current browser/context/page state for agent decision making."""
+        # 这里返回的是 agent 侧真正需要消费的统一状态视图：
+        # - browser: 浏览器是否打开/是否从持久化恢复
+        # - context: 当前 tab 列表、激活页、最近用户事件
+        # - page: 当前页面 URL / title / load 状态 / 最近交互
         restored = self._restored_state_snapshot or {}
         restored_context = restored.get("context", {}) if isinstance(restored.get("context"), dict) else {}
         restored_page = restored.get("page", {}) if isinstance(restored.get("page"), dict) else {}
@@ -748,6 +768,7 @@ class StatefulBrowserBackend:
         await page.wait_for_timeout(random.randint(min_ms, max_ms))
 
     async def _register_context_instrumentation(self, context: BrowserContext) -> None:
+        # context 级监听：新 tab / popup 会从这里进入。
         if not hasattr(context, "on"):
             return
         context.on("page", self._handle_new_page)
@@ -810,6 +831,7 @@ class StatefulBrowserBackend:
             self._record_event("page_navigated", page=page, metadata={"url": frame_url or getattr(page, 'url', None)})
 
     async def _record_page_dom_event(self, _source: Any, payload: dict[str, Any]) -> None:
+        # 页面注入脚本把 DOM 事件回传到这里，再映射到具体 page 并进入统一事件流。
         if not isinstance(payload, dict):
             return
         url = payload.get("url")
@@ -821,6 +843,7 @@ class StatefulBrowserBackend:
         await self._persist_playwright_storage_state()
 
     def _record_event(self, event_type: str, *, page: Page | None = None, metadata: dict[str, Any] | None = None) -> None:
+        # 所有状态变化最终都汇聚到这里：更新 recent events、runtime state、状态消息队列、磁盘快照。
         self._event_seq += 1
         page_id = self._page_id(page) if page is not None else self._active_page_id
         url = getattr(page, "url", None) if page is not None else None
@@ -887,6 +910,7 @@ class StatefulBrowserBackend:
             runtime_state["user_interaction_count"] = int(runtime_state.get("user_interaction_count", 0)) + 1
 
     async def _persist_playwright_storage_state(self) -> None:
+        # storage_state 用于恢复 cookies/localStorage；它不是完整浏览器进程快照，但足以恢复很多登录态。
         if self._context is None or not hasattr(self._context, "storage_state"):
             return
         try:
