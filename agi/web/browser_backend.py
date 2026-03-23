@@ -32,6 +32,7 @@ DEFAULT_SCROLL_TIMEOUT_MS = 2_000
 DEFAULT_CAPTURE_DELAY_MS = 300
 MAX_FIND_RESULTS = 50
 MAX_BROWSER_EVENTS = 100
+USER_EVENT_TYPES = {"dom_click", "dom_input", "dom_change", "dom_submit", "page_hashchange", "page_popstate", "page_focusin"}
 BROWSER_OBSERVER_SCRIPT = """
 (() => {
   if (window.__agiBrowserObserverInstalled) return;
@@ -44,27 +45,34 @@ BROWSER_OBSERVER_SCRIPT = """
     return {
       tag: target.tagName ? target.tagName.toLowerCase() : null,
       id: target.id || null,
+      name: target.getAttribute?.("name") || null,
+      type: target.getAttribute?.("type") || null,
       classes: Array.from(target.classList || []),
       text: (target.innerText || target.textContent || "").trim().slice(0, 120),
+      value: ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) ? String(target.value || "").slice(0, 120) : null,
     };
   };
 
-  document.addEventListener(
-    "click",
-    (event) => {
-      const payload = {
-        type: "dom_click",
-        url: window.location.href,
-        title: document.title,
-        target: buildTarget(event.target),
-        timestamp: new Date().toISOString(),
-      };
-      if (window.__agiRecordBrowserEvent) {
-        window.__agiRecordBrowserEvent(payload).catch(() => undefined);
-      }
-    },
-    true,
-  );
+  const emit = (type, extra = {}) => {
+    const payload = {
+      type,
+      url: window.location.href,
+      title: document.title,
+      timestamp: new Date().toISOString(),
+      ...extra,
+    };
+    if (window.__agiRecordBrowserEvent) {
+      window.__agiRecordBrowserEvent(payload).catch(() => undefined);
+    }
+  };
+
+  document.addEventListener("click", (event) => emit("dom_click", { target: buildTarget(event.target) }), true);
+  document.addEventListener("input", (event) => emit("dom_input", { target: buildTarget(event.target) }), true);
+  document.addEventListener("change", (event) => emit("dom_change", { target: buildTarget(event.target) }), true);
+  document.addEventListener("submit", (event) => emit("dom_submit", { target: buildTarget(event.target) }), true);
+  document.addEventListener("focusin", (event) => emit("page_focusin", { target: buildTarget(event.target) }), true);
+  window.addEventListener("hashchange", () => emit("page_hashchange"), true);
+  window.addEventListener("popstate", () => emit("page_popstate"), true);
 })();
 """
 
@@ -131,6 +139,10 @@ class BrowserBackendPool:
                 yield session
             finally:
                 await self._release_session(user_id)
+
+    def get_existing_session(self, user_id: str) -> UserBrowserSession | None:
+        """Return the current session for a user without creating a new browser."""
+        return self._sessions.get(user_id)
 
     async def close_all(self) -> None:
         """Close every managed browser session."""
@@ -240,6 +252,7 @@ class StatefulBrowserBackend:
         self._event_seq = 0
         self._active_page_id: str | None = None
         self._page_titles: dict[str, str | None] = {}
+        self._page_runtime_state: dict[str, dict[str, Any]] = {}
         self._instrumented_pages: set[str] = set()
         self._binding_registered = False
 
@@ -297,6 +310,7 @@ class StatefulBrowserBackend:
             self._playwright = None
             self._active_page_id = None
             self._binding_registered = False
+            self._page_runtime_state.clear()
             self._instrumented_pages.clear()
             logger.info("Browser backend closed")
 
@@ -508,6 +522,8 @@ class StatefulBrowserBackend:
         last_event = self._events[-1] if self._events else None
         last_page_result = last_result or None
 
+        active_runtime = self._page_runtime_state.get(active_page_id or "", {})
+
         return {
             "user_id": user_id,
             "storage_dir": str(self.storage_dir),
@@ -522,6 +538,7 @@ class StatefulBrowserBackend:
                 "page_count": len(pages),
                 "active_page_id": active_page_id,
                 "pages": [self._page_snapshot(page) for page in pages],
+                "recent_user_events": [event for event in self.get_recent_events() if event.get("type") in USER_EVENT_TYPES][-10:],
             },
             "page": {
                 "active_page_id": active_page_id,
@@ -532,6 +549,11 @@ class StatefulBrowserBackend:
                 "last_result_url": last_page_result.url if last_page_result else None,
                 "last_result_title": last_page_result.title if last_page_result else None,
                 "has_screenshot": bool(last_page_result and last_page_result.screenshot_path),
+                "last_interaction": active_runtime.get("last_interaction"),
+                "last_user_event": active_runtime.get("last_user_event"),
+                "user_interaction_count": active_runtime.get("user_interaction_count", 0),
+                "observed_title": active_runtime.get("title"),
+                "observed_url": active_runtime.get("url"),
             },
             "history_length": len(self._history),
             "recent_events": self.get_recent_events(),
@@ -750,6 +772,9 @@ class StatefulBrowserBackend:
             return
         url = payload.get("url")
         page = self._resolve_page_by_url(url)
+        page_id = self._page_id(page)
+        if payload.get("title"):
+            self._page_titles[page_id] = str(payload["title"])
         self._record_event(payload.get("type", "dom_event"), page=page, metadata=payload)
 
     def _record_event(self, event_type: str, *, page: Page | None = None, metadata: dict[str, Any] | None = None) -> None:
@@ -764,8 +789,57 @@ class StatefulBrowserBackend:
             "metadata": dict(metadata or {}),
         }
         self._events.append(event)
+        self._update_page_runtime_state(event)
         if len(self._events) > MAX_BROWSER_EVENTS:
             self._events = self._events[-MAX_BROWSER_EVENTS:]
+
+
+    def _update_page_runtime_state(self, event: dict[str, Any]) -> None:
+        page_id = event.get("page_id")
+        if not page_id or page_id == "page:none":
+            return
+
+        runtime_state = self._page_runtime_state.setdefault(
+            page_id,
+            {
+                "load_state": "idle",
+                "last_event_type": None,
+                "last_user_event": None,
+                "last_interaction": None,
+                "user_interaction_count": 0,
+                "title": self._page_titles.get(page_id),
+                "url": event.get("url"),
+            },
+        )
+        event_type = str(event.get("type"))
+        metadata = event.get("metadata", {}) if isinstance(event.get("metadata"), dict) else {}
+        runtime_state["last_event_type"] = event_type
+        runtime_state["url"] = metadata.get("url") or event.get("url") or runtime_state.get("url")
+        if metadata.get("title"):
+            runtime_state["title"] = metadata.get("title")
+
+        if event_type in {"page_domcontentloaded", "page_navigated", "page_hashchange", "page_popstate"}:
+            runtime_state["load_state"] = "loading"
+        elif event_type in {"page_load", "page_load_state", "page_capture"}:
+            runtime_state["load_state"] = "loaded"
+        elif event_type in {"page_closed", "browser_closed"}:
+            runtime_state["load_state"] = "closed"
+
+        if event_type in USER_EVENT_TYPES or event_type.startswith("action_"):
+            runtime_state["last_interaction"] = {
+                "type": event_type,
+                "url": runtime_state.get("url"),
+                "target": metadata.get("target"),
+                "timestamp": metadata.get("timestamp"),
+            }
+        if event_type in USER_EVENT_TYPES:
+            runtime_state["last_user_event"] = {
+                "type": event_type,
+                "url": runtime_state.get("url"),
+                "target": metadata.get("target"),
+                "timestamp": metadata.get("timestamp"),
+            }
+            runtime_state["user_interaction_count"] = int(runtime_state.get("user_interaction_count", 0)) + 1
 
     def _set_active_page(self, page: Page | None) -> None:
         if page is None:
@@ -782,12 +856,18 @@ class StatefulBrowserBackend:
 
     def _page_snapshot(self, page: Page) -> dict[str, Any]:
         page_id = self._page_id(page)
+        runtime_state = self._page_runtime_state.get(page_id, {})
         return {
             "page_id": page_id,
             "url": getattr(page, "url", None),
             "title": self._page_titles.get(page_id),
             "is_active": page_id == self._active_page_id,
             "is_closed": self._page_is_closed(page),
+            "load_state": runtime_state.get("load_state", "idle"),
+            "last_event_type": runtime_state.get("last_event_type"),
+            "last_user_event": runtime_state.get("last_user_event"),
+            "last_interaction": runtime_state.get("last_interaction"),
+            "user_interaction_count": runtime_state.get("user_interaction_count", 0),
         }
 
     def _infer_load_state(self, last_event: dict[str, Any] | None) -> str:

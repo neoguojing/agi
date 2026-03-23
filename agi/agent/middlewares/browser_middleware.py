@@ -25,6 +25,8 @@ from agi.config import BROWSER_STORAGE_PATH
 from agi.deepagents.middleware._utils import append_to_system_message
 from agi.web.browser_backend import BrowserBackendPool, PageInfo, UserBrowserSession
 
+MAX_PROMPT_EVENTS = 8
+
 logger = logging.getLogger(__name__)
 
 BROWSER_SYSTEM_PROMPT = """## Browser Tools
@@ -181,7 +183,7 @@ class BrowserMiddleware(AgentMiddleware):
         request: ModelRequest[ContextT],
         handler: Callable[[ModelRequest[ContextT]], ModelResponse[ResponseT]],
     ) -> ModelResponse[ResponseT]:
-        system_prompt = self._custom_system_prompt or BROWSER_SYSTEM_PROMPT
+        system_prompt = self._build_model_system_prompt(request)
         if system_prompt:
             request = request.override(system_message=append_to_system_message(request.system_message, system_prompt))
         return handler(request)
@@ -191,7 +193,7 @@ class BrowserMiddleware(AgentMiddleware):
         request: ModelRequest[ContextT],
         handler: Callable[[ModelRequest[ContextT]], Awaitable[ModelResponse[ResponseT]]],
     ) -> ModelResponse[ResponseT]:
-        system_prompt = self._custom_system_prompt or BROWSER_SYSTEM_PROMPT
+        system_prompt = self._build_model_system_prompt(request)
         if system_prompt:
             request = request.override(system_message=append_to_system_message(request.system_message, system_prompt))
         return await handler(request)
@@ -600,6 +602,95 @@ class BrowserMiddleware(AgentMiddleware):
             if configurable.get("user_id"):
                 return str(configurable["user_id"])
         return "default"
+
+    def _build_model_system_prompt(self, request: ModelRequest[ContextT]) -> str:
+        system_prompt = self._custom_system_prompt or BROWSER_SYSTEM_PROMPT
+        session_state = self._resolve_session_state_for_request(request)
+        if not session_state:
+            return system_prompt
+        return f"{system_prompt}\n\n{self._format_browser_state_for_prompt(session_state)}"
+
+    def _resolve_session_state_for_request(self, request: ModelRequest[ContextT]) -> BrowserSessionState | None:
+        state = getattr(request, "state", None) or {}
+        if isinstance(state, dict):
+            session_state = state.get("browser_session_state")
+            if isinstance(session_state, dict):
+                user_id = session_state.get("user_id")
+                live_state = self._get_live_session_state(str(user_id)) if user_id else None
+                return live_state or session_state
+
+        user_id = self._resolve_user_id_from_request(request)
+        if not user_id:
+            return None
+        return self._get_live_session_state(user_id)
+
+    def _resolve_user_id_from_request(self, request: ModelRequest[ContextT]) -> str | None:
+        state = getattr(request, "state", None) or {}
+        if isinstance(state, dict) and state.get("user_id"):
+            return str(state["user_id"])
+
+        runtime = getattr(request, "runtime", None)
+        if runtime is not None:
+            return self._resolve_user_id(runtime)
+
+        context = getattr(request, "context", None)
+        if getattr(context, "user_id", None):
+            return str(context.user_id)
+
+        config = getattr(request, "config", {}) or {}
+        configurable = config.get("configurable", {}) if isinstance(config, dict) else {}
+        if configurable.get("user_id"):
+            return str(configurable["user_id"])
+        return None
+
+    def _get_live_session_state(self, user_id: str) -> BrowserSessionState | None:
+        session = self._session_pool.get_existing_session(user_id)
+        if session is None:
+            return None
+        return self._build_session_state(session)
+
+    def _format_browser_state_for_prompt(self, session_state: BrowserSessionState) -> str:
+        browser = session_state.get("browser", {})
+        context = session_state.get("context", {})
+        page = session_state.get("page", {})
+        recent_events = session_state.get("recent_events", [])[-MAX_PROMPT_EVENTS:]
+        recent_lines = []
+        for event in recent_events:
+            metadata = event.get("metadata", {}) if isinstance(event.get("metadata"), dict) else {}
+            target = metadata.get("target") if isinstance(metadata.get("target"), dict) else None
+            target_desc = ""
+            if target:
+                tag = target.get("tag") or "element"
+                target_text = target.get("text") or target.get("value") or ""
+                target_desc = f" target={tag}:{target_text[:40]}" if target_text else f" target={tag}"
+            recent_lines.append(
+                f"- #{event.get('seq')} {event.get('type')} url={event.get('url') or metadata.get('url')}{target_desc}"
+            )
+
+        tabs = context.get("pages", [])
+        tab_lines = []
+        for tab in tabs[:5]:
+            active_mark = "*" if tab.get("is_active") else "-"
+            tab_lines.append(
+                f"{active_mark} {tab.get('page_id')} url={tab.get('url')} load={tab.get('load_state')} closed={tab.get('is_closed')}"
+            )
+
+        return "\n".join(
+            [
+                "## Current Browser Session State",
+                f"user_id: {session_state.get('user_id')}",
+                f"browser_open: {browser.get('is_open')} | browser_closed: {browser.get('is_closed')} | storage_dir: {session_state.get('storage_dir')}",
+                f"active_page_url: {page.get('url') or page.get('observed_url')} | load_state: {page.get('load_state')} | title: {page.get('title') or page.get('observed_title')}",
+                f"active_page_last_interaction: {page.get('last_interaction')}",
+                f"active_page_last_user_event: {page.get('last_user_event')}",
+                f"tab_count: {context.get('page_count')} | event_version: {session_state.get('event_version')} | history_length: {session_state.get('history_length')}",
+                "tabs:",
+                *(tab_lines or ["- none"]),
+                "recent_events:",
+                *(recent_lines or ["- none"]),
+                "Use this live browser state to decide whether to navigate, wait, inspect, click, fill, or recover from a closed browser/page.",
+            ]
+        )
 
     def _build_session_state(self, session: UserBrowserSession) -> BrowserSessionState:
         return session.backend.get_state_snapshot(user_id=session.user_id, last_result=session.last_result)

@@ -259,3 +259,27 @@ async def test_get_state_snapshot_exposes_browser_context_and_page_events(backen
     assert snapshot["page"]["url"] == page.url
     assert snapshot["page"]["load_state"] == "loaded"
     assert snapshot["recent_events"][-1]["type"] == "page_load"
+
+
+@pytest.mark.asyncio
+async def test_record_page_dom_event_updates_runtime_state(backend: StatefulBrowserBackend) -> None:
+    page = backend._page
+    assert page is not None
+
+    await backend._record_page_dom_event(
+        None,
+        {
+            "type": "dom_input",
+            "url": page.url,
+            "title": "Interactive Page",
+            "timestamp": "2026-03-23T00:00:00Z",
+            "target": {"tag": "input", "text": "", "value": "hello"},
+        },
+    )
+
+    snapshot = backend.get_state_snapshot(user_id="alice")
+
+    assert snapshot["page"]["last_user_event"]["type"] == "dom_input"
+    assert snapshot["page"]["last_interaction"]["target"]["value"] == "hello"
+    assert snapshot["page"]["user_interaction_count"] == 1
+    assert snapshot["context"]["recent_user_events"][-1]["type"] == "dom_input"

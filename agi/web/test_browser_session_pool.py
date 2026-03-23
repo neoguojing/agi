@@ -53,12 +53,15 @@ class FakePool:
     def __init__(self) -> None:
         self.sessions: dict[str, SimpleNamespace] = {}
 
+    def get_existing_session(self, user_id: str):
+        return self.sessions.get(user_id)
+
     @asynccontextmanager
     async def session(self, user_id: str):
         if user_id not in self.sessions:
             self.sessions[user_id] = SimpleNamespace(
                 user_id=user_id,
-                backend=SimpleNamespace(get_history=lambda: [], get_state_snapshot=lambda **kwargs: {"user_id": user_id, "history_length": 0, "browser": {"is_closed": False}, "context": {"page_count": 1}, "page": {"url": f"https://example.com/{user_id}"}, "storage_dir": f"/tmp/{user_id}", "recent_events": [], "event_version": 1}),
+                backend=SimpleNamespace(get_history=lambda: [], get_state_snapshot=lambda **kwargs: {"user_id": user_id, "history_length": 0, "browser": {"is_closed": False, "is_open": True}, "context": {"page_count": 1, "pages": [{"page_id": f"page-{user_id}", "url": f"https://example.com/{user_id}", "load_state": "loaded", "is_active": True, "is_closed": False}]}, "page": {"url": f"https://example.com/{user_id}", "load_state": "loaded", "last_interaction": {"type": "dom_click"}, "last_user_event": {"type": "dom_click"}}, "storage_dir": f"/tmp/{user_id}", "recent_events": [{"seq": 1, "type": "dom_click", "url": f"https://example.com/{user_id}", "metadata": {"target": {"tag": "button", "text": "Go"}}}], "event_version": 1}),
                 last_result=None,
             )
         yield self.sessions[user_id]
@@ -120,3 +123,64 @@ async def test_browser_middleware_command_updates_include_browser_session_state(
 
     assert command.update["browser_session_state"]["user_id"] == "alice"
     assert command.update["browser_last_result"]["metadata"]["browser_session_state"]["page"]["url"] == "https://example.com"
+
+
+@pytest.mark.asyncio
+async def test_browser_middleware_includes_browser_state_in_model_prompt() -> None:
+    pytest.importorskip("langchain")
+
+    from agi.agent.middlewares.browser_middleware import BrowserMiddleware
+
+    middleware = BrowserMiddleware(enable_ocr_fallback=False, max_retries=1)
+    middleware._session_pool = FakePool()
+    middleware._session_pool.sessions["alice"] = SimpleNamespace(
+        user_id="alice",
+        last_result=None,
+        backend=SimpleNamespace(
+            get_state_snapshot=lambda **kwargs: {
+                "user_id": "alice",
+                "storage_dir": "/tmp/alice",
+                "browser": {"is_open": True, "is_closed": False},
+                "context": {
+                    "page_count": 1,
+                    "pages": [{"page_id": "page-1", "url": "https://example.com", "load_state": "loaded", "is_active": True, "is_closed": False}],
+                },
+                "page": {
+                    "url": "https://example.com",
+                    "observed_url": "https://example.com",
+                    "load_state": "loaded",
+                    "title": "Example",
+                    "observed_title": "Example",
+                    "last_interaction": {"type": "dom_click"},
+                    "last_user_event": {"type": "dom_click"},
+                },
+                "history_length": 2,
+                "recent_events": [{"seq": 3, "type": "dom_click", "url": "https://example.com", "metadata": {"target": {"tag": "button", "text": "Search"}}}],
+                "event_version": 3,
+            }
+        ),
+    )
+
+    captured = {}
+
+    class FakeRequest:
+        def __init__(self):
+            self.system_message = "BASE"
+            self.state = {"browser_session_state": {"user_id": "alice"}}
+            self.context = SimpleNamespace(user_id="alice")
+            self.config = {"configurable": {"user_id": "alice"}}
+
+        def override(self, **kwargs):
+            captured.update(kwargs)
+            return self
+
+    request = FakeRequest()
+
+    def handler(req):
+        return req
+
+    middleware.wrap_model_call(request, handler)
+
+    assert "## Current Browser Session State" in captured["system_message"]
+    assert "dom_click" in captured["system_message"]
+    assert "https://example.com" in captured["system_message"]
