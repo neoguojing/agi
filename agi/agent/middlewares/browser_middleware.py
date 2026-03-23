@@ -21,6 +21,7 @@ from langchain_core.tools import BaseTool, StructuredTool
 from langgraph.types import Command
 from typing_extensions import TypedDict
 
+from agi.config import BROWSER_STORAGE_PATH
 from agi.deepagents.middleware._utils import append_to_system_message
 from agi.web.browser_backend import PageInfo, StatefulBrowserBackend
 
@@ -126,7 +127,7 @@ class BrowserMiddleware(AgentMiddleware):
 
     def __init__(
         self,
-        backend: StatefulBrowserBackend,
+        storage_dir: str = BROWSER_STORAGE_PATH,
         ocr_engine: Any | None = None,
         max_retries: int = 3,
         enable_ocr_fallback: bool = True,
@@ -135,7 +136,7 @@ class BrowserMiddleware(AgentMiddleware):
         system_prompt: str | None = None,
     ):
         super().__init__()
-        self.backend = backend
+        self.backend = StatefulBrowserBackend(storage_dir=storage_dir)
         self.ocr = ocr_engine
         self.max_retries = max_retries
         self.enable_ocr = enable_ocr_fallback

@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 
 from agi.rag.retriever import MultiCollectionRAGManager
 from agi.agent.models import ModelProvider
-from agi.agent.middlewares import DebugLLMContextMiddleware, ContextEngineeringMiddleware
+from agi.agent.middlewares import DebugLLMContextMiddleware, ContextEngineeringMiddleware,BrowserMiddleware
 from agi.agent.tools import buildin_tools
 from agi.agent.subagents import buildin_agents
 from agi.agent.context import Context
@@ -56,7 +56,8 @@ class DeepAgentBuilder:
             "memory": self.memory_paths,
             "middleware": [
                 DebugLLMContextMiddleware(),
-                ContextEngineeringMiddleware(extractor_model=self.llm)
+                ContextEngineeringMiddleware(extractor_model=self.llm),
+                BrowserMiddleware()
             ],
             "context_schema": Context
         }
@@ -101,6 +102,8 @@ class DeepAgentManager:
 
             saver = AsyncSqliteSaver(conn=conn_saver)
             store = AsyncSqliteStore(conn=conn_store)
+            await saver.setup()  # 确保表结构已创建
+            await store.setup()  # 确保表结构已创建
             
             self._async_agent = create_deep_agent(
                 **self.builder.build_options(),

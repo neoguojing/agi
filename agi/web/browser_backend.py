@@ -55,7 +55,7 @@ class StatefulBrowserBackend:
     def __init__(
         self,
         storage_dir: str,
-        headless: bool = True,
+        headless: bool = False,
         timeout: int = 30_000,
         max_content_length: int = 2_000_000,
         max_retry: int = 2,
