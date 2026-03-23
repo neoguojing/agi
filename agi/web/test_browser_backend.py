@@ -283,3 +283,43 @@ async def test_record_page_dom_event_updates_runtime_state(backend: StatefulBrow
     assert snapshot["page"]["last_interaction"]["target"]["value"] == "hello"
     assert snapshot["page"]["user_interaction_count"] == 1
     assert snapshot["context"]["recent_user_events"][-1]["type"] == "dom_input"
+
+
+@pytest.mark.asyncio
+async def test_state_snapshot_is_persisted_and_restored(tmp_path: Path) -> None:
+    backend = StatefulBrowserBackend(storage_dir=str(tmp_path), headless=True, max_retry=1)
+    backend._browser = object()
+    backend._page = FakePage()
+    backend._context = SimpleNamespace(pages=[backend._page])
+
+    await backend._record_page_dom_event(
+        None,
+        {
+            "type": "dom_click",
+            "url": backend._page.url,
+            "title": "Persisted Page",
+            "timestamp": "2026-03-23T00:00:01Z",
+            "target": {"tag": "button", "text": "Continue"},
+        },
+    )
+
+    restored = StatefulBrowserBackend(storage_dir=str(tmp_path), headless=True, max_retry=1)
+    snapshot = restored.get_state_snapshot(user_id="alice")
+
+    assert snapshot["browser"]["was_restored"] is True
+    assert snapshot["page"]["last_user_event"]["type"] == "dom_click"
+    assert snapshot["state_messages"][-1]["event"]["type"] == "dom_click"
+
+
+@pytest.mark.asyncio
+async def test_state_messages_can_be_drained(backend: StatefulBrowserBackend) -> None:
+    page = backend._page
+    assert page is not None
+
+    backend._record_event("page_load", page=page, metadata={"url": page.url})
+
+    drained = backend.drain_state_messages()
+
+    assert drained
+    assert drained[-1]["kind"] == "browser_state"
+    assert backend.drain_state_messages() == []

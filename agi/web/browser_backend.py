@@ -1,7 +1,8 @@
+import json
 import logging
 import random
 import uuid
-from asyncio import Lock, Task
+from asyncio import Lock, Queue, Task
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
@@ -32,6 +33,9 @@ DEFAULT_SCROLL_TIMEOUT_MS = 2_000
 DEFAULT_CAPTURE_DELAY_MS = 300
 MAX_FIND_RESULTS = 50
 MAX_BROWSER_EVENTS = 100
+MAX_STATE_MESSAGES = 100
+STATE_SNAPSHOT_FILENAME = "browser_session_state.json"
+PLAYWRIGHT_STORAGE_STATE_FILENAME = "playwright_storage_state.json"
 USER_EVENT_TYPES = {"dom_click", "dom_input", "dom_change", "dom_submit", "page_hashchange", "page_popstate", "page_focusin"}
 BROWSER_OBSERVER_SCRIPT = """
 (() => {
@@ -241,6 +245,8 @@ class StatefulBrowserBackend:
 
         self.storage_dir = Path(storage_dir).resolve()
         self.storage_dir.mkdir(parents=True, exist_ok=True)
+        self._state_snapshot_path = self.storage_dir / STATE_SNAPSHOT_FILENAME
+        self._playwright_storage_state_path = self.storage_dir / PLAYWRIGHT_STORAGE_STATE_FILENAME
 
         self._init_lock = Lock()
         self._playwright = None
@@ -249,12 +255,15 @@ class StatefulBrowserBackend:
         self._page: Page | None = None
         self._history: list[dict[str, Any]] = []
         self._events: list[dict[str, Any]] = []
+        self._state_message_queue: Queue[dict[str, Any]] = Queue()
+        self._state_messages: list[dict[str, Any]] = []
         self._event_seq = 0
         self._active_page_id: str | None = None
         self._page_titles: dict[str, str | None] = {}
         self._page_runtime_state: dict[str, dict[str, Any]] = {}
         self._instrumented_pages: set[str] = set()
         self._binding_registered = False
+        self._restored_state_snapshot = self._load_persisted_state_snapshot()
 
         self.min_text_length = 50
         self.min_html_length = 100
@@ -277,10 +286,13 @@ class StatefulBrowserBackend:
                 headless=self.headless,
                 args=["--no-sandbox", "--disable-setuid-sandbox"],
             )
-            self._context = await self._browser.new_context(
-                viewport=DEFAULT_VIEWPORT,
-                user_agent=DEFAULT_USER_AGENT,
-            )
+            context_kwargs: dict[str, Any] = {
+                "viewport": DEFAULT_VIEWPORT,
+                "user_agent": DEFAULT_USER_AGENT,
+            }
+            if self._playwright_storage_state_path.exists():
+                context_kwargs["storage_state"] = str(self._playwright_storage_state_path)
+            self._context = await self._browser.new_context(**context_kwargs)
             await self._register_context_instrumentation(self._context)
             self._page = await self._context.new_page()
             self._set_active_page(self._page)
@@ -295,6 +307,7 @@ class StatefulBrowserBackend:
             metadata={"storage_dir": str(self.storage_dir)},
         )
         try:
+            await self._persist_playwright_storage_state()
             if self._page is not None:
                 await self._page.close()
             if self._context is not None:
@@ -311,6 +324,7 @@ class StatefulBrowserBackend:
             self._active_page_id = None
             self._binding_registered = False
             self._page_runtime_state.clear()
+            self._state_messages.clear()
             self._instrumented_pages.clear()
             logger.info("Browser backend closed")
 
@@ -508,6 +522,20 @@ class StatefulBrowserBackend:
         """Return a copy of the recorded browser action history."""
         return list(self._history)
 
+    def peek_state_messages(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Return recently published state messages without consuming them."""
+        if limit <= 0:
+            return []
+        return [dict(message) for message in self._state_messages[-limit:]]
+
+    def drain_state_messages(self, limit: int = 100) -> list[dict[str, Any]]:
+        """Drain pending state messages for downstream synchronizers."""
+        messages: list[dict[str, Any]] = []
+        while limit > 0 and not self._state_message_queue.empty():
+            messages.append(self._state_message_queue.get_nowait())
+            limit -= 1
+        return messages
+
     def get_recent_events(self, limit: int = 20) -> list[dict[str, Any]]:
         """Return a copy of the most recent browser/page events."""
         if limit <= 0:
@@ -516,50 +544,63 @@ class StatefulBrowserBackend:
 
     def get_state_snapshot(self, *, user_id: str | None = None, last_result: PageInfo | None = None) -> dict[str, Any]:
         """Return the current browser/context/page state for agent decision making."""
+        restored = self._restored_state_snapshot or {}
+        restored_context = restored.get("context", {}) if isinstance(restored.get("context"), dict) else {}
+        restored_page = restored.get("page", {}) if isinstance(restored.get("page"), dict) else {}
+        restored_browser = restored.get("browser", {}) if isinstance(restored.get("browser"), dict) else {}
+
         pages = self._context_pages()
         active_page = self._page
-        active_page_id = self._page_id(active_page) if active_page is not None else self._active_page_id
-        last_event = self._events[-1] if self._events else None
+        active_page_id = self._page_id(active_page) if active_page is not None else restored_context.get("active_page_id") or self._active_page_id
+        last_event = self._events[-1] if self._events else restored.get("last_event")
         last_page_result = last_result or None
 
         active_runtime = self._page_runtime_state.get(active_page_id or "", {})
+        recent_events = self.get_recent_events() or list(restored.get("recent_events", []))
+        recent_user_events = [event for event in recent_events if event.get("type") in USER_EVENT_TYPES][-10:]
+        state_messages = self.peek_state_messages() or list(restored.get("state_messages", []))
+        context_pages = [self._page_snapshot(page) for page in pages] or list(restored_context.get("pages", []))
 
-        return {
-            "user_id": user_id,
+        snapshot = {
+            "user_id": user_id or restored.get("user_id"),
             "storage_dir": str(self.storage_dir),
             "browser": {
                 "is_open": self._browser is not None and not self.is_closed,
                 "is_closed": self.is_closed,
                 "headless": self.headless,
                 "timeout_ms": self.timeout,
+                "was_restored": bool(restored),
+                "last_persisted_open": restored_browser.get("is_open"),
             },
             "context": {
                 "is_initialized": self._context is not None,
-                "page_count": len(pages),
+                "page_count": len(context_pages),
                 "active_page_id": active_page_id,
-                "pages": [self._page_snapshot(page) for page in pages],
-                "recent_user_events": [event for event in self.get_recent_events() if event.get("type") in USER_EVENT_TYPES][-10:],
+                "pages": context_pages,
+                "recent_user_events": recent_user_events,
             },
             "page": {
                 "active_page_id": active_page_id,
-                "url": getattr(active_page, "url", None),
-                "title": self._page_titles.get(active_page_id) if active_page_id else None,
-                "is_closed": self._page_is_closed(active_page),
+                "url": getattr(active_page, "url", None) or restored_page.get("url"),
+                "title": self._page_titles.get(active_page_id) if active_page_id and self._page_titles.get(active_page_id) is not None else restored_page.get("title"),
+                "is_closed": self._page_is_closed(active_page) if active_page is not None else restored_page.get("is_closed", True),
                 "load_state": self._infer_load_state(last_event),
-                "last_result_url": last_page_result.url if last_page_result else None,
-                "last_result_title": last_page_result.title if last_page_result else None,
-                "has_screenshot": bool(last_page_result and last_page_result.screenshot_path),
-                "last_interaction": active_runtime.get("last_interaction"),
-                "last_user_event": active_runtime.get("last_user_event"),
-                "user_interaction_count": active_runtime.get("user_interaction_count", 0),
-                "observed_title": active_runtime.get("title"),
-                "observed_url": active_runtime.get("url"),
+                "last_result_url": last_page_result.url if last_page_result else restored_page.get("last_result_url"),
+                "last_result_title": last_page_result.title if last_page_result else restored_page.get("last_result_title"),
+                "has_screenshot": bool(last_page_result and last_page_result.screenshot_path) or restored_page.get("has_screenshot", False),
+                "last_interaction": active_runtime.get("last_interaction") or restored_page.get("last_interaction"),
+                "last_user_event": active_runtime.get("last_user_event") or restored_page.get("last_user_event"),
+                "user_interaction_count": active_runtime.get("user_interaction_count", restored_page.get("user_interaction_count", 0)),
+                "observed_title": active_runtime.get("title") or restored_page.get("observed_title"),
+                "observed_url": active_runtime.get("url") or restored_page.get("observed_url"),
             },
-            "history_length": len(self._history),
-            "recent_events": self.get_recent_events(),
-            "last_event": dict(last_event) if last_event else None,
-            "event_version": self._event_seq,
+            "history_length": len(self._history) or restored.get("history_length", 0),
+            "recent_events": recent_events,
+            "last_event": dict(last_event) if isinstance(last_event, dict) else None,
+            "event_version": self._event_seq or restored.get("event_version", 0),
+            "state_messages": state_messages,
         }
+        return snapshot
 
     async def _run_page_action(
         self,
@@ -581,6 +622,7 @@ class StatefulBrowserBackend:
                 await self._instrument_page(page, source=action)
                 if history_entry is not None:
                     self._history.append(history_entry)
+                await self._persist_playwright_storage_state()
                 return await self._capture_page_info(page, capture_url or page.url, response)
             except PlaywrightTimeoutError as exc:
                 last_error = exc
@@ -776,6 +818,7 @@ class StatefulBrowserBackend:
         if payload.get("title"):
             self._page_titles[page_id] = str(payload["title"])
         self._record_event(payload.get("type", "dom_event"), page=page, metadata=payload)
+        await self._persist_playwright_storage_state()
 
     def _record_event(self, event_type: str, *, page: Page | None = None, metadata: dict[str, Any] | None = None) -> None:
         self._event_seq += 1
@@ -790,8 +833,10 @@ class StatefulBrowserBackend:
         }
         self._events.append(event)
         self._update_page_runtime_state(event)
+        self._publish_state_message(event)
         if len(self._events) > MAX_BROWSER_EVENTS:
             self._events = self._events[-MAX_BROWSER_EVENTS:]
+        self._persist_state_snapshot()
 
 
     def _update_page_runtime_state(self, event: dict[str, Any]) -> None:
@@ -840,6 +885,43 @@ class StatefulBrowserBackend:
                 "timestamp": metadata.get("timestamp"),
             }
             runtime_state["user_interaction_count"] = int(runtime_state.get("user_interaction_count", 0)) + 1
+
+    async def _persist_playwright_storage_state(self) -> None:
+        if self._context is None or not hasattr(self._context, "storage_state"):
+            return
+        try:
+            await self._context.storage_state(path=str(self._playwright_storage_state_path))
+        except Exception:
+            logger.debug("Failed to persist Playwright storage state", exc_info=True)
+
+    def _publish_state_message(self, event: dict[str, Any]) -> None:
+        message = {
+            "kind": "browser_state",
+            "event": dict(event),
+            "event_version": self._event_seq,
+        }
+        self._state_messages.append(message)
+        if len(self._state_messages) > MAX_STATE_MESSAGES:
+            self._state_messages = self._state_messages[-MAX_STATE_MESSAGES:]
+        self._state_message_queue.put_nowait(message)
+
+    def _persist_state_snapshot(self) -> None:
+        snapshot = self.get_state_snapshot()
+        try:
+            self._state_snapshot_path.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2))
+            self._restored_state_snapshot = snapshot
+        except Exception:
+            logger.debug("Failed to persist browser state snapshot", exc_info=True)
+
+    def _load_persisted_state_snapshot(self) -> dict[str, Any] | None:
+        if not self._state_snapshot_path.exists():
+            return None
+        try:
+            data = json.loads(self._state_snapshot_path.read_text())
+            return data if isinstance(data, dict) else None
+        except Exception:
+            logger.debug("Failed to load persisted browser state snapshot", exc_info=True)
+            return None
 
     def _set_active_page(self, page: Page | None) -> None:
         if page is None:
