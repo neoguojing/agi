@@ -15,7 +15,7 @@ from langchain.agents.middleware.types import (
     ResponseT,
 )
 from langchain.tools import ToolRuntime
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import ToolMessage,HumanMessage
 from langchain_core.messages.content import create_image_block
 from langchain_core.tools import BaseTool, StructuredTool
 from langgraph.types import Command
@@ -403,8 +403,14 @@ class BrowserMiddleware(AgentMiddleware):
             return "", session.last_result.screenshot_path if session.last_result else None
 
         screenshot_path, image_bytes = screenshot
+        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
         try:
-            ocr_text = await self.ocr.parse(image_bytes)
+            ocr_text = await self.ocr.ainvoke([
+                        HumanMessage(
+                            content="extract the image content",
+                            content_blocks=[create_image_block(base64=image_b64, mime_type="image/png")],
+                        )
+                    ])
         except Exception:
             logger.exception("OCR extraction failed for %s", session.last_result.url if session.last_result else "current page")
             return "", screenshot_path
@@ -435,7 +441,7 @@ class BrowserMiddleware(AgentMiddleware):
                 )
 
             screenshot_path, image_bytes = screenshot
-            image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+            # image_b64 = base64.b64encode(image_bytes).decode("utf-8")
             current_url = session.last_result.url if session.last_result else ""
             text = f"Screenshot captured for {current_url}" if current_url else "Screenshot captured"
             artifact: BrowserToolArtifact = {
@@ -456,7 +462,7 @@ class BrowserMiddleware(AgentMiddleware):
                     "messages": [
                         ToolMessage(
                             content=text,
-                            content_blocks=[create_image_block(base64=image_b64, mime_type="image/png")],
+                            content_blocks=[create_image_block(file_id=screenshot_path, mime_type="image/png")],
                             name="browser_screenshot",
                             tool_call_id=tool_call_id,
                             additional_kwargs={"artifact": artifact},

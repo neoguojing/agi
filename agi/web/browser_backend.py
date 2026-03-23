@@ -126,7 +126,7 @@ class BrowserBackendPool:
         self,
         storage_dir: str,
         *,
-        idle_timeout_seconds: float = 60.0,
+        idle_timeout_seconds: float = 60.0*30,
         headless: bool = False,
         timeout: int = 30_000,
         max_content_length: int = 2_000_000,

@@ -57,7 +57,7 @@ class DeepAgentBuilder:
             "middleware": [
                 DebugLLMContextMiddleware(),
                 ContextEngineeringMiddleware(extractor_model=self.llm),
-                BrowserMiddleware()
+                BrowserMiddleware(ocr_engine=self.llm)
             ],
             "context_schema": Context
         }
