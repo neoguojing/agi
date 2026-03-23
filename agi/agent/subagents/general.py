@@ -1,7 +1,7 @@
 
 from agi.agent.tools import RemoteImageEditTool,RemoteImageGenTool,RemoteMultiModalTool,RemoteTranscriptionTool,RemoteTTSTool
-
-
+from agi.agent.middlewares import BrowserMiddleware
+from agi.agent.models import ModelProvider
 image_gen_tool = RemoteImageGenTool()
 image_edit_tool = RemoteImageEditTool()
 visual_subagent = {
@@ -62,3 +62,16 @@ tts_subagent = {
     ),
     "tools": [tts_tool]
 }
+
+browser_subagent = {
+    "name": "browser-expert",
+    "description": "Specialized in browsing websites, extracting content via OCR and DOM, and interacting with web pages.",
+    "system_prompt": "",
+    "middleware": [
+        BrowserMiddleware(
+            ocr_engine=ModelProvider.get_chat_model()
+        )
+    ]
+}
+
+

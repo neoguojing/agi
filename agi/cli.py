@@ -12,6 +12,7 @@ import pathlib
 from typing import List, Any
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+import traceback
 
 # --- 配置 ---
 IGNORED_DIRS = {"__pycache__", ".git", ".venv", "node_modules", ".idea", ".pytest_cache", "dist", "build"}
@@ -19,6 +20,7 @@ IGNORED_DIRS = {"__pycache__", ".git", ".venv", "node_modules", ".idea", ".pytes
 WATCH_EXTENSIONS = {".py", ".yaml", ".yml", ".json", ".env"} 
 STATE_CACHE = ".cli_session.json"
 RESTART_DEBOUNCE_SECONDS = 1.5
+
 
 # --- 1. CLI 逻辑部分 ---
 def get_agent_cls():
@@ -162,6 +164,7 @@ def get_agent_cls():
                 except (EOFError, KeyboardInterrupt): 
                     break
                 except Exception as e:
+                    traceback.print_stack()
                     console.print(f"[red]发生错误: {e}[/red]")
 
     return DeepAgentCLI
@@ -172,30 +175,28 @@ class ReloadHandler(FileSystemEventHandler):
         self.script_path = script_path
         self.process = None
         self.last_restart = 0
-        self.start_agent()
+        self.active = True  # True 表示可以重启
+        self.start_agent()  # 首次启动
 
     def start_agent(self):
+        if not self.active:
+            return  # 禁止重启
         now = time.time()
         if now - self.last_restart < RESTART_DEBOUNCE_SECONDS:
             return
         self.last_restart = now
 
-        if self.process:
-            if self.process.poll() is None:
-                print("\n⏹️  正在停止旧进程...")
-                self.process.terminate()
-                try:
-                    self.process.wait(timeout=3)
-                except subprocess.TimeoutExpired:
-                    print("⚠️  强制杀死旧进程...")
-                    self.process.kill()
-                    self.process.wait()
-        
-        print(f"\n🔄 [{time.strftime('%H:%M:%S')}] 检测到变动 ({', '.join(WATCH_EXTENSIONS)}), 重启服务...")
-        
-        # [修复 3] 显式接管 stdout/stderr
-        # 这样子进程的输出会直接显示在当前终端，与父进程日志混合但可控
-        # 如果需要完全隔离日志，可以改为 PIPE 并单独线程转发
+        if self.process and self.process.poll() is None:
+            print("\n⏹️  正在停止旧进程...")
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                print("⚠️  强制杀死旧进程...")
+                self.process.kill()
+                self.process.wait()
+
+        print(f"\n🔄 [{time.strftime('%H:%M:%S')}] 启动服务...")
         self.process = subprocess.Popen(
             [sys.executable, "-m", "agi.cli", "--child"],
             env=os.environ,
@@ -204,19 +205,30 @@ class ReloadHandler(FileSystemEventHandler):
         )
 
     def on_modified(self, event):
-        if event.is_directory:
+        if event.is_directory or not self.active:
             return
         
         src_path = pathlib.Path(event.src_path)
+
+        # 忽略目录
+        if any(ignore in src_path.parts for ignore in IGNORED_DIRS):
+            return
         
-        # 忽略目录检查
-        for ignore_dir in IGNORED_DIRS:
-            if ignore_dir in src_path.parts:
-                return
-        
-        # [修复 4] 检查扩展名白名单
+        # 忽略 session 文件
+        if src_path.name == STATE_CACHE:
+            return
+
+        # 扩展名白名单
         if src_path.suffix.lower() in WATCH_EXTENSIONS:
+            # 只有 active=True 才允许启动
             self.start_agent()
+
+    def monitor_process_exit(self):
+        """主循环中调用，监控子进程退出，不再自动重启"""
+        if self.process and self.process.poll() is not None and self.active:
+            code = self.process.returncode
+            print(f"\nℹ️  子进程退出 (代码: {code})，不会自动重启。")
+            self.active = False  # 禁止再次重启
 
 # --- 3. 入口控制 ---
 if __name__ == "__main__":
@@ -233,6 +245,7 @@ if __name__ == "__main__":
             sys.exit(0)
         except Exception as e:
             print(f"\n💥 Agent 崩溃: {e}")
+            traceback.print_exc()
             sys.exit(1)
     
     else:
@@ -262,12 +275,20 @@ if __name__ == "__main__":
         try:
             while True:
                 time.sleep(1)
-                if handler.process and handler.process.poll() is not None:
-                    code = handler.process.returncode
-                    print(f"\n⚠️  子进程意外退出 (代码: {code})，尝试重启...")
-                    handler.last_restart = 0
-                    handler.start_agent()
+                handler.monitor_process_exit()
+                if not handler.active:
+                    print("🛑 主进程检测到子进程已退出，正在关闭监控...")
+                    break
         except KeyboardInterrupt:
             pass
         finally:
+            observer.stop()
             observer.join()
+            # 如果子进程还存在，安全终止
+            if handler.process and handler.process.poll() is None:
+                handler.process.terminate()
+                try:
+                    handler.process.wait(timeout=3)
+                except:
+                    handler.process.kill()
+            sys.exit(0)

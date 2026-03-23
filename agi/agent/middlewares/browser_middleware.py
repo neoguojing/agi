@@ -35,72 +35,172 @@ logger = logging.getLogger(__name__)
 
 BROWSER_SYSTEM_PROMPT = """## Browser Tools
 
-You have access to a stateful browser session.
+You have access to a stateful, real-time browser session.
 
-- Always navigate before interacting with a new website.
+### Core Principles
+
+- The browser state may change due to:
+  - your actions (agent)
+  - external actions (e.g., human interaction, auto-navigation, SPA updates)
+
+- Always reason about the **current browser state** before acting.
+- Each tool response may include **recent browser events** (e.g., navigation, DOM updates, clicks).
+
+---
+
+### State Awareness (VERY IMPORTANT)
+
+- Always check:
+  - current URL
+  - recent events (if provided)
+  - whether the page has changed
+
+- If the page has already changed (e.g., navigation or content update), **DO NOT repeat previous actions**.
+
+- If events indicate:
+  - navigation → the page context has changed
+  - DOM updates → content may have changed without navigation
+  - user interaction → the user may have already performed an action
+
+→ Adapt your plan accordingly.
+
+---
+
+### Tool Usage Strategy
+
+- Always call `browser_navigate` before interacting with a new website.
+
 - Prefer `browser_find` before `browser_click` or `browser_fill` when selectors are uncertain.
-- Use `browser_extract` as the primary content-reading tool; it prioritizes full-page screenshot OCR before falling back to DOM content.
-- Screenshots are primarily used as OCR input, and secondarily for visual debugging or layout verification.
-- Large HTML responses may be truncated and optionally evicted to disk.
+
+- Use `browser_extract` as the primary way to read page content:
+  - It prioritizes OCR (via screenshot)
+  - DOM is only a fallback
+
+- Use `browser_screenshot` when:
+  - OCR is needed explicitly
+  - visual layout matters
+  - debugging interaction issues
+
+---
+
+### Efficiency Rules
+
+- Avoid redundant actions:
+  - Do not click the same button again if navigation already happened
+  - Do not re-fill inputs unless necessary
+
+- If the page appears unchanged, consider:
+  - re-extracting content
+  - verifying via screenshot
+
+- If the page changed unexpectedly:
+  - re-evaluate the task before continuing
+
+---
+
+### Large Content Handling
+
+- HTML content may be truncated.
+- Full content may be stored externally (file path provided).
+- Use extraction tools instead of relying on raw HTML dumps.
 """
 
 BROWSER_NAVIGATE_TOOL_DESCRIPTION = """
 Navigates the browser to a specific URL.
 
-Assume this tool can access most public websites. If the user provides a URL, assume it is valid unless known otherwise.
-This tool maintains the current browser session state (cookies, local storage, history).
+Key Behavior:
+- Updates the current browser session (cookies, local storage, history).
+- Waits for `domcontentloaded` and page stabilization.
+- May trigger navigation events.
 
-Usage:
-- Stateful navigation updates the current page context.
-- Automatically waits for `domcontentloaded` and then for the page to stabilize.
-- Returns a summary of the page (title, URL, preview text) instead of dumping full HTML.
-- To inspect the full HTML/text, call `browser_extract` after navigation.
+Returns:
+- Page summary (URL, title, preview text)
+- Recent browser events (if any)
+
+Guidelines:
+- Always use this before interacting with a new website.
+- If recent events already indicate navigation to the target page, avoid redundant navigation.
 """
 
 BROWSER_CLICK_TOOL_DESCRIPTION = """
 Clicks an element on the current page using a CSS selector.
 
-Usage:
-- Call `browser_find` first if the selector is uncertain.
-- The tool waits for the page to stabilize after the click, including possible navigation.
-- Returns an error if the element is missing, hidden, or not interactable.
+Key Behavior:
+- Triggers DOM updates and possibly navigation.
+- Waits for page stabilization after the click.
+
+Returns:
+- Updated page state
+- Any resulting navigation or DOM change events
+
+Guidelines:
+- Use `browser_find` first if the selector is uncertain.
+- If recent events already indicate the intended action occurred, do not click again.
+- If a click does not cause visible changes, consider extracting or inspecting the page.
 """
 
 BROWSER_FILL_TOOL_DESCRIPTION = """
-Fills a text input field on the current page with the provided text.
+Fills a text input field on the current page.
 
-Usage:
-- The selector should target an `<input>`, `<textarea>`, or editable field.
-- Existing content is cleared before the new text is entered.
-- Returns the updated page context after the field is filled.
+Key Behavior:
+- Clears existing content before entering new text.
+- May trigger dynamic UI updates (e.g., suggestions, validation).
+
+Returns:
+- Updated page state
+- Any DOM change events
+
+Guidelines:
+- Ensure the selector targets an input-capable element.
+- Avoid re-filling if the desired value is already present.
 """
 
 BROWSER_EXTRACT_TOOL_DESCRIPTION = """
 Extracts page content from the current page, prioritizing OCR.
 
-Usage:
-- The tool first captures a full-page screenshot and uses OCR to read page content.
-- DOM text and HTML are treated as fallback/reference data when OCR is unavailable or incomplete.
-- If the HTML content exceeds the limit, only previews are returned.
-- When an eviction handler is configured, large HTML is written to disk and the file path is returned.
+Key Behavior:
+- Captures a full-page screenshot and applies OCR.
+- Falls back to DOM text and HTML if needed.
+
+Returns:
+- Extracted text content
+- Metadata including truncation and storage info
+- Recent browser events
+
+Guidelines:
+- Use this as the primary method to understand page content.
+- If the page has recently changed (navigation or DOM update), call this again.
+- Prefer this over relying on previous observations.
 """
 
 BROWSER_SCREENSHOT_TOOL_DESCRIPTION = """
-Captures a screenshot of the current browser page.
+Captures a screenshot of the current page.
 
-Usage:
-- The screenshot is primarily intended to feed OCR-based page extraction.
-- It can also be used for visual debugging and page verification.
-- Returns a multimodal image content block the model can inspect.
-- The response also includes metadata such as the current URL and saved file path.
+Key Behavior:
+- Produces an image for OCR or visual inspection.
+
+Returns:
+- Image content (for model inspection)
+- Metadata including URL and file path
+
+Guidelines:
+- Use when:
+  - OCR is needed explicitly
+  - layout or visual elements matter
+  - debugging is required
 """
 
 BROWSER_FIND_TOOL_DESCRIPTION = """
 Finds elements on the current page matching a CSS selector.
 
-Usage:
-- Returns text and attributes for up to the first 10 matches.
-- Useful for selector discovery before clicking or filling fields.
+Key Behavior:
+- Returns text and attributes of up to 10 matches.
+
+Guidelines:
+- Use for:
+  - discovering selectors
+  - verifying element presence
+- Prefer this before click/fill when uncertain.
 """
 
 

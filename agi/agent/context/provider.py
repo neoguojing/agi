@@ -109,7 +109,7 @@ class ContextRenderer:
                 # 此时 Lint 会识别到 formatter 是 Callable，不再报错
                 formatted_content = formatter(data)
                 if formatted_content:
-                    sections.append(f"### {header}\n{formatted_content}")
+                    sections.append(f"## {header}\n{formatted_content}")
 
         sections.append("---\nRespond to the user's latest query based on the information above.")
         return [SystemMessage(content="\n\n".join(sections))]

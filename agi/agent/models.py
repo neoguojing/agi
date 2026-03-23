@@ -3,14 +3,15 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.embeddings import Embeddings
+from agi.config import OLLAMA_API_BASE_URL,OLLAMA_DEFAULT_MODE
 
 class ModelProvider:
     @staticmethod
     def get_chat_model(
-        provider: str, 
-        model_name: str, 
+        provider: str = "ollama", 
+        model_name: str = OLLAMA_DEFAULT_MODE, 
         temperature: float = 0.7,
-        base_url: str = None
+        base_url: str = OLLAMA_API_BASE_URL
     ) -> BaseChatModel:
         """
         获取文本模型实例
@@ -26,7 +27,7 @@ class ModelProvider:
             return ChatOllama(
                 model=model_name,
                 temperature=temperature,
-                base_url=base_url or "http://localhost:11434"
+                base_url=base_url or OLLAMA_API_BASE_URL
             )
         else:
             raise ValueError(f"Unsupported provider: {provider}")

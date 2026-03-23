@@ -13,6 +13,8 @@ from agi.agent.tools import buildin_tools
 from agi.agent.subagents import buildin_agents
 from agi.agent.context import Context
 
+from agi.config import OLLAMA_DEFAULT_MODE
+
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.store.sqlite import SqliteStore
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -28,7 +30,7 @@ class DeepAgentBuilder:
     """Fluent Builder for Agent Configuration"""
     def __init__(self, name: str = "main"):
         self.name = name
-        self.llm = ModelProvider.get_chat_model(provider="ollama", model_name="qwen3.5:9b")
+        self.llm = ModelProvider.get_chat_model(provider="ollama", model_name=OLLAMA_DEFAULT_MODE)
         self.embd = ModelProvider.get_embeddings(provider="ollama", model_name="embeddinggemma:latest")
         self.system_prompt = None
         self.tools = list(buildin_tools)
@@ -55,9 +57,8 @@ class DeepAgentBuilder:
             "backend": self.backend,
             "memory": self.memory_paths,
             "middleware": [
-                DebugLLMContextMiddleware(),
                 ContextEngineeringMiddleware(extractor_model=self.llm),
-                BrowserMiddleware(ocr_engine=self.llm)
+                DebugLLMContextMiddleware()
             ],
             "context_schema": Context
         }

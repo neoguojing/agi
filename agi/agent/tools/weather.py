@@ -40,47 +40,50 @@ def get_city_list(province_code):
 # 构建搜索列表，包含省份和城市信息
 def build_search_list():
     file_path = f'{CACHE_DIR}/search_list.json'
-    if os.path.exists(file_path):
-        with open(file_path, 'r', encoding='utf-8') as f:
-            search_list = json.load(f)
-            ts = search_list["time"]
-            ts_time = datetime.fromtimestamp(ts / 1000)
-            now = datetime.now()
-            # 比较是否早于当前时间 10 天
-            ten_days_ago = now - timedelta(days=10)
-            if ts_time > ten_days_ago:
-                return search_list
-    
-    provinces = get_province_list()
-    search_list = {}
-    
-    for province in provinces:
-        province_name = province['name']
-        province_code = province['code']
-        province_url = province['url']
-        # 添加省份信息
-        # search_list[province_name] = {
-        #     'code': province_code,
-        #     'url': province_url,
-        #     'type': 'province'
-        # }
+    try:
+        if os.path.exists(file_path):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                search_list = json.load(f)
+                ts = search_list["time"]
+                ts_time = datetime.fromtimestamp(ts / 1000)
+                now = datetime.now()
+                # 比较是否早于当前时间 10 天
+                ten_days_ago = now - timedelta(days=10)
+                if ts_time > ten_days_ago:
+                    return search_list
         
-        # 获取该省份下的城市列表
-        cities = get_city_list(province_code)
-        for city in cities:
-            city_name = city['city']
-            city_code = city['code']
-            city_url = city['url']
-            # 添加城市信息
-            search_list[city_name] = {
-                'code': city_code,
-                'url': city_url,
-                'type': 'city'
-            }
-    search_list["time"] = int(time.time() * 1000)
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(search_list, f, indent=4, ensure_ascii=False)
-        return search_list
+        provinces = get_province_list()
+        search_list = {}
+        
+        for province in provinces:
+            province_name = province['name']
+            province_code = province['code']
+            province_url = province['url']
+            # 添加省份信息
+            # search_list[province_name] = {
+            #     'code': province_code,
+            #     'url': province_url,
+            #     'type': 'province'
+            # }
+            
+            # 获取该省份下的城市列表
+            cities = get_city_list(province_code)
+            for city in cities:
+                city_name = city['city']
+                city_code = city['code']
+                city_url = city['url']
+                # 添加城市信息
+                search_list[city_name] = {
+                    'code': city_code,
+                    'url': city_url,
+                    'type': 'city'
+                }
+        search_list["time"] = int(time.time() * 1000)
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(search_list, f, indent=4, ensure_ascii=False)
+            return search_list
+    except Exception as e:
+        print(f"build_search_list: {e}")
 
 # 构建搜索列表（建议在程序启动时构建一次并缓存）
 search_list = build_search_list()
