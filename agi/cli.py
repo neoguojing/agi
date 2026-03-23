@@ -1,170 +1,273 @@
 import asyncio
-from asyncio import sleep
 import uuid
 import os
-import mimetypes
-from typing import List, Dict, Any, Union
-from prompt_toolkit import PromptSession
-from langgraph.types import Overwrite
-from prompt_toolkit.completion import PathCompleter
-from rich.console import Console
-from rich.markdown import Markdown
-from rich.live import Live
-from rich.panel import Panel
-from rich.spinner import Spinner
+import sys
+import time
+import subprocess
+import signal
+import json       # [修复 1] 补全导入
+import mimetypes  # [修复 1] 补全导入
+import tempfile   # [修复 2] 用于原子写入
+import pathlib
+from typing import List, Any
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
-from agi.agent.agent import stream_agent_async
-from agi.agent.context import Context
-from agi.apps.common import MessageContent,ImageURL,FileObject
-from agi.api.media import process_multimodal_content
-console = Console()
+# --- 配置 ---
+IGNORED_DIRS = {"__pycache__", ".git", ".venv", "node_modules", ".idea", ".pytest_cache", "dist", "build"}
+# [修复 4] 扩展监听文件类型，支持配置变更触发重启
+WATCH_EXTENSIONS = {".py", ".yaml", ".yml", ".json", ".env"} 
+STATE_CACHE = ".cli_session.json"
+RESTART_DEBOUNCE_SECONDS = 1.5
 
-class DeepAgentCLI:
-    def __init__(self):
-        self.user_id = "admin"
-        self.conversation_id = str(uuid.uuid4())
-        self.thread_id = str(uuid.uuid4())
-        self.state = {"messages": [], "user_id": self.user_id, "conversation_id": self.conversation_id}
-        self.session = PromptSession(completer=PathCompleter(expanduser=True))
+# --- 1. CLI 逻辑部分 ---
+def get_agent_cls():
+    # 延迟导入重型依赖
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.completion import PathCompleter
+    from rich.console import Console
+    from rich.markdown import Markdown
+    from rich.live import Live
+    from rich.panel import Panel
+    from rich.spinner import Spinner
+    
+    try:
+        from agi.agent.agent import stream_agent_async
+        from agi.agent.context import Context
+        from agi.apps.common import MessageContent, ImageURL, FileObject
+        from agi.api.media import process_multimodal_content
+    except ImportError as e:
+        print(f"\n❌ 错误: 无法导入 AGI 模块。\n详情: {e}")
+        sys.exit(1)
 
-    async def handle_stream(self, live: Live):
-        full_response = ""
-        current_tool = None
-        is_streaming_text = False
-        
-        config = {"configurable": {"thread_id": self.thread_id}}
-        context = Context(user_id=self.user_id, conversation_id=self.conversation_id)
+    console = Console()
 
-        try:
-            async for part in stream_agent_async(
-                self.state, 
-                config=config, 
-                context=context,
-                # stream_mode=["messages", "updates"]
-                stream_mode=["messages"]
-            ):
-                # --- 情况 A: 处理实时消息流 (打字机效果) ---
-                if isinstance(part, dict) and part.get("type") == "messages":
-                    data_tuple = part.get("data")
-                    if data_tuple and len(data_tuple) >= 1:
-                        chunk = data_tuple[0]
-                        content = getattr(chunk, "content", "")
-                        if content:
-                            full_response += content
-                            is_streaming_text = True
-                            live.update(Panel(Markdown(full_response), title="Agent Response", border_style="blue"))
+    class DeepAgentCLI:
+        def __init__(self):
+            self.load_session()
+            self.session = PromptSession(completer=PathCompleter(expanduser=True))
+
+        def load_session(self):
+            if os.path.exists(STATE_CACHE):
+                try:
+                    with open(STATE_CACHE, 'r') as f:
+                        data = json.load(f)
+                        self.user_id = data.get("user_id", "admin")
+                        self.conversation_id = data.get("conversation_id", str(uuid.uuid4()))
+                        self.thread_id = self.conversation_id
+                        self.state = {"messages": [], "user_id": self.user_id}
+                        return
+                except (json.JSONDecodeError, IOError):
+                    # 文件损坏或读取失败，静默重置
+                    pass
+            self.user_id = "admin"
+            self.conversation_id = str(uuid.uuid4())
+            self.thread_id = self.conversation_id
+            self.state = {"messages": []}
+
+        def _save_session(self):
+            """
+            [修复 2] 原子写入会话状态
+            防止写入过程中被中断导致 JSON 损坏
+            """
+            tmp_path = STATE_CACHE + ".tmp"
+            try:
+                data = {
+                    "user_id": self.user_id,
+                    "thread_id": self.thread_id,
+                    "conversation_id": self.conversation_id
+                }
+                # 先写入临时文件
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno()) # 确保落盘
                 
-                # --- 情况 B: 处理节点状态更新 (工具调用/完成) ---
-                elif isinstance(part, dict) and part.get("type") == "updates":
-                    updates_data = part.get("data", {})
-                    
-                    for node_name, node_output in updates_data.items():
-                        if not isinstance(node_output, dict):
-                            continue
-                            
-                        raw_messages = node_output.get("messages")
-                        
-                        # 🛠️ 关键修复：处理 Overwrite 对象
-                        if raw_messages is None:
-                            continue
-                        
-                        # 检查是否是 LangGraph 的 Overwrite 包装器
-                        actual_messages = []
-                        if hasattr(raw_messages, 'value'):
-                            # 这是一个 Overwrite 对象，提取真实列表
-                            actual_messages = raw_messages.value
-                        elif isinstance(raw_messages, list):
-                            # 普通列表
-                            actual_messages = raw_messages
-                        else:
-                            # 未知类型，跳过
-                            continue
+                # 原子替换原文件 (Windows 和 Linux 均支持)
+                os.replace(tmp_path, STATE_CACHE)
+            except Exception as e:
+                # 清理可能残留的临时文件
+                if os.path.exists(tmp_path):
+                    try: os.remove(tmp_path)
+                    except: pass
+                # 不抛出异常以免打断主流程，仅记录（实际项目中可用 logger）
+                # print(f"⚠️ 保存会话失败: {e}")
 
-                        if not actual_messages:
-                            continue
-                            
-                        last_msg = actual_messages[-1]
-                        
-                        # 1. 检测工具调用
-                        if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
-                            for tc in last_msg.tool_calls:
-                                tool_name = tc.get('name', 'Unknown')
-                                current_tool = tool_name
-                                live.update(Panel(
-                                    Spinner("dots", text=f"正在调用工具: [bold cyan]{tool_name}[/bold cyan]..."),
-                                    title="Agent Action", border_style="yellow"
-                                ))
-                        
-                        # 2. 检测工具返回
-                        elif getattr(last_msg, "role", "") == "tool":
-                            live.update(Panel(
-                                f"✅ 工具 [bold cyan]{current_tool}[/bold cyan] 执行完毕，正在分析结果...",
-                                title="Agent Action", border_style="green"
-                            ))
-                            await asyncio.sleep(0.3)
-                        
-                        # 3. 检测最终回复 (兜底)
-                        elif getattr(last_msg, "role", "") == "assistant":
-                            content = getattr(last_msg, "content", "")
-                            if content and not is_streaming_text:
-                                full_response = content
-                                live.update(Panel(Markdown(full_response), title="Agent Response", border_style="blue"))
+        async def handle_stream(self, live):
+            full_response = ""
+            config = {"configurable": {"thread_id": self.thread_id}}
+            context = Context(user_id=self.user_id, conversation_id=self.conversation_id)
+            
+            # [修复 5] UI 渲染限流变量
+            last_update_time = 0
+            update_interval = 0.05 # 50ms 刷新一次，平衡流畅度与 CPU
 
+            async for part in stream_agent_async(self.state, config=config, context=context, stream_mode=["messages"]):
+                if isinstance(part, dict) and part.get("type") == "messages":
+                    data = part.get("data")
+                    if data and len(data) > 0:
+                        content = getattr(data[0], "content", "")
+                        full_response += str(content)
+                        
+                        # [修复 5] 限流逻辑：避免高频更新导致 UI 抖动和 CPU 飙升
+                        now = time.time()
+                        if now - last_update_time > update_interval:
+                            live.update(Panel(Markdown(full_response), title="Agent Response", border_style="blue"))
+                            last_update_time = now
+            
+            # 确保最后一次更新被渲染
+            if full_response:
+                live.update(Panel(Markdown(full_response), title="Agent Response", border_style="blue"))
+                
             return full_response
 
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            console.print(f"\n[bold red]Stream Error: {e}[/bold red]")
-            return f"错误: {e}"
-    
-    def _smart_parse(self, text: str) -> List[Any]:
-        """解析输入，支持 img: 和 file: 标签"""
-        tokens = text.split()
-        contents = []
-        text_parts = []
-        for token in tokens:
-            if token.startswith("img:"):
-                path = os.path.expanduser(token.replace("img:", ""))
-                contents.append(MessageContent(type="image_url", image_url=ImageURL(url=path)))
-            elif token.startswith("file:"):
-                path = os.path.expanduser(token.replace("file:", ""))
-                mime, _ = mimetypes.guess_type(path)
-                contents.append(MessageContent(type="file", file=FileObject(file_id=path, mime_type=mime)))
-            else:
-                text_parts.append(token)
-        if text_parts:
-            contents.append(MessageContent(type="text", text=" ".join(text_parts)))
-        return contents
+        def _smart_parse(self, text: str):
+            tokens = text.split()
+            contents = []
+            for t in tokens:
+                if t.startswith("img:"):
+                    contents.append(MessageContent(type="image_url", image_url=ImageURL(url=t[4:])))
+                elif t.startswith("file:"):
+                    mime, _ = mimetypes.guess_type(t[5:])
+                    contents.append(MessageContent(type="file", file=FileObject(file_id=t[5:], mime_type=mime or "application/octet-stream")))
+                else:
+                    contents.append(MessageContent(type="text", text=t))
+            return contents
 
-    async def main_loop(self):
-        console.print(Panel.fit(
-            "🚀 [bold green]Multi-Modal Tool-Enabled Agent CLI[/bold green]\n"
-            "混合输入: [cyan]帮我看看这张图 img:1.jpg 并把结果存入 file:res.txt[/cyan]",
-            border_style="green"
-        ))
+        async def run(self):
+            self._save_session()
+            console.print(Panel(f"🔥 [bold green]Agent 已就绪[/bold green]\nThread: {self.thread_id[:8]}...", border_style="green"))
+            
+            while True:
+                try:
+                    user_input = await self.session.prompt_async("\n👤 [bold yellow]You > [/bold yellow]")
+                    if not user_input: continue
+                    if user_input.lower() in ["exit", "q", "/quit"]: 
+                        break
+                    
+                    if user_input.startswith("/reset"):
+                        self.state["messages"] = []
+                        console.print("[dim]上下文已清空[/dim]")
+                        continue
 
-        while True:
-            try:
-                user_input = await self.session.prompt_async("\n👤 [bold yellow]You > [/bold yellow]")
-                if not user_input.strip(): continue
-                if user_input.lower() in ["exit", "quit", "q"]: break
+                    processed, _ = process_multimodal_content(self._smart_parse(user_input))
+                    self.state["messages"].append({"role": "user", "content": processed})
+                    
+                    with Live(Spinner("dots", text="思考中..."), console=console, refresh_per_second=10) as live:
+                        ans = await self.handle_stream(live)
+                    
+                    self.state["messages"].append({"role": "assistant", "content": ans})
+                    self._save_session()
+                    
+                except (EOFError, KeyboardInterrupt): 
+                    break
+                except Exception as e:
+                    console.print(f"[red]发生错误: {e}[/red]")
 
-                # 转换协议并更新状态
-                content_models = self._smart_parse(user_input)
-                processed_content, _ = process_multimodal_content(content_models)
-                self.state["messages"].append({"role": "user", "content": processed_content})
+    return DeepAgentCLI
 
-                # 流式展示进度和结果
-                with Live(Spinner("dots", text="Agent 准备中..."), console=console, refresh_per_second=10) as live:
-                    final_text = await self.handle_stream(live)
+# --- 2. 热重载监控逻辑 ---
+class ReloadHandler(FileSystemEventHandler):
+    def __init__(self, script_path):
+        self.script_path = script_path
+        self.process = None
+        self.last_restart = 0
+        self.start_agent()
 
-                self.state["messages"].append({"role": "assistant", "content": final_text})
+    def start_agent(self):
+        now = time.time()
+        if now - self.last_restart < RESTART_DEBOUNCE_SECONDS:
+            return
+        self.last_restart = now
 
-            except KeyboardInterrupt:
-                continue
-            except EOFError:
-                break
+        if self.process:
+            if self.process.poll() is None:
+                print("\n⏹️  正在停止旧进程...")
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    print("⚠️  强制杀死旧进程...")
+                    self.process.kill()
+                    self.process.wait()
+        
+        print(f"\n🔄 [{time.strftime('%H:%M:%S')}] 检测到变动 ({', '.join(WATCH_EXTENSIONS)}), 重启服务...")
+        
+        # [修复 3] 显式接管 stdout/stderr
+        # 这样子进程的输出会直接显示在当前终端，与父进程日志混合但可控
+        # 如果需要完全隔离日志，可以改为 PIPE 并单独线程转发
+        self.process = subprocess.Popen(
+            [sys.executable, "-m", "agi.cli", "--child"],
+            env=os.environ,
+            stdout=sys.stdout,
+            stderr=sys.stderr
+        )
 
+    def on_modified(self, event):
+        if event.is_directory:
+            return
+        
+        src_path = pathlib.Path(event.src_path)
+        
+        # 忽略目录检查
+        for ignore_dir in IGNORED_DIRS:
+            if ignore_dir in src_path.parts:
+                return
+        
+        # [修复 4] 检查扩展名白名单
+        if src_path.suffix.lower() in WATCH_EXTENSIONS:
+            self.start_agent()
+
+# --- 3. 入口控制 ---
 if __name__ == "__main__":
-    asyncio.run(DeepAgentCLI().main_loop())
+    if "__file__" in globals():
+        SCRIPT_PATH = os.path.abspath(__file__)
+    else:
+        SCRIPT_PATH = os.path.abspath(sys.argv[0])
+
+    if "--child" in sys.argv:
+        try:
+            AgentClass = get_agent_cls()
+            asyncio.run(AgentClass().run())
+        except KeyboardInterrupt:
+            sys.exit(0)
+        except Exception as e:
+            print(f"\n💥 Agent 崩溃: {e}")
+            sys.exit(1)
+    
+    else:
+        print(f"👀 监控已启动: {os.getcwd()}")
+        print(f"   监听文件类型: {', '.join(WATCH_EXTENSIONS)}")
+        print("   按 Ctrl+C 停止所有服务\n")
+        
+        handler = ReloadHandler(SCRIPT_PATH)
+        observer = Observer()
+        observer.schedule(handler, path=".", recursive=True)
+        observer.start()
+
+        def signal_handler(sig, frame):
+            print("\n🛑 接收到停止信号，正在关闭...")
+            observer.stop()
+            if handler.process and handler.process.poll() is None:
+                handler.process.terminate()
+                try:
+                    handler.process.wait(timeout=3)
+                except:
+                    handler.process.kill()
+            sys.exit(0)
+
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+
+        try:
+            while True:
+                time.sleep(1)
+                if handler.process and handler.process.poll() is not None:
+                    code = handler.process.returncode
+                    print(f"\n⚠️  子进程意外退出 (代码: {code})，尝试重启...")
+                    handler.last_restart = 0
+                    handler.start_agent()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            observer.join()
