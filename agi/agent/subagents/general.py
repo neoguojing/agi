@@ -1,4 +1,5 @@
 
+from agi.agent.middlewares.debug_middleware import DebugLLMContextMiddleware
 from agi.agent.tools import RemoteImageEditTool,RemoteImageGenTool,RemoteMultiModalTool,RemoteTranscriptionTool,RemoteTTSTool
 from agi.agent.middlewares import BrowserMiddleware
 from agi.agent.models import ModelProvider
@@ -12,7 +13,10 @@ visual_subagent = {
         "When generating, expand user prompts into high-quality descriptive prompts. "
         "Always return the resulting Image URL to the main agent."
     ),
-    "tools": [image_gen_tool, image_edit_tool]
+    "tools": [image_gen_tool, image_edit_tool],
+    "middleware": [
+        DebugLLMContextMiddleware()
+    ]
 }
 
 omni_tool = RemoteMultiModalTool()
@@ -24,7 +28,10 @@ perception_subagent = {
         "see images/videos via Omni models, and speak via TTS. "
         "If a user provides a file path, use the appropriate tool to process it."
     ),
-    "tools": [omni_tool]
+    "tools": [omni_tool],
+    "middleware": [
+        DebugLLMContextMiddleware()
+    ]
 }
 
 
@@ -43,7 +50,10 @@ stt_subagent = {
         "3. Maintain the original meaning and tone of the speaker.\n"
         "4. If the audio is low quality or the transcription fails, explain the specific reason to the main agent."
     ),
-    "tools": [stt_tool]
+    "tools": [stt_tool],
+    "middleware": [
+        DebugLLMContextMiddleware()
+    ]
 }
 
 # Tools previously defined via HTTPX
@@ -60,7 +70,10 @@ tts_subagent = {
         "3. Ensure the text is sanitized (e.g., expand abbreviations like 'Dr.' to 'Doctor') before synthesis to improve pronunciation.\n"
         "4. Return the final Audio URL or streaming instructions clearly to the main agent."
     ),
-    "tools": [tts_tool]
+    "tools": [tts_tool],
+    "middleware": [
+        DebugLLMContextMiddleware()
+    ]
 }
 
 browser_subagent = {
@@ -70,7 +83,8 @@ browser_subagent = {
     "middleware": [
         BrowserMiddleware(
             ocr_engine=ModelProvider.get_chat_model()
-        )
+        ),
+        DebugLLMContextMiddleware()
     ]
 }
 

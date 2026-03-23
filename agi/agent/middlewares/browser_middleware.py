@@ -261,12 +261,10 @@ class BrowserMiddleware(AgentMiddleware):
         content_token_limit: int = 15_000,
         eviction_handler: Callable[[str], str] | None = None,
         system_prompt: str | None = None,
-        idle_timeout_seconds: float = 60.0,
     ):
         super().__init__()
         self._session_pool = BrowserBackendPool(
-            storage_dir=storage_dir,
-            idle_timeout_seconds=idle_timeout_seconds,
+            storage_dir=storage_dir
         )
         self.ocr = ocr_engine
         self.max_retries = max_retries

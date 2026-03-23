@@ -1,5 +1,7 @@
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from typing import Callable, Awaitable
+from typing import List
+from langchain_core.messages import BaseMessage
     
 
 class DebugLLMContextMiddleware(AgentMiddleware):
@@ -51,7 +53,7 @@ class DebugLLMContextMiddleware(AgentMiddleware):
             print(f"【状态】: {request.state}")
 
         print("-" * 66)
-
+        request.messages = deduplicate_messages_by_id(request.messages)  # 去重，防止重复消息干扰调试
         # 4. 消息流解析
         if self.show_messages:
             # 合并 SystemMessage 和普通消息列表进行展示
@@ -90,7 +92,7 @@ class DebugLLMContextMiddleware(AgentMiddleware):
                 # --- ✅ 修复结束 ---
 
                 # 截断长内容
-                if len(content_str) > self.limit and role != "SYSTEM":
+                if len(content_str) > self.limit:
                     half = self.limit // 2
                     content_str = f"{content_str[:half]}\n... [已省略 {len(content_str)-self.limit} 字] ...\n{content_str[-half:]}"
                 
@@ -105,3 +107,34 @@ class DebugLLMContextMiddleware(AgentMiddleware):
         # 继续执行
         response = await handler(request)
         return response
+    
+    from langchain_core.messages import BaseMessage
+
+def deduplicate_messages_by_id(messages: List[BaseMessage]) -> List[BaseMessage]:
+    """
+    根据 LangChain 消息对象的 .id 属性进行去重。
+    保留列表中第一次出现的消息，移除后续 ID 重复的消息。
+    """
+    seen_ids = set()
+    unique_messages = []
+    
+    for msg in messages:
+        # 直接访问顶层 id 属性
+        # 在你提供的示例中：msg.id 如 'e72247b6-26b7-4bed-ae84-3a75433b686e'
+        msg_id = msg.id
+        
+        if msg_id is None:
+            # 如果某些消息没有 ID (极少见，除非手动构造未初始化)，
+            # 策略：视为唯一消息保留，或者根据需求跳过。这里选择保留。
+            unique_messages.append(msg)
+            continue
+        
+        if msg_id not in seen_ids:
+            seen_ids.add(msg_id)
+            unique_messages.append(msg)
+        else:
+            # 调试信息：如果发现重复，可以打印出来
+            # print(f"Skipping duplicate message with ID: {msg_id}")
+            pass
+            
+    return unique_messages

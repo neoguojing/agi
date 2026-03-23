@@ -32,6 +32,7 @@ def get_agent_cls():
     from rich.live import Live
     from rich.panel import Panel
     from rich.spinner import Spinner
+    from prompt_toolkit.formatted_text import HTML 
     
     try:
         from agi.agent.agent import stream_agent_async
@@ -142,7 +143,7 @@ def get_agent_cls():
             
             while True:
                 try:
-                    user_input = await self.session.prompt_async("\n👤 [bold yellow]You > [/bold yellow]")
+                    user_input = await self.session.prompt_async(HTML("\n👤 <b><ansiyellow>You > </ansiyellow></b>"))
                     if not user_input: continue
                     if user_input.lower() in ["exit", "q", "/quit"]: 
                         break

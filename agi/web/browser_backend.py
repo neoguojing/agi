@@ -32,9 +32,9 @@ DEFAULT_SMART_WAIT_TIMEOUT_MS = 5_000
 DEFAULT_CLICK_TIMEOUT_MS = 5_000
 DEFAULT_SCROLL_TIMEOUT_MS = 2_000
 DEFAULT_CAPTURE_DELAY_MS = 300
-MAX_FIND_RESULTS = 50
-MAX_BROWSER_EVENTS = 100
-MAX_STATE_MESSAGES = 100
+MAX_FIND_RESULTS = 5
+MAX_BROWSER_EVENTS = 1
+MAX_STATE_MESSAGES = 1
 # 持久化的两个核心文件：一个保存 agent 可消费的状态摘要，一个保存 Playwright 的 cookies/localStorage。
 STATE_SNAPSHOT_FILENAME = "browser_session_state.json"
 PLAYWRIGHT_STORAGE_STATE_FILENAME = "playwright_storage_state.json"
@@ -126,7 +126,7 @@ class BrowserBackendPool:
         self,
         storage_dir: str,
         *,
-        idle_timeout_seconds: float = 60.0*30,
+        idle_timeout_seconds: float = 60.0*30.0,
         headless: bool = False,
         timeout: int = 30_000,
         max_content_length: int = 2_000_000,
@@ -538,13 +538,13 @@ class StatefulBrowserBackend:
         """Return a copy of the recorded browser action history."""
         return list(self._history)
 
-    def peek_state_messages(self, limit: int = 20) -> list[dict[str, Any]]:
+    def peek_state_messages(self, limit: int = 1) -> list[dict[str, Any]]:
         """Return recently published state messages without consuming them."""
         if limit <= 0:
             return []
         return [dict(message) for message in self._state_messages[-limit:]]
 
-    def drain_state_messages(self, limit: int = 100) -> list[dict[str, Any]]:
+    def drain_state_messages(self, limit: int = 1) -> list[dict[str, Any]]:
         """Drain pending state messages for downstream synchronizers."""
         messages: list[dict[str, Any]] = []
         while limit > 0 and not self._state_message_queue.empty():
@@ -552,7 +552,7 @@ class StatefulBrowserBackend:
             limit -= 1
         return messages
 
-    def get_recent_events(self, limit: int = 20) -> list[dict[str, Any]]:
+    def get_recent_events(self, limit: int = 1) -> list[dict[str, Any]]:
         """Return a copy of the most recent browser/page events."""
         if limit <= 0:
             return []
@@ -676,15 +676,17 @@ class StatefulBrowserBackend:
     async def _capture_page_info(self, page: Page, url: str, response: Response | None) -> PageInfo:
         """Capture normalized page metadata after an action completes."""
         try:
-            html = await page.content()
-            if len(html) > self.max_content_length:
-                html = html[: self.max_content_length] + "\n... [TRUNCATED]"
-
+            # html = await page.content()
+            # if len(html) > self.max_content_length:
+            #     html = html[: self.max_content_length] + "\n... [TRUNCATED]"
+            a11y_snapshot = await page.accessibility.snapshot()
+            html_repr = json.dumps(a11y_snapshot) 
+            
             page_text = await page.inner_text("body")
             page_title = await page.title()
             self._page_titles[self._page_id(page)] = page_title
             take_screenshot = self._should_capture_screenshot(
-                html=html,
+                html=html_repr,
                 page_text=page_text,
                 response=response,
             )
@@ -705,13 +707,13 @@ class StatefulBrowserBackend:
             return PageInfo(
                 url=page.url,
                 title=page_title,
-                html=html,
+                html=html_repr,
                 text=page_text,
                 screenshot_path=screenshot_path,
                 metadata={
                     "requested_url": url,
                     "status": response.status if response is not None else 200,
-                    "content_length": len(html),
+                    "content_length": len(html_repr),
                     "text_length": len(page_text),
                     "has_screenshot": screenshot_path is not None,
                     "ocr_ready": screenshot_path is not None,

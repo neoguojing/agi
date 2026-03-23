@@ -12,7 +12,7 @@ buildin_agents = [
     visual_subagent,
     perception_subagent,
     stt_subagent,
-    browser_subagent
+    # browser_subagent
 ]
 
 

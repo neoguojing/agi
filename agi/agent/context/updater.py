@@ -172,10 +172,10 @@ class UnifiedContextUpdater:
                 current_val=current_val, user_msg=user_msg, ai_msg=ai_msg
             )
             patch = await self.user_extractor.ainvoke(prompt)
-            print(f"User Profile Patch: {patch.model_dump(exclude_none=True)}")
+            # print(f"User Profile Patch: {patch.model_dump(exclude_none=True)}")
             # 3. 智能合并并存入 Store
             updated_val = self._smart_merge_user(current_val, patch.model_dump(exclude_none=True))
-            print(f"Updated User Profile: {updated_val}")
+            # print(f"Updated User Profile: {updated_val}")
             await runtime.store.aput(user_id, USER_PROFILE_CONTEXT, updated_val)
         except Exception as e:
             print(f"User Profile Update Error: {e}")
