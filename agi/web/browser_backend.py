@@ -1,10 +1,9 @@
 import logging
 import random
 import uuid
-from asyncio import Task
-from asyncio import Lock
-from contextlib import asynccontextmanager, suppress
+from asyncio import Lock, Task
 from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -32,6 +31,42 @@ DEFAULT_CLICK_TIMEOUT_MS = 5_000
 DEFAULT_SCROLL_TIMEOUT_MS = 2_000
 DEFAULT_CAPTURE_DELAY_MS = 300
 MAX_FIND_RESULTS = 50
+MAX_BROWSER_EVENTS = 100
+BROWSER_OBSERVER_SCRIPT = """
+(() => {
+  if (window.__agiBrowserObserverInstalled) return;
+  window.__agiBrowserObserverInstalled = true;
+
+  const buildTarget = (target) => {
+    if (!(target instanceof Element)) {
+      return { tag: null, id: null, classes: [], text: "" };
+    }
+    return {
+      tag: target.tagName ? target.tagName.toLowerCase() : null,
+      id: target.id || null,
+      classes: Array.from(target.classList || []),
+      text: (target.innerText || target.textContent || "").trim().slice(0, 120),
+    };
+  };
+
+  document.addEventListener(
+    "click",
+    (event) => {
+      const payload = {
+        type: "dom_click",
+        url: window.location.href,
+        title: document.title,
+        target: buildTarget(event.target),
+        timestamp: new Date().toISOString(),
+      };
+      if (window.__agiRecordBrowserEvent) {
+        window.__agiRecordBrowserEvent(payload).catch(() => undefined);
+      }
+    },
+    true,
+  );
+})();
+"""
 
 
 @dataclass(slots=True)
@@ -111,7 +146,6 @@ class BrowserBackendPool:
             await session.backend.close()
 
     async def _acquire_session(self, user_id: str) -> UserBrowserSession:
-        loop = None
         async with self._lock:
             session = self._sessions.get(user_id)
             if session is None:
@@ -202,6 +236,12 @@ class StatefulBrowserBackend:
         self._context: BrowserContext | None = None
         self._page: Page | None = None
         self._history: list[dict[str, Any]] = []
+        self._events: list[dict[str, Any]] = []
+        self._event_seq = 0
+        self._active_page_id: str | None = None
+        self._page_titles: dict[str, str | None] = {}
+        self._instrumented_pages: set[str] = set()
+        self._binding_registered = False
 
         self.min_text_length = 50
         self.min_html_length = 100
@@ -228,11 +268,19 @@ class StatefulBrowserBackend:
                 viewport=DEFAULT_VIEWPORT,
                 user_agent=DEFAULT_USER_AGENT,
             )
+            await self._register_context_instrumentation(self._context)
             self._page = await self._context.new_page()
+            self._set_active_page(self._page)
+            await self._instrument_page(self._page, source="initialize")
             logger.info("Browser backend ready")
 
     async def close(self) -> None:
         """Close the browser session and release Playwright resources."""
+        self._record_event(
+            "browser_closed",
+            page=self._page,
+            metadata={"storage_dir": str(self.storage_dir)},
+        )
         try:
             if self._page is not None:
                 await self._page.close()
@@ -247,12 +295,25 @@ class StatefulBrowserBackend:
             self._context = None
             self._browser = None
             self._playwright = None
+            self._active_page_id = None
+            self._binding_registered = False
+            self._instrumented_pages.clear()
             logger.info("Browser backend closed")
+
+    @property
+    def is_closed(self) -> bool:
+        return self._browser is None or self._context is None or self._page is None or self._page_is_closed(self._page)
 
     async def ensure_page(self) -> Page:
         """Return the active page, initializing the backend when needed."""
-        if self._page is None:
+        if self._page is None or self._page_is_closed(self._page):
             await self.initialize()
+            if self._context is not None:
+                live_pages = [page for page in self._context_pages() if not self._page_is_closed(page)]
+                if live_pages:
+                    self._page = live_pages[-1]
+                    self._set_active_page(self._page)
+                    await self._instrument_page(self._page, source="ensure_page")
         if self._page is None:
             msg = "Browser page is not available after initialization"
             raise RuntimeError(msg)
@@ -278,6 +339,11 @@ class StatefulBrowserBackend:
             await self._scroll_into_view(page, selector)
             await self._human_delay(100, 400)
             await page.click(selector, timeout=DEFAULT_CLICK_TIMEOUT_MS)
+            self._record_event(
+                "action_click",
+                page=page,
+                metadata={"selector": selector},
+            )
             return None
 
         return await self._run_page_action(
@@ -298,6 +364,11 @@ class StatefulBrowserBackend:
             await elements[0].scroll_into_view_if_needed(timeout=DEFAULT_SCROLL_TIMEOUT_MS)
             await self._human_delay(100, 400)
             await elements[0].click(timeout=DEFAULT_CLICK_TIMEOUT_MS)
+            self._record_event(
+                "action_click_text",
+                page=page,
+                metadata={"text": text},
+            )
             return None
 
         return await self._run_page_action(
@@ -313,6 +384,11 @@ class StatefulBrowserBackend:
         async def operation(page: Page) -> Response | None:
             await self._scroll_into_view(page, selector)
             await page.fill(selector, value, timeout=DEFAULT_CLICK_TIMEOUT_MS)
+            self._record_event(
+                "action_fill",
+                page=page,
+                metadata={"selector": selector, "value": value},
+            )
             return None
 
         return await self._run_page_action(
@@ -332,6 +408,11 @@ class StatefulBrowserBackend:
                 raise ValueError(msg)
             await element.scroll_into_view_if_needed(timeout=DEFAULT_SCROLL_TIMEOUT_MS)
             await element.fill(value)
+            self._record_event(
+                "action_fill_label",
+                page=page,
+                metadata={"label": label_text, "value": value},
+            )
             return None
 
         return await self._run_page_action(
@@ -351,6 +432,11 @@ class StatefulBrowserBackend:
             for char in value:
                 await page.keyboard.type(char, delay=random.randint(50, 150))
             await self._human_delay()
+            self._record_event(
+                "action_fill_human_like",
+                page=page,
+                metadata={"selector": selector, "value": value},
+            )
             return None
 
         return await self._run_page_action(
@@ -363,6 +449,7 @@ class StatefulBrowserBackend:
     async def find_elements(self, selector: str) -> list[QueryMatch]:
         """Return text and attributes for elements matching a CSS selector."""
         page = await self.ensure_page()
+        self._set_active_page(page)
         try:
             elements = await page.query_selector_all(selector)
             results: list[QueryMatch] = []
@@ -376,6 +463,11 @@ class StatefulBrowserBackend:
                     }"""
                 )
                 results.append(QueryMatch(selector=selector, text=text, attributes=attributes or {}))
+            self._record_event(
+                "query_selector_all",
+                page=page,
+                metadata={"selector": selector, "count": len(results)},
+            )
             return results
         except Exception:
             logger.exception("find_elements failed for selector=%s", selector)
@@ -402,6 +494,51 @@ class StatefulBrowserBackend:
         """Return a copy of the recorded browser action history."""
         return list(self._history)
 
+    def get_recent_events(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Return a copy of the most recent browser/page events."""
+        if limit <= 0:
+            return []
+        return [dict(event) for event in self._events[-limit:]]
+
+    def get_state_snapshot(self, *, user_id: str | None = None, last_result: PageInfo | None = None) -> dict[str, Any]:
+        """Return the current browser/context/page state for agent decision making."""
+        pages = self._context_pages()
+        active_page = self._page
+        active_page_id = self._page_id(active_page) if active_page is not None else self._active_page_id
+        last_event = self._events[-1] if self._events else None
+        last_page_result = last_result or None
+
+        return {
+            "user_id": user_id,
+            "storage_dir": str(self.storage_dir),
+            "browser": {
+                "is_open": self._browser is not None and not self.is_closed,
+                "is_closed": self.is_closed,
+                "headless": self.headless,
+                "timeout_ms": self.timeout,
+            },
+            "context": {
+                "is_initialized": self._context is not None,
+                "page_count": len(pages),
+                "active_page_id": active_page_id,
+                "pages": [self._page_snapshot(page) for page in pages],
+            },
+            "page": {
+                "active_page_id": active_page_id,
+                "url": getattr(active_page, "url", None),
+                "title": self._page_titles.get(active_page_id) if active_page_id else None,
+                "is_closed": self._page_is_closed(active_page),
+                "load_state": self._infer_load_state(last_event),
+                "last_result_url": last_page_result.url if last_page_result else None,
+                "last_result_title": last_page_result.title if last_page_result else None,
+                "has_screenshot": bool(last_page_result and last_page_result.screenshot_path),
+            },
+            "history_length": len(self._history),
+            "recent_events": self.get_recent_events(),
+            "last_event": dict(last_event) if last_event else None,
+            "event_version": self._event_seq,
+        }
+
     async def _run_page_action(
         self,
         action: str,
@@ -411,6 +548,7 @@ class StatefulBrowserBackend:
         history_entry: dict[str, Any] | None = None,
     ) -> PageInfo:
         page = await self.ensure_page()
+        self._set_active_page(page)
         last_error: Exception | None = None
 
         for attempt in range(self.max_retry + 1):
@@ -418,6 +556,7 @@ class StatefulBrowserBackend:
                 logger.info("Browser action '%s' attempt %s/%s", action, attempt + 1, self.max_retry + 1)
                 response = await operation(page)
                 await self._smart_wait(page)
+                await self._instrument_page(page, source=action)
                 if history_entry is not None:
                     self._history.append(history_entry)
                 return await self._capture_page_info(page, capture_url or page.url, response)
@@ -436,6 +575,11 @@ class StatefulBrowserBackend:
         )
 
     def _build_error_page_info(self, url: str, error: str, **metadata: Any) -> PageInfo:
+        self._record_event(
+            "page_error",
+            page=self._page,
+            metadata={"url": url, "error": error, **metadata},
+        )
         return PageInfo(
             url=url,
             title=None,
@@ -454,6 +598,7 @@ class StatefulBrowserBackend:
 
             page_text = await page.inner_text("body")
             page_title = await page.title()
+            self._page_titles[self._page_id(page)] = page_title
             take_screenshot = self._should_capture_screenshot(
                 html=html,
                 page_text=page_text,
@@ -464,6 +609,15 @@ class StatefulBrowserBackend:
             if take_screenshot:
                 screenshot_path = str(await self._take_screenshot(page, prefix="page", full_page=True))
 
+            self._record_event(
+                "page_capture",
+                page=page,
+                metadata={
+                    "requested_url": url,
+                    "status": response.status if response is not None else 200,
+                    "has_screenshot": screenshot_path is not None,
+                },
+            )
             return PageInfo(
                 url=page.url,
                 title=page_title,
@@ -478,6 +632,7 @@ class StatefulBrowserBackend:
                     "has_screenshot": screenshot_path is not None,
                     "ocr_ready": screenshot_path is not None,
                     "history_length": len(self._history),
+                    "browser_state": self.get_state_snapshot(last_result=None),
                 },
             )
         except Exception as exc:
@@ -497,14 +652,21 @@ class StatefulBrowserBackend:
         file_path = self.storage_dir / f"{prefix}_{uuid.uuid4().hex[:10]}.png"
         await page.screenshot(path=str(file_path), full_page=full_page)
         logger.info("Screenshot saved to %s", file_path)
+        self._record_event(
+            "screenshot_captured",
+            page=page,
+            metadata={"path": str(file_path), "full_page": full_page},
+        )
         return file_path
 
     async def _smart_wait(self, page: Page, delay: int = DEFAULT_CAPTURE_DELAY_MS) -> None:
         """Wait for network stability, then add a small human-like delay."""
         try:
             await page.wait_for_load_state("networkidle", timeout=DEFAULT_SMART_WAIT_TIMEOUT_MS)
+            self._record_event("page_load_state", page=page, metadata={"state": "networkidle"})
         except PlaywrightTimeoutError:
             logger.debug("networkidle wait timed out; continuing with fallback delay")
+            self._record_event("page_load_state_timeout", page=page, metadata={"state": "networkidle"})
         await page.wait_for_timeout(delay)
 
     async def _scroll_into_view(self, page: Page, selector: str) -> None:
@@ -520,3 +682,146 @@ class StatefulBrowserBackend:
         """Sleep briefly to simulate human interaction cadence."""
         page = await self.ensure_page()
         await page.wait_for_timeout(random.randint(min_ms, max_ms))
+
+    async def _register_context_instrumentation(self, context: BrowserContext) -> None:
+        if not hasattr(context, "on"):
+            return
+        context.on("page", self._handle_new_page)
+        if not self._binding_registered and hasattr(context, "expose_binding"):
+            try:
+                await context.expose_binding("__agiRecordBrowserEvent", self._record_page_dom_event)
+                self._binding_registered = True
+            except Exception:
+                logger.debug("Failed to register browser event binding", exc_info=True)
+        if hasattr(context, "add_init_script"):
+            try:
+                await context.add_init_script(BROWSER_OBSERVER_SCRIPT)
+            except Exception:
+                logger.debug("Failed to install browser observer script", exc_info=True)
+
+    async def _instrument_page(self, page: Page, *, source: str) -> None:
+        page_id = self._page_id(page)
+        if page_id in self._instrumented_pages:
+            return
+        self._instrumented_pages.add(page_id)
+        self._page_titles.setdefault(page_id, None)
+        self._set_active_page(page)
+        self._attach_page_listeners(page)
+        if hasattr(page, "add_init_script"):
+            try:
+                await page.add_init_script(BROWSER_OBSERVER_SCRIPT)
+            except Exception:
+                logger.debug("Failed to install page observer script", exc_info=True)
+        self._record_event("page_instrumented", page=page, metadata={"source": source})
+
+    def _attach_page_listeners(self, page: Page) -> None:
+        if not hasattr(page, "on"):
+            return
+        page.on("domcontentloaded", lambda: self._record_event("page_domcontentloaded", page=page))
+        page.on("load", lambda: self._record_event("page_load", page=page))
+        page.on("close", lambda: self._record_event("page_closed", page=page))
+        page.on("framenavigated", lambda frame: self._handle_frame_navigated(page, frame))
+
+    async def _handle_new_page(self, page: Page) -> None:
+        self._set_active_page(page)
+        await self._instrument_page(page, source="context_page")
+        self._record_event("context_page_created", page=page, metadata={"page_count": len(self._context_pages())})
+
+    def _handle_frame_navigated(self, page: Page, frame: Any) -> None:
+        frame_url = getattr(frame, "url", None)
+        if callable(frame_url):
+            try:
+                frame_url = frame_url()
+            except Exception:
+                frame_url = None
+        is_main_frame = True
+        main_frame = getattr(page, "main_frame", None)
+        if main_frame is not None and frame is not None:
+            try:
+                is_main_frame = frame == main_frame
+            except Exception:
+                is_main_frame = True
+        if is_main_frame:
+            self._set_active_page(page)
+            self._record_event("page_navigated", page=page, metadata={"url": frame_url or getattr(page, 'url', None)})
+
+    async def _record_page_dom_event(self, _source: Any, payload: dict[str, Any]) -> None:
+        if not isinstance(payload, dict):
+            return
+        url = payload.get("url")
+        page = self._resolve_page_by_url(url)
+        self._record_event(payload.get("type", "dom_event"), page=page, metadata=payload)
+
+    def _record_event(self, event_type: str, *, page: Page | None = None, metadata: dict[str, Any] | None = None) -> None:
+        self._event_seq += 1
+        page_id = self._page_id(page) if page is not None else self._active_page_id
+        url = getattr(page, "url", None) if page is not None else None
+        event = {
+            "seq": self._event_seq,
+            "type": event_type,
+            "page_id": page_id,
+            "url": url,
+            "metadata": dict(metadata or {}),
+        }
+        self._events.append(event)
+        if len(self._events) > MAX_BROWSER_EVENTS:
+            self._events = self._events[-MAX_BROWSER_EVENTS:]
+
+    def _set_active_page(self, page: Page | None) -> None:
+        if page is None:
+            return
+        self._page = page
+        self._active_page_id = self._page_id(page)
+        self._record_event("active_page_changed", page=page, metadata={"page_count": len(self._context_pages())})
+
+    def _context_pages(self) -> list[Page]:
+        pages = getattr(self._context, "pages", None)
+        if pages is None:
+            return [self._page] if self._page is not None else []
+        return list(pages)
+
+    def _page_snapshot(self, page: Page) -> dict[str, Any]:
+        page_id = self._page_id(page)
+        return {
+            "page_id": page_id,
+            "url": getattr(page, "url", None),
+            "title": self._page_titles.get(page_id),
+            "is_active": page_id == self._active_page_id,
+            "is_closed": self._page_is_closed(page),
+        }
+
+    def _infer_load_state(self, last_event: dict[str, Any] | None) -> str:
+        if not last_event:
+            return "idle"
+        event_type = last_event.get("type")
+        if event_type in {"page_load", "page_load_state", "page_capture"}:
+            return "loaded"
+        if event_type in {"page_domcontentloaded", "page_navigated"}:
+            return "loading"
+        if event_type in {"page_closed", "browser_closed"}:
+            return "closed"
+        return "idle"
+
+    def _resolve_page_by_url(self, url: str | None) -> Page | None:
+        if not url:
+            return self._page
+        for page in self._context_pages():
+            if getattr(page, "url", None) == url:
+                return page
+        return self._page
+
+    def _page_id(self, page: Page | None) -> str:
+        if page is None:
+            return "page:none"
+        return f"page:{id(page)}"
+
+    def _page_is_closed(self, page: Page | None) -> bool:
+        if page is None:
+            return True
+        is_closed = getattr(page, "is_closed", None)
+        if callable(is_closed):
+            try:
+                return bool(is_closed())
+            except Exception:
+                return False
+        return False

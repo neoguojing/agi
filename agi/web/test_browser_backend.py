@@ -45,6 +45,14 @@ class FakePage:
         self.query_selector = AsyncMock(return_value=FakeElement())
         self.query_selector_all = AsyncMock(return_value=[])
         self.screenshot = AsyncMock()
+        self.add_init_script = AsyncMock()
+        self._listeners = {}
+
+    def on(self, event: str, callback):
+        self._listeners[event] = callback
+
+    def is_closed(self) -> bool:
+        return False
 
 
 @pytest.fixture
@@ -55,7 +63,9 @@ def backend(tmp_path: Path) -> StatefulBrowserBackend:
         max_content_length=20,
         max_retry=1,
     )
+    instance._browser = object()
     instance._page = FakePage()
+    instance._context = SimpleNamespace(pages=[instance._page])
     return instance
 
 
@@ -222,3 +232,30 @@ async def test_fill_human_like_types_each_character(backend: StatefulBrowserBack
     assert page.keyboard.type.await_count == 3
     assert backend.get_history()[-1] == {"action": "fill_human_like", "selector": "#query", "value": "abc"}
     assert result.title == "Filled"
+
+
+@pytest.mark.asyncio
+async def test_get_state_snapshot_exposes_browser_context_and_page_events(backend: StatefulBrowserBackend) -> None:
+    page = backend._page
+    assert page is not None
+
+    await backend._instrument_page(page, source="test")
+    backend._record_event("page_navigated", page=page, metadata={"url": page.url})
+    backend._record_event("page_load", page=page)
+
+    result = PageInfo(
+        url=page.url,
+        title="Example",
+        html="<html></html>",
+        text="hello",
+        screenshot_path=None,
+        metadata={},
+    )
+    snapshot = backend.get_state_snapshot(user_id="alice", last_result=result)
+
+    assert snapshot["user_id"] == "alice"
+    assert snapshot["browser"]["is_closed"] is False
+    assert snapshot["context"]["page_count"] == 1
+    assert snapshot["page"]["url"] == page.url
+    assert snapshot["page"]["load_state"] == "loaded"
+    assert snapshot["recent_events"][-1]["type"] == "page_load"
