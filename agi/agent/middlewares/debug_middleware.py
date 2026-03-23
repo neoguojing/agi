@@ -90,7 +90,7 @@ class DebugLLMContextMiddleware(AgentMiddleware):
                 # --- ✅ 修复结束 ---
 
                 # 截断长内容
-                if len(content_str) > self.limit:
+                if len(content_str) > self.limit and role != "SYSTEM":
                     half = self.limit // 2
                     content_str = f"{content_str[:half]}\n... [已省略 {len(content_str)-self.limit} 字] ...\n{content_str[-half:]}"
                 
