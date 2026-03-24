@@ -300,6 +300,7 @@ class StatefulBrowserBackend:
             self._browser = await self._playwright.chromium.launch(
                 headless=self.headless,
                 args=["--no-sandbox", "--disable-setuid-sandbox"],
+                executable_path="/usr/bin/google-chrome",
             )
             # 如果之前持久化过 storage_state，则在新建 context 时恢复 cookies/localStorage。
             context_kwargs: dict[str, Any] = {

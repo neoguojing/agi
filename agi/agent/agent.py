@@ -24,7 +24,8 @@ from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend
 
 # --- Constants & Config ---
-DB_PATH = "agent_state.db"
+DB_PATH_CHECKPOINT = "agent_checkpoint.db"
+DB_PATH_STRORE = "agent_store.db"
 
 class DeepAgentBuilder:
     """Fluent Builder for Agent Configuration"""
@@ -92,17 +93,19 @@ class DeepAgentManager:
     async def get_async_agent(self):
         if self._async_agent is None:
             # 1. 初始化主连接用于 Saver (检查点通常更关键)
-            conn_saver = await aiosqlite.connect(DB_PATH)
+            conn_saver = await aiosqlite.connect(DB_PATH_CHECKPOINT)
             await conn_saver.execute("PRAGMA journal_mode=WAL")
             await conn_saver.execute("PRAGMA synchronous=NORMAL")
             
             # 2. 初始化独立连接用于 Store (向量/记忆存储)
             # 指向同一个文件没问题，WAL 模式下并发安全
-            conn_store = await aiosqlite.connect(DB_PATH)
+            conn_store = await aiosqlite.connect(DB_PATH_STRORE)
             await conn_store.execute("PRAGMA journal_mode=WAL")
             await conn_store.execute("PRAGMA synchronous=NORMAL")
 
             saver = AsyncSqliteSaver(conn=conn_saver)
+            store = AsyncSqliteStore(conn=conn_store)
+
             store = AsyncSqliteStore(conn=conn_store)
             await saver.setup()  # 确保表结构已创建
             await store.setup()  # 确保表结构已创建
@@ -115,7 +118,7 @@ class DeepAgentManager:
             
             # ⚠️ 重要：你需要在程序退出时关闭这两个连接
             # 可以在 __del__ 或专门的 shutdown 方法中处理
-            self._connections_to_close = [conn_saver, conn_store]
+            # self._connections_to_close = [conn_saver, conn_store]
 
         return self._async_agent
 

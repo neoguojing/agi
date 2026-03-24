@@ -146,3 +146,5 @@ def init_logger() -> logging.Logger:
 # -----------------------------
 log = init_logger()
 init_langchain_debug()
+
+print(f"{OLLAMA_API_BASE_URL}-{OLLAMA_DEFAULT_MODE}")

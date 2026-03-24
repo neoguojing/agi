@@ -1,295 +1,180 @@
-import asyncio
-import uuid
+# filename: agi/watcher.py
 import os
 import sys
 import time
-import subprocess
 import signal
-import json       # [修复 1] 补全导入
-import mimetypes  # [修复 1] 补全导入
-import tempfile   # [修复 2] 用于原子写入
+import subprocess
 import pathlib
-from typing import List, Any
+import tty
+import termios
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-import traceback
 
 # --- 配置 ---
 IGNORED_DIRS = {"__pycache__", ".git", ".venv", "node_modules", ".idea", ".pytest_cache", "dist", "build"}
-# [修复 4] 扩展监听文件类型，支持配置变更触发重启
-WATCH_EXTENSIONS = {".py", ".yaml", ".yml", ".json", ".env"} 
-STATE_CACHE = ".cli_session.json"
+WATCH_EXTENSIONS = {".py", ".yaml", ".yml", ".json", ".env"}
 RESTART_DEBOUNCE_SECONDS = 1.5
 
+TARGET_MODULE = "agi.console"
 
-# --- 1. CLI 逻辑部分 ---
-def get_agent_cls():
-    # 延迟导入重型依赖
-    from prompt_toolkit import PromptSession
-    from prompt_toolkit.completion import PathCompleter
-    from rich.console import Console
-    from rich.markdown import Markdown
-    from rich.live import Live
-    from rich.panel import Panel
-    from rich.spinner import Spinner
-    from prompt_toolkit.formatted_text import HTML 
-    
+def reset_terminal():
+    """
+    强制重置终端状态，解决子进程崩溃后导致的 bash 换行/显示混乱问题。
+    发送 ANSI 重置序列并刷新 stdout。
+    """
     try:
-        from agi.agent.agent import stream_agent_async
-        from agi.agent.context import Context
-        from agi.apps.common import MessageContent, ImageURL, FileObject
-        from agi.api.media import process_multimodal_content
-    except ImportError as e:
-        print(f"\n❌ 错误: 无法导入 AGI 模块。\n详情: {e}")
-        sys.exit(1)
+        # 1. 发送 "Reset Device" (RIS) 序列
+        sys.stdout.write("\033c")
+        # 2. 确保光标可见 (DECTCEM)
+        sys.stdout.write("\033[?25h")
+        # 3. 禁用鼠标跟踪 (如果之前开启了)
+        sys.stdout.write("\033[?1000l\033[?1002l\033[?1003l")
+        # 4. 退出备用屏幕缓冲区 (如果使用了)
+        sys.stdout.write("\033[?1049l")
+        # 5. 换行并刷新，确保提示符在新的一行
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        
+        # 6. (可选) 尝试调用 tput reset，这更彻底但稍慢
+        # os.system("tput reset > /dev/tty 2>&1") 
+    except Exception:
+        pass
 
-    console = Console()
-
-    class DeepAgentCLI:
-        def __init__(self):
-            self.load_session()
-            self.session = PromptSession(completer=PathCompleter(expanduser=True))
-
-        def load_session(self):
-            if os.path.exists(STATE_CACHE):
-                try:
-                    with open(STATE_CACHE, 'r') as f:
-                        data = json.load(f)
-                        self.user_id = data.get("user_id", "admin")
-                        self.conversation_id = data.get("conversation_id", str(uuid.uuid4()))
-                        self.thread_id = self.conversation_id
-                        self.state = {"messages": [], "user_id": self.user_id}
-                        return
-                except (json.JSONDecodeError, IOError):
-                    # 文件损坏或读取失败，静默重置
-                    pass
-            self.user_id = "admin"
-            self.conversation_id = str(uuid.uuid4())
-            self.thread_id = self.conversation_id
-            self.state = {"messages": []}
-
-        def _save_session(self):
-            """
-            [修复 2] 原子写入会话状态
-            防止写入过程中被中断导致 JSON 损坏
-            """
-            tmp_path = STATE_CACHE + ".tmp"
-            try:
-                data = {
-                    "user_id": self.user_id,
-                    "thread_id": self.thread_id,
-                    "conversation_id": self.conversation_id
-                }
-                # 先写入临时文件
-                with open(tmp_path, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-                    f.flush()
-                    os.fsync(f.fileno()) # 确保落盘
-                
-                # 原子替换原文件 (Windows 和 Linux 均支持)
-                os.replace(tmp_path, STATE_CACHE)
-            except Exception as e:
-                # 清理可能残留的临时文件
-                if os.path.exists(tmp_path):
-                    try: os.remove(tmp_path)
-                    except: pass
-                # 不抛出异常以免打断主流程，仅记录（实际项目中可用 logger）
-                # print(f"⚠️ 保存会话失败: {e}")
-
-        async def handle_stream(self, live):
-            full_response = ""
-            config = {"configurable": {"thread_id": self.thread_id}}
-            context = Context(user_id=self.user_id, conversation_id=self.conversation_id)
-            
-            # [修复 5] UI 渲染限流变量
-            last_update_time = 0
-            update_interval = 0.05 # 50ms 刷新一次，平衡流畅度与 CPU
-
-            async for part in stream_agent_async(self.state, config=config, context=context, stream_mode=["messages"]):
-                if isinstance(part, dict) and part.get("type") == "messages":
-                    data = part.get("data")
-                    if data and len(data) > 0:
-                        content = getattr(data[0], "content", "")
-                        full_response += str(content)
-                        
-                        # [修复 5] 限流逻辑：避免高频更新导致 UI 抖动和 CPU 飙升
-                        now = time.time()
-                        if now - last_update_time > update_interval:
-                            live.update(Panel(Markdown(full_response), title="Agent Response", border_style="blue"))
-                            last_update_time = now
-            
-            # 确保最后一次更新被渲染
-            if full_response:
-                live.update(Panel(Markdown(full_response), title="Agent Response", border_style="blue"))
-                
-            return full_response
-
-        def _smart_parse(self, text: str):
-            tokens = text.split()
-            contents = []
-            for t in tokens:
-                if t.startswith("img:"):
-                    contents.append(MessageContent(type="image_url", image_url=ImageURL(url=t[4:])))
-                elif t.startswith("file:"):
-                    mime, _ = mimetypes.guess_type(t[5:])
-                    contents.append(MessageContent(type="file", file=FileObject(file_id=t[5:], mime_type=mime or "application/octet-stream")))
-                else:
-                    contents.append(MessageContent(type="text", text=t))
-            return contents
-
-        async def run(self):
-            self._save_session()
-            console.print(Panel(f"🔥 [bold green]Agent 已就绪[/bold green]\nThread: {self.thread_id[:8]}...", border_style="green"))
-            
-            while True:
-                try:
-                    user_input = await self.session.prompt_async(HTML("\n👤 <b><ansiyellow>You > </ansiyellow></b>"))
-                    if not user_input: continue
-                    if user_input.lower() in ["exit", "q", "/quit"]: 
-                        break
-                    
-                    if user_input.startswith("/reset"):
-                        self.state["messages"] = []
-                        console.print("[dim]上下文已清空[/dim]")
-                        continue
-
-                    processed, _ = process_multimodal_content(self._smart_parse(user_input))
-                    self.state["messages"].append({"role": "user", "content": processed})
-                    
-                    with Live(Spinner("dots", text="思考中..."), console=console, refresh_per_second=10) as live:
-                        ans = await self.handle_stream(live)
-                    
-                    self.state["messages"].append({"role": "assistant", "content": ans})
-                    self._save_session()
-                    
-                except (EOFError, KeyboardInterrupt): 
-                    break
-                except Exception as e:
-                    traceback.print_stack()
-                    console.print(f"[red]发生错误: {e}[/red]")
-
-    return DeepAgentCLI
-
-# --- 2. 热重载监控逻辑 ---
 class ReloadHandler(FileSystemEventHandler):
-    def __init__(self, script_path):
-        self.script_path = script_path
+    def __init__(self, module_name):
+        self.module_name = module_name
         self.process = None
         self.last_restart = 0
-        self.active = True  # True 表示可以重启
-        self.start_agent()  # 首次启动
+        self.active = True
+        
+        current_file_dir = os.path.dirname(os.path.abspath(__file__))
+        self.work_dir = os.path.dirname(current_file_dir) 
+        
+        self.start_agent()
 
     def start_agent(self):
         if not self.active:
-            return  # 禁止重启
+            return
+        
         now = time.time()
         if now - self.last_restart < RESTART_DEBOUNCE_SECONDS:
             return
         self.last_restart = now
 
-        if self.process and self.process.poll() is None:
-            print("\n⏹️  正在停止旧进程...")
-            self.process.terminate()
+        if self.process:
+            self._kill_process()
+
+        if not self.active:
+            return
+
+        print(f"\n🔄 [{time.strftime('%H:%M:%S')}] 重启服务: python -m {self.module_name} ...")
+
+        try:
+            cmd = [sys.executable, "-m", self.module_name]
+            
+            self.process = subprocess.Popen(
+                cmd,
+                cwd=self.work_dir,
+                env=os.environ,
+                start_new_session=True, 
+            )
+        except Exception as e:
+            print(f"❌ 启动失败: {e}")
+            self.active = False
+
+    def _kill_process(self):
+        if not self.process or self.process.poll() is not None:
+            # 如果进程已经退出，也要执行一次终端重置，以防它是异常退出的
+            if self.process and self.process.poll() is not None:
+                reset_terminal()
+            return
+
+        print("⏹️  正在停止旧进程...")
+        try:
+            pgid = os.getpgid(self.process.pid)
+            os.killpg(pgid, signal.SIGTERM)
+            
             try:
-                self.process.wait(timeout=3)
+                self.process.wait(timeout=2)
             except subprocess.TimeoutExpired:
-                print("⚠️  强制杀死旧进程...")
+                print("⚠️  强制杀死进程组...")
+                os.killpg(pgid, signal.SIGKILL)
+                self.process.wait()
+        except ProcessLookupError:
+            pass
+        except Exception as e:
+            print(f"⚠️ 清理进程出错: {e}")
+            try:
                 self.process.kill()
                 self.process.wait()
-
-        print(f"\n🔄 [{time.strftime('%H:%M:%S')}] 启动服务...")
-        self.process = subprocess.Popen(
-            [sys.executable, "-m", "agi.cli", "--child"],
-            env=os.environ,
-            stdout=sys.stdout,
-            stderr=sys.stderr
-        )
+            except:
+                pass
+        finally:
+            # 【关键修复】无论进程如何结束，都尝试重置终端
+            reset_terminal()
 
     def on_modified(self, event):
         if event.is_directory or not self.active:
             return
         
         src_path = pathlib.Path(event.src_path)
-
-        # 忽略目录
         if any(ignore in src_path.parts for ignore in IGNORED_DIRS):
             return
-        
-        # 忽略 session 文件
-        if src_path.name == STATE_CACHE:
+        if src_path.name.endswith(".tmp") or src_path.name == ".cli_session.json":
             return
-
-        # 扩展名白名单
         if src_path.suffix.lower() in WATCH_EXTENSIONS:
-            # 只有 active=True 才允许启动
             self.start_agent()
 
-    def monitor_process_exit(self):
-        """主循环中调用，监控子进程退出，不再自动重启"""
-        if self.process and self.process.poll() is not None and self.active:
+    def check_process_status(self):
+        """检查子进程是否意外退出"""
+        if self.process and self.process.poll() is not None:
             code = self.process.returncode
-            print(f"\nℹ️  子进程退出 (代码: {code})，不会自动重启。")
-            self.active = False  # 禁止再次重启
+            print(f"\nℹ️  子进程意外退出 (代码: {code})")
+            
+            # 【关键修复】如果子进程自己崩了（比如报错退出），它可能没来得及恢复终端
+            # 父进程检测到后，必须立即接管并重置终端
+            reset_terminal()
+            
+            self.active = False
 
-# --- 3. 入口控制 ---
 if __name__ == "__main__":
-    if "__file__" in globals():
-        SCRIPT_PATH = os.path.abspath(__file__)
-    else:
-        SCRIPT_PATH = os.path.abspath(sys.argv[0])
+    current_file_dir = os.path.dirname(os.path.abspath(__file__))
+    work_dir = os.path.dirname(current_file_dir)
+    os.chdir(work_dir)
 
-    if "--child" in sys.argv:
-        try:
-            AgentClass = get_agent_cls()
-            asyncio.run(AgentClass().run())
-        except KeyboardInterrupt:
-            sys.exit(0)
-        except Exception as e:
-            print(f"\n💥 Agent 崩溃: {e}")
-            traceback.print_exc()
-            sys.exit(1)
-    
-    else:
-        print(f"👀 监控已启动: {os.getcwd()}")
-        print(f"   监听文件类型: {', '.join(WATCH_EXTENSIONS)}")
-        print("   按 Ctrl+C 停止所有服务\n")
+    print(f"👀 热重载监控已启动 (-m 模式)")
+    print(f"   包根目录: {work_dir}")
+    print(f"   目标模块: {TARGET_MODULE}")
+    print("   按 Ctrl+C 停止所有服务\n")
+
+    handler = ReloadHandler(TARGET_MODULE)
+    observer = Observer()
+    observer.schedule(handler, path=".", recursive=True)
+    observer.start()
+
+    def signal_handler(sig, frame):
+        print("\n🛑 接收到停止信号，正在关闭...")
+        handler.active = False
+        handler._kill_process() # 这里会调用 reset_terminal
+        observer.stop()
+        observer.join()
         
-        handler = ReloadHandler(SCRIPT_PATH)
-        observer = Observer()
-        observer.schedule(handler, path=".", recursive=True)
-        observer.start()
+        # 最后一次确保终端干净
+        reset_terminal()
+        print("✅ 监控器已退出，终端已重置。")
+        sys.exit(0)
 
-        def signal_handler(sig, frame):
-            print("\n🛑 接收到停止信号，正在关闭...")
-            observer.stop()
-            if handler.process and handler.process.poll() is None:
-                handler.process.terminate()
-                try:
-                    handler.process.wait(timeout=3)
-                except:
-                    handler.process.kill()
-            sys.exit(0)
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
-
-        try:
-            while True:
-                time.sleep(1)
-                handler.monitor_process_exit()
-                if not handler.active:
-                    print("🛑 主进程检测到子进程已退出，正在关闭监控...")
-                    break
-        except KeyboardInterrupt:
-            pass
-        finally:
-            observer.stop()
-            observer.join()
-            # 如果子进程还存在，安全终止
-            if handler.process and handler.process.poll() is None:
-                handler.process.terminate()
-                try:
-                    handler.process.wait(timeout=3)
-                except:
-                    handler.process.kill()
-            sys.exit(0)
+    try:
+        while handler.active:
+            time.sleep(1)
+            handler.check_process_status()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        observer.stop()
+        observer.join()
+        handler._kill_process()
+        reset_terminal()

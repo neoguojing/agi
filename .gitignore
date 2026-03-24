@@ -173,3 +173,11 @@ agent_state.db-wal
 .aider*
 agi/search_list.json
 .cli_session.json
+agent_checkpoint.db
+agent_checkpoint.db
+agent_checkpoint.db-shm
+agent_store.db
+.gitignore
+agent_checkpoint.db-wal
+agent_store.db-wal
+agent_store.db-shm

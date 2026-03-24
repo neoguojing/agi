@@ -4,7 +4,7 @@ from typing import List, Dict, Optional,Any
 from pydantic import BaseModel, Field
 from .context import USER_PROFILE_CONTEXT,get_session_context_id,get_session_entity_id
 from agi.utils.common import extract_messages_content
-
+import traceback
 # --- Prompt Constants ---
 
 PROMPT_USER_PROFILE = """
@@ -164,6 +164,8 @@ class UnifiedContextUpdater:
     async def _update_user_profile(self, runtime, user_id, user_msg, ai_msg):
         try:
             # 1. 获取现有数据
+            print(f"{type(runtime.store)}")
+
             existing = await runtime.store.aget(user_id, USER_PROFILE_CONTEXT)
             current_val = existing.value if existing else UserPersona().model_dump()
             
@@ -178,6 +180,7 @@ class UnifiedContextUpdater:
             # print(f"Updated User Profile: {updated_val}")
             await runtime.store.aput(user_id, USER_PROFILE_CONTEXT, updated_val)
         except Exception as e:
+            traceback.print_stack()
             print(f"User Profile Update Error: {e}")
 
     async def _update_session_context(self, runtime,user_id, session_id, user_msg):
