@@ -181,3 +181,6 @@ agent_store.db
 agent_checkpoint.db-wal
 agent_store.db-wal
 agent_store.db-shm
+.fuse_hidden0000187c00000004
+.fuse_hidden0000188100000005
+.fuse_hidden0000188000000006

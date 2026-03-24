@@ -59,8 +59,8 @@ class DeepAgentBuilder:
             "backend": self.backend,
             "memory": self.memory_paths,
             "middleware": [
-                # BrowserMiddleware(ocr_engine=self.llm),
-                # ContextEngineeringMiddleware(extractor_model=self.llm),
+                BrowserMiddleware(ocr_engine=self.llm),
+                ContextEngineeringMiddleware(extractor_model=self.llm),
                 DebugLLMContextMiddleware()
             ],
             "context_schema": Context

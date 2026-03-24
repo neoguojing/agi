@@ -38,71 +38,13 @@ BROWSER_SYSTEM_PROMPT = """## Browser Tools
 You have access to a stateful, real-time browser session.
 
 ### Core Principles
-
-- The browser state may change due to:
-  - your actions (agent)
-  - external actions (e.g., human interaction, auto-navigation, SPA updates)
-
-- Always reason about the **current browser state** before acting.
-- Each tool response may include **recent browser events** (e.g., navigation, DOM updates, clicks).
-
----
-
-### State Awareness (VERY IMPORTANT)
-
-- Always check:
-  - current URL
-  - recent events (if provided)
-  - whether the page has changed
-
-- If the page has already changed (e.g., navigation or content update), **DO NOT repeat previous actions**.
-
-- If events indicate:
-  - navigation → the page context has changed
-  - DOM updates → content may have changed without navigation
-  - user interaction → the user may have already performed an action
-
-→ Adapt your plan accordingly.
-
----
-
-### Tool Usage Strategy
-
-- Always call `browser_navigate` before interacting with a new website.
-
-- Prefer `browser_find` before `browser_click` or `browser_fill` when selectors are uncertain.
-
-- Use `browser_extract` as the primary way to read page content:
-  - It prioritizes OCR (via screenshot)
-  - DOM is only a fallback
-
-- Use `browser_screenshot` when:
-  - OCR is needed explicitly
-  - visual layout matters
-  - debugging interaction issues
-
----
-
-### Efficiency Rules
-
-- Avoid redundant actions:
-  - Do not click the same button again if navigation already happened
-  - Do not re-fill inputs unless necessary
-
-- If the page appears unchanged, consider:
-  - re-extracting content
-  - verifying via screenshot
-
-- If the page changed unexpectedly:
-  - re-evaluate the task before continuing
-
----
-
-### Large Content Handling
-
-- HTML content may be truncated.
-- Full content may be stored externally (file path provided).
-- Use extraction tools instead of relying on raw HTML dumps.
+- **State Awareness**: Always check the current URL and recent events (navigation, DOM updates, user interaction) before acting. Adapt your plan if the page context has changed; do not repeat actions that have already succeeded.
+- **Tool Strategy**:
+  - Call `browser_navigate` before interacting with a new site.
+  - Use `browser_find` to locate selectors before clicking or filling.
+  - Use `browser_extract` (OCR prioritized) as the primary way to read content; use `browser_screenshot` for visual layout or debugging.
+- **Efficiency**: Avoid redundant clicks or inputs. If the page appears unchanged, re-extract content or verify via screenshot.
+- **Large Content**: HTML may be truncated. Rely on extraction tools rather than raw HTML dumps.
 """
 
 BROWSER_NAVIGATE_TOOL_DESCRIPTION = """
@@ -303,6 +245,7 @@ class BrowserMiddleware(AgentMiddleware):
         handler: Callable[[ModelRequest[ContextT]], Awaitable[ModelResponse[ResponseT]]],
     ) -> ModelResponse[ResponseT]:
         system_prompt = self._build_model_system_prompt(request)
+        print({"*******************": system_prompt})
         if system_prompt:
             request = request.override(system_message=append_to_system_message(request.system_message, system_prompt))
         return await handler(request)
@@ -798,16 +741,9 @@ class BrowserMiddleware(AgentMiddleware):
             [
                 "## Current Browser Session State",
                 f"user_id: {session_state.get('user_id')}",
-                f"browser_open: {browser.get('is_open')} | browser_closed: {browser.get('is_closed')} | storage_dir: {session_state.get('storage_dir')}",
+                f"browser_open: {browser.get('is_open')} | storage_dir: {session_state.get('storage_dir')}",
                 f"active_page_url: {page.get('url') or page.get('observed_url')} | load_state: {page.get('load_state')} | title: {page.get('title') or page.get('observed_title')}",
                 f"last_page_url: {page.get('last_result_url')}",
-                f"active_page_last_interaction: {page.get('last_interaction')}",
-                f"active_page_last_user_event: {page.get('last_user_event')}",
-                f"tab_count: {context.get('page_count')} | event_version: {session_state.get('event_version')} | history_length: {session_state.get('history_length')}",
-                "tabs:",
-                *(tab_lines or ["- none"]),
-                "recent_events:",
-                *(recent_lines or ["- none"]),
                 "Use this live browser state to decide whether to navigate, wait, inspect, click, fill.",
             ]
         )
