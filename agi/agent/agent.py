@@ -17,6 +17,7 @@ from agi.config import OLLAMA_DEFAULT_MODE
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.store.sqlite import SqliteStore
+from langgraph.store.memory import InMemoryStore
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.store.sqlite.aio import AsyncSqliteStore
 
@@ -58,8 +59,8 @@ class DeepAgentBuilder:
             "backend": self.backend,
             "memory": self.memory_paths,
             "middleware": [
-                BrowserMiddleware(ocr_engine=self.llm),
-                ContextEngineeringMiddleware(extractor_model=self.llm),
+                # BrowserMiddleware(ocr_engine=self.llm),
+                # ContextEngineeringMiddleware(extractor_model=self.llm),
                 DebugLLMContextMiddleware()
             ],
             "context_schema": Context
@@ -76,7 +77,7 @@ class DeepAgentManager:
     # --- Synchronous Logic ---
     def get_sync_agent(self):
         if self._sync_agent is None:
-            conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+            conn = sqlite3.connect(DB_PATH_CHECKPOINT, check_same_thread=False)
             # Standard LangGraph SqliteSaver
             checkpointer = SqliteSaver(conn)
             store = SqliteStore(conn=conn)
@@ -104,11 +105,10 @@ class DeepAgentManager:
             await conn_store.execute("PRAGMA synchronous=NORMAL")
 
             saver = AsyncSqliteSaver(conn=conn_saver)
-            store = AsyncSqliteStore(conn=conn_store)
-
-            store = AsyncSqliteStore(conn=conn_store)
+            # store = AsyncSqliteStore(conn=conn_store)
+            store = InMemoryStore()
             await saver.setup()  # 确保表结构已创建
-            await store.setup()  # 确保表结构已创建
+            # await store.setup()  # 确保表结构已创建
             
             self._async_agent = create_deep_agent(
                 **self.builder.build_options(),

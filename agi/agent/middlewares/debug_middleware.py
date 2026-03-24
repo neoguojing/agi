@@ -1,8 +1,12 @@
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from typing import Callable, Awaitable
-from typing import List
-from langchain_core.messages import BaseMessage
-    
+from typing import List,Any
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage,ToolMessage
+from langgraph.types import Command
+from langgraph.prebuilt import AgentMiddleware
+from langgraph.prebuilt.tool_node import ToolCallRequest
+import json
+import time
 
 class DebugLLMContextMiddleware(AgentMiddleware):
     def __init__(
@@ -32,6 +36,7 @@ class DebugLLMContextMiddleware(AgentMiddleware):
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]], 
     ) -> ModelResponse:
         
+        print(f"{len(request.messages)}")
         print(f"\n{'='*25} 🛠️ LLM DEBUG 仪表盘 {'='*25}")
 
         # 1. 基础模型信息
@@ -53,7 +58,7 @@ class DebugLLMContextMiddleware(AgentMiddleware):
             print(f"【状态】: {request.state}")
 
         print("-" * 66)
-        request.messages = deduplicate_messages_by_id(request.messages)  # 去重，防止重复消息干扰调试
+        request.messages = deduplicate_messages_by_content_pairs(request.messages)  # 去重，防止重复消息干扰调试
         # 4. 消息流解析
         if self.show_messages:
             # 合并 SystemMessage 和普通消息列表进行展示
@@ -108,33 +113,132 @@ class DebugLLMContextMiddleware(AgentMiddleware):
         response = await handler(request)
         return response
     
-    from langchain_core.messages import BaseMessage
+    async def awrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]],
+    ) -> ToolMessage | Command[Any]:
+        # 1. 提取关键信息
+        tool_call = request.tool_call
+        tool_name = tool_call.get("name", "unknown")
+        tool_id = tool_call.get("id", "no-id")
+        args = tool_call.get("args", {})
+        
+        # 格式化参数以便打印 (限制长度防止日志爆炸)
+        args_str = json.dumps(args, ensure_ascii=False)
+        if len(args_str) > 200:
+            args_str = args_str[:200] + "... [truncated]"
 
-def deduplicate_messages_by_id(messages: List[BaseMessage]) -> List[BaseMessage]:
+        print("\n" + "="*60)
+        print(f"🛠️  [TOOL START] {tool_name}")
+        print(f"   ID: {tool_id}")
+        print(f"   Args: {args_str}")
+        print("-" * 60)
+
+        # 2. 记录开始时间
+        start_time = time.perf_counter()
+        
+        try:
+            # 3. 执行真正的工具调用 (调用 handler)
+            result = await handler(request)
+            
+            # 4. 计算耗时
+            duration = time.perf_counter() - start_time
+            
+            # 5. 处理结果并打印
+            content_preview = ""
+            if isinstance(result, ToolMessage):
+                content_preview = str(result.content)
+                if len(content_preview) > 150:
+                    content_preview = content_preview[:150] + "... [truncated]"
+                status_icon = "✅"
+            elif isinstance(result, Command):
+                content_preview = f"Command(goto={result.goto})"
+                status_icon = "🔀"
+            else:
+                content_preview = str(result)
+                status_icon = "❓"
+
+            print(f"{status_icon} [TOOL END]   {tool_name}")
+            print(f"   Duration: {duration:.4f}s")
+            print(f"   Result Preview: {content_preview}")
+            print("="*60 + "\n")
+            
+            return result
+
+        except Exception as e:
+            # 6. 异常处理
+            duration = time.perf_counter() - start_time
+            print(f"❌ [TOOL ERROR]  {tool_name}")
+            print(f"   Duration: {duration:.4f}s")
+            print(f"   Error Type: {type(e).__name__}")
+            print(f"   Error Msg:  {str(e)}")
+            # 可选：打印堆栈跟踪 (生产环境建议关闭或仅记录到文件)
+            # traceback.print_exc() 
+            print("="*60 + "\n")
+            
+            # 重要：必须重新抛出异常，除非你想在这里吞掉错误
+            raise
+
+def deduplicate_messages_by_content_pairs(messages: List[BaseMessage]) -> List[BaseMessage]:
     """
-    根据 LangChain 消息对象的 .id 属性进行去重。
-    保留列表中第一次出现的消息，移除后续 ID 重复的消息。
+    去除连续重复的 (Human, AI) 消息对。
+    如果当前的 [Human, AI] 对的内容与上一对 [Human, AI] 完全一致，则移除当前这对。
+    
+    示例场景:
+    Input:  [H: hello1, A: Hi, H: hello1, A: Hi, H: hello2]
+    Output: [H: hello1, A: Hi, H: hello2]
     """
-    seen_ids = set()
+    if not messages:
+        return []
+    
     unique_messages = []
     
-    for msg in messages:
-        # 直接访问顶层 id 属性
-        # 在你提供的示例中：msg.id 如 'e72247b6-26b7-4bed-ae84-3a75433b686e'
-        msg_id = msg.id
+    # 我们按步长 2 遍历，尝试提取 (Human, AI) 对
+    i = 0
+    while i < len(messages):
+        # 获取当前潜在的一对消息
+        current_human = messages[i]
+        current_ai = messages[i+1] if (i + 1) < len(messages) else None
         
-        if msg_id is None:
-            # 如果某些消息没有 ID (极少见，除非手动构造未初始化)，
-            # 策略：视为唯一消息保留，或者根据需求跳过。这里选择保留。
-            unique_messages.append(msg)
-            continue
+        # 检查是否构成完整的一对 (Human -> AI)
+        # 注意：这里假设列表顺序严格是 Human, AI, Human, AI...
+        # 如果结构混乱，可能需要更复杂的逻辑，但通常对话历史是有序的
+        is_pair = (
+            isinstance(current_human, HumanMessage) and 
+            (current_ai is None or isinstance(current_ai, AIMessage))
+        )
         
-        if msg_id not in seen_ids:
-            seen_ids.add(msg_id)
-            unique_messages.append(msg)
+        if is_pair and current_ai is not None:
+            # 如果有上一对消息在结果列表中，进行比较
+            if len(unique_messages) >= 2:
+                prev_ai = unique_messages[-1]
+                prev_human = unique_messages[-2]
+                
+                # 检查上一对是否也是完整的 Human-AI 对
+                if isinstance(prev_human, HumanMessage) and isinstance(prev_ai, AIMessage):
+                    # 比较内容 (content)
+                    # 使用 str() 或直接 .content 属性，防止 content 为 None 的情况
+                    curr_h_content = getattr(current_human, "content", "")
+                    curr_a_content = getattr(current_ai, "content", "")
+                    prev_h_content = getattr(prev_human, "content", "")
+                    prev_a_content = getattr(prev_ai, "content", "")
+                    
+                    if curr_h_content == prev_h_content and curr_a_content == prev_a_content:
+                        # 内容完全重复，跳过当前这对 (不添加到 unique_messages)
+                        # print(f"Skipped duplicate pair: Human='{curr_h_content}', AI='{curr_a_content}'")
+                        i += 2
+                        continue
+            
+            # 如果不重复，或者这是第一对，添加这两个消息
+            unique_messages.append(current_human)
+            unique_messages.append(current_ai)
+            i += 2
+            
         else:
-            # 调试信息：如果发现重复，可以打印出来
-            # print(f"Skipping duplicate message with ID: {msg_id}")
-            pass
+            # 如果不是成对出现（例如最后剩一个 Human 消息，或者顺序错乱）
+            # 直接保留当前消息，步进 1
+            unique_messages.append(current_human)
+            i += 1
             
     return unique_messages
