@@ -800,6 +800,7 @@ class BrowserMiddleware(AgentMiddleware):
                 f"user_id: {session_state.get('user_id')}",
                 f"browser_open: {browser.get('is_open')} | browser_closed: {browser.get('is_closed')} | storage_dir: {session_state.get('storage_dir')}",
                 f"active_page_url: {page.get('url') or page.get('observed_url')} | load_state: {page.get('load_state')} | title: {page.get('title') or page.get('observed_title')}",
+                f"last_page_url: {page.get('last_result_url')}",
                 f"active_page_last_interaction: {page.get('last_interaction')}",
                 f"active_page_last_user_event: {page.get('last_user_event')}",
                 f"tab_count: {context.get('page_count')} | event_version: {session_state.get('event_version')} | history_length: {session_state.get('history_length')}",
@@ -807,7 +808,7 @@ class BrowserMiddleware(AgentMiddleware):
                 *(tab_lines or ["- none"]),
                 "recent_events:",
                 *(recent_lines or ["- none"]),
-                "Use this live browser state to decide whether to navigate, wait, inspect, click, fill, or recover from a closed browser/page.",
+                "Use this live browser state to decide whether to navigate, wait, inspect, click, fill.",
             ]
         )
 

@@ -552,13 +552,13 @@ class StatefulBrowserBackend:
             limit -= 1
         return messages
 
-    def get_recent_events(self, limit: int = 1) -> list[dict[str, Any]]:
+    def get_recent_events(self, limit: int = 5) -> list[dict[str, Any]]:
         """Return a copy of the most recent browser/page events."""
         if limit <= 0:
             return []
         return [dict(event) for event in self._events[-limit:]]
 
-    def get_state_snapshot(self, *, user_id: str | None = None, last_result: PageInfo | None = None) -> dict[str, Any]:
+    def get_state_snapshot_full(self, *, user_id: str | None = None, last_result: PageInfo | None = None) -> dict[str, Any]:
         """Return the current browser/context/page state for agent decision making."""
         # 这里返回的是 agent 侧真正需要消费的统一状态视图：
         # - browser: 浏览器是否打开/是否从持久化恢复
@@ -620,6 +620,74 @@ class StatefulBrowserBackend:
             "event_version": self._event_seq or restored.get("event_version", 0),
             "state_messages": state_messages,
         }
+        
+        return snapshot
+    
+    def get_state_snapshot(self, *, user_id: str | None = None, last_result: PageInfo | None = None) -> dict[str, Any]:
+        """Return the current browser/context/page state for agent decision making."""
+        restored = self._restored_state_snapshot or {}
+        restored_context = restored.get("context", {}) if isinstance(restored.get("context"), dict) else {}
+        restored_page = restored.get("page", {}) if isinstance(restored.get("page"), dict) else {}
+
+        pages = self._context_pages()
+        active_page = self._page
+        active_page_id = self._page_id(active_page) if active_page is not None else restored_context.get("active_page_id") or self._active_page_id
+        last_event = self._events[-1] if self._events else restored.get("last_event")
+        last_page_result = last_result or None
+
+        active_runtime = self._page_runtime_state.get(active_page_id or "", {})
+        recent_events = self.get_recent_events() or list(restored.get("recent_events", []))
+
+        # ✅ 只保留最近事件（防止上下文爆炸）
+        recent_events = recent_events[-1:]
+
+        snapshot = {
+            "user_id": user_id or restored.get("user_id"),
+            "storage_dir": str(self.storage_dir),
+            "browser": {
+                # ✅ 只保留可用性判断
+                "is_open": self._browser is not None and not self.is_closed,
+            },
+
+            "context": {
+                # ✅ 仅保留必要上下文
+                "page_count": len(pages),
+                "active_page_id": active_page_id,
+            },
+
+            "page": {
+                "url": getattr(active_page, "url", None) or restored_page.get("url"),
+                "title": (
+                    self._page_titles.get(active_page_id)
+                    if active_page_id and self._page_titles.get(active_page_id) is not None
+                    else restored_page.get("title")
+                ),
+                "is_closed": (
+                    self._page_is_closed(active_page)
+                    if active_page is not None
+                    else restored_page.get("is_closed", True)
+                ),
+                "load_state": self._infer_load_state(last_event),
+
+                "last_result_url": last_page_result.url if last_page_result else restored_page.get("last_result_url"),
+                # ✅ 行为信息（核心）
+                "last_interaction": active_runtime.get("last_interaction") or restored_page.get("last_interaction"),
+                "last_user_event": active_runtime.get("last_user_event") or restored_page.get("last_user_event"),
+            },
+
+            # ✅ 事件（核心）
+            "recent_events": recent_events,
+            "last_event": dict(last_event) if isinstance(last_event, dict) else None,
+
+            # ✅ 显式变化（非常关键）
+            "changes": {
+                "url_changed": (
+                    (getattr(active_page, "url", None) or restored_page.get("url"))
+                    != (last_page_result.url if last_page_result else restored_page.get("last_result_url"))
+                )
+            },
+        }
+
         return snapshot
 
     async def _run_page_action(
