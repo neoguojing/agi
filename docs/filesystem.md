@@ -106,3 +106,184 @@ ToolCallRequest	Tool 调用请求	表示一次 tool 调用	tool_call
 runtime	由 middleware 拦截处理
 AgentMiddleware	基类	LangChain Agent middleware 基类	wrap_model_call()
 wrap_tool_call()
+
+
+from typing import Any, Callable, Awaitable, Annotated, Literal
+from typing_extensions import NotRequired, TypedDict
+from langchain.agents.middleware.types import AgentMiddleware, AgentState, ModelRequest, ModelResponse
+from langchain.tools import ToolRuntime
+from langchain.tools.tool_node import ToolCallRequest
+from langchain_core.messages import ToolMessage
+from langchain_core.tools import BaseTool
+from langgraph.types import Command
+
+# =========================
+# 数据结构定义
+# =========================
+
+class FileData(TypedDict):
+    """文件数据结构"""
+    content: list[str]
+    created_at: str
+    modified_at: str
+
+
+class FilesystemState(AgentState):
+    """Middleware 状态"""
+    files: Annotated[NotRequired[dict[str, FileData]], "_file_data_reducer"]
+
+
+# =========================
+# Middleware 定义
+# =========================
+
+class FilesystemMiddleware(AgentMiddleware[FilesystemState, Any, Any]):
+    """
+    文件系统中间件（抽象定义）
+
+    提供能力：
+    - 文件读写 / 编辑
+    - 文件搜索（glob / grep）
+    - 命令执行（可选）
+    - 大结果自动落盘（eviction）
+    """
+
+    # -------------------------
+    # 核心属性
+    # -------------------------
+
+    state_schema = FilesystemState
+
+    backend: Any
+    tools: list[BaseTool]
+
+    _custom_system_prompt: str | None
+    _custom_tool_descriptions: dict[str, str]
+    _tool_token_limit_before_evict: int | None
+    _max_execute_timeout: int
+
+    # -------------------------
+    # 初始化
+    # -------------------------
+
+    def __init__(
+        self,
+        *,
+        backend: Any | None = None,
+        system_prompt: str | None = None,
+        custom_tool_descriptions: dict[str, str] | None = None,
+        tool_token_limit_before_evict: int | None = 20000,
+        max_execute_timeout: int = 3600,
+    ) -> None:
+        ...
+
+    # -------------------------
+    # Backend 解析
+    # -------------------------
+
+    def _get_backend(self, runtime: ToolRuntime) -> Any:
+        """获取 backend 实例"""
+        ...
+
+    # -------------------------
+    # Tool 构造方法
+    # -------------------------
+
+    def _create_ls_tool(self) -> BaseTool:
+        ...
+
+    def _create_read_file_tool(self) -> BaseTool:
+        ...
+
+    def _create_write_file_tool(self) -> BaseTool:
+        ...
+
+    def _create_edit_file_tool(self) -> BaseTool:
+        ...
+
+    def _create_glob_tool(self) -> BaseTool:
+        ...
+
+    def _create_grep_tool(self) -> BaseTool:
+        ...
+
+    def _create_execute_tool(self) -> BaseTool:
+        ...
+
+    # -------------------------
+    # Model Call Hook
+    # -------------------------
+
+    def wrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse],
+    ) -> ModelResponse:
+        """
+        修改：
+        - system prompt
+        - tools（如移除 execute）
+        """
+        ...
+
+    async def awrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
+    ) -> ModelResponse:
+        ...
+
+    # -------------------------
+    # Tool Call Hook
+    # -------------------------
+
+    def wrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], ToolMessage | Command],
+    ) -> ToolMessage | Command:
+        """
+        拦截 tool 结果：
+        - 判断是否过大
+        - 是否需要 eviction
+        """
+        ...
+
+    async def awrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command]],
+    ) -> ToolMessage | Command:
+        ...
+
+    # -------------------------
+    # 大结果处理（核心机制）
+    # -------------------------
+
+    def _process_large_message(
+        self,
+        message: ToolMessage,
+        backend: Any,
+    ) -> tuple[ToolMessage, dict[str, FileData] | None]:
+        ...
+
+    async def _aprocess_large_message(
+        self,
+        message: ToolMessage,
+        backend: Any,
+    ) -> tuple[ToolMessage, dict[str, FileData] | None]:
+        ...
+
+    def _intercept_large_tool_result(
+        self,
+        tool_result: ToolMessage | Command,
+        runtime: ToolRuntime,
+    ) -> ToolMessage | Command:
+        ...
+
+    async def _aintercept_large_tool_result(
+        self,
+        tool_result: ToolMessage | Command,
+        runtime: ToolRuntime,
+    ) -> ToolMessage | Command:
+        ...

@@ -9,7 +9,7 @@ from deepagents.backends.protocol import (
     FileDownloadResponse,
 )
 from pathlib import Path
-from base_sandbox import BaseSandbox  # 你之前的基类
+from deepagents.backends.sandbox import BaseSandbox  # 你之前的基类
 
 class DockerSandbox(BaseSandbox):
     """Stateful Docker sandbox implementation."""
@@ -41,7 +41,7 @@ class DockerSandbox(BaseSandbox):
             "-w", self._workspace_container,
             "--rm",  # remove on stop
             self._image,
-            "sleep", "infinity"  # keep container alive
+            "tail", "-f", "/dev/null"  # keep container alive
         ]
         subprocess.run(cmd, check=True)
         self._container_running = True
@@ -102,3 +102,6 @@ class DockerSandbox(BaseSandbox):
         # Optional: cleanup workspace if not mounted externally
         if self._workspace_host.startswith("/tmp/") and Path(self._workspace_host).exists():
             shutil.rmtree(self._workspace_host)
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()

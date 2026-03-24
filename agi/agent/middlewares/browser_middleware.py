@@ -22,7 +22,7 @@ from langgraph.types import Command
 from typing_extensions import NotRequired, TypedDict
 
 from agi.config import BROWSER_STORAGE_PATH
-from agi.deepagents.middleware._utils import append_to_system_message
+from agi.utils.common import append_to_system_message
 from agi.web.browser_backend import BrowserBackendPool, PageInfo, UserBrowserSession
 
 MAX_PROMPT_EVENTS = 8
