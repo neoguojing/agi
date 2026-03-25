@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 
 from agi.rag.retriever import MultiCollectionRAGManager
 from agi.agent.models import ModelProvider
-from agi.agent.middlewares import DebugLLMContextMiddleware, ContextEngineeringMiddleware,BrowserMiddleware
+from agi.agent.middlewares import DebugLLMContextMiddleware, ContextEngineeringMiddleware,BrowserMiddleware,MultimodalBase64Middleware
 from agi.agent.tools import buildin_tools
 from agi.agent.subagents import buildin_agents
 from agi.agent.context import Context
@@ -61,7 +61,8 @@ class DeepAgentBuilder:
             "middleware": [
                 # BrowserMiddleware(ocr_engine=self.llm),
                 ContextEngineeringMiddleware(extractor_model=self.llm),
-                DebugLLMContextMiddleware()
+                DebugLLMContextMiddleware(),
+                MultimodalBase64Middleware()
             ],
             "context_schema": Context
         }
