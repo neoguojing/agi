@@ -748,8 +748,7 @@ class StatefulBrowserBackend:
             # html = await page.content()
             # if len(html) > self.max_content_length:
             #     html = html[: self.max_content_length] + "\n... [TRUNCATED]"
-            a11y_snapshot = await page.accessibility.snapshot()
-            html_repr = json.dumps(a11y_snapshot) 
+            html_repr = self.extract_ui(page)
             
             page_text = await page.inner_text("body")
             page_title = await page.title()
@@ -773,11 +772,12 @@ class StatefulBrowserBackend:
                     "has_screenshot": screenshot_path is not None,
                 },
             )
-            return PageInfo(
+
+            page_info = PageInfo(
                 url=page.url,
                 title=page_title,
                 html=html_repr,
-                text=page_text,
+                text="",
                 screenshot_path=screenshot_path,
                 metadata={
                     "requested_url": url,
@@ -787,12 +787,70 @@ class StatefulBrowserBackend:
                     "has_screenshot": screenshot_path is not None,
                     "ocr_ready": screenshot_path is not None,
                     "history_length": len(self._history),
-                    "browser_state": self.get_state_snapshot(last_result=None),
-                },
+                    # "browser_state": self.get_state_snapshot(last_result=None),
+                }
             )
+
+            return page_info
         except Exception as exc:
             logger.exception("Failed to capture page info for %s", url)
             return self._build_error_page_info(url, str(exc), action="capture")
+
+    async def extract_ui(self,page: Page):
+        return await page.evaluate("""
+        () => {
+        function getSelector(el) {
+            if (el.id) return "#" + el.id;
+            if (el.name) return `[name="${el.name}"]`;
+            return el.tagName.toLowerCase();
+        }
+
+        function isVisible(el) {
+            return !!(el.offsetParent);
+        }
+
+        function getText(el) {
+            return (
+            el.innerText ||
+            el.value ||
+            el.getAttribute("aria-label") ||
+            el.title ||
+            ""
+            ).trim();
+        }
+
+        const elements = Array.from(
+            document.querySelectorAll('input, button, textarea, select, a')
+        )
+        .filter(isVisible)
+        .map((el, idx) => {
+            const rect = el.getBoundingClientRect();
+
+            return {
+            id: idx + 1,
+            type: el.tagName.toLowerCase(),
+            text: getText(el),
+            href: el.href || "",
+            role: el.getAttribute("role") || "",
+            placeholder: el.placeholder || "",
+            selector: getSelector(el),
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height
+            };
+        })
+        .filter(el => el.text.length > 0 || el.type === "input");
+
+        return {
+            page: {
+            title: document.title,
+            url: location.href
+            },
+            elements
+        };
+        }
+        """)
 
     def _should_capture_screenshot(self, *, html: str, page_text: str, response: Response | None) -> bool:
         normalized_text = page_text.lower().strip()

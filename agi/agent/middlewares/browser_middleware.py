@@ -713,29 +713,30 @@ class BrowserMiddleware(AgentMiddleware):
     def _format_browser_state_for_prompt(self, session_state: BrowserSessionState) -> str:
         # 把结构化状态压缩成模型容易理解的文本，避免把完整 JSON 原样塞进 prompt。
         browser = session_state.get("browser", {})
-        context = session_state.get("context", {})
         page = session_state.get("page", {})
-        recent_events = session_state.get("recent_events", [])[-MAX_PROMPT_EVENTS:]
-        recent_lines = []
-        for event in recent_events:
-            metadata = event.get("metadata", {}) if isinstance(event.get("metadata"), dict) else {}
-            target = metadata.get("target") if isinstance(metadata.get("target"), dict) else None
-            target_desc = ""
-            if target:
-                tag = target.get("tag") or "element"
-                target_text = target.get("text") or target.get("value") or ""
-                target_desc = f" target={tag}:{target_text[:40]}" if target_text else f" target={tag}"
-            recent_lines.append(
-                f"- #{event.get('seq')} {event.get('type')} url={event.get('url') or metadata.get('url')}{target_desc}"
-            )
 
-        tabs = context.get("pages", [])
-        tab_lines = []
-        for tab in tabs[:5]:
-            active_mark = "*" if tab.get("is_active") else "-"
-            tab_lines.append(
-                f"{active_mark} {tab.get('page_id')} url={tab.get('url')} load={tab.get('load_state')} closed={tab.get('is_closed')}"
-            )
+        # context = session_state.get("context", {})
+        # recent_events = session_state.get("recent_events", [])[-MAX_PROMPT_EVENTS:]
+        # recent_lines = []
+        # for event in recent_events:
+        #     metadata = event.get("metadata", {}) if isinstance(event.get("metadata"), dict) else {}
+        #     target = metadata.get("target") if isinstance(metadata.get("target"), dict) else None
+        #     target_desc = ""
+        #     if target:
+        #         tag = target.get("tag") or "element"
+        #         target_text = target.get("text") or target.get("value") or ""
+        #         target_desc = f" target={tag}:{target_text[:40]}" if target_text else f" target={tag}"
+        #     recent_lines.append(
+        #         f"- #{event.get('seq')} {event.get('type')} url={event.get('url') or metadata.get('url')}{target_desc}"
+        #     )
+
+        # tabs = context.get("pages", [])
+        # tab_lines = []
+        # for tab in tabs[:5]:
+        #     active_mark = "*" if tab.get("is_active") else "-"
+        #     tab_lines.append(
+        #         f"{active_mark} {tab.get('page_id')} url={tab.get('url')} load={tab.get('load_state')} closed={tab.get('is_closed')}"
+        #     )
 
         return "\n".join(
             [
