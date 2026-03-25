@@ -748,7 +748,7 @@ class StatefulBrowserBackend:
             # html = await page.content()
             # if len(html) > self.max_content_length:
             #     html = html[: self.max_content_length] + "\n... [TRUNCATED]"
-            html_repr = self.extract_ui(page)
+            html_repr = await self.extract_ui(page)
             
             page_text = await page.inner_text("body")
             page_title = await page.title()
