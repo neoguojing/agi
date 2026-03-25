@@ -1,4 +1,4 @@
-from typing import List, Dict, Tuple,Union
+from typing import List, Dict, Tuple,Union,Any
 from agi.apps.common import MessageContent
 from agi.config import FILE_STORAGE_PATH
 import os
@@ -134,68 +134,79 @@ def save_media_content(
         raise ValueError("Unsupported content format")
 
 
-def process_multimodal_content(content: Union[str, List[MessageContent]]) -> Tuple[List[Dict], str]:
+def process_multimodal_content(
+    content: Union[str, List[MessageContent]]
+) -> Tuple[List[Dict[str, Any]], str]:
+    """
+    将自定义 MessageContent 转换为标准多模态 Dict 格式。
+    支持: text, image(落盘), file(映射为 audio/video/file 并落盘)
+    """
     if isinstance(content, str):
         return [{"type": "text", "text": content}], "text"
 
     result = []
-    last_input_type = "text"
+    # 记录最后处理的非文本类型，用于返回 content_type 标识
+    last_processed_type = "text"
 
     for item in content:
-        t = item.type
+        # 1. 处理文本类型
+        if item.type == "text":
+            if item.text:
+                result.append({"type": "text", "text": item.text})
 
-        # =========================
-        # 1. TEXT
-        # =========================
-        if t == "text":
-            result.append({"type": "text", "text": item.text or ""})
-
-        # =========================
-        # 2. IMAGE (内网环境：强制下载并传路径)
-        # =========================
-        elif t == "image_url":
-            img_obj = item.image_url
-            if not img_obj: continue
+        # 2. 处理图片类型 (image_url -> image)
+        elif item.type == "image_url":
+            if not item.image_url or not item.image_url.url:
+                continue
             
-            # 无论输入是 http 还是 base64，统一调用你的函数下载/保存到本地
-            # file_path 会是如 "/data/storage/cache/img_abc.jpg" 的本地路径
-            file_path, mime_type, _ = save_media_content(img_obj.url, FILE_STORAGE_PATH)
+            # 调用落盘逻辑：屏蔽 URL/Base64 差异
+            file_path, mime, _ = save_media_content(item.image_url.url, FILE_STORAGE_PATH)
             
-            # 按照你提供的 LangChain 图片输出规范
             result.append({
                 "type": "image",
-                "file_id": file_path,   # 传本地路径
-                "detail": img_obj.detail or "auto"
+                "file_id": file_path,  # 传入落盘后的本地路径
+                "detail": item.image_url.detail or "auto",
+                "mime_type": mime
             })
-            last_input_type = "image"
+            last_processed_type = "image"
 
-        # =========================
-        # 3. FILE (Audio/Video/Doc - 统一落盘)
-        # =========================
-        elif t == "file":
+        # 3. 处理文件类型 (file -> audio/video/file)
+        elif item.type == "file":
             f_obj = item.file
-            if not f_obj: continue
+            if not f_obj:
+                continue
 
-            # 优先级：已有的路径 > url > base64
+            # 确定来源优先级：file_id (可能是路径) > url > base64
             source = f_obj.file_id or f_obj.url or f_obj.base64
-            
-            # 同样调用 save_media_content 屏蔽来源差异
+            if not source:
+                continue
+
+            # 执行落盘
             file_path, mime_type, _ = save_media_content(source, FILE_STORAGE_PATH)
             
-            # 根据 MIME 映射 LangChain 的具体 type
-            lc_type = "file"
+            # 根据 MIME 类型自动映射到具体的 LangChain 类别
+            final_type = "file"
             if mime_type:
-                if "audio" in mime_type: lc_type = "audio"
-                elif "video" in mime_type: lc_type = "video"
+                if "audio" in mime_type:
+                    final_type = "audio"
+                elif "video" in mime_type:
+                    final_type = "video"
             
-            result.append({
-                "type": lc_type,
-                "file_id": file_path,  # 统一传本地路径
+            # 构建标准输出
+            file_data = {
+                "type": final_type,
+                "file_id": file_path,
                 "mime_type": mime_type or f_obj.mime_type
-            })
-            last_input_type = lc_type
+            }
+            
+            # 如果是 base64 且你需要保留原始数据（可选，通常落盘后不需要了）
+            # if f_obj.base64: file_data["base64"] = f_obj.base64
+            
+            result.append(file_data)
+            last_processed_type = final_type
 
         else:
-            raise ValueError(f"Unsupported type: {t}")
+            # 记录未知类型但不中断流程
+            print(f"⚠️ Warning: Found unsupported content type: {item.type}")
 
-    return result, last_input_type
+    return result, last_processed_type

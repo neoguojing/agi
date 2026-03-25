@@ -29,25 +29,55 @@ class DebugLLMContextMiddleware(AgentMiddleware):
         self.reset = color_reset
 
     def _format_content(self, content: Any) -> str:
-        """统一处理消息内容提取与截断"""
+        """
+        统一处理消息内容提取与截断。
+        支持：纯文本、多模态列表（Image, File, Audio, Video）。
+        """
         if isinstance(content, str):
             res = content.strip()
         elif isinstance(content, list):
             parts = []
             for item in content:
-                if isinstance(item, dict):
-                    parts.append(item.get("text", f"[{item.get('type', 'obj')}]") if item.get("type") == "text" else f"[{item.get('type', 'media')}]")
-                else:
+                if not isinstance(item, dict):
                     parts.append(str(item))
+                    continue
+                
+                # 提取类型
+                c_type = item.get("type", "unknown").upper()
+                
+                if c_type == "TEXT":
+                    parts.append(item.get("text", "").strip())
+                
+                # 处理多媒体/文件类型: image, file, audio, video
+                elif c_type in ["IMAGE", "FILE", "AUDIO", "VIDEO"]:
+                    # 识别来源标识
+                    source = "unknown"
+                    if "url" in item:
+                        source = f"URL: {item['url']}"
+                    elif "file_id" in item:
+                        source = f"FileID: {item['file_id']}"
+                    elif "base64" in item:
+                        # Base64 太长，只显示前 10 位和长度，以及 MIME 类型
+                        mime = item.get("mime_type", "unknown-mime")
+                        b64_val = str(item['base64'])
+                        source = f"Base64({mime}, len={len(b64_val)}) {b64_val[:10]}..."
+                    
+                    parts.append(f"[{c_type} | {source}]")
+                
+                else:
+                    parts.append(f"[Unsupported Type: {c_type}]")
+            
             res = "\n".join(parts).strip()
         else:
             res = str(content).strip()
 
-        if not res: return "[Empty Content]"
+        if not res: 
+            return "[Empty Content]"
         
+        # 截断长内容逻辑
         if len(res) > self.limit:
             half = self.limit // 2
-            return f"{res[:half]}\n... [Skipped {len(res)-self.limit} chars] ...\n{res[-half:]}"
+            return f"{res[:half]}\n... [已省略 {len(res)-self.limit} 字] ...\n{res[-half:]}"
         return res
 
     async def awrap_model_call(

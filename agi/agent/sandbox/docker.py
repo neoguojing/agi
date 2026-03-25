@@ -14,7 +14,7 @@ from deepagents.backends.sandbox import BaseSandbox  # 你之前的基类
 class DockerSandbox(BaseSandbox):
     """Stateful Docker sandbox implementation."""
 
-    def __init__(self, image: str = "python:3.11-slim", workspace: str | None = None):
+    def __init__(self, image: str = "eswardudi/python-ffmpeg:3.13.3", workspace: str | None = None):
         """
         Args:
             image: Docker image to use
