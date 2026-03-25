@@ -16,7 +16,7 @@ visual_subagent = {
     ),
     "tools": [image_gen_tool, image_edit_tool],
     "middleware": [
-        DebugLLMContextMiddleware()
+        DebugLLMContextMiddleware(name="visual_subagent")
     ]
 }
 
@@ -31,7 +31,7 @@ perception_subagent = {
     ),
     "tools": [omni_tool],
     "middleware": [
-        DebugLLMContextMiddleware()
+        DebugLLMContextMiddleware(name="perception_subagent")
     ]
 }
 
@@ -53,7 +53,7 @@ stt_subagent = {
     ),
     "tools": [stt_tool],
     "middleware": [
-        DebugLLMContextMiddleware()
+        DebugLLMContextMiddleware(name="stt_subagent")
     ]
 }
 
@@ -73,7 +73,7 @@ tts_subagent = {
     ),
     "tools": [tts_tool],
     "middleware": [
-        DebugLLMContextMiddleware()
+        DebugLLMContextMiddleware(name="tts_subagent")
     ]
 }
 
@@ -85,7 +85,7 @@ browser_subagent = {
         BrowserMiddleware(
             ocr_engine=ModelProvider.get_chat_model()
         ),
-        DebugLLMContextMiddleware()
+        DebugLLMContextMiddleware(name="browser_subagent")
     ]
 }
 
@@ -101,7 +101,7 @@ ffmpeg_subagent = {
         FfmpegMiddleware(
             backend=DockerSandbox()
         ),
-        DebugLLMContextMiddleware()
+        DebugLLMContextMiddleware(name="ffmpeg_subagent")
     ]
 }
 
