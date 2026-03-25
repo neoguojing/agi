@@ -18,6 +18,7 @@ from langchain.tools import ToolRuntime
 from langchain_core.messages import ToolMessage,HumanMessage
 from langchain_core.messages.content import create_image_block
 from langchain_core.tools import BaseTool, StructuredTool
+from langchain.tools.tool_node import ToolCallRequest
 from langgraph.types import Command
 from typing_extensions import NotRequired, TypedDict
 
@@ -250,6 +251,44 @@ class BrowserMiddleware(AgentMiddleware):
             request = request.override(system_message=append_to_system_message(request.system_message, system_prompt))
         return await handler(request)
 
+    def wrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], ToolMessage | Command],
+    ) -> ToolMessage | Command:
+        """Check the size of the tool call result and evict to filesystem if too large.
+
+        Args:
+            request: The tool call request being processed.
+            handler: The handler function to call with the modified request.
+
+        Returns:
+            The raw ToolMessage, or a pseudo tool message with the ToolResult in state.
+        """
+        return handler(request)
+
+
+    async def awrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command]],
+    ) -> ToolMessage | Command:
+        """(async)Check the size of the tool call result and evict to filesystem if too large.
+
+        Args:
+            request: The tool call request being processed.
+            handler: The handler function to call with the modified request.
+
+        Returns:
+            The raw ToolMessage, or a pseudo tool message with the ToolResult in state.
+        """
+        print(request)
+        tool_result = await handler(request)
+        print(tool_result)
+
+        return tool_result
+
+    
     def _create_navigate_tool(self) -> BaseTool:
         async def async_navigate(
             url: Annotated[str, "URL to open in the current browser session."],

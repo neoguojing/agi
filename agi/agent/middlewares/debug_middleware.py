@@ -3,7 +3,7 @@ from typing import Callable, Awaitable
 from typing import List,Any
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage,ToolMessage
 from langgraph.types import Command
-from langgraph.prebuilt.tool_node import ToolCallRequest
+from langchain.tools.tool_node import ToolCallRequest
 import json
 import time
 
