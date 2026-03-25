@@ -2,7 +2,11 @@
 from .debug_middleware import DebugLLMContextMiddleware
 from .context_middleware import ContextEngineeringMiddleware
 from .browser_middleware import BrowserMiddleware
+from .ffmpeg_middleware import FfmpegMiddleware
 
 
 # 导出清单，方便其他模块调用
-__all__ = ["DebugLLMContextMiddleware","ContextEngineeringMiddleware","BrowserMiddleware"]
+__all__ = ["DebugLLMContextMiddleware",
+           "ContextEngineeringMiddleware",
+           "BrowserMiddleware",
+           "FfmpegMiddleware"]

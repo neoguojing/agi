@@ -1,8 +1,9 @@
 
 from agi.agent.middlewares.debug_middleware import DebugLLMContextMiddleware
 from agi.agent.tools import RemoteImageEditTool,RemoteImageGenTool,RemoteMultiModalTool,RemoteTranscriptionTool,RemoteTTSTool
-from agi.agent.middlewares import BrowserMiddleware
+from agi.agent.middlewares import BrowserMiddleware,FfmpegMiddleware
 from agi.agent.models import ModelProvider
+from agi.agent.sandbox.docker import DockerSandbox
 image_gen_tool = RemoteImageGenTool()
 image_edit_tool = RemoteImageEditTool()
 visual_subagent = {
@@ -88,4 +89,19 @@ browser_subagent = {
     ]
 }
 
+ffmpeg_subagent = {
+    "name": "video-expert",
+    "description": (
+        "Specialized in video processing and editing tasks. "
+        "Can cut, merge, snapshot, transcode, remove watermarks, and apply filters on videos. "
+        "Operates on local or sandboxed video files and reports success messages for each operation."
+    ),
+    "system_prompt": "",
+    "middleware": [
+        FfmpegMiddleware(
+            backend=DockerSandbox()
+        ),
+        DebugLLMContextMiddleware()
+    ]
+}
 
