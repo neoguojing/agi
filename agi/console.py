@@ -96,14 +96,51 @@ class DeepAgentCLI:
     def _smart_parse(self, text: str):
         tokens = text.split()
         contents = []
+        
+        text_buffer = []
+
+        def flush_text():
+            """把缓存的文本一次性输出"""
+            if text_buffer:
+                contents.append(
+                    MessageContent(type="text", text=" ".join(text_buffer))
+                )
+                text_buffer.clear()
+
         for t in tokens:
+            # ---------- IMAGE ----------
             if t.startswith("img:"):
-                contents.append(MessageContent(type="image_url", image_url=ImageURL(url=t[4:])))
+                flush_text()
+                contents.append(
+                    MessageContent(
+                        type="image_url",
+                        image_url=ImageURL(url=t[4:])
+                    )
+                )
+
+            # ---------- FILE ----------
             elif t.startswith("file:"):
-                mime, _ = mimetypes.guess_type(t[5:])
-                contents.append(MessageContent(type="file", file=FileObject(file_id=t[5:], mime_type=mime or "application/octet-stream")))
+                flush_text()
+                path = t[5:]
+                mime, _ = mimetypes.guess_type(path)
+
+                contents.append(
+                    MessageContent(
+                        type="file",
+                        file=FileObject(
+                            file_id=path,
+                            mime_type=mime or "application/octet-stream"
+                        )
+                    )
+                )
+
+            # ---------- TEXT ----------
             else:
-                contents.append(MessageContent(type="text", text=t))
+                text_buffer.append(t)
+
+        # 收尾
+        flush_text()
+
         return contents
 
     async def run(self):
@@ -122,8 +159,8 @@ class DeepAgentCLI:
                     console.print("[dim]上下文已清空[/dim]")
                     continue
 
-                processed, _ = process_multimodal_content(self._smart_parse(user_input))
-                self.state["messages"].append({"role": "user", "content": processed})
+                human_message = process_multimodal_content(self._smart_parse(user_input))
+                self.state["messages"].append(human_message)
                 
                 with Live(Spinner("dots", text="思考中..."), console=console, refresh_per_second=10) as live:
                     ans = await self.handle_stream(live)

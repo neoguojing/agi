@@ -23,12 +23,11 @@ def build_state(request: ChatCompletionRequest) -> Dict[str, Any]:
 
     # 多模态
     else:
-        content, input_type = process_multimodal_content(msg.content)
-        messages = [HumanMessage(content=content)]
+        human_message = process_multimodal_content(msg.content)
+        messages = [human_message]
 
     return {
         "messages": messages,
-        "input_type": input_type,
         "need_speech": request.need_speech,
         "user_id": request.user or "default",
         "conversation_id": request.conversation_id,

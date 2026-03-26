@@ -5,7 +5,11 @@ import os
 from typing import Callable, Awaitable, List, Dict, Any
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from langchain_core.messages import BaseMessage,HumanMessage
-
+from langchain_core.messages.content import (
+    create_text_block,
+    create_image_block,
+    create_audio_block,
+)
 
 class MultimodalBase64Middleware(AgentMiddleware):
     """
@@ -35,43 +39,97 @@ class MultimodalBase64Middleware(AgentMiddleware):
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse:
 
-        # 检查最后一条消息是否 HumanMessage
-        if not request.messages or request.messages[-1].type != "human":
-            # 不是 HumanMessage，直接调用 handler
+        if not request.messages:
             return await handler(request)
 
-        # 仅处理最后一条消息
-        last_msg = request.messages[-1]
-        new_content = []
-        for item in last_msg.content:
-            if not isinstance(item, dict):
-                new_content.append(item)
+        # ✅ 判断“最后一条是不是 HumanMessage”
+        last_is_human = isinstance(request.messages[-1], HumanMessage)
+
+        new_messages = []
+
+        for idx, msg in enumerate(request.messages):
+
+            # ---------- 非 Human ----------
+            if not isinstance(msg, HumanMessage):
+                new_messages.append(msg)
                 continue
 
-            c_type = item.get("type")
-            # 仅处理 image 和 audio
-            if c_type in ["image", "audio"]:
-                source = item.get("file_id") or item.get("url")
-                if source and not item.get("base64"):
-                    try:
-                        b64_data, mime = await self._get_base64_content(source)
-                        encoded_item = item.copy()
-                        encoded_item["base64"] = b64_data
-                        encoded_item["mime_type"] = item.get("mime_type") or mime
-                        encoded_item.pop("url", None)
-                        new_content.append(encoded_item)
+            is_last_msg = idx == len(request.messages) - 1
+            should_encode = last_is_human and is_last_msg  # 🔥 核心条件
+
+            content_blocks = []
+
+            if isinstance(msg.content, list):
+                for item in msg.content:
+                    if not isinstance(item, dict):
                         continue
-                    except Exception as e:
-                        print(f"❌ [Base64 Middleware Error]: {str(e)}")
 
-            # 其他类型原样保留
-            new_content.append(item)
+                    c_type = item.get("type")
 
-        msg_dict = last_msg.model_dump()
-        msg_dict["content"] = new_content
-        new_last_msg = type(last_msg)(**msg_dict)
+                    # ---------- TEXT ----------
+                    if c_type == "text":
+                        content_blocks.append(
+                            create_text_block(text=item.get("text", ""))
+                        )
 
-        # 替换最后一条消息，其它消息保持不变
-        new_messages = request.messages[:-1] + [new_last_msg]
-        print(f"****************{new_messages}")
+                    # ---------- IMAGE ----------
+                    elif c_type == "image":
+                        mime = item.get("mime_type", "image/png")
+
+                        if should_encode:
+                            # ✅ 只有最后一条 Human 才转 base64
+                            base64_data = item.get("base64")
+                            if not base64_data:
+                                source = item.get("file_id") or item.get("url")
+                                if source:
+                                    base64_data, mime = await self._get_base64_content(source)
+
+                            if base64_data:
+                                content_blocks.append(
+                                    create_image_block(
+                                        base64=base64_data,
+                                        mime_type=mime,
+                                    )
+                                )
+                        else:
+                            # 🔥 占位
+                            content_blocks.append(
+                                create_text_block(
+                                    text=f"[image omitted: {item.get('file_id') or item.get('url')}]"
+                                )
+                            )
+
+                    # ---------- AUDIO ----------
+                    elif c_type == "audio":
+                        mime = item.get("mime_type", "audio/wav")
+
+                        if should_encode:
+                            base64_data = item.get("base64")
+                            if not base64_data:
+                                source = item.get("file_id") or item.get("url")
+                                if source:
+                                    base64_data, mime = await self._get_base64_content(source)
+
+                            if base64_data:
+                                content_blocks.append(
+                                    create_audio_block(
+                                        base64=base64_data,
+                                        mime_type=mime,
+                                    )
+                                )
+                        else:
+                            content_blocks.append(
+                                create_text_block(
+                                    text=f"[audio omitted: {item.get('file_id') or item.get('url')}]"
+                                )
+                            )
+
+            # ✅ 构造新消息
+            new_msg = HumanMessage(
+                content=msg.content if isinstance(msg.content, str) else "",
+                content_blocks=content_blocks,
+            )
+
+            new_messages.append(new_msg)
+
         return await handler(request.override(messages=new_messages))

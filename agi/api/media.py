@@ -7,7 +7,11 @@ import uuid
 import requests
 from mimetypes import guess_extension
 from langchain_core.messages import HumanMessage
-
+from langchain_core.messages.content import (
+    create_text_block,
+    create_image_block,
+    create_audio_block,
+)
 
 # =========================
 # 工具函数
@@ -136,77 +140,71 @@ def save_media_content(
 
 def process_multimodal_content(
     content: Union[str, List[MessageContent]]
-) -> Tuple[List[Dict[str, Any]], str]:
+) -> HumanMessage:
     """
-    将自定义 MessageContent 转换为标准多模态 Dict 格式。
-    支持: text, image(落盘), file(映射为 audio/video/file 并落盘)
+    将自定义 MessageContent 转换为 HumanMessage（包含 content_blocks）
     """
-    if isinstance(content, str):
-        return [{"type": "text", "text": content}], "text"
 
-    result = []
-    # 记录最后处理的非文本类型，用于返回 content_type 标识
-    last_processed_type = "text"
+    # ---------- 纯文本 ----------
+    if isinstance(content, str):
+        return HumanMessage(content=content)
+
+    blocks = []
+    text_parts = []  # 用于 fallback content
 
     for item in content:
-        # 1. 处理文本类型
+        # ---------- TEXT ----------
         if item.type == "text":
             if item.text:
-                result.append({"type": "text", "text": item.text})
-
-        # 2. 处理图片类型 (image_url -> image)
+                blocks.append(create_text_block(text=item.text))
+        # ---------- IMAGE ----------
         elif item.type == "image_url":
             if not item.image_url or not item.image_url.url:
                 continue
-            
-            # 调用落盘逻辑：屏蔽 URL/Base64 差异
-            file_path, mime, _ = save_media_content(item.image_url.url, FILE_STORAGE_PATH)
-            
-            result.append({
-                "type": "image",
-                "file_id": file_path,  # 传入落盘后的本地路径
-                "detail": item.image_url.detail or "auto",
-                "mime_type": mime
-            })
-            last_processed_type = "image"
 
-        # 3. 处理文件类型 (file -> audio/video/file)
+            file_path, mime, _ = save_media_content(
+                item.image_url.url, FILE_STORAGE_PATH
+            )
+
+            blocks.append(
+                create_image_block(
+                    file_id=file_path,
+                    mime_type=mime or "image/png",
+                )
+            )
+
+        # ---------- FILE ----------
         elif item.type == "file":
             f_obj = item.file
             if not f_obj:
                 continue
 
-            # 确定来源优先级：file_id (可能是路径) > url > base64
             source = f_obj.file_id or f_obj.url or f_obj.base64
             if not source:
                 continue
 
-            # 执行落盘
-            file_path, mime_type, _ = save_media_content(source, FILE_STORAGE_PATH)
-            
-            # 根据 MIME 类型自动映射到具体的 LangChain 类别
-            final_type = "file"
-            if mime_type:
-                if "audio" in mime_type:
-                    final_type = "audio"
-                elif "video" in mime_type:
-                    final_type = "video"
-            
-            # 构建标准输出
-            file_data = {
-                "type": final_type,
-                "file_id": file_path,
-                "mime_type": mime_type or f_obj.mime_type
-            }
-            
-            # 如果是 base64 且你需要保留原始数据（可选，通常落盘后不需要了）
-            # if f_obj.base64: file_data["base64"] = f_obj.base64
-            
-            result.append(file_data)
-            last_processed_type = final_type
+            file_path, mime_type, _ = save_media_content(
+                source, FILE_STORAGE_PATH
+            )
+
+            if mime_type and "audio" in mime_type:
+                blocks.append(
+                    create_audio_block(
+                        file_id=file_path,
+                        mime_type=mime_type,
+                    )
+                )
+            else:
+                # fallback
+                text_parts.append(f"[Unsupported file: {mime_type}]")
 
         else:
-            # 记录未知类型但不中断流程
-            print(f"⚠️ Warning: Found unsupported content type: {item.type}")
+            print(f"⚠️ Unsupported content type: {item.type}")
 
-    return result, last_processed_type
+    # ⚠️ 必须有 content（很多模型依赖）
+    final_text = "\n".join(text_parts) if text_parts else ""
+
+    return HumanMessage(
+        content=final_text,
+        content_blocks=blocks,
+    )
