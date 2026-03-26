@@ -164,7 +164,6 @@ class UnifiedContextUpdater:
     async def _update_user_profile(self, runtime, user_id, user_msg, ai_msg):
         try:
             # 1. 获取现有数据
-            print(f"{type(runtime.store)}")
 
             existing = await runtime.store.aget(user_id, USER_PROFILE_CONTEXT)
             current_val = existing.value if existing else UserPersona().model_dump()

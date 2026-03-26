@@ -669,8 +669,8 @@ class StatefulBrowserBackend:
                     else restored_page.get("is_closed", True)
                 ),
                 "load_state": self._infer_load_state(last_event),
-
-                "last_result_url": last_page_result.url if last_page_result else restored_page.get("last_result_url"),
+                # AttributeError: 'tuple' object has no attribute 'url'
+                # "last_result_url": last_page_result.url if last_page_result else restored_page.get("last_result_url"),
                 # ✅ 行为信息（核心）
                 "last_interaction": active_runtime.get("last_interaction") or restored_page.get("last_interaction"),
                 "last_user_event": active_runtime.get("last_user_event") or restored_page.get("last_user_event"),
@@ -754,7 +754,6 @@ class StatefulBrowserBackend:
             page_title = await page.title()
             self._page_titles[self._page_id(page)] = page_title
             take_screenshot = self._should_capture_screenshot(
-                html=html_repr,
                 page_text=page_text,
                 response=response,
             )
@@ -852,11 +851,10 @@ class StatefulBrowserBackend:
         }
         """)
 
-    def _should_capture_screenshot(self, *, html: str, page_text: str, response: Response | None) -> bool:
+    def _should_capture_screenshot(self, *,  page_text: str, response: Response | None) -> bool:
         normalized_text = page_text.lower().strip()
         return (
             len(page_text.strip()) < self.min_text_length
-            or len(html.strip()) < self.min_html_length
             or (response is not None and response.status != 200)
             or any(keyword in normalized_text for keyword in self.ocr_keywords)
         )

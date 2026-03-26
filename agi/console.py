@@ -22,6 +22,7 @@ from agi.agent.agent import stream_agent_async
 from agi.agent.context import Context
 from agi.apps.common import MessageContent, ImageURL, FileObject
 from agi.api.media import process_multimodal_content
+from langgraph.graph.message import add_messages
 # --- 配置 ---
 STATE_CACHE = ".cli_session.json"
 
@@ -160,12 +161,12 @@ class DeepAgentCLI:
                     continue
 
                 human_message = process_multimodal_content(self._smart_parse(user_input))
-                self.state["messages"].append(human_message)
-                
+                self.state["messages"] = add_messages(self.state["messages"], [human_message])
+
                 with Live(Spinner("dots", text="思考中..."), console=console, refresh_per_second=10) as live:
                     ans = await self.handle_stream(live)
-                
-                self.state["messages"].append({"role": "assistant", "content": ans})
+
+                # self.state["messages"] = add_messages(self.state["messages"], [{"role": "assistant", "content": ans}])
                 self._save_session()
                 
             except (EOFError, KeyboardInterrupt): 

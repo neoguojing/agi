@@ -578,7 +578,7 @@ class BrowserMiddleware(AgentMiddleware):
                         msg = str(result.metadata["error"])
                         raise RuntimeError(msg)
 
-                    await self._maybe_apply_ocr(session, result)
+                    result = await self._extract_content_with_ocr(session)
                     session.last_result = result
                     result.metadata = {
                         **result.metadata,
@@ -619,27 +619,6 @@ class BrowserMiddleware(AgentMiddleware):
             return await session.backend.fill(kwargs["selector"], kwargs["text"])
         msg = f"Unknown action: {action}"
         raise ValueError(msg)
-
-    async def _maybe_apply_ocr(self, session: UserBrowserSession, result: PageInfo) -> None:
-        if not self.enable_ocr or self.ocr is None:
-            return
-        if result.html and len(result.html) >= 100:
-            return
-
-        screenshot = await session.backend.read_screenshot_bytes(full_page=True)
-        if screenshot is None:
-            return
-
-        screenshot_path, image_bytes = screenshot
-        logger.warning("Applying OCR fallback for %s", result.url)
-        ocr_text = await self.ocr.parse(image_bytes)
-        result.text = str(ocr_text)
-        result.screenshot_path = screenshot_path
-        result.metadata = {
-            **result.metadata,
-            "ocr_applied": True,
-            "ocr_text_length": len(result.text),
-        }
 
     def _format_page_result(self, result: PageInfo) -> BrowserToolArtifact:
         if result.metadata.get("error"):

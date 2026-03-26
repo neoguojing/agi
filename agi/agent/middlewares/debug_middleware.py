@@ -85,7 +85,6 @@ class DebugLLMContextMiddleware(AgentMiddleware):
         request: ModelRequest,
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]], 
     ) -> ModelResponse:
-        
         # 构建头部日志
         header = f"\n{self.c1}>>> [{self.namespace}] LLM CALL START <<<{self.reset}"
         lines = [header]
@@ -150,7 +149,7 @@ class DebugLLMContextMiddleware(AgentMiddleware):
             
             # 结果预览处理
             if isinstance(result, ToolMessage):
-                preview = self._format_content(result.content)
+                preview = self._format_content(result.content,result.id)
                 status = "✅"
             elif isinstance(result, Command):
                 preview = f"Command(goto={result.goto})"

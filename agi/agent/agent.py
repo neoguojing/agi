@@ -18,11 +18,12 @@ from agi.config import OLLAMA_DEFAULT_MODE
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.store.sqlite import SqliteStore
 from langgraph.store.memory import InMemoryStore
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.store.sqlite.aio import AsyncSqliteStore
-
+from deepagents.backends import CompositeBackend
 from deepagents import create_deep_agent
-from deepagents.backends import LocalShellBackend
+from deepagents.backends import LocalShellBackend,StoreBackend,FilesystemBackend
 
 # --- Constants & Config ---
 DB_PATH_CHECKPOINT = "agent_checkpoint.db"
@@ -34,11 +35,15 @@ class DeepAgentBuilder:
         self.name = name
         self.llm = ModelProvider.get_chat_model(provider="ollama", model_name=OLLAMA_DEFAULT_MODE)
         self.embd = ModelProvider.get_embeddings(provider="ollama", model_name="embeddinggemma:latest")
-        self.system_prompt = None
+        self.system_prompt = '''Please structure the data storage paths as follows, ensuring that the {user_id} placeholder is replaced with the actual user ID:
+User Preferences: Save to /profiles/{user_id}/preferences.json
+Session History: Store in /sessions/{user_id}/{conversation_id}/chat_history.json
+Entity Data: Save to /entities/{user_id}/entities.json
+        '''
         self.tools = list(buildin_tools)
         self.subagents = list(buildin_agents)
         self.memory_paths = ["./memories/AGENT.md"]
-        self.backend = LocalShellBackend(root_dir=".", env={"PATH": "/usr/bin:/bin"})
+        self.backend = None
         
     def with_model(self, provider: str, name: str):
         self.llm = ModelProvider.get_chat_model(provider, name)
@@ -48,21 +53,36 @@ class DeepAgentBuilder:
         self.system_prompt = prompt
         return self
 
+    def make_backend(self, runtime):
+        return CompositeBackend(
+            default=LocalShellBackend(root_dir=".", env={"PATH": "/usr/bin:/bin"}),
+            routes={
+                # 用户画像：偏好、历史行为、个性化配置
+                "/profiles/{user_id}/": StoreBackend(runtime),
+                # 会话：跨线程持久对话历史
+                "/sessions/{user_id}/{conversation_id}/": StoreBackend(runtime),
+                # 实体：产品、联系人、订单等结构化数据
+                "/entities/{user_id}/": StoreBackend(runtime),
+                # 全局：系统配置、模板
+                "/shared/": StoreBackend(runtime),
+            },
+        )
+
     def build_options(self) -> Dict[str, Any]:
         """Returns the dictionary of parameters required for create_deep_agent"""
         return {
             "name": self.name,
             "model": self.llm,
-            # "tools": self.tools,
-            # "system_prompt": self.system_prompt,
-            # "subagents": self.subagents,
-            "backend": self.backend,
+            "tools": self.tools,
+            "system_prompt": self.system_prompt,
+            "subagents": self.subagents,
+            "backend": self.make_backend,
             # "memory": self.memory_paths,
             "middleware": [
                 # BrowserMiddleware(ocr_engine=self.llm),
                 # ContextEngineeringMiddleware(extractor_model=self.llm),
                 DebugLLMContextMiddleware(),
-                # MultimodalBase64Middleware()
+                MultimodalBase64Middleware()
             ],
             "context_schema": Context
         }
@@ -107,6 +127,7 @@ class DeepAgentManager:
 
             saver = AsyncSqliteSaver(conn=conn_saver)
             # store = AsyncSqliteStore(conn=conn_store)
+            # saver = MemorySaver()
             store = InMemoryStore()
             await saver.setup()  # 确保表结构已创建
             # await store.setup()  # 确保表结构已创建
