@@ -681,12 +681,13 @@ class StatefulBrowserBackend:
             "last_event": dict(last_event) if isinstance(last_event, dict) else None,
 
             # ✅ 显式变化（非常关键）
-            "changes": {
-                "url_changed": (
-                    (getattr(active_page, "url", None) or restored_page.get("url"))
-                    != (last_page_result.url if last_page_result else restored_page.get("last_result_url"))
-                )
-            },
+            # AttributeError: 'tuple' object has no attribute 'url'
+            # "changes": {
+            #     "url_changed": (
+            #         (getattr(active_page, "url", None) or restored_page.get("url"))
+            #         != (last_page_result.url if last_page_result else restored_page.get("last_result_url"))
+            #     )
+            # },
         }
 
         return snapshot
