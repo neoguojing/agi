@@ -28,7 +28,7 @@ class DebugLLMContextMiddleware(AgentMiddleware):
         self.c1 = color_header
         self.reset = color_reset
 
-    def _format_content(self, content: Any) -> str:
+    def _format_content(self, content: Any,id: Any) -> str:
         """
         统一处理消息内容提取与截断。
         支持：纯文本、多模态列表（Image, File, Audio, Video）。
@@ -78,7 +78,7 @@ class DebugLLMContextMiddleware(AgentMiddleware):
         if len(res) > self.limit:
             half = self.limit // 2
             return f"{res[:half]}\n... [已省略 {len(res)-self.limit} 字] ...\n{res[-half:]}"
-        return res
+        return f"{id}-{res}"
 
     async def awrap_model_call(
         self,
@@ -110,11 +110,17 @@ class DebugLLMContextMiddleware(AgentMiddleware):
 
         # 2. 消息流解析
         if self.show_messages:
-            all_msgs = ([request.system_message] if request.system_message else []) + list(request.messages)
-            for msg in all_msgs:
+            if request.system_message:
+                msg = request.system_message
+                role = "SYSTEM"
+                icon = "⚙️"
+                # content = self._format_content(msg.content)
+                content = msg.content
+                lines.append(f"{icon} [{role:^6}] | {content}")
+            for msg in list(request.messages):
                 role = msg.type.upper()
                 icon = {"SYSTEM": "⚙️", "HUMAN": "👤", "AI": "🤖", "TOOL": "🛠️"}.get(role, "📝")
-                content = self._format_content(msg.content)
+                content = self._format_content(msg.content,msg.id)
                 lines.append(f"{icon} [{role:^6}] | {content}")
 
         lines.append(f"{self.c1}>>> [{self.namespace}] END CALL <<<{self.reset}\n")

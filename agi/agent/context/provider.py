@@ -97,7 +97,7 @@ class ContextRenderer:
             ContextKeys.KNOWLEDGE: ("Relevant Knowledge", lambda x: str(x))
         }
 
-    def render(self, ctx: Dict[str, Any]) -> List[SystemMessage]:
+    def render(self, ctx: Dict[str, Any]) ->str:
         core_instruction = "Use the context below to tailor your response."
         sections = [core_instruction, "---"]
 
@@ -112,7 +112,7 @@ class ContextRenderer:
                     sections.append(f"## {header}\n{formatted_content}")
 
         sections.append("---\nRespond to the user's latest query based on the information above.")
-        return [SystemMessage(content="\n\n".join(sections))]
+        return "\n".join(sections)
 
     # 确保辅助函数遵循 (Any) -> str 的签名
     def _fmt_env(self, d: Any) -> str:
@@ -141,7 +141,7 @@ class AsyncContextManager:
         self.timeout = timeout
         self.renderer = ContextRenderer()
 
-    async def get_context_message(self, runtime, state) -> List[SystemMessage]:
+    async def get_context_str(self, runtime, state) -> str:
         tasks = [
             asyncio.wait_for(p.load(runtime, state), timeout=self.timeout) 
             for p in self.providers

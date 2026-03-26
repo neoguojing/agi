@@ -6,7 +6,7 @@ from langchain_core.messages import SystemMessage, BaseMessage
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 
 from agi.agent.context import create_default_context_manager,UnifiedContextUpdater
-
+from agi.utils.common import append_to_system_message
 class ContextEngineeringMiddleware(AgentMiddleware):
     """
     上下文工程中间件：
@@ -33,20 +33,19 @@ class ContextEngineeringMiddleware(AgentMiddleware):
     ) -> ModelResponse:
         
         # 1. 异步并行构建上下文 (RAG + Profile)
-        injected_messages = await self.builder.get_context_message(request.runtime,request.state)
+        injected_context_str = await self.builder.get_context_str(request.runtime,request.state)
         
         # 3. 智能合并消息 (确保注入内容位于首个 SystemMessage 之后)
-        new_messages = self._smart_inject(request.messages, injected_messages)
-        request = request.override(messages=new_messages)
+        request = request.override(system_message=append_to_system_message(request.system_message, injected_context_str))
 
         # 4. 执行模型调用
-        self._log_debug_info(injected_messages, len(new_messages))
+        self._log_debug_info(injected_context_str, len(request.messages))
         response = await handler(request)
         async def update_profile_task():
             try:
                 await self.updater.update(
                     runtime=request.runtime, 
-                    messages=new_messages, 
+                    messages=request.messages, 
                     ai_response=response.result
                 )
             except Exception as e:
@@ -56,23 +55,6 @@ class ContextEngineeringMiddleware(AgentMiddleware):
 
         return response
 
-    def _smart_inject(self, original: List[BaseMessage], injected: List[BaseMessage]) -> List[BaseMessage]:
-        """将背景知识注入到系统指令之后，用户对话之前"""
-        if not injected:
-            return original
-            
-        res = list(original)
-        # 寻找第一个非 System 消息的位置（通常是 Human 消息）
-        insert_idx = 0
-        for i, msg in enumerate(res):
-            if msg.type != "system":
-                insert_idx = i
-                break
-        else:
-            insert_idx = len(res)
-            
-        return res[:insert_idx] + injected + res[insert_idx:]
 
-    def _log_debug_info(self, ctx_data: dict, total_count: int):
-        # print(f"--- [Context Engine] 注入数据: {ctx_data[0].content} | 消息流长度: {total_count} ---")
-        print(f"--- [Context Engine] 注入数据: {ctx_data[0].content}")
+    def _log_debug_info(self, ctx_data: str, total_count: int):
+        print(f"--- [Context Engine] 注入数据: {ctx_data} | 消息流长度: {total_count} ---")

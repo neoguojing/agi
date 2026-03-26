@@ -53,16 +53,16 @@ class DeepAgentBuilder:
         return {
             "name": self.name,
             "model": self.llm,
-            "tools": self.tools,
-            "system_prompt": self.system_prompt,
-            "subagents": self.subagents,
+            # "tools": self.tools,
+            # "system_prompt": self.system_prompt,
+            # "subagents": self.subagents,
             "backend": self.backend,
-            "memory": self.memory_paths,
+            # "memory": self.memory_paths,
             "middleware": [
                 # BrowserMiddleware(ocr_engine=self.llm),
-                ContextEngineeringMiddleware(extractor_model=self.llm),
+                # ContextEngineeringMiddleware(extractor_model=self.llm),
                 DebugLLMContextMiddleware(),
-                MultimodalBase64Middleware()
+                # MultimodalBase64Middleware()
             ],
             "context_schema": Context
         }
