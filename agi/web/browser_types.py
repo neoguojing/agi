@@ -1,0 +1,105 @@
+# browser_types.py
+import json
+import logging
+import random
+import uuid
+from asyncio import Lock, Queue, Task
+from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# --- 常量 ---
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/120.0.0.0 Safari/537.36"
+)
+DEFAULT_VIEWPORT = {"width": 1280, "height": 720}
+DEFAULT_WAIT_UNTIL = "domcontentloaded"
+DEFAULT_SMART_WAIT_TIMEOUT_MS = 5_000
+DEFAULT_CLICK_TIMEOUT_MS = 5_000
+DEFAULT_SCROLL_TIMEOUT_MS = 2_000
+DEFAULT_CAPTURE_DELAY_MS = 300
+MAX_FIND_RESULTS = 5
+MAX_BROWSER_EVENTS = 1
+MAX_STATE_MESSAGES = 1
+
+STATE_SNAPSHOT_FILENAME = "browser_session_state.json"
+PLAYWRIGHT_STORAGE_STATE_FILENAME = "playwright_storage_state.json"
+
+USER_EVENT_TYPES = {
+    "dom_click", "dom_input", "dom_change", "dom_submit",
+    "page_hashchange", "page_popstate", "page_focusin"
+}
+
+BROWSER_OBSERVER_SCRIPT = """(() => {
+    if (window.__agiBrowserObserverInstalled) return;
+    window.__agiBrowserObserverInstalled = true;
+
+    const buildTarget = (target) => {
+        if (!(target instanceof Element)) {
+            return { tag: null, id: null, classes: [], text: "" };
+        }
+        return {
+            tag: target.tagName ? target.tagName.toLowerCase() : null,
+            id: target.id || null,
+            name: target.getAttribute?.("name") || null,
+            type: target.getAttribute?.("type") || null,
+            classes: Array.from(target.classList || []),
+            text: (target.innerText || target.textContent || "").trim().slice(0, 120),
+            value: ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) ? String(target.value || "").slice(0, 120) : null,
+        };
+    };
+
+    const emit = (type, extra = {}) => {
+        const payload = {
+            type,
+            url: window.location.href,
+            title: document.title,
+            timestamp: new Date().toISOString(),
+            ...extra,
+        };
+        if (window.__agiRecordBrowserEvent) {
+            window.__agiRecordBrowserEvent(payload).catch(() => undefined);
+        }
+    };
+
+    document.addEventListener("click", (event) => emit("dom_click", { target: buildTarget(event.target) }), true);
+    document.addEventListener("input", (event) => emit("dom_input", { target: buildTarget(event.target) }), true);
+    document.addEventListener("change", (event) => emit("dom_change", { target: buildTarget(event.target) }), true);
+    document.addEventListener("submit", (event) => emit("dom_submit", { target: buildTarget(event.target) }), true);
+    document.addEventListener("focusin", (event) => emit("page_focusin", { target: buildTarget(event.target) }), true);
+    window.addEventListener("hashchange", () => emit("page_hashchange"), true);
+    window.addEventListener("popstate", () => emit("page_popstate"), true);
+})();"""
+
+WaitUntilState = Literal["commit", "domcontentloaded", "load", "networkidle"]
+# --- 数据类 ---
+@dataclass(slots=True)
+class PageInfo:
+    url: str
+    title: str | None
+    html: str | None
+    text: str | None
+    screenshot_path: str | None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+@dataclass(slots=True)
+class QueryMatch:
+    selector: str
+    text: str
+    attributes: dict[str, Any]
+
+@dataclass(slots=True)
+class UserBrowserSession:
+    """Browser session state scoped to a single user."""
+    user_id: str
+    backend: "StatefulBrowserBackend"  # Forward reference
+    last_result: PageInfo | None = None
+    active_operations: int = 0
+    last_used_at: float = field(default_factory=lambda: 0.0)
+    idle_task: Task[None] | None = None
+    operation_lock: Lock = field(default_factory=Lock)

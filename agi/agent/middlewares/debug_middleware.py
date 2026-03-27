@@ -71,7 +71,7 @@ class DebugLLMContextMiddleware(AgentMiddleware):
         else:
             res = str(content).strip()
 
-        if not res: 
+        if not res:
             return "[Empty Content]"
         
         # 截断长内容逻辑
