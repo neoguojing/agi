@@ -125,11 +125,18 @@ class BrowserEventManager:
         if "url" in metadata:
             self.update_page_state(page, url=metadata["url"])
 
+    def add_to_history(self, history_entry: Dict[str, Any]) -> None:
+        """
+        添加历史记录条目。
+        用于在动作执行后记录历史，与 record_event 分开管理。
+        """
+        self._history.append(history_entry)
+
     # --- Playwright 仪器化逻辑 (Core) ---
     async def register_context_instrumentation(self, context: BrowserContext) -> None:
         """
         为整个浏览器上下文注册监听器。
-        这是自动化监控的“入水口”，负责捕获所有新开启的标签页。
+        这是自动化监控的"入水口"，负责捕获所有新开启的标签页。
         """
         # 监听新页面打开事件
         # 当 target="_blank" 点击或 window.open() 触发时，Playwright 会抛出此事件
@@ -277,4 +284,4 @@ class BrowserEventManager:
             # logger.debug(f"Retrieved state for {page_id}: {state.url}")
             return state
             
-        return None
+        return None```
