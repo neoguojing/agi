@@ -191,8 +191,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             if self._context is not None:
                 await self._persister.persist_playwright_storage_state(self._context)
 
-            # 捕获页面信息
-            return await self._capture_page_info(page, url, response)
+            # 捕获页面信息（仅记录，不截图/OCR）
+            return await self._capture_page_info(page, url, response, capture_content=False)
         
         except PlaywrightTimeoutError as exc:
             logger.warning("Navigation timed out for %s", url)
@@ -222,8 +222,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             if self._context is not None:
                 await self._persister.persist_playwright_storage_state(self._context)
 
-            # 捕获页面信息
-            return await self._capture_page_info(page, None, None)
+            # 捕获页面信息（仅记录，不截图/OCR）
+            return await self._capture_page_info(page, None, None, capture_content=False)
         
         except PlaywrightTimeoutError as exc:
             logger.warning("Click timed out for selector %s", selector)
@@ -257,8 +257,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             if self._context is not None:
                 await self._persister.persist_playwright_storage_state(self._context)
 
-            # 捕获页面信息
-            return await self._capture_page_info(page, None, None)
+            # 捕获页面信息（仅记录，不截图/OCR）
+            return await self._capture_page_info(page, None, None, capture_content=False)
         
         except PlaywrightTimeoutError as exc:
             logger.warning("Click by text timed out for %s", text)
@@ -287,8 +287,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             if self._context is not None:
                 await self._persister.persist_playwright_storage_state(self._context)
 
-            # 捕获页面信息
-            return await self._capture_page_info(page, None, None)
+            # 捕获页面信息（仅记录，不截图/OCR）
+            return await self._capture_page_info(page, None, None, capture_content=False)
         
         except PlaywrightTimeoutError as exc:
             logger.warning("Fill timed out for selector %s", selector)
@@ -321,8 +321,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             if self._context is not None:
                 await self._persister.persist_playwright_storage_state(self._context)
 
-            # 捕获页面信息
-            return await self._capture_page_info(page, None, None)
+            # 捕获页面信息（仅记录，不截图/OCR）
+            return await self._capture_page_info(page, None, None, capture_content=False)
         
         except PlaywrightTimeoutError as exc:
             logger.warning("Fill by label timed out for %s", label_text)
@@ -356,8 +356,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             if self._context is not None:
                 await self._persister.persist_playwright_storage_state(self._context)
 
-            # 捕获页面信息
-            return await self._capture_page_info(page, None, None)
+            # 捕获页面信息（仅记录，不截图/OCR）
+            return await self._capture_page_info(page, None, None, capture_content=False)
         
         except PlaywrightTimeoutError as exc:
             logger.warning("Fill human-like timed out for %s", selector)
@@ -440,7 +440,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
     # --- Internal Action Implementations ---
 
-    async def _capture_page_info(self, page: Page, url: str, response: Response | None) -> PageInfo:
+    async def _capture_page_info(self, page: Page, url: str, response: Response | None, capture_content: bool = True) -> PageInfo:
         """Capture normalized page metadata after an action completes."""
         try:
             html_repr = await self.extract_ui(page)
@@ -448,14 +448,16 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             page_text = await page.inner_text("body")
             page_title = await page.title()
             
-            take_screenshot = self._should_capture_screenshot(
-                page_text=page_text,
-                response=response,
-            )
+            # 仅在需要内容时才进行截图和 OCR
+            if capture_content:
+                take_screenshot = self._should_capture_screenshot(
+                    page_text=page_text,
+                    response=response,
+                )
 
-            screenshot_path: str | None = None
-            if take_screenshot:
-                screenshot_path = str(await self._take_screenshot(page, prefix="page", full_page=True))
+                screenshot_path: str | None = None
+                if take_screenshot:
+                    screenshot_path = str(await self._take_screenshot(page, prefix="page", full_page=True))
 
             page_info = PageInfo(
                 url=page.url,
