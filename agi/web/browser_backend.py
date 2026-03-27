@@ -268,6 +268,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             "user_interaction_count": current_page_state_obj.user_interaction_count if current_page_state_obj else 0,
             "history_length": len(self._event_manager.get_history()),
             "user_id": user_id,
-            "last_result": last_result.__dict__ if last_result else None,
+            "last_result": last_result,
         }
         return snapshot
