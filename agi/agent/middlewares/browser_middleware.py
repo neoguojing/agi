@@ -24,7 +24,9 @@ from typing_extensions import NotRequired, TypedDict
 
 from agi.config import BROWSER_STORAGE_PATH
 from agi.utils.common import append_to_system_message
-from agi.web.browser_backend import BrowserBackendPool, PageInfo, UserBrowserSession
+from agi.web.browser_session import BrowserBackendPool
+from agi.web.browser_types import PageInfo,UserBrowserSession
+
 
 MAX_PROMPT_EVENTS = 8
 

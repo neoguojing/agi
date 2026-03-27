@@ -7,7 +7,7 @@ from asyncio import Lock, Queue, Task
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any,Literal
 
 logger = logging.getLogger(__name__)
 

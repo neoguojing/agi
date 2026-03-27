@@ -7,7 +7,7 @@ from typing import Any
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 from .browser_types import (
     DEFAULT_USER_AGENT, DEFAULT_VIEWPORT, DEFAULT_WAIT_UNTIL,
-    STATE_SNAPSHOT_FILENAME, PLAYWRIGHT_STORAGE_STATE_FILENAME, BROWSER_OBSERVER_SCRIPT,
+    STATE_SNAPSHOT_FILENAME, PLAYWRIGHT_STORAGE_STATE_FILENAME,
     PageInfo, QueryMatch, WaitUntilState
 )
 from .browser_protocal import AbstractBrowserBackend
@@ -17,7 +17,7 @@ from .browser_state_persister import BrowserStatePersister
 
 logger = logging.getLogger(__name__)
 
-class StatefulBrowserBackend(AbstractBrowserBackend): # 继承抽象类
+class StatefulBrowserBackend(AbstractBrowserBackend):
     """Stateful Playwright backend for browser automation."""
 
     def __init__(
@@ -75,6 +75,11 @@ class StatefulBrowserBackend(AbstractBrowserBackend): # 继承抽象类
             logger.debug("Failed to load persisted browser state snapshot", exc_info=True)
             return None
 
+    def _get_running_loop(self):
+        import asyncio
+
+        return asyncio.get_running_loop()
+    
     async def initialize(self) -> None:
         """Initialize the shared browser session lazily."""
         async with self._init_lock:
@@ -86,7 +91,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend): # 继承抽象类
         self._browser = await self._playwright.chromium.launch(
             headless=self.headless,
             args=["--no-sandbox", "--disable-setuid-sandbox"],
-            # executable_path="/usr/bin/google-chrome", # Note: This path might need configuration
         )
 
         context_kwargs: dict[str, Any] = {
@@ -94,14 +98,20 @@ class StatefulBrowserBackend(AbstractBrowserBackend): # 继承抽象类
             "user_agent": DEFAULT_USER_AGENT,
         }
         snapshot_paths = self._persister.get_persistent_paths()
-        if snapshot_paths[1].exists(): # Check for PLAYWRIGHT_STORAGE_STATE_FILENAME
+        if snapshot_paths[1].exists():
             context_kwargs["storage_state"] = str(snapshot_paths[1])
 
         self._context = await self._browser.new_context(**context_kwargs)
-        await self._register_context_instrumentation(self._context)
+        
+        # 将事件注册逻辑委托给 EventManager
+        await self._event_manager.register_context_instrumentation(self._context)
+        
         self._page = await self._context.new_page()
         self._event_manager.set_active_page(self._page)
-        await self._instrument_page(self._page, source="initialize")
+        
+        # 将页面仪器化逻辑也委托给 EventManager
+        await self._event_manager.instrument_page(self._page, source="initialize")
+        
         logger.info("Browser backend ready")
 
     async def close(self) -> None:
@@ -146,18 +156,19 @@ class StatefulBrowserBackend(AbstractBrowserBackend): # 继承抽象类
         if self.is_closed:
             await self.initialize()
             if self._context is not None:
-                live_pages = [p for p in self._context.pages if not getattr(p, 'is_closed', lambda: True)()]
+                live_pages = [p for p in self._context.pages if not self._page_is_closed(p)]
                 if live_pages:
                     self._page = live_pages[-1]
                     self._event_manager.set_active_page(self._page)
-                    await self._instrument_page(self._page, source="ensure_page")
+                    # 确保新激活的页面也被仪器化
+                    await self._event_manager.instrument_page(self._page, source="ensure_page")
 
             if self._page is None:
                 msg = "Browser page is not available after initialization"
                 raise RuntimeError(msg)
         return self._page
 
-    # --- 实现所有抽象方法 ---
+    # --- 实现所有抽象方法 (与之前相同) ---
 
     async def navigate(self, url: str, wait_until: WaitUntilState = "networkidle") -> PageInfo:
         page = await self.ensure_page()
@@ -241,7 +252,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend): # 继承抽象类
         return self._event_manager.get_recent_events(limit)
 
     def get_state_snapshot(self, *, user_id: str | None = None, last_result: PageInfo | None = None) -> dict[str, Any]:
-        """Generate a minimal snapshot of the current browser state."""
         current_page_state = self._event_manager.get_page_runtime_state(self._page_id(self._page)) if self._page else {}
         snapshot = {
             "current_url": self._page.url if self._page else None,
@@ -254,41 +264,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend): # 继承抽象类
         }
         return snapshot
 
-    def get_state_snapshot_full(self, *, user_id: str | None = None, last_result: PageInfo | None = None) -> dict[str, Any]:
-        """Generate a comprehensive snapshot of the current browser state."""
-        restored = self._persister._restored_state_snapshot or {}
-        
-        # 获取所有活动页签的 ID
-        all_page_ids = []
-        if self._context:
-            all_page_ids = [
-                self._page_id(p) for p in self._context.pages if not self._page_is_closed(p)
-            ]
-
-        # 当前页签的状态
-        current_page_id = self._page_id(self._page)
-        current_page_state = self._event_manager.get_page_runtime_state(current_page_id) if self._page else {}
-
-        # 组合快照数据
-        snapshot = {
-            "version": "1.0",
-            "user_id": user_id,
-            "last_result": last_result.__dict__ if last_result else None,
-            "current_page_id": current_page_id,
-            "all_page_ids": all_page_ids,
-            "active_page": {
-                "id": current_page_id,
-                "url": self._page.url if self._page else None,
-                "title": self._page.title() if self._page else None,
-                "runtime_state": current_page_state,
-            },
-            "history": self._event_manager.get_history(),
-            "recent_events": self._event_manager.get_recent_events(),
-            "restored_snapshot": restored,
-        }
-        return snapshot
-
-    # --- 补全其他动作方法 ---
+    # --- 其他动作方法 (与之前相同) ---
     async def go_back(self) -> PageInfo:
         page = await self.ensure_page()
         async def operation(p: Page):
@@ -377,7 +353,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend): # 继承抽象类
             return False
 
     async def close_other_tabs(self) -> None:
-        """关闭除当前页签外的所有页签"""
         if not self._context:
             return
         current_page = await self.ensure_page()
@@ -390,68 +365,26 @@ class StatefulBrowserBackend(AbstractBrowserBackend): # 继承抽象类
                 logger.warning(f"Failed to close page: {e}")
 
     async def switch_to_tab(self, tab_index: int) -> PageInfo | None:
-        """切换到指定索引的页签"""
         if not self._context:
             return None
         pages = [p for p in self._context.pages if not self._page_is_closed(p)]
         if 0 <= tab_index < len(pages):
             self._page = pages[tab_index]
             self._event_manager.set_active_page(self._page)
-            await self._instrument_page(self._page, source="switch_tab")
-            # 返回新页签的信息
+            # 切换页签后也需要确保页面被仪器化
+            await self._event_manager.instrument_page(self._page, source="switch_tab")
             return await self._executor.capture_page_info(self._page, self._page.url, None, self._event_manager)
         return None
 
     async def open_new_tab(self, url: str = "about:blank") -> PageInfo:
-        """打开一个新页签并导航到指定URL"""
         if not self._context:
             await self.initialize()
         new_page = await self._context.new_page()
         self._event_manager.set_active_page(new_page)
-        await self._instrument_page(new_page, source="open_new_tab")
+        # 新开的页签需要被仪器化
+        await self._event_manager.instrument_page(new_page, source="open_new_tab")
         return await self.navigate(url)
 
-    # --- 内部辅助方法 ---
-    async def _register_context_instrumentation(self, context: BrowserContext) -> None:
-        """Register global event listeners for the browser context."""
-        context.on("page", self._handle_new_page)
-        # logger.debug("Registered context instrumentation for %s", self._page_id(context.pages[-1] if context.pages else None))
-
-    async def _instrument_page(self, page: Page, *, source: str) -> None:
-        """Install DOM event observers and state tracking for a specific page."""
-        page_id = self._page_id(page)
-        if page_id in self._event_manager._instrumented_pages:
-            return
-
-        self._event_manager._instrumented_pages.add(page_id)
-
-        # 1. 安装 JavaScript 事件观察者
-        try:
-            await page.add_init_script(content=BROWSER_OBSERVER_SCRIPT)
-            await page.expose_binding("__agiRecordBrowserEvent", self._on_browser_event, handle=True)
-            self._event_manager.record_event(
-                "page_instrumented",
-                page=page,
-                metadata={"source": source, "page_count": len(self._context.pages)},
-            )
-        except Exception as e:
-            logger.warning("Failed to instrument page %s: %s", page_id, e)
-
-    async def _handle_new_page(self, page: Page) -> None:
-        """Handle a new page being opened within the context."""
-        self._event_manager.record_event(
-            "page_opened",
-            page=page,
-            metadata={"page_count": len(self._context.pages)},
-        )
-        await self._instrument_page(page, source="new_page")
-        self._event_manager.update_page_title(page, await page.title())
-
-    async def _on_browser_event(self, source, event_data: dict[str, Any]) -> None:
-        """Callback for events emitted by the JavaScript observer script."""
-        self._event_manager.record_event(
-            event_data.get("type", "unknown"),
-            page=source.page,
-            metadata=event_data,
-        )
-        self._event_manager.update_page_title(source.page, event_data.get("title"))
+    # --- 清理内部辅助方法 ---
+    # `_register_context_instrumentation`, `_instrument_page`, `_handle_new_page`, `_on_browser_event`
+    # 这些方法已从 `browser_backend_core.py` 中移除，因为它们现在位于 `browser_event_manager.py` 中。

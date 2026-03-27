@@ -1,157 +1,199 @@
 # browser_event_manager.py
 import logging
-from asyncio import Queue
+from collections import deque
+from datetime import datetime
 from pathlib import Path
-from typing import Any
-from playwright.async_api import Page
-from .browser_types import (
-    MAX_BROWSER_EVENTS, MAX_STATE_MESSAGES, USER_EVENT_TYPES, BROWSER_OBSERVER_SCRIPT
-)
+from typing import Deque, Dict, List, Any, Optional, Set
+from playwright.async_api import Page, BrowserContext
 
 logger = logging.getLogger(__name__)
 
 class BrowserEventManager:
-    """
-    负责管理浏览器事件、运行时状态和页面监听。
-    """
     def __init__(self, storage_dir: Path):
         self.storage_dir = storage_dir
-        self._history: list[dict[str, Any]] = []
-        self._events: list[dict[str, Any]] = []
-        self._state_message_queue: Queue[dict[str, Any]] = Queue()
-        self._state_messages: list[dict[str, Any]] = []
-        self._event_seq = 0
-        self._active_page_id: str | None = None
-        self._page_titles: dict[str, str | None] = {}
-        self._page_runtime_state: dict[str, dict[str, Any]] = {}
-        self._instrumented_pages: set[str] = set()
-        self._binding_registered = False
+        self._history: List[Dict[str, Any]] = []
+        self._recent_events: Deque[Dict[str, Any]] = deque(maxlen=20)
+        self._state_messages: Deque[Dict[str, Any]] = deque(maxlen=10)
+        self._active_page: Optional[Page] = None
+        self._page_runtime_state: Dict[str, Dict[str, Any]] = {}
+        self._instrumented_pages: Set[str] = set()
 
-    def add_to_history(self, entry: dict[str, Any]):
-        self._history.append(entry)
+    def set_active_page(self, page: Optional[Page]) -> None:
+        self._active_page = page
 
-    def get_history(self) -> list[dict[str, Any]]:
-        return list(self._history)
-
-    def get_recent_events(self, limit: int = 5) -> list[dict[str, Any]]:
-        if limit <= 0:
-            return []
-        return [dict(event) for event in self._events[-limit:]]
-
-    def peek_state_messages(self, limit: int = 1) -> list[dict[str, Any]]:
-        if limit <= 0:
-            return []
-        return [dict(message) for message in self._state_messages[-limit:]]
-
-    def drain_state_messages(self, limit: int = 1) -> list[dict[str, Any]]:
-        messages: list[dict[str, Any]] = []
-        while limit > 0 and not self._state_message_queue.empty():
-            messages.append(self._state_message_queue.get_nowait())
-            limit -= 1
-        return messages
-
-    def record_event(self, event_type: str, *, page: Page | None = None, metadata: dict[str, Any] | None = None) -> None:
-        self._event_seq += 1
-        page_id = self._page_id(page) if page is not None else self._active_page_id
-        url = getattr(page, "url", None) if page is not None else None
-        event = {
-            "seq": self._event_seq,
-            "type": event_type,
-            "page_id": page_id,
-            "url": url,
-            "metadata": dict(metadata or {}),
-        }
-        self._events.append(event)
-        self._update_page_runtime_state(event)
-        self._publish_state_message(event)
-        if len(self._events) > MAX_BROWSER_EVENTS:
-            self._events = self._events[-MAX_BROWSER_EVENTS:]
-
-    def _update_page_runtime_state(self, event: dict[str, Any]) -> None:
-        page_id = event.get("page_id")
-        if not page_id or page_id == "page:none":
-            return
-
-        runtime_state = self._page_runtime_state.setdefault(
-            page_id,
-            {
-                "load_state": "idle",
-                "last_event_type": None,
-                "last_user_event": None,
-                "last_interaction": None,
-                "user_interaction_count": 0,
-                "title": self._page_titles.get(page_id),
-                "url": event.get("url"),
-            },
-        )
-        event_type = str(event.get("type"))
-        metadata = event.get("metadata", {}) if isinstance(event.get("metadata"), dict) else {}
-
-        runtime_state["last_event_type"] = event_type
-        runtime_state["url"] = metadata.get("url") or event.get("url") or runtime_state.get("url")
-        if metadata.get("title"):
-            runtime_state["title"] = metadata.get("title")
-
-        if event_type in {"page_domcontentloaded", "page_navigated", "page_hashchange", "page_popstate"}:
-            runtime_state["load_state"] = "loading"
-        elif event_type in {"page_load", "page_load_state", "page_capture"}:
-            runtime_state["load_state"] = "loaded"
-        elif event_type in {"page_closed", "browser_closed"}:
-            runtime_state["load_state"] = "closed"
-
-        if event_type in USER_EVENT_TYPES or event_type.startswith("action_"):
-            runtime_state["last_interaction"] = {
-                "type": event_type,
-                "url": runtime_state.get("url"),
-                "target": metadata.get("target"),
-                "timestamp": metadata.get("timestamp"),
-            }
-            if event_type in USER_EVENT_TYPES:
-                runtime_state["last_user_event"] = {
-                    "type": event_type,
-                    "url": runtime_state.get("url"),
-                    "target": metadata.get("target"),
-                    "timestamp": metadata.get("timestamp"),
-                }
-            runtime_state["user_interaction_count"] = int(runtime_state.get("user_interaction_count", 0)) + 1
-
-    def _publish_state_message(self, event: dict[str, Any]) -> None:
-        message = {
-            "kind": "browser_state",
-            "event": dict(event),
-            "event_version": self._event_seq,
-        }
-        self._state_messages.append(message)
-        if len(self._state_messages) > MAX_STATE_MESSAGES:
-            self._state_messages = self._state_messages[-MAX_STATE_MESSAGES:]
-        self._state_message_queue.put_nowait(message)
-
-    def update_page_title(self, page: Page, title: str):
-        page_id = self._page_id(page)
-        self._page_titles[page_id] = title
-
-    def set_active_page(self, page: Page | None) -> None:
-        if page is None:
-            return
-        self._active_page_id = self._page_id(page)
-        self.record_event("active_page_changed", page=page, metadata={"page_count": -1}) # Placeholder count
-
-    def get_page_runtime_state(self, page_id: str) -> dict[str, Any]:
+    def get_page_runtime_state(self, page_id: str) -> Dict[str, Any]:
         return self._page_runtime_state.get(page_id, {})
 
-    def infer_load_state(self, last_event: dict[str, Any] | None) -> str:
-        if not last_event:
-            return "idle"
-        event_type = last_event.get("type")
-        if event_type in {"page_load", "page_load_state", "page_capture"}:
-            return "loaded"
-        if event_type in {"page_domcontentloaded", "page_navigated"}:
-            return "loading"
-        if event_type in {"page_closed", "browser_closed"}:
-            return "closed"
-        return "idle"
+    def update_page_title(self, page: Page, new_title: str) -> None:
+        page_id = self._page_id(page)
+        state = self._page_runtime_state.setdefault(page_id, {})
+        old_title = state.get("title", "")
+        if old_title != new_title:
+            state["title"] = new_title
+            logger.debug("Updated title for %s: %s", page_id, new_title)
 
-    def _page_id(self, page: Page | None) -> str:
+    def record_event(self, event_type: str, page: Optional[Page], metadata: Dict[str, Any]={}) -> None:
+        page_id = self._page_id(page)
+        event = {
+            "timestamp": datetime.now().isoformat(),
+            "type": event_type,
+            "page_id": page_id,
+            "metadata": metadata,
+        }
+        self._recent_events.append(event)
+        self._state_messages.append({
+            "type": "event",
+            "data": event
+        })
+
+    def log_history(self, action: str, url: str = "", metadata: Dict[str, Any] = {}) -> None:
+        entry = {
+            "action": action,
+            "timestamp": datetime.now().isoformat(),
+            "url": url,
+            "metadata": metadata,
+        }
+        self._history.append(entry)
+        self._state_messages.append({
+            "type": "history_update",
+            "data": entry
+        })
+        logger.info(f"Action: {action}, URL: {url}")
+
+    def get_history(self) -> List[Dict[str, Any]]:
+        return self._history.copy()
+
+    def get_recent_events(self, limit: int = 5) -> List[Dict[str, Any]]:
+        return list(self._recent_events)[-limit:]
+
+    def peek_state_messages(self, limit: int = 1) -> List[Dict[str, Any]]:
+        return list(self._state_messages)[-limit:]
+
+    def drain_state_messages(self, limit: int = 1) -> List[Dict[str, Any]]:
+        messages = list(self._state_messages)[:limit]
+        for _ in range(min(limit, len(self._state_messages))):
+            self._state_messages.popleft()
+        return messages
+
+    def _page_id(self, page: Optional[Page]) -> str:
         if page is None:
             return "page:none"
         return f"page:{id(page)}"
+
+    def _page_is_closed(self, page: Page) -> bool:
+        is_closed = getattr(page, "is_closed", None)
+        if callable(is_closed):
+            try:
+                return bool(is_closed())
+            except Exception:
+                return True
+        return False
+
+    # --- 事件管理逻辑 ---
+    async def register_context_instrumentation(self, context: BrowserContext) -> None:
+        """Register global event listeners for the browser context."""
+        context.on("page", self._handle_new_page)
+        logger.debug("Registered context instrumentation.")
+
+    async def instrument_page(self, page: Page, *, source: str) -> None:
+        """Install DOM event observers and state tracking for a specific page."""
+        page_id = self._page_id(page)
+        if page_id in self._instrumented_pages:
+            return
+
+        self._instrumented_pages.add(page_id)
+
+        # Install JavaScript event observer
+        BROWSER_OBSERVER_SCRIPT = """
+        // A global variable to store the last known page title.
+        window.__agiLastTitle = document.title;
+
+        // Function to send an event to the Python backend.
+        function __agiSendEvent(eventType, payload) {
+            // The '__agiRecordBrowserEvent' binding will be exposed by Python.
+            window.__agiRecordBrowserEvent({ type: eventType, ...payload });
+        }
+
+        // Observe DOM mutations for dynamic content changes.
+        const mutationObserver = new MutationObserver((mutations) => {
+            let shouldNotify = false;
+            for (const mutation of mutations) {
+                if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                    shouldNotify = true;
+                    break;
+                }
+            }
+            if (shouldNotify) {
+                __agiSendEvent('dom_mutation', { timestamp: Date.now() });
+            }
+        });
+        mutationObserver.observe(document, { childList: true, subtree: true });
+
+        // Listen for beforeunload to detect navigations away from the page.
+        window.addEventListener('beforeunload', () => {
+            __agiSendEvent('navigation_start', { url: window.location.href });
+        });
+
+        // Listen for custom events dispatched by user interactions.
+        document.addEventListener('click', (event) => {
+            const target = event.target;
+            const rect = target.getBoundingClientRect();
+            __agiSendEvent('click_intercepted', {
+                element_tag: target.tagName,
+                element_id: target.id,
+                element_class: target.className,
+                element_text: target.innerText?.substring(0, 100), // Truncate long text
+                clientX: event.clientX,
+                clientY: event.clientY,
+                viewportX: rect.left,
+                viewportY: rect.top,
+                timestamp: Date.now(),
+            });
+        });
+
+        // Periodically check for title changes.
+        setInterval(() => {
+            if (document.title !== window.__agiLastTitle) {
+                window.__agiLastTitle = document.title;
+                __agiSendEvent('title_changed', { title: document.title });
+            }
+        }, 500);
+
+        // Notify of initial state.
+        __agiSendEvent('page_ready', { title: document.title, url: window.location.href });
+        """
+
+        try:
+            await page.add_init_script(content=BROWSER_OBSERVER_SCRIPT)
+            # Expose the Python callback to JavaScript
+            await page.expose_binding("__agiRecordBrowserEvent", self._on_browser_event, handle=True)
+            # 修复：使用 page.context.pages 获取页签数量
+            page_count = len([p for p in page.context.pages if not self._page_is_closed(p)])
+            self.record_event(
+                "page_instrumented",
+                page=page,
+                metadata={"source": source, "page_count": page_count},
+            )
+        except Exception as e:
+            logger.warning("Failed to instrument page %s: %s", page_id, e)
+
+    async def _handle_new_page(self, page: Page) -> None:
+        """Handle a new page being opened within the context."""
+        # 修复：使用 page.context.pages 获取页签数量
+        page_count = len([p for p in page.context.pages if not self._page_is_closed(p)])
+        self.record_event(
+            "page_opened",
+            page=page,
+            metadata={"page_count": page_count},
+        )
+        await self.instrument_page(page, source="new_page")
+        self.update_page_title(page, await page.title())
+
+    async def _on_browser_event(self, source, event_data: dict[str, Any]) -> None:
+        """Callback for events emitted by the JavaScript observer script."""
+        self.record_event(
+            event_data.get("type", "unknown"),
+            page=source.page,
+            metadata=event_data,
+        )
+        self.update_page_title(source.page, event_data.get("title"))
