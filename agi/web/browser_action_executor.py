@@ -245,13 +245,13 @@ class BrowserActionExecutor:
     # --- Action Implementations ---
 
     def navigate(self, page: Page, url: str, wait_until: str = "domcontentloaded") -> Callable[[Page], Any]:
-        """Return a callable that navigates to the URL."""
+        """返回一个可序列化的操作函数，用于导航到指定 URL"""
         async def operation(p: Page) -> Response | None:
             return await p.goto(url, wait_until=wait_until, timeout=self.timeout)
         return operation
 
     def click(self, page: Page, selector: str) -> Callable[[Page], Any]:
-        """Return a callable that clicks the element."""
+        """返回一个可序列化的操作函数，用于点击元素"""
         async def operation(p: Page) -> Response | None:
             await self._scroll_into_view(p, selector)
             await self._human_delay(100, 400)
@@ -261,7 +261,7 @@ class BrowserActionExecutor:
         return operation
 
     def click_by_text(self, page: Page, text: str) -> Callable[[Page], Any]:
-        """Return a callable that clicks by text."""
+        """返回一个可序列化的操作函数，用于通过文本点击元素"""
         async def operation(p: Page) -> Response | None:
             elements = await p.query_selector_all(f"text={text}")
             if not elements:
@@ -275,7 +275,7 @@ class BrowserActionExecutor:
         return operation
 
     def fill(self, page: Page, selector: str, value: str) -> Callable[[Page], Any]:
-        """Return a callable that fills the input."""
+        """返回一个可序列化的操作函数，用于填充输入框"""
         async def operation(p: Page) -> Response | None:
             await self._scroll_into_view(p, selector)
             await p.fill(selector, value, timeout=DEFAULT_CLICK_TIMEOUT_MS)
@@ -284,7 +284,7 @@ class BrowserActionExecutor:
         return operation
 
     def fill_by_label(self, page: Page, label_text: str, value: str) -> Callable[[Page], Any]:
-        """Return a callable that fills by label."""
+        """返回一个可序列化的操作函数，用于通过标签填充输入框"""
         async def operation(p: Page) -> Response | None:
             element = await p.query_selector(f"label:has-text('{label_text}') >> input")
             if element is None:
@@ -297,7 +297,7 @@ class BrowserActionExecutor:
         return operation
 
     def fill_human_like(self, page: Page, selector: str, value: str) -> Callable[[Page], Any]:
-        """Return a callable that fills human-like."""
+        """返回一个可序列化的操作函数，用于模拟人类打字速度填充输入框"""
         async def operation(p: Page) -> Response | None:
             await self._scroll_into_view(p, selector)
             await p.focus(selector)
@@ -310,7 +310,7 @@ class BrowserActionExecutor:
         return operation
 
     async def find_elements(self, page: Page, selector: str) -> list[QueryMatch]:
-        """Return text and attributes for elements matching a CSS selector."""
+        """返回匹配 CSS 选择器的元素列表及其文本和属性"""
         try:
             elements = await page.query_selector_all(selector)
             results: list[QueryMatch] = []
@@ -332,7 +332,7 @@ class BrowserActionExecutor:
             return []
 
     async def get_screenshot(self, page: Page, *, full_page: bool = True) -> str:
-        """Capture a screenshot for OCR/inspection and return the absolute file path."""
+        """捕获页面截图并返回绝对文件路径"""
         try:
             screenshot_path = await self._take_screenshot(page, prefix="screenshot", full_page=full_page)
             return str(screenshot_path)
