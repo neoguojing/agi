@@ -284,4 +284,4 @@ class BrowserEventManager:
             # logger.debug(f"Retrieved state for {page_id}: {state.url}")
             return state
             
-        return None```
+        return None
