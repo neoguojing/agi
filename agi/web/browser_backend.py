@@ -259,12 +259,13 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         return self._event_manager.get_recent_events(limit)
 
     def get_state_snapshot(self, *, user_id: str | None = None, last_result: PageInfo | None = None) -> dict[str, Any]:
-        current_page_state = self._event_manager.get_page_runtime_state(self._page_id(self._page)) if self._page else {}
+        current_page_state_obj = self._event_manager.get_page_runtime_state(self._page_id(self._page)) if self._page else None
+        
         snapshot = {
             "current_url": self._page.url if self._page else None,
             "current_title": self._page.title() if self._page else None,
-            "load_state": current_page_state.get("load_state", "unknown"),
-            "user_interaction_count": current_page_state.get("user_interaction_count", 0),
+            "load_state": current_page_state_obj.load_state if current_page_state_obj else "unknown",
+            "user_interaction_count": current_page_state_obj.user_interaction_count if current_page_state_obj else 0,
             "history_length": len(self._event_manager.get_history()),
             "user_id": user_id,
             "last_result": last_result.__dict__ if last_result else None,
