@@ -450,14 +450,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             
             # 仅在需要内容时才进行截图和 OCR
             if capture_content:
-                take_screenshot = self._should_capture_screenshot(
-                    page_text=page_text,
-                    response=response,
-                )
-
-                screenshot_path: str | None = None
-                if take_screenshot:
-                    screenshot_path = str(await self._take_screenshot(page, prefix="page", full_page=True))
+                screenshot_path = str(await self._take_screenshot(page, prefix="page", full_page=True))
 
             page_info = PageInfo(
                 url=page.url,
@@ -534,15 +527,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 elements
             };
         } """)
-
-    def _should_capture_screenshot(self, *, page_text: str, response: Response | None) -> bool:
-        """Determine if a screenshot should be captured."""
-        normalized_text = page_text.lower().strip()
-        return (
-            len(page_text.strip()) < self.min_text_length
-            or (response is not None and response.status != 200)
-            or any(keyword in normalized_text for keyword in self.ocr_keywords)
-        )
 
     async def _take_screenshot(self, page: Page, *, prefix: str, full_page: bool = False) -> Path:
         """Take a screenshot and save to storage."""

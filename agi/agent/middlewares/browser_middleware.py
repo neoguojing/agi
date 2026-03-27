@@ -580,7 +580,7 @@ class BrowserMiddleware(AgentMiddleware):
                         msg = str(result.metadata["error"])
                         raise RuntimeError(msg)
 
-                    result = await self._extract_content_with_ocr(session)
+                    # result = await self._extract_content_with_ocr(session)
                     session.last_result = result
                     result.metadata = {
                         **result.metadata,
