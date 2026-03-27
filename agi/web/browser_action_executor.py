@@ -111,38 +111,36 @@ class BrowserActionExecutor:
             page_text = await page.inner_text("body")
             page_title = await page.title()
 
-            take_screenshot = self._should_capture_screenshot(
-                page_text=page_text,
-                response=response,
-            )
-            screenshot_path: str | None = None
-            if take_screenshot:
-                screenshot_path = str(await self._take_screenshot(page, prefix="page", full_page=True))
+            # take_screenshot = self._should_capture_screenshot(
+            #     page_text=page_text,
+            #     response=response,
+            # )
+            # screenshot_path: str | None = None
+            # if take_screenshot:
+            #     screenshot_path = str(await self._take_screenshot(page, prefix="page", full_page=True))
 
-            if event_recorder:
-                 event_recorder.record_event(
-                     "page_capture",
-                     page=page,
-                     metadata={
-                         "requested_url": url,
-                         "status": response.status if response is not None else 200,
-                         "has_screenshot": screenshot_path is not None,
-                     },
-                 )
+            # if event_recorder:
+            #      event_recorder.record_event(
+            #          "page_capture",
+            #          page=page,
+            #          metadata={
+            #              "requested_url": url,
+            #              "status": response.status if response is not None else 200,
+            #              "has_screenshot": screenshot_path is not None,
+            #          },
+            #      )
 
             page_info = PageInfo(
                 url=page.url,
                 title=page_title,
                 html=html_repr,
                 text="",
-                screenshot_path=screenshot_path,
+                screenshot_path="",
                 metadata={
                     "requested_url": url,
                     "status": response.status if response is not None else 200,
                     "content_length": len(html_repr),
                     "text_length": len(page_text),
-                    "has_screenshot": screenshot_path is not None,
-                    "ocr_ready": screenshot_path is not None,
                     # Assuming history length is available from the recorder
                     "history_length": len(getattr(event_recorder, '_history', [])),
                 },

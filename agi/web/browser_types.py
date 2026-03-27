@@ -7,7 +7,10 @@ from asyncio import Lock, Queue, Task
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any,Literal
+from enum import Enum
+from dataclasses import dataclass, field, asdict
+from typing import Any, Optional, Dict,Literal
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -103,3 +106,47 @@ class UserBrowserSession:
     last_used_at: float = field(default_factory=lambda: 0.0)
     idle_task: Task[None] | None = None
     operation_lock: Lock = field(default_factory=Lock)
+
+
+# 
+class BrowserEventType(str, Enum):
+    NAVIGATE = "navigate"
+    CLICK = "click"
+    CLICK_INTERCEPTED = "click_intercepted"
+    FILL = "fill"
+    DOM_MUTATION = "dom_mutation"
+    PAGE_READY = "page_ready"
+    PAGE_OPENED = "page_opened"
+    PAGE_CLOSED = "browser_closed"
+    TITLE_CHANGED = "title_changed"
+    INSTRUMENTED = "page_instrumented"
+    NAVIGATION_START = "navigation_start"
+
+@dataclass
+class PageRuntimeState:
+    """页面的实时运行状态"""
+    page_id: str
+    url: str = ""
+    title: str = ""
+    load_state: str = "unknown"
+    user_interaction_count: int = 0
+    last_update: str = field(default_factory=lambda: datetime.now().isoformat())
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+@dataclass
+class BrowserEvent:
+    """标准化的事件模型"""
+    type: BrowserEventType
+    timestamp: str
+    page_id: str
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "type": self.type.value,
+            "timestamp": self.timestamp,
+            "page_id": self.page_id,
+            "metadata": self.metadata
+        }

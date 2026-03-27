@@ -238,6 +238,13 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
     async def get_screenshot(self, *, full_page: bool = True) -> str:
         page = await self.ensure_page()
         return await self._executor.get_screenshot(page, full_page=full_page)
+    
+    async def read_screenshot_bytes(self, *, full_page: bool = True) -> tuple[str, bytes] | None:
+        """Capture a screenshot for OCR/inspection and return both path and raw bytes."""
+        screenshot_path = await self.get_screenshot(full_page=full_page)
+        if not screenshot_path:
+            return None
+        return screenshot_path, Path(screenshot_path).read_bytes()
 
     def get_history(self) -> list[dict[str, Any]]:
         return self._event_manager.get_history()
@@ -263,128 +270,3 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             "last_result": last_result.__dict__ if last_result else None,
         }
         return snapshot
-
-    # --- 其他动作方法 (与之前相同) ---
-    async def go_back(self) -> PageInfo:
-        page = await self.ensure_page()
-        async def operation(p: Page):
-            await p.go_back()
-            return None
-        return await self._executor.run_page_action(
-            page, "go_back", operation, capture_url=None,
-            history_entry={"action": "go_back"},
-            event_recorder=self._event_manager,
-            state_persister=self._persister
-        )
-
-    async def go_forward(self) -> PageInfo:
-        page = await self.ensure_page()
-        async def operation(p: Page):
-            await p.go_forward()
-            return None
-        return await self._executor.run_page_action(
-            page, "go_forward", operation, capture_url=None,
-            history_entry={"action": "go_forward"},
-            event_recorder=self._event_manager,
-            state_persister=self._persister
-        )
-
-    async def reload(self) -> PageInfo:
-        page = await self.ensure_page()
-        async def operation(p: Page):
-            await p.reload()
-            return None
-        return await self._executor.run_page_action(
-            page, "reload", operation, capture_url=None,
-            history_entry={"action": "reload"},
-            event_recorder=self._event_manager,
-            state_persister=self._persister
-        )
-
-    async def get_page_source(self) -> str:
-        page = await self.ensure_page()
-        try:
-            return await page.content()
-        except Exception as e:
-            logger.error(f"Failed to get page source: {e}")
-            return ""
-
-    async def get_current_url(self) -> str:
-        page = await self.ensure_page()
-        try:
-            return page.url
-        except Exception as e:
-            logger.error(f"Failed to get current URL: {e}")
-            return ""
-
-    async def get_title(self) -> str:
-        page = await self.ensure_page()
-        try:
-            return await page.title()
-        except Exception as e:
-            logger.error(f"Failed to get page title: {e}")
-            return ""
-
-    async def evaluate(self, expression: str) -> Any:
-        page = await self.ensure_page()
-        try:
-            result = await page.evaluate(expression)
-            return result
-        except Exception as e:
-            logger.error(f"Failed to evaluate expression: {e}")
-            return None
-
-    async def wait_for_selector(self, selector: str, timeout: int = 30000) -> bool:
-        page = await self.ensure_page()
-        try:
-            await page.wait_for_selector(selector, timeout=timeout)
-            return True
-        except Exception as e:
-            logger.error(f"Failed to wait for selector '{selector}': {e}")
-            return False
-
-    async def wait_for_function(self, function: str, timeout: int = 30000) -> bool:
-        page = await self.ensure_page()
-        try:
-            await page.wait_for_function(function, timeout=timeout)
-            return True
-        except Exception as e:
-            logger.error(f"Failed to wait for function: {e}")
-            return False
-
-    async def close_other_tabs(self) -> None:
-        if not self._context:
-            return
-        current_page = await self.ensure_page()
-        pages_to_close = [p for p in self._context.pages if p != current_page and not self._page_is_closed(p)]
-        for page in pages_to_close:
-            try:
-                await page.close()
-                self._event_manager.record_event("page_closed", page=page)
-            except Exception as e:
-                logger.warning(f"Failed to close page: {e}")
-
-    async def switch_to_tab(self, tab_index: int) -> PageInfo | None:
-        if not self._context:
-            return None
-        pages = [p for p in self._context.pages if not self._page_is_closed(p)]
-        if 0 <= tab_index < len(pages):
-            self._page = pages[tab_index]
-            self._event_manager.set_active_page(self._page)
-            # 切换页签后也需要确保页面被仪器化
-            await self._event_manager.instrument_page(self._page, source="switch_tab")
-            return await self._executor.capture_page_info(self._page, self._page.url, None, self._event_manager)
-        return None
-
-    async def open_new_tab(self, url: str = "about:blank") -> PageInfo:
-        if not self._context:
-            await self.initialize()
-        new_page = await self._context.new_page()
-        self._event_manager.set_active_page(new_page)
-        # 新开的页签需要被仪器化
-        await self._event_manager.instrument_page(new_page, source="open_new_tab")
-        return await self.navigate(url)
-
-    # --- 清理内部辅助方法 ---
-    # `_register_context_instrumentation`, `_instrument_page`, `_handle_new_page`, `_on_browser_event`
-    # 这些方法已从 `browser_backend_core.py` 中移除，因为它们现在位于 `browser_event_manager.py` 中。
