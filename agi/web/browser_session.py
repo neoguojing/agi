@@ -83,7 +83,7 @@ class BrowserBackendPool:
                 session.idle_task.cancel()
                 session.idle_task = None
 
-            loop = session.backend._get_running_loop()
+            loop = session.backend.get_running_loop()
             session.active_operations += 1
             session.last_used_at = loop.time()
             return session
@@ -95,7 +95,7 @@ class BrowserBackendPool:
                 return
 
             session.active_operations = max(0, session.active_operations - 1)
-            loop = session.backend._get_running_loop()
+            loop = session.backend.get_running_loop()
             session.last_used_at = loop.time()
             if session.active_operations == 0:
                 session.idle_task = loop.create_task(self._close_when_idle(user_id))
@@ -108,7 +108,7 @@ class BrowserBackendPool:
                 if session is None or session.active_operations > 0:
                     return
 
-                loop = session.backend._get_running_loop()
+                loop = session.backend.get_running_loop()
                 if loop.time() - session.last_used_at < self.idle_timeout_seconds:
                     session.idle_task = loop.create_task(self._close_when_idle(user_id))
                     return

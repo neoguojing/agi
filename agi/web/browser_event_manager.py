@@ -47,6 +47,30 @@ class BrowserEventManager:
                 return False
         return False
     
+    def set_active_page(self, page: Optional[Page]) -> None:
+        """
+        设置当前正在操作的活跃页面。
+        1. 更新内部引用。
+        2. 如果该页面是首次被设为活跃，则初始化其运行时状态。
+        """
+        self._active_page = page
+        
+        if page is not None:
+            page_id = self._page_id(page)
+            
+            # 确保活跃页面在状态字典中占位
+            if page_id not in self._page_runtime_state:
+                self._page_runtime_state[page_id] = PageRuntimeState(
+                    page_id=page_id,
+                    url=page.url,
+                    title="Active Page (Initializing...)",
+                    last_update=datetime.now().isoformat()
+                )
+                
+            logger.debug(f"Active page set to: {page_id} ({page.url})")
+        else:
+            logger.debug("Active page cleared (set to None)")
+
     def update_page_state(self, page: Page, **kwargs) -> None:
         """
         更新特定页面的运行时状态。

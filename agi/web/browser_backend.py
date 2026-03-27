@@ -75,7 +75,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             logger.debug("Failed to load persisted browser state snapshot", exc_info=True)
             return None
 
-    def _get_running_loop(self):
+    def get_running_loop(self):
         import asyncio
 
         return asyncio.get_running_loop()
