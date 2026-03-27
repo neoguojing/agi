@@ -4,8 +4,6 @@ import logging
 import random
 import uuid
 from asyncio import Lock
-from collections.abc import AsyncIterator, Awaitable, Callable
-from functools import partial
 from pathlib import Path
 from typing import Any, List, Dict, Optional
 from playwright.async_api import (
@@ -44,7 +42,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
         # 初始化子模块
-        self._executor = None  # 不再单独使用 executor，逻辑直接内联
         restored_snapshot = self._load_persisted_state_snapshot()
         self._event_manager = BrowserEventManager(self.storage_dir)
         self._persister = BrowserStatePersister(self.storage_dir, restored_snapshot)
@@ -179,80 +176,195 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         """Navigate to a URL and capture the resulting page state."""
         page = await self.ensure_page()
         
-        # 使用 partial 绑定参数，避免 pickle 问题
-        operation = partial(self._do_navigate, url=url, wait_until=wait_until)
+        try:
+            # 直接导航，不使用 operation 包装
+            response = await page.goto(url, wait_until=wait_until, timeout=self.timeout)
+            
+            # 智能等待
+            await self._smart_wait(page)
+            
+            # 记录历史
+            history_entry = {"action": "navigate", "url": url, "wait_until": wait_until}
+            self._event_manager.add_to_history(history_entry)
+            
+            # 持久化状态
+            if self._context is not None:
+                await self._persister.persist_playwright_storage_state(self._context)
+
+            # 捕获页面信息
+            return await self._capture_page_info(page, url, response)
         
-        return await self._run_page_action(
-            action="navigate",
-            operation=operation,
-            capture_url=url,
-            history_entry={"action": "navigate", "url": url, "wait_until": wait_until},
-        )
+        except PlaywrightTimeoutError as exc:
+            logger.warning("Navigation timed out for %s", url)
+            return self._build_error_page_info(url, str(exc), action="navigate")
+        except Exception as exc:
+            logger.exception("Navigation failed for %s", url)
+            return self._build_error_page_info(url, str(exc), action="navigate")
 
     async def click(self, selector: str) -> PageInfo:
         """Click an element identified by CSS selector."""
         page = await self.ensure_page()
         
-        operation = partial(self._do_click, selector=selector)
+        try:
+            # 直接点击，不使用 operation 包装
+            await self._scroll_into_view(page, selector)
+            await self._human_delay(100, 400)
+            await page.click(selector, timeout=DEFAULT_CLICK_TIMEOUT_MS)
+            
+            # 智能等待
+            await self._smart_wait(page)
+            
+            # 记录历史
+            history_entry = {"action": "click", "selector": selector}
+            self._event_manager.add_to_history(history_entry)
+            
+            # 持久化状态
+            if self._context is not None:
+                await self._persister.persist_playwright_storage_state(self._context)
+
+            # 捕获页面信息
+            return await self._capture_page_info(page, None, None)
         
-        return await self._run_page_action(
-            action="click",
-            operation=operation,
-            capture_url=None,
-            history_entry={"action": "click", "selector": selector},
-        )
+        except PlaywrightTimeoutError as exc:
+            logger.warning("Click timed out for selector %s", selector)
+            return self._build_error_page_info(page.url, str(exc), action="click")
+        except Exception as exc:
+            logger.exception("Click failed for selector %s", selector)
+            return self._build_error_page_info(page.url, str(exc), action="click")
 
     async def click_by_text(self, text: str) -> PageInfo:
         """Click the first element matching visible text."""
         page = await self.ensure_page()
         
-        operation = partial(self._do_click_by_text, text=text)
+        try:
+            # 直接通过文本点击
+            elements = await page.query_selector_all(f"text={text}")
+            if not elements:
+                raise ValueError(f"No element with text '{text}'")
+            
+            await elements[0].scroll_into_view_if_needed(timeout=DEFAULT_SCROLL_TIMEOUT_MS)
+            await self._human_delay(100, 400)
+            await elements[0].click(timeout=DEFAULT_CLICK_TIMEOUT_MS)
+            
+            # 智能等待
+            await self._smart_wait(page)
+            
+            # 记录历史
+            history_entry = {"action": "click_by_text", "text": text}
+            self._event_manager.add_to_history(history_entry)
+            
+            # 持久化状态
+            if self._context is not None:
+                await self._persister.persist_playwright_storage_state(self._context)
+
+            # 捕获页面信息
+            return await self._capture_page_info(page, None, None)
         
-        return await self._run_page_action(
-            action="click_by_text",
-            operation=operation,
-            capture_url=None,
-            history_entry={"action": "click_by_text", "text": text},
-        )
+        except PlaywrightTimeoutError as exc:
+            logger.warning("Click by text timed out for %s", text)
+            return self._build_error_page_info(page.url, str(exc), action="click_by_text")
+        except Exception as exc:
+            logger.exception("Click by text failed for %s", text)
+            return self._build_error_page_info(page.url, str(exc), action="click_by_text")
 
     async def fill(self, selector: str, value: str) -> PageInfo:
         """Fill an editable element with text."""
         page = await self.ensure_page()
         
-        operation = partial(self._do_fill, selector=selector, value=value)
+        try:
+            # 直接填充，不使用 operation 包装
+            await self._scroll_into_view(page, selector)
+            await page.fill(selector, value, timeout=DEFAULT_CLICK_TIMEOUT_MS)
+            
+            # 智能等待
+            await self._smart_wait(page)
+            
+            # 记录历史
+            history_entry = {"action": "fill", "selector": selector, "value": value}
+            self._event_manager.add_to_history(history_entry)
+            
+            # 持久化状态
+            if self._context is not None:
+                await self._persister.persist_playwright_storage_state(self._context)
+
+            # 捕获页面信息
+            return await self._capture_page_info(page, None, None)
         
-        return await self._run_page_action(
-            action="fill",
-            operation=operation,
-            capture_url=None,
-            history_entry={"action": "fill", "selector": selector, "value": value},
-        )
+        except PlaywrightTimeoutError as exc:
+            logger.warning("Fill timed out for selector %s", selector)
+            return self._build_error_page_info(page.url, str(exc), action="fill")
+        except Exception as exc:
+            logger.exception("Fill failed for selector %s", selector)
+            return self._build_error_page_info(page.url, str(exc), action="fill")
 
     async def fill_by_label(self, label_text: str, value: str) -> PageInfo:
         """Fill the first input associated with a matching label."""
         page = await self.ensure_page()
         
-        operation = partial(self._do_fill_by_label, label_text=label_text, value=value)
+        try:
+            # 直接通过标签填充
+            element = await page.query_selector(f"label:has-text('{label_text}') >> input")
+            if element is None:
+                raise ValueError(f"No input for label '{label_text}'")
+            
+            await element.scroll_into_view_if_needed(timeout=DEFAULT_SCROLL_TIMEOUT_MS)
+            await element.fill(value)
+            
+            # 智能等待
+            await self._smart_wait(page)
+            
+            # 记录历史
+            history_entry = {"action": "fill_by_label", "label_text": label_text, "value": value}
+            self._event_manager.add_to_history(history_entry)
+            
+            # 持久化状态
+            if self._context is not None:
+                await self._persister.persist_playwright_storage_state(self._context)
+
+            # 捕获页面信息
+            return await self._capture_page_info(page, None, None)
         
-        return await self._run_page_action(
-            action="fill_by_label",
-            operation=operation,
-            capture_url=None,
-            history_entry={"action": "fill_by_label", "label_text": label_text, "value": value},
-        )
+        except PlaywrightTimeoutError as exc:
+            logger.warning("Fill by label timed out for %s", label_text)
+            return self._build_error_page_info(page.url, str(exc), action="fill_by_label")
+        except Exception as exc:
+            logger.exception("Fill by label failed for %s", label_text)
+            return self._build_error_page_info(page.url, str(exc), action="fill_by_label")
 
     async def fill_human_like(self, selector: str, value: str) -> PageInfo:
         """Type into a field character-by-character to mimic human input."""
         page = await self.ensure_page()
         
-        operation = partial(self._do_fill_human_like, selector=selector, value=value)
+        try:
+            # 直接模拟人类输入
+            await self._scroll_into_view(page, selector)
+            await page.focus(selector)
+            await page.fill(selector, "")
+            
+            for char in value:
+                await page.keyboard.type(char, delay=random.randint(50, 150))
+                await self._human_delay()
+            
+            # 智能等待
+            await self._smart_wait(page)
+            
+            # 记录历史
+            history_entry = {"action": "fill_human_like", "selector": selector, "value": value}
+            self._event_manager.add_to_history(history_entry)
+            
+            # 持久化状态
+            if self._context is not None:
+                await self._persister.persist_playwright_storage_state(self._context)
+
+            # 捕获页面信息
+            return await self._capture_page_info(page, None, None)
         
-        return await self._run_page_action(
-            action="fill_human_like",
-            operation=operation,
-            capture_url=None,
-            history_entry={"action": "fill_human_like", "selector": selector, "value": value},
-        )
+        except PlaywrightTimeoutError as exc:
+            logger.warning("Fill human-like timed out for %s", selector)
+            return self._build_error_page_info(page.url, str(exc), action="fill_human_like")
+        except Exception as exc:
+            logger.exception("Fill human-like failed for %s", selector)
+            return self._build_error_page_info(page.url, str(exc), action="fill_human_like")
 
     async def find_elements(self, selector: str) -> List[QueryMatch]:
         """Return text and attributes for elements matching a CSS selector."""
@@ -326,95 +438,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         }
         return snapshot
 
-    # --- Internal Action Implementations (from BrowserActionExecutor) ---
-
-    async def _run_page_action(
-        self,
-        action: str,
-        operation: Callable[[Page], Awaitable[Any]],
-        *,
-        capture_url: str | None,
-        history_entry: dict[str, Any] | None = None,
-    ) -> PageInfo:
-        """Execute a browser action with retries and optional OCR fallback."""
-        page = await self.ensure_page()
-        self._event_manager.set_active_page(page)
-        
-        last_error: Exception | None = None
-        
-        for attempt in range(self.max_retry + 1):
-            try:
-                logger.info("Browser action '%s' attempt %s/%s", action, attempt + 1, self.max_retry + 1)
-                response = await operation(page)
-                
-                # 智能等待
-                await self._smart_wait(page)
-                
-                # 记录历史
-                if history_entry is not None:
-                    self._event_manager.add_to_history(history_entry)
-                
-                # 持久化状态
-                if self._context is not None:
-                    await self._persister.persist_playwright_storage_state(self._context)
-
-                # 捕获页面信息
-                return await self._capture_page_info(page, capture_url or page.url, response)
-            
-            except PlaywrightTimeoutError as exc:
-                last_error = exc
-                logger.warning("Browser action '%s' timed out on attempt %s/%s", action, attempt + 1, self.max_retry + 1)
-            except Exception as exc:
-                logger.exception("Browser action '%s' failed", action)
-                return self._build_error_page_info(page.url, str(exc), action=action, attempt=attempt)
-
-        return self._build_error_page_info(
-            page.url,
-            f"Max retries exceeded: {last_error}",
-            action=action,
-            attempt=self.max_retry,
-        )
-
-    async def _do_navigate(self, p: Page, url: str, wait_until: str) -> Response | None:
-        """Navigate to a URL."""
-        return await p.goto(url, wait_until=wait_until, timeout=self.timeout)
-
-    async def _do_click(self, p: Page, selector: str) -> None:
-        """Click an element."""
-        await self._scroll_into_view(p, selector)
-        await self._human_delay(100, 400)
-        await p.click(selector, timeout=DEFAULT_CLICK_TIMEOUT_MS)
-
-    async def _do_click_by_text(self, p: Page, text: str) -> None:
-        """Click by text."""
-        elements = await p.query_selector_all(f"text={text}")
-        if not elements:
-            raise ValueError(f"No element with text '{text}'")
-        await elements[0].scroll_into_view_if_needed(timeout=DEFAULT_SCROLL_TIMEOUT_MS)
-        await self._human_delay(100, 400)
-        await elements[0].click(timeout=DEFAULT_CLICK_TIMEOUT_MS)
-
-    async def _do_fill(self, p: Page, selector: str, value: str) -> None:
-        """Fill an input field."""
-        await self._scroll_into_view(p, selector)
-        await p.fill(selector, value, timeout=DEFAULT_CLICK_TIMEOUT_MS)
-
-    async def _do_fill_by_label(self, p: Page, label_text: str, value: str) -> None:
-        """Fill by label text."""
-        element = await p.query_selector(f"label:has-text('{label_text}') >> input")
-        if element is None:
-            raise ValueError(f"No input for label '{label_text}'")
-        await element.scroll_into_view_if_needed(timeout=DEFAULT_SCROLL_TIMEOUT_MS)
-        await element.fill(value)
-
-    async def _do_fill_human_like(self, p: Page, selector: str, value: str) -> None:
-        """Fill human-like."""
-        await self._scroll_into_view(p, selector)
-        await p.focus(selector)
-        await p.fill(selector, "")
-        for char in value:
-            await p.keyboard.type(char, delay=random.randint(50, 150))
-            await self._human_delay()
+    # --- Internal Action Implementations ---
 
     async def _capture_page_info(self, page: Page, url: str, response: Response | None) -> PageInfo:
         """Capture normalized page metadata after an action completes."""
