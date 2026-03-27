@@ -214,14 +214,6 @@ class BrowserEventManager:
             # Step A: 注入脚本。使用 add_init_script 确保在页面加载最初期执行。
             await page.add_init_script(BROWSER_OBSERVER_SCRIPT)
             
-            # Step B: 暴露 Python 回调。
-            # 这会在浏览器 window 对象上创建一个名为 __agiRecordBrowserEvent 的异步函数。
-            await page.expose_binding(
-                "__agiRecordBrowserEvent", 
-                self._on_browser_event, 
-                handle=True # 设置为 True 时，第一个参数 source 将包含 page 和 context 信息
-            )
-            
             self._instrumented_pages.add(page_id)
             self.update_page_state(page, title=await page.title(), load_state="ready")
             
