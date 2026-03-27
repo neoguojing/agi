@@ -74,8 +74,8 @@ class BrowserActionExecutor:
                          event_recorder.add_to_history(history_entry)
                 
                 # 持久化状态
-                if state_persister:
-                    await state_persister.persist_playwright_storage_state()
+                if state_persister and hasattr(state_persister, 'persist_playwright_storage_state'):
+                    await state_persister.persist_playwright_storage_state(page.context)
 
                 # 捕获页面信息
                 return await self.capture_page_info(page, capture_url or page.url, response, event_recorder)
