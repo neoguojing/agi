@@ -414,7 +414,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         await p.fill(selector, "")
         for char in value:
             await p.keyboard.type(char, delay=random.randint(50, 150))
-            await self._human_delay(p)
+            await self._human_delay()
 
     async def _capture_page_info(self, page: Page, url: str, response: Response | None) -> PageInfo:
         """Capture normalized page metadata after an action completes."""
@@ -544,6 +544,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
     async def _human_delay(self, min_ms: int = 200, max_ms: int = 800) -> None:
         """Sleep briefly to simulate human interaction cadence."""
+        page = await self.ensure_page()
         await page.wait_for_timeout(random.randint(min_ms, max_ms))
 
     def _build_error_page_info(self, url: str, error: str, **metadata: Any) -> PageInfo:
