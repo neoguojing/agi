@@ -1,17 +1,24 @@
 # browser_backend_core.py
 import json
 import logging
+import random
+import uuid
 from asyncio import Lock
+from collections.abc import AsyncIterator, Awaitable, Callable
+from functools import partial
 from pathlib import Path
-from typing import Any
-from playwright.async_api import Browser, BrowserContext, Page, async_playwright
+from typing import Any, List, Dict, Optional
+from playwright.async_api import (
+    Browser, BrowserContext, Page, Response, TimeoutError as PlaywrightTimeoutError,
+    async_playwright
+)
 from .browser_types import (
     DEFAULT_USER_AGENT, DEFAULT_VIEWPORT, DEFAULT_WAIT_UNTIL,
     STATE_SNAPSHOT_FILENAME, PLAYWRIGHT_STORAGE_STATE_FILENAME,
-    PageInfo, QueryMatch, WaitUntilState
+    PageInfo, QueryMatch, WaitUntilState, MAX_FIND_RESULTS, DEFAULT_CLICK_TIMEOUT_MS,
+    DEFAULT_SCROLL_TIMEOUT_MS, DEFAULT_SMART_WAIT_TIMEOUT_MS, DEFAULT_CAPTURE_DELAY_MS
 )
 from .browser_protocal import AbstractBrowserBackend
-from .browser_action_executor import BrowserActionExecutor
 from .browser_event_manager import BrowserEventManager
 from .browser_state_persister import BrowserStatePersister
 
@@ -37,7 +44,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
         # 初始化子模块
-        self._executor = BrowserActionExecutor(self.storage_dir, self.timeout, self.max_content_length, self.max_retry)
+        self._executor = None  # 不再单独使用 executor，逻辑直接内联
         restored_snapshot = self._load_persisted_state_snapshot()
         self._event_manager = BrowserEventManager(self.storage_dir)
         self._persister = BrowserStatePersister(self.storage_dir, restored_snapshot)
@@ -168,76 +175,118 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 raise RuntimeError(msg)
         return self._page
 
-    # --- 实现所有抽象方法 (与之前相同) ---
-
     async def navigate(self, url: str, wait_until: WaitUntilState = "networkidle") -> PageInfo:
+        """Navigate to a URL and capture the resulting page state."""
         page = await self.ensure_page()
-        operation = await self._executor.navigate(page, url, wait_until)
-        return await self._executor.run_page_action(
-            page, "navigate", operation, capture_url=url,
+        
+        # 使用 partial 绑定参数，避免 pickle 问题
+        operation = partial(self._do_navigate, url=url, wait_until=wait_until)
+        
+        return await self._run_page_action(
+            action="navigate",
+            operation=operation,
+            capture_url=url,
             history_entry={"action": "navigate", "url": url, "wait_until": wait_until},
-            event_recorder=self._event_manager,
-            state_persister=self._persister
         )
 
     async def click(self, selector: str) -> PageInfo:
+        """Click an element identified by CSS selector."""
         page = await self.ensure_page()
-        operation = await self._executor.click(page, selector)
-        return await self._executor.run_page_action(
-            page, "click", operation, capture_url=None,
+        
+        operation = partial(self._do_click, selector=selector)
+        
+        return await self._run_page_action(
+            action="click",
+            operation=operation,
+            capture_url=None,
             history_entry={"action": "click", "selector": selector},
-            event_recorder=self._event_manager,
-            state_persister=self._persister
         )
 
     async def click_by_text(self, text: str) -> PageInfo:
+        """Click the first element matching visible text."""
         page = await self.ensure_page()
-        operation = await self._executor.click_by_text(page, text)
-        return await self._executor.run_page_action(
-            page, "click_by_text", operation, capture_url=None,
+        
+        operation = partial(self._do_click_by_text, text=text)
+        
+        return await self._run_page_action(
+            action="click_by_text",
+            operation=operation,
+            capture_url=None,
             history_entry={"action": "click_by_text", "text": text},
-            event_recorder=self._event_manager,
-            state_persister=self._persister
         )
 
     async def fill(self, selector: str, value: str) -> PageInfo:
+        """Fill an editable element with text."""
         page = await self.ensure_page()
-        operation = await self._executor.fill(page, selector, value)
-        return await self._executor.run_page_action(
-            page, "fill", operation, capture_url=None,
+        
+        operation = partial(self._do_fill, selector=selector, value=value)
+        
+        return await self._run_page_action(
+            action="fill",
+            operation=operation,
+            capture_url=None,
             history_entry={"action": "fill", "selector": selector, "value": value},
-            event_recorder=self._event_manager,
-            state_persister=self._persister
         )
 
     async def fill_by_label(self, label_text: str, value: str) -> PageInfo:
+        """Fill the first input associated with a matching label."""
         page = await self.ensure_page()
-        operation = await self._executor.fill_by_label(page, label_text, value)
-        return await self._executor.run_page_action(
-            page, "fill_by_label", operation, capture_url=None,
+        
+        operation = partial(self._do_fill_by_label, label_text=label_text, value=value)
+        
+        return await self._run_page_action(
+            action="fill_by_label",
+            operation=operation,
+            capture_url=None,
             history_entry={"action": "fill_by_label", "label_text": label_text, "value": value},
-            event_recorder=self._event_manager,
-            state_persister=self._persister
         )
 
     async def fill_human_like(self, selector: str, value: str) -> PageInfo:
+        """Type into a field character-by-character to mimic human input."""
         page = await self.ensure_page()
-        operation = await self._executor.fill_human_like(page, selector, value)
-        return await self._executor.run_page_action(
-            page, "fill_human_like", operation, capture_url=None,
+        
+        operation = partial(self._do_fill_human_like, selector=selector, value=value)
+        
+        return await self._run_page_action(
+            action="fill_human_like",
+            operation=operation,
+            capture_url=None,
             history_entry={"action": "fill_human_like", "selector": selector, "value": value},
-            event_recorder=self._event_manager,
-            state_persister=self._persister
         )
 
-    async def find_elements(self, selector: str) -> list[QueryMatch]:
+    async def find_elements(self, selector: str) -> List[QueryMatch]:
+        """Return text and attributes for elements matching a CSS selector."""
         page = await self.ensure_page()
         self._event_manager.set_active_page(page)
-        return await self._executor.find_elements(page, selector)
+        
+        try:
+            elements = await page.query_selector_all(selector)
+            results: List[QueryMatch] = []
+            for element in elements[:MAX_FIND_RESULTS]:
+                text = await element.inner_text()
+                attributes = await element.evaluate(
+                    """el => {
+                        const obj = {};
+                        for (const attr of el.attributes) obj[attr.name] = attr.value;
+                        return obj;
+                    }"""
+                )
+                results.append(QueryMatch(selector=selector, text=text, attributes=attributes or {}))
+            return results
+        except Exception:
+            logger.exception("find_elements failed for selector=%s", selector)
+            return []
 
     async def get_screenshot(self, *, full_page: bool = True) -> str:
+        """Capture a screenshot for OCR/inspection and return the absolute file path."""
         page = await self.ensure_page()
-        return await self._executor.get_screenshot(page, full_page=full_page)
+        
+        try:
+            screenshot_path = await self._take_screenshot(page, prefix="screenshot", full_page=full_page)
+            return str(screenshot_path)
+        except Exception:
+            logger.exception("Screenshot failed")
+            return ""
     
     async def read_screenshot_bytes(self, *, full_page: bool = True) -> tuple[str, bytes] | None:
         """Capture a screenshot for OCR/inspection and return both path and raw bytes."""
@@ -246,19 +295,24 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             return None
         return screenshot_path, Path(screenshot_path).read_bytes()
 
-    def get_history(self) -> list[dict[str, Any]]:
+    def get_history(self) -> List[Dict[str, Any]]:
+        """Return a copy of the recorded browser action history."""
         return self._event_manager.get_history()
 
-    def peek_state_messages(self, limit: int = 1) -> list[dict[str, Any]]:
+    def peek_state_messages(self, limit: int = 1) -> List[Dict[str, Any]]:
+        """Return recently published state messages without consuming them."""
         return self._event_manager.peek_state_messages(limit)
 
-    def drain_state_messages(self, limit: int = 1) -> list[dict[str, Any]]:
+    def drain_state_messages(self, limit: int = 1) -> List[Dict[str, Any]]:
+        """Drain pending state messages for downstream synchronizers."""
         return self._event_manager.drain_state_messages(limit)
 
-    def get_recent_events(self, limit: int = 5) -> list[dict[str, Any]]:
+    def get_recent_events(self, limit: int = 5) -> List[Dict[str, Any]]:
+        """Return a copy of the most recent browser/page events."""
         return self._event_manager.get_recent_events(limit)
 
     def get_state_snapshot(self, *, user_id: str | None = None, last_result: PageInfo | None = None) -> dict[str, Any]:
+        """Return the current browser/context/page state for agent decision making."""
         current_page_state_obj = self._event_manager.get_page_runtime_state(self._page_id(self._page)) if self._page else None
         
         snapshot = {
@@ -271,3 +325,246 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             "last_result": last_result,
         }
         return snapshot
+
+    # --- Internal Action Implementations (from BrowserActionExecutor) ---
+
+    async def _run_page_action(
+        self,
+        action: str,
+        operation: Callable[[Page], Awaitable[Any]],
+        *,
+        capture_url: str | None,
+        history_entry: dict[str, Any] | None = None,
+    ) -> PageInfo:
+        """Execute a browser action with retries and optional OCR fallback."""
+        page = await self.ensure_page()
+        self._event_manager.set_active_page(page)
+        
+        last_error: Exception | None = None
+        
+        for attempt in range(self.max_retry + 1):
+            try:
+                logger.info("Browser action '%s' attempt %s/%s", action, attempt + 1, self.max_retry + 1)
+                response = await operation(page)
+                
+                # 智能等待
+                await self._smart_wait(page)
+                
+                # 记录历史
+                if history_entry is not None:
+                    self._event_manager.add_to_history(history_entry)
+                
+                # 持久化状态
+                if self._context is not None:
+                    await self._persister.persist_playwright_storage_state(self._context)
+
+                # 捕获页面信息
+                return await self._capture_page_info(page, capture_url or page.url, response)
+            
+            except PlaywrightTimeoutError as exc:
+                last_error = exc
+                logger.warning("Browser action '%s' timed out on attempt %s/%s", action, attempt + 1, self.max_retry + 1)
+            except Exception as exc:
+                logger.exception("Browser action '%s' failed", action)
+                return self._build_error_page_info(page.url, str(exc), action=action, attempt=attempt)
+
+        return self._build_error_page_info(
+            page.url,
+            f"Max retries exceeded: {last_error}",
+            action=action,
+            attempt=self.max_retry,
+        )
+
+    async def _do_navigate(self, p: Page, url: str, wait_until: str) -> Response | None:
+        """Navigate to a URL."""
+        return await p.goto(url, wait_until=wait_until, timeout=self.timeout)
+
+    async def _do_click(self, p: Page, selector: str) -> None:
+        """Click an element."""
+        await self._scroll_into_view(p, selector)
+        await self._human_delay(100, 400)
+        await p.click(selector, timeout=DEFAULT_CLICK_TIMEOUT_MS)
+
+    async def _do_click_by_text(self, p: Page, text: str) -> None:
+        """Click by text."""
+        elements = await p.query_selector_all(f"text={text}")
+        if not elements:
+            raise ValueError(f"No element with text '{text}'")
+        await elements[0].scroll_into_view_if_needed(timeout=DEFAULT_SCROLL_TIMEOUT_MS)
+        await self._human_delay(100, 400)
+        await elements[0].click(timeout=DEFAULT_CLICK_TIMEOUT_MS)
+
+    async def _do_fill(self, p: Page, selector: str, value: str) -> None:
+        """Fill an input field."""
+        await self._scroll_into_view(p, selector)
+        await p.fill(selector, value, timeout=DEFAULT_CLICK_TIMEOUT_MS)
+
+    async def _do_fill_by_label(self, p: Page, label_text: str, value: str) -> None:
+        """Fill by label text."""
+        element = await p.query_selector(f"label:has-text('{label_text}') >> input")
+        if element is None:
+            raise ValueError(f"No input for label '{label_text}'")
+        await element.scroll_into_view_if_needed(timeout=DEFAULT_SCROLL_TIMEOUT_MS)
+        await element.fill(value)
+
+    async def _do_fill_human_like(self, p: Page, selector: str, value: str) -> None:
+        """Fill human-like."""
+        await self._scroll_into_view(p, selector)
+        await p.focus(selector)
+        await p.fill(selector, "")
+        for char in value:
+            await p.keyboard.type(char, delay=random.randint(50, 150))
+            await self._human_delay(p)
+
+    async def _capture_page_info(self, page: Page, url: str, response: Response | None) -> PageInfo:
+        """Capture normalized page metadata after an action completes."""
+        try:
+            html_repr = await self.extract_ui(page)
+            
+            page_text = await page.inner_text("body")
+            page_title = await page.title()
+            
+            take_screenshot = self._should_capture_screenshot(
+                page_text=page_text,
+                response=response,
+            )
+
+            screenshot_path: str | None = None
+            if take_screenshot:
+                screenshot_path = str(await self._take_screenshot(page, prefix="page", full_page=True))
+
+            page_info = PageInfo(
+                url=page.url,
+                title=page_title,
+                html=html_repr,
+                text="",
+                screenshot_path=screenshot_path,
+                metadata={
+                    "requested_url": url,
+                    "status": response.status if response is not None else 200,
+                    "content_length": len(html_repr),
+                    "text_length": len(page_text),
+                    "has_screenshot": screenshot_path is not None,
+                    "ocr_ready": screenshot_path is not None,
+                    "history_length": len(self._event_manager.get_history()),
+                }
+            )
+
+            return page_info
+        except Exception as exc:
+            logger.exception("Failed to capture page info for %s", url)
+            return self._build_error_page_info(url, str(exc), action="capture")
+
+    async def extract_ui(self, page: Page):
+        """Extract UI elements from the page."""
+        return await page.evaluate(""" () => {
+            function getSelector(el) {
+                if (el.id) return "#" + el.id;
+                if (el.name) return `[name="${el.name}"]`;
+                return el.tagName.toLowerCase();
+            }
+
+            function isVisible(el) {
+                return !!(el.offsetParent);
+            }
+
+            function getText(el) {
+                return (
+                    el.innerText ||
+                    el.value ||
+                    el.getAttribute("aria-label") ||
+                    el.title ||
+                    ""
+                ).trim();
+            }
+
+            const elements = Array.from(
+                document.querySelectorAll('input, button, textarea, select, a')
+            )
+            .filter(isVisible)
+            .map((el, idx) => {
+                const rect = el.getBoundingClientRect();
+                return {
+                    id: idx + 1,
+                    type: el.tagName.toLowerCase(),
+                    text: getText(el),
+                    href: el.href || "",
+                    role: el.getAttribute("role") || "",
+                    placeholder: el.placeholder || "",
+                    selector: getSelector(el),
+                    x: rect.x,
+                    y: rect.y,
+                    width: rect.width,
+                    height: rect.height
+                };
+            })
+            .filter(el => el.text.length > 0 || el.type === "input");
+
+            return {
+                page: {
+                    title: document.title,
+                    url: location.href
+                },
+                elements
+            };
+        } """)
+
+    def _should_capture_screenshot(self, *, page_text: str, response: Response | None) -> bool:
+        """Determine if a screenshot should be captured."""
+        normalized_text = page_text.lower().strip()
+        return (
+            len(page_text.strip()) < self.min_text_length
+            or (response is not None and response.status != 200)
+            or any(keyword in normalized_text for keyword in self.ocr_keywords)
+        )
+
+    async def _take_screenshot(self, page: Page, *, prefix: str, full_page: bool = False) -> Path:
+        """Take a screenshot and save to storage."""
+        file_path = self.storage_dir / f"{prefix}_{uuid.uuid4().hex[:10]}.png"
+        await page.screenshot(path=str(file_path), full_page=full_page)
+        logger.info("Screenshot saved to %s", file_path)
+        return file_path
+
+    async def _smart_wait(self, page: Page, delay: int = DEFAULT_CAPTURE_DELAY_MS) -> None:
+        """Wait for network stability, then add a small human-like delay."""
+        try:
+            await page.wait_for_load_state("networkidle", timeout=DEFAULT_SMART_WAIT_TIMEOUT_MS)
+        except PlaywrightTimeoutError:
+            logger.debug("networkidle wait timed out; continuing with fallback delay")
+        await page.wait_for_timeout(delay)
+
+    async def _scroll_into_view(self, page: Page, selector: str) -> None:
+        """Scroll a target element into the viewport when possible."""
+        try:
+            element = await page.query_selector(selector)
+            if element is not None:
+                await element.scroll_into_view_if_needed(timeout=DEFAULT_SCROLL_TIMEOUT_MS)
+        except Exception:
+            logger.debug("Failed to scroll selector into view: %s", selector, exc_info=True)
+
+    async def _human_delay(self, min_ms: int = 200, max_ms: int = 800) -> None:
+        """Sleep briefly to simulate human interaction cadence."""
+        await page.wait_for_timeout(random.randint(min_ms, max_ms))
+
+    def _build_error_page_info(self, url: str, error: str, **metadata: Any) -> PageInfo:
+        """Build an error PageInfo object."""
+        return PageInfo(
+            url=url,
+            title=None,
+            html=None,
+            text=None,
+            screenshot_path=None,
+            metadata={"error": error, **metadata},
+        )
+
+    @property
+    def min_text_length(self) -> int:
+        return 50
+
+    @property
+    def min_html_length(self) -> int:
+        return 100
+
+    @property
+    def ocr_keywords(self) -> List[str]:
+        return ["captcha", "验证", "blocked"]
