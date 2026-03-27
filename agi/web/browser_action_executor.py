@@ -244,34 +244,38 @@ class BrowserActionExecutor:
 
     # --- Action Implementations ---
 
-    async def navigate(self, page: Page, url: str, wait_until: str = "domcontentloaded") -> Callable[[Page], Any]:
+    def navigate(self, page: Page, url: str, wait_until: str = "domcontentloaded") -> Callable[[Page], Any]:
+        """Return a callable that navigates to the URL."""
         async def operation(p: Page) -> Response | None:
             return await p.goto(url, wait_until=wait_until, timeout=self.timeout)
         return operation
 
-    async def click(self, page: Page, selector: str) -> Callable[[Page], Any]:
+    def click(self, page: Page, selector: str) -> Callable[[Page], Any]:
+        """Return a callable that clicks the element."""
         async def operation(p: Page) -> Response | None:
             await self._scroll_into_view(p, selector)
-            await self._human_delay(p, 100, 400)
+            await self._human_delay(100, 400)
             await p.click(selector, timeout=DEFAULT_CLICK_TIMEOUT_MS)
             # event_recorder.record_event(...)
             return None
         return operation
 
-    async def click_by_text(self, page: Page, text: str) -> Callable[[Page], Any]:
+    def click_by_text(self, page: Page, text: str) -> Callable[[Page], Any]:
+        """Return a callable that clicks by text."""
         async def operation(p: Page) -> Response | None:
             elements = await p.query_selector_all(f"text={text}")
             if not elements:
                 msg = f"No element with text '{text}'"
                 raise ValueError(msg)
             await elements[0].scroll_into_view_if_needed(timeout=DEFAULT_SCROLL_TIMEOUT_MS)
-            await self._human_delay(p, 100, 400)
+            await self._human_delay(100, 400)
             await elements[0].click(timeout=DEFAULT_CLICK_TIMEOUT_MS)
             # event_recorder.record_event(...)
             return None
         return operation
 
-    async def fill(self, page: Page, selector: str, value: str) -> Callable[[Page], Any]:
+    def fill(self, page: Page, selector: str, value: str) -> Callable[[Page], Any]:
+        """Return a callable that fills the input."""
         async def operation(p: Page) -> Response | None:
             await self._scroll_into_view(p, selector)
             await p.fill(selector, value, timeout=DEFAULT_CLICK_TIMEOUT_MS)
@@ -279,7 +283,8 @@ class BrowserActionExecutor:
             return None
         return operation
 
-    async def fill_by_label(self, page: Page, label_text: str, value: str) -> Callable[[Page], Any]:
+    def fill_by_label(self, page: Page, label_text: str, value: str) -> Callable[[Page], Any]:
+        """Return a callable that fills by label."""
         async def operation(p: Page) -> Response | None:
             element = await p.query_selector(f"label:has-text('{label_text}') >> input")
             if element is None:
@@ -291,7 +296,8 @@ class BrowserActionExecutor:
             return None
         return operation
 
-    async def fill_human_like(self, page: Page, selector: str, value: str) -> Callable[[Page], Any]:
+    def fill_human_like(self, page: Page, selector: str, value: str) -> Callable[[Page], Any]:
+        """Return a callable that fills human-like."""
         async def operation(p: Page) -> Response | None:
             await self._scroll_into_view(p, selector)
             await p.focus(selector)
