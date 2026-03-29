@@ -457,7 +457,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 title=page_title,
                 html=html_repr,
                 text="",
-                screenshot_path=screenshot_path,
+                # screenshot_path=screenshot_path,
                 metadata={
                     "requested_url": url,
                     "status": response.status if response is not None else 200,

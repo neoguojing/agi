@@ -96,19 +96,7 @@ class QueryMatch:
     text: str
     attributes: dict[str, Any]
 
-@dataclass(slots=True)
-class UserBrowserSession:
-    """Browser session state scoped to a single user."""
-    user_id: str
-    backend: "StatefulBrowserBackend"  # Forward reference
-    last_result: PageInfo | None = None
-    active_operations: int = 0
-    last_used_at: float = field(default_factory=lambda: 0.0)
-    idle_task: Task[None] | None = None
-    operation_lock: Lock = field(default_factory=Lock)
 
-
-# 
 class BrowserEventType(str, Enum):
     NAVIGATE = "navigate"
     CLICK = "click"

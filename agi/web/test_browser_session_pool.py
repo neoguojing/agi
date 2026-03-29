@@ -74,7 +74,7 @@ async def test_browser_middleware_tracks_last_result_per_user() -> None:
     from agi.agent.middlewares.browser_middleware import BrowserMiddleware
 
     middleware = BrowserMiddleware(enable_ocr_fallback=False, max_retries=1)
-    middleware._session_pool = FakePool()
+    middleware._session_manager = FakePool()
 
     async def fake_dispatch(session, action: str, **kwargs):
         return PageInfo(
@@ -97,8 +97,8 @@ async def test_browser_middleware_tracks_last_result_per_user() -> None:
 
     assert alice_result.url == "https://example.com/alice/navigate"
     assert bob_result.url == "https://example.com/bob/navigate"
-    assert middleware._session_pool.sessions["alice"].last_result == alice_result
-    assert middleware._session_pool.sessions["bob"].last_result == bob_result
+    assert middleware._session_manager.sessions["alice"].last_result == alice_result
+    assert middleware._session_manager.sessions["bob"].last_result == bob_result
     assert alice_result.metadata["browser_session_state"]["user_id"] == "alice"
     assert bob_result.metadata["browser_session_state"]["user_id"] == "bob"
 
@@ -132,8 +132,8 @@ async def test_browser_middleware_includes_browser_state_in_model_prompt() -> No
     from agi.agent.middlewares.browser_middleware import BrowserMiddleware
 
     middleware = BrowserMiddleware(enable_ocr_fallback=False, max_retries=1)
-    middleware._session_pool = FakePool()
-    middleware._session_pool.sessions["alice"] = SimpleNamespace(
+    middleware._session_manager = FakePool()
+    middleware._session_manager.sessions["alice"] = SimpleNamespace(
         user_id="alice",
         last_result=None,
         backend=SimpleNamespace(
