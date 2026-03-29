@@ -402,7 +402,9 @@ class BrowserMiddleware(AgentMiddleware):
 
     async def _tool_extract(self, runtime: ToolRuntime[None, BrowserState]) -> BrowserToolArtifact:
         """Extract page content from the last successfully loaded page, prioritizing OCR."""
-        session = await self._get_session(runtime)
+        user_id = self._resolve_user_id(runtime)
+        session = await self._session_manager.get_session(user_id)
+        
         if session.last_result is None:
             return self._artifact_with_state(
                 self._error_artifact("No page loaded. Please navigate first."),
@@ -462,7 +464,9 @@ class BrowserMiddleware(AgentMiddleware):
 
     async def _tool_find(self, runtime: ToolRuntime[None, BrowserState], selector: str) -> BrowserToolArtifact:
         """Find candidate elements on the current page."""
-        session = await self._get_session(runtime)
+        user_id = self._resolve_user_id(runtime)
+        session = await self._session_manager.get_session(user_id)
+        
         matches = await session.backend.find_elements(selector)
         metadata = {
             "selector": selector,
@@ -520,7 +524,9 @@ class BrowserMiddleware(AgentMiddleware):
 
     async def _tool_screenshot(self, runtime: ToolRuntime[None, BrowserState], tool_call_id: str) -> ToolMessage | Command:
         """Capture a screenshot and return a multimodal tool response."""
-        session = await self._get_session(runtime)
+        user_id = self._resolve_user_id(runtime)
+        session = await self._session_manager.get_session(user_id)
+        
         screenshot = await session.backend.read_screenshot_bytes(full_page=True)
         if screenshot is None:
             artifact = self._artifact_with_state(self._error_artifact("Failed to take screenshot"), session)
