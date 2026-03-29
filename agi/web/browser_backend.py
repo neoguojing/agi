@@ -449,6 +449,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             page_title = await page.title()
             
             # 仅在需要内容时才进行截图和 OCR
+            screenshot_path = None
             if capture_content:
                 screenshot_path = str(await self._take_screenshot(page, prefix="page", full_page=True))
 
