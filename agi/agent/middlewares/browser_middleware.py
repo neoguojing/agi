@@ -786,8 +786,8 @@ class BrowserMiddleware(AgentMiddleware):
             return str(configurable["user_id"])
         return None
 
-    def _get_live_session_state(self, user_id: str) -> BrowserSessionState | None:
-        state = asyncio.run(self._session_manager.get_state(user_id))
+    async def _get_live_session_state(self, user_id: str) -> BrowserSessionState | None:
+        state = await self._session_manager.get_state(user_id)
         if not state or "last_result" not in state:
             return None
         return self._build_session_state(state)
@@ -844,8 +844,8 @@ class BrowserMiddleware(AgentMiddleware):
             "event_version": state.get("event_version", 0),
         }
 
-    def _artifact_with_state(self, artifact: BrowserToolArtifact, user_id: str) -> BrowserToolArtifact:
-        state = asyncio.run(self._session_manager.get_state(user_id))
+    async def _artifact_with_state(self, artifact: BrowserToolArtifact, user_id: str) -> BrowserToolArtifact:
+        state = await self._session_manager.get_state(user_id)
         artifact["metadata"] = {
             **dict(artifact.get("metadata", {})),
             "browser_session_state": self._build_session_state(state),
