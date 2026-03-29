@@ -60,7 +60,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
     def _page_is_closed(self, page: Page | None) -> bool:
         if page is None:
             return True
-        is_closed = getattr(page, "is_closed", None)
+        is_closed = getattr(page, "is_closed", lambda: True)
         if callable(is_closed):
             try:
                 return bool(is_closed())
@@ -88,7 +88,12 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         """Initialize the shared browser session lazily."""
         async with self._init_lock:
             if self._browser is not None:
-                return
+                # 检查浏览器是否真的还活着
+                try:
+                    if self._page and not self._page_is_closed(self._page):
+                        return
+                except Exception:
+                    logger.warning("Browser page check failed, reinitializing")
 
         logger.info("Launching browser backend")
         self._playwright = await async_playwright().start()
@@ -152,8 +157,11 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
     def is_closed(self) -> bool:
         if self._page is None or self._context is None or self._browser is None:
             return True
-        is_closed_attr = getattr(self._page, "is_closed", lambda: True)
-        return is_closed_attr()
+        try:
+            is_closed_attr = getattr(self._page, "is_closed", lambda: True)
+            return is_closed_attr()
+        except Exception:
+            return True
 
     async def ensure_page(self) -> Page:
         """Return the active page, initializing the backend when needed."""
@@ -198,8 +206,28 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             logger.warning("Navigation timed out for %s", url)
             return self._build_error_page_info(url, str(exc), action="navigate")
         except Exception as exc:
-            logger.exception("Navigation failed for %s", url)
-            return self._build_error_page_info(url, str(exc), action="navigate")
+            # 检查是否是页面关闭的错误，需要重新初始化
+            error_str = str(exc)
+            if "TargetClosedError" in error_str or "closed" in error_str.lower():
+                logger.warning("Page was closed during navigation, reinitializing browser for %s", url)
+                try:
+                    await self.close()
+                    await self.initialize()
+                    page = await self.ensure_page()
+                    # 重试导航
+                    response = await page.goto(url, wait_until=wait_until, timeout=self.timeout)
+                    await self._smart_wait(page)
+                    history_entry = {"action": "navigate", "url": url, "wait_until": wait_until}
+                    self._event_manager.add_to_history(history_entry)
+                    if self._context is not None:
+                        await self._persister.persist_playwright_storage_state(self._context)
+                    return await self._capture_page_info(page, url, response, capture_content=False)
+                except Exception as retry_exc:
+                    logger.exception("Retry navigation failed for %s", url)
+                    return self._build_error_page_info(url, str(retry_exc), action="navigate")
+            else:
+                logger.exception("Navigation failed for %s", url)
+                return self._build_error_page_info(url, str(exc), action="navigate")
 
     async def click(self, selector: str) -> PageInfo:
         """Click an element identified by CSS selector."""
@@ -229,8 +257,30 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             logger.warning("Click timed out for selector %s", selector)
             return self._build_error_page_info(page.url, str(exc), action="click")
         except Exception as exc:
-            logger.exception("Click failed for selector %s", selector)
-            return self._build_error_page_info(page.url, str(exc), action="click")
+            # 检查是否是页面关闭的错误，需要重新初始化
+            error_str = str(exc)
+            if "TargetClosedError" in error_str or "closed" in error_str.lower():
+                logger.warning("Page was closed during click, reinitializing browser for selector %s", selector)
+                try:
+                    await self.close()
+                    await self.initialize()
+                    page = await self.ensure_page()
+                    # 重试点击
+                    await self._scroll_into_view(page, selector)
+                    await self._human_delay(100, 400)
+                    await page.click(selector, timeout=DEFAULT_CLICK_TIMEOUT_MS)
+                    await self._smart_wait(page)
+                    history_entry = {"action": "click", "selector": selector}
+                    self._event_manager.add_to_history(history_entry)
+                    if self._context is not None:
+                        await self._persister.persist_playwright_storage_state(self._context)
+                    return await self._capture_page_info(page, None, None, capture_content=False)
+                except Exception as retry_exc:
+                    logger.exception("Retry click failed for selector %s", selector)
+                    return self._build_error_page_info(page.url, str(retry_exc), action="click")
+            else:
+                logger.exception("Click failed for selector %s", selector)
+                return self._build_error_page_info(page.url, str(exc), action="click")
 
     async def click_by_text(self, text: str) -> PageInfo:
         """Click the first element matching visible text."""
@@ -264,8 +314,34 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             logger.warning("Click by text timed out for %s", text)
             return self._build_error_page_info(page.url, str(exc), action="click_by_text")
         except Exception as exc:
-            logger.exception("Click by text failed for %s", text)
-            return self._build_error_page_info(page.url, str(exc), action="click_by_text")
+            # 检查是否是页面关闭的错误，需要重新初始化
+            error_str = str(exc)
+            if "TargetClosedError" in error_str or "closed" in error_str.lower():
+                logger.warning("Page was closed during click_by_text, reinitializing browser for text %s", text)
+                try:
+                    await self.close()
+                    await self.initialize()
+                    page = await self.ensure_page()
+                    # 重试点击
+                    elements = await page.query_selector_all(f"text={text}")
+                    if not elements:
+                        raise ValueError(f"No element with text '{text}'")
+                    
+                    await elements[0].scroll_into_view_if_needed(timeout=DEFAULT_SCROLL_TIMEOUT_MS)
+                    await self._human_delay(100, 400)
+                    await elements[0].click(timeout=DEFAULT_CLICK_TIMEOUT_MS)
+                    await self._smart_wait(page)
+                    history_entry = {"action": "click_by_text", "text": text}
+                    self._event_manager.add_to_history(history_entry)
+                    if self._context is not None:
+                        await self._persister.persist_playwright_storage_state(self._context)
+                    return await self._capture_page_info(page, None, None, capture_content=False)
+                except Exception as retry_exc:
+                    logger.exception("Retry click_by_text failed for text %s", text)
+                    return self._build_error_page_info(page.url, str(retry_exc), action="click_by_text")
+            else:
+                logger.exception("Click by text failed for %s", text)
+                return self._build_error_page_info(page.url, str(exc), action="click_by_text")
 
     async def fill(self, selector: str, value: str) -> PageInfo:
         """Fill an editable element with text."""
@@ -294,8 +370,29 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             logger.warning("Fill timed out for selector %s", selector)
             return self._build_error_page_info(page.url, str(exc), action="fill")
         except Exception as exc:
-            logger.exception("Fill failed for selector %s", selector)
-            return self._build_error_page_info(page.url, str(exc), action="fill")
+            # 检查是否是页面关闭的错误，需要重新初始化
+            error_str = str(exc)
+            if "TargetClosedError" in error_str or "closed" in error_str.lower():
+                logger.warning("Page was closed during fill, reinitializing browser for selector %s", selector)
+                try:
+                    await self.close()
+                    await self.initialize()
+                    page = await self.ensure_page()
+                    # 重试填充
+                    await self._scroll_into_view(page, selector)
+                    await page.fill(selector, value, timeout=DEFAULT_CLICK_TIMEOUT_MS)
+                    await self._smart_wait(page)
+                    history_entry = {"action": "fill", "selector": selector, "value": value}
+                    self._event_manager.add_to_history(history_entry)
+                    if self._context is not None:
+                        await self._persister.persist_playwright_storage_state(self._context)
+                    return await self._capture_page_info(page, None, None, capture_content=False)
+                except Exception as retry_exc:
+                    logger.exception("Retry fill failed for selector %s", selector)
+                    return self._build_error_page_info(page.url, str(retry_exc), action="fill")
+            else:
+                logger.exception("Fill failed for selector %s", selector)
+                return self._build_error_page_info(page.url, str(exc), action="fill")
 
     async def fill_by_label(self, label_text: str, value: str) -> PageInfo:
         """Fill the first input associated with a matching label."""
@@ -328,8 +425,33 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             logger.warning("Fill by label timed out for %s", label_text)
             return self._build_error_page_info(page.url, str(exc), action="fill_by_label")
         except Exception as exc:
-            logger.exception("Fill by label failed for %s", label_text)
-            return self._build_error_page_info(page.url, str(exc), action="fill_by_label")
+            # 检查是否是页面关闭的错误，需要重新初始化
+            error_str = str(exc)
+            if "TargetClosedError" in error_str or "closed" in error_str.lower():
+                logger.warning("Page was closed during fill_by_label, reinitializing browser for label %s", label_text)
+                try:
+                    await self.close()
+                    await self.initialize()
+                    page = await self.ensure_page()
+                    # 重试填充
+                    element = await page.query_selector(f"label:has-text('{label_text}') >> input")
+                    if element is None:
+                        raise ValueError(f"No input for label '{label_text}'")
+                    
+                    await element.scroll_into_view_if_needed(timeout=DEFAULT_SCROLL_TIMEOUT_MS)
+                    await element.fill(value)
+                    await self._smart_wait(page)
+                    history_entry = {"action": "fill_by_label", "label_text": label_text, "value": value}
+                    self._event_manager.add_to_history(history_entry)
+                    if self._context is not None:
+                        await self._persister.persist_playwright_storage_state(self._context)
+                    return await self._capture_page_info(page, None, None, capture_content=False)
+                except Exception as retry_exc:
+                    logger.exception("Retry fill_by_label failed for label %s", label_text)
+                    return self._build_error_page_info(page.url, str(retry_exc), action="fill_by_label")
+            else:
+                logger.exception("Fill by label failed for %s", label_text)
+                return self._build_error_page_info(page.url, str(exc), action="fill_by_label")
 
     async def fill_human_like(self, selector: str, value: str) -> PageInfo:
         """Type into a field character-by-character to mimic human input."""
@@ -363,8 +485,35 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             logger.warning("Fill human-like timed out for %s", selector)
             return self._build_error_page_info(page.url, str(exc), action="fill_human_like")
         except Exception as exc:
-            logger.exception("Fill human-like failed for %s", selector)
-            return self._build_error_page_info(page.url, str(exc), action="fill_human_like")
+            # 检查是否是页面关闭的错误，需要重新初始化
+            error_str = str(exc)
+            if "TargetClosedError" in error_str or "closed" in error_str.lower():
+                logger.warning("Page was closed during fill_human_like, reinitializing browser for selector %s", selector)
+                try:
+                    await self.close()
+                    await self.initialize()
+                    page = await self.ensure_page()
+                    # 重试填充
+                    await self._scroll_into_view(page, selector)
+                    await page.focus(selector)
+                    await page.fill(selector, "")
+                    
+                    for char in value:
+                        await page.keyboard.type(char, delay=random.randint(50, 150))
+                        await self._human_delay()
+                    
+                    await self._smart_wait(page)
+                    history_entry = {"action": "fill_human_like", "selector": selector, "value": value}
+                    self._event_manager.add_to_history(history_entry)
+                    if self._context is not None:
+                        await self._persister.persist_playwright_storage_state(self._context)
+                    return await self._capture_page_info(page, None, None, capture_content=False)
+                except Exception as retry_exc:
+                    logger.exception("Retry fill_human_like failed for selector %s", selector)
+                    return self._build_error_page_info(page.url, str(retry_exc), action="fill_human_like")
+            else:
+                logger.exception("Fill human-like failed for %s", selector)
+                return self._build_error_page_info(page.url, str(exc), action="fill_human_like")
 
     async def find_elements(self, selector: str) -> List[QueryMatch]:
         """Return text and attributes for elements matching a CSS selector."""
