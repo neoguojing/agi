@@ -19,7 +19,7 @@ from langchain_core.messages import ToolMessage,HumanMessage
 from langchain_core.messages.content import create_image_block
 from langchain_core.tools import BaseTool, StructuredTool
 from langchain.tools.tool_node import ToolCallRequest
-from toolgraph.types import Command
+from langgraph.types import Command
 from typing_extensions import NotRequired, TypedDict
 
 from agi.config import BROWSER_STORAGE_PATH
