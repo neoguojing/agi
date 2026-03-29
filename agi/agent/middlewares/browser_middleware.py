@@ -242,7 +242,7 @@ class BrowserMiddleware(AgentMiddleware):
         request: ModelRequest[ContextT],
         handler: Callable[[ModelRequest[ContextT]], ModelResponse[ResponseT]],
     ) -> ModelResponse[ResponseT]:
-        system_prompt = self._build_model_system_prompt_sync(request)
+        system_prompt = self._build_model_system_prompt(request)
         if system_prompt:
             request = request.override(system_message=append_to_system_message(request.system_message, system_prompt))
         return handler(request)
@@ -253,7 +253,7 @@ class BrowserMiddleware(AgentMiddleware):
         request: ModelRequest[ContextT],
         handler: Callable[[ModelRequest[ContextT]], Awaitable[ModelResponse[ResponseT]]],
     ) -> ModelResponse[ResponseT]:
-        system_prompt = self._build_model_system_prompt_sync(request)
+        system_prompt = self._build_model_system_prompt(request)
         print({"*******************": system_prompt})
         if system_prompt:
             request = request.override(system_message=append_to_system_message(request.system_message, system_prompt))
@@ -744,30 +744,30 @@ class BrowserMiddleware(AgentMiddleware):
                 return str(configurable["user_id"])
         return "default"
 
-    def _build_model_system_prompt_sync(self, request: ModelRequest[ContextT]) -> str:
+    async def _build_model_system_prompt(self, request: ModelRequest[ContextT]) -> str:
         # system prompt = 浏览器工具说明 + 当前 live browser state 摘要。
         system_prompt = self._custom_system_prompt or BROWSER_SYSTEM_PROMPT
-        session_state = self._resolve_session_state_for_request(request)
-        if not session_state:
+        session_state = await self._resolve_session_state_for_request(request)
+        if not session_prompt and not session_state:
             return system_prompt
         return f"{system_prompt}\n\n{self._format_browser_state_for_prompt(session_state)}"
 
-    def _resolve_session_state_for_request(self, request: ModelRequest[ContextT]) -> BrowserSessionState | None:
+    async def _resolve_session_state_for_request(self, request: ModelRequest[ContextT]) -> BrowserSessionState | None:
         # 优先使用 request.state 里的状态；如果 state 里只有 user_id，则回到 session pool 读取最新 live snapshot。
         state = getattr(request, "state", None) or {}
         if isinstance(state, dict):
             session_state = state.get("browser_session_state")
             if isinstance(session_state, dict):
                 user_id = session_state.get("user_id")
-                live_state = self._get_live_session_state_sync(str(user_id)) if user_id else None
+                live_state = await self._get_live_session_state(str(user_id)) if user_id else None
                 return live_state or session_state
 
-        user_id = self._resolve_user_id_from_request(request)
+        user_id = await self._resolve_user_id_from_request(request)
         if not user_id:
             return None
-        return self._get_live_session_state_sync(user_id)
+        return await self._get_live_session_state(user_id)
 
-    def _resolve_user_id_from_request(self, request: ModelRequest[ContextT]) -> str | None:
+    async def _resolve_user_id_from_request(self, request: ModelRequest[ContextT]) -> str | None:
         state = getattr(request, "state", None) or {}
         if isinstance(state, dict) and state.get("user_id"):
             return str(state["user_id"])
@@ -786,10 +786,8 @@ class BrowserMiddleware(AgentMiddleware):
             return str(configurable["user_id"])
         return None
 
-    def _get_live_session_state_sync(self, user_id: str) -> BrowserSessionState | None:
-        # 同步方法：使用 run_in_executor 避免阻塞事件循环
-        loop = asyncio.get_event_loop()
-        state = loop.run_until_complete(self._session_manager.get_state(user_id))
+    async def _get_live_session_state(self, user_id: str) -> BrowserSessionState | None:
+        state = await self._session_manager.get_state(user_id)
         if not state or "last_result" not in state:
             return None
         return self._build_session_state(state)
