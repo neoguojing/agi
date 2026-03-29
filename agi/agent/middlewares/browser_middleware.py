@@ -27,7 +27,7 @@ from agi.utils.common import append_to_system_message
 from agi.web.session_manager import BrowserSessionManager
 from agi.web.browser_session import BrowserSession
 from agi.web.browser_backend import StatefulBrowserBackend
-from agi.web.browser_types import PageInfo,UserBrowserSession
+from agi.web.browser_types import PageInfo
 
 
 MAX_PROMPT_EVENTS = 8
@@ -487,7 +487,7 @@ class BrowserMiddleware(AgentMiddleware):
             return "", session.last_result.screenshot_path if session.last_result else None
 
         screenshot = await session.run(
-            session.screenshot
+            session.backend.read_screenshot_bytes,
             full_page=True
         )
         if screenshot is None:
@@ -629,7 +629,7 @@ class BrowserMiddleware(AgentMiddleware):
             metadata={"error": f"Failed after {self.max_retries}: {last_error}"},
         )
 
-    async def _dispatch_action(self, session: UserBrowserSession, action: str, **kwargs: Any) -> PageInfo:
+    async def _dispatch_action(self, session: BrowserSession, action: str, **kwargs: Any) -> PageInfo:
         if action == "navigate":
             return await session.backend.navigate(kwargs["url"])
         if action == "click":
@@ -786,10 +786,10 @@ class BrowserMiddleware(AgentMiddleware):
             ]
         )
 
-    def _build_session_state(self, session: UserBrowserSession) -> BrowserSessionState:
+    def _build_session_state(self, session: BrowserSession) -> BrowserSessionState:
         return session.backend.get_state_snapshot(user_id=session.user_id, last_result=session.last_result)
 
-    def _artifact_with_state(self, artifact: BrowserToolArtifact, session: UserBrowserSession) -> BrowserToolArtifact:
+    def _artifact_with_state(self, artifact: BrowserToolArtifact, session: BrowserSession) -> BrowserToolArtifact:
         artifact["metadata"] = {
             **dict(artifact.get("metadata", {})),
             "browser_session_state": self._build_session_state(session),
