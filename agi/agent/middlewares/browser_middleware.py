@@ -499,13 +499,25 @@ class BrowserMiddleware(AgentMiddleware):
         if not self.enable_ocr or self.ocr is None:
             return "", state["last_result"].get("screenshot_path") if state.get("last_result") else None
 
-        # 使用 session manager 的统一 API 获取截图
-        screenshot = await self._session_manager.screenshot(state["user_id"])
+        # 使用 session manager 的统一 API 获取截图路径（不是元组）
+        screenshot_path = await self._session_manager.screenshot(state["user_id"])
         
-        if screenshot is None:
+        if not screenshot_path:
             return "", state["last_result"].get("screenshot_path") if state.get("last_result") else None
 
-        screenshot_path, image_bytes = screenshot
+        # 单独读取文件内容获取 image_bytes
+        from pathlib import Path
+        image_path = Path(screenshot_path)
+        if not image_path.exists():
+            logger.warning("Screenshot file not found: %s", screenshot_path)
+            return "", screenshot_path
+        
+        try:
+            image_bytes = image_path.read_bytes()
+        except Exception as e:
+            logger.exception("Failed to read screenshot bytes from %s", screenshot_path, exc_info=True)
+            return "", screenshot_path
+
         image_b64 = base64.b64encode(image_bytes).decode("utf-8")
         try:
             ocr_text = await self.ocr.ainvoke([
@@ -536,10 +548,10 @@ class BrowserMiddleware(AgentMiddleware):
         """Capture a screenshot and return a multimodal tool response."""
         user_id = self._resolve_user_id(runtime)
         
-        # 使用 session manager 的统一 API 获取截图
-        screenshot = await self._session_manager.screenshot(user_id)
+        # 使用 session manager 的统一 API 获取截图路径（不是元组）
+        screenshot_path = await self._session_manager.screenshot(user_id)
         
-        if screenshot is None:
+        if not screenshot_path:
             artifact = self._artifact_with_state(self._error_artifact("Failed to take screenshot"), user_id)
             return self._command_for_result(
                 "browser_screenshot",
@@ -548,7 +560,31 @@ class BrowserMiddleware(AgentMiddleware):
                 session_state=self._session_state_from_artifact(artifact),
             )
 
-        screenshot_path, image_bytes = screenshot
+        # 单独读取文件内容获取 image_bytes（如果需要）
+        from pathlib import Path
+        image_path = Path(screenshot_path)
+        if not image_path.exists():
+            logger.warning("Screenshot file not found: %s", screenshot_path)
+            artifact = self._artifact_with_state(self._error_artifact(f"Screenshot file not found: {screenshot_path}"), user_id)
+            return self._command_for_result(
+                "browser_screenshot",
+                tool_call_id,
+                artifact,
+                session_state=self._session_state_from_artifact(artifact),
+            )
+        
+        try:
+            image_bytes = image_path.read_bytes()
+        except Exception as e:
+            logger.exception("Failed to read screenshot bytes from %s", screenshot_path, exc_info=True)
+            artifact = self._artifact_with_state(self._error_artifact(f"Failed to read screenshot: {e}"), user_id)
+            return self._command_for_result(
+                "browser_screenshot",
+                tool_call_id,
+                artifact,
+                session_state=self._session_state_from_artifact(artifact),
+            )
+
         # image_b64 = base64.b64encode(image_bytes).decode("utf-8")
         state = await self._session_manager.get_state(user_id)
         current_url = state["last_result"].get("url") if state.get("last_result") else ""
