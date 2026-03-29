@@ -748,7 +748,7 @@ class BrowserMiddleware(AgentMiddleware):
         # system prompt = 浏览器工具说明 + 当前 live browser state 摘要。
         system_prompt = self._custom_system_prompt or BROWSER_SYSTEM_PROMPT
         session_state = await self._resolve_session_state_for_request(request)
-        if not session_prompt and not session_state:
+        if not session_state:
             return system_prompt
         return f"{system_prompt}\n\n{self._format_browser_state_for_prompt(session_state)}"
 
