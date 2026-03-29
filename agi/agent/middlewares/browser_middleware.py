@@ -407,21 +407,22 @@ class BrowserMiddleware(AgentMiddleware):
         # 使用 session manager 的统一 API 获取状态
         state = await self._session_manager.get_state(user_id)
         
-        if state.get("last_result") is None:
+        if not state or "last_result" not in state:
             return self._artifact_with_state(
                 self._error_artifact("No page loaded. Please navigate first."),
                 user_id,
             )
 
-        html = state["last_result"].get("html") or ""
-        text = state["last_result"].get("text") or ""
+        last_result = state["last_result"]
+        html = last_result.get("html") or ""
+        text = last_result.get("text") or ""
         ocr_text, screenshot_path = await self._extract_content_with_ocr(state)
         if not ocr_text and not html and not text:
             return self._artifact_with_state(
                 self._error_artifact(
                     "Page content is empty and OCR extraction was unavailable.",
-                    url=state["last_result"].get("url"),
-                    metadata=state["last_result"].get("metadata", {}),
+                    url=last_result.get("url"),
+                    metadata=last_result.get("metadata", {}),
                     screenshot_path=screenshot_path,
                 ),
                 user_id,
@@ -430,10 +431,10 @@ class BrowserMiddleware(AgentMiddleware):
         primary_content = ocr_text or text or html
         artifact: BrowserToolArtifact = {
             "status": "success",
-            "url": state["last_result"].get("url"),
-            "title": state["last_result"].get("title"),
+            "url": last_result.get("url"),
+            "title": last_result.get("title"),
             "metadata": {
-                **dict(state["last_result"].get("metadata", {})),
+                **dict(last_result.get("metadata", {})),
                 "ocr_priority": True,
                 "ocr_applied": bool(ocr_text),
             },
@@ -471,6 +472,11 @@ class BrowserMiddleware(AgentMiddleware):
         # 使用 session manager 的统一 API
         matches = await self._session_manager.find_elements(user_id, selector)
         
+        # 只获取一次状态，避免竞态条件
+        state = await self._session_manager.get_state(user_id)
+        
+        last_result = state.get("last_result") if state else None
+        
         metadata = {
             "selector": selector,
             "count": len(matches),
@@ -479,8 +485,8 @@ class BrowserMiddleware(AgentMiddleware):
         return self._artifact_with_state(
             {
                 "status": "success",
-                "url": state["last_result"].get("url") if (state := await self._session_manager.get_state(user_id)) else "",
-                "title": state["last_result"].get("title") if state and state.get("last_result") else None,
+                "url": last_result.get("url") if last_result else "",
+                "title": last_result.get("title") if last_result else None,
                 "metadata": metadata,
                 "content_preview": f"Found {len(matches)} element(s) for selector: {selector}",
                 "history_length": len(state.get("history", [])) if state else 0,
@@ -514,7 +520,7 @@ class BrowserMiddleware(AgentMiddleware):
 
         normalized_text = str(ocr_text).strip()
         if state.get("last_result") and normalized_text:
-            # 更新状态中的文本和截图路径
+            # 更新状态中的文本和截图路径 - 注意：这里只是本地更新，实际持久化由 session.run 处理
             last_result = state["last_result"]
             last_result["text"] = normalized_text
             last_result["screenshot_path"] = screenshot_path
@@ -612,9 +618,10 @@ class BrowserMiddleware(AgentMiddleware):
                 if result.metadata.get("error"):
                     raise RuntimeError(str(result.metadata["error"]))
 
-                # 更新状态
+                # 更新状态 - 通过 session manager 的 get_state 获取最新状态并更新
                 state = await self._session_manager.get_state(user_id)
-                state["last_result"] = result
+                if state and "last_result" in state:
+                    state["last_result"] = result
 
                 result.metadata = {
                     **result.metadata,
