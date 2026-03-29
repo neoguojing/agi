@@ -19,7 +19,7 @@ from langchain_core.messages import ToolMessage,HumanMessage
 from langchain_core.messages.content import create_image_block
 from langchain_core.tools import BaseTool, StructuredTool
 from langchain.tools.tool_node import ToolCallRequest
-from langgraph.types import Command
+from toolgraph.types import Command
 from typing_extensions import NotRequired, TypedDict
 
 from agi.config import BROWSER_STORAGE_PATH
@@ -197,7 +197,7 @@ class BrowserToolArtifact(TypedDict):
 class BrowserMiddleware(AgentMiddleware):
     """Stateful browser middleware with filesystem-style tool wrappers."""
 
-    # 这里不直接管理 Playwright 细节，而是通过 BrowserBackendPool 获取“某个用户的当前浏览器会话”。
+    # 这里不直接管理 Playwright 细节，而是通过 BrowserBackendPool 获取"某个用户的当前浏览器会话"。
 
     def __init__(
         self,
@@ -208,10 +208,14 @@ class BrowserMiddleware(AgentMiddleware):
         content_token_limit: int = 15_000,
         eviction_handler: Callable[[str], str] | None = None,
         system_prompt: str | None = None,
+        session_ttl: int = 1800,  # 30分钟，与 BrowserSessionManager 保持一致
+        cleanup_interval: int = 60,  # 清理间隔，与 BrowserSessionManager 保持一致
     ):
         super().__init__()
         self._session_manager = BrowserSessionManager(
-            backend_factory=lambda: StatefulBrowserBackend(storage_dir=storage_dir)
+            backend_factory=lambda: StatefulBrowserBackend(storage_dir=storage_dir),
+            session_ttl=session_ttl,
+            cleanup_interval=cleanup_interval
         )
         self.ocr = ocr_engine
         self.max_retries = max_retries
