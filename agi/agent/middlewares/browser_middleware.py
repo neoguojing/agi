@@ -487,7 +487,7 @@ class BrowserMiddleware(AgentMiddleware):
             return "", session.last_result.screenshot_path if session.last_result else None
 
         screenshot = await session.run(
-            session.backend.read_screenshot_bytes,
+            session.screenshot
             full_page=True
         )
         if screenshot is None:
