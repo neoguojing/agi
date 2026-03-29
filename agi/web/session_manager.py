@@ -104,7 +104,11 @@ class BrowserSessionManager:
 
     async def get_state(self, user_id: str):
         session = await self.get_session(user_id)
-        return session.backend.get_state_snapshot(user_id=user_id)
+        return session.backend.get_state_snapshot(
+            user_id=user_id,
+            last_result=session.last_result,
+            previous_result=session.previous_result,
+        )
 
     # ========================
     # 自动清理

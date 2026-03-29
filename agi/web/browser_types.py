@@ -1,18 +1,15 @@
-# browser_types.py
-import json
-import logging
-import random
-import uuid
-from asyncio import Lock, Queue, Task
-from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass, field
-from pathlib import Path
-from enum import Enum
-from dataclasses import dataclass, field, asdict
-from typing import Any, Optional, Dict,Literal
-from datetime import datetime
+"""Shared browser domain types.
 
-logger = logging.getLogger(__name__)
+This module intentionally keeps all browser-facing state shapes in one place so
+middleware/backend/session layers read and write the same schema.
+"""
+
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, Literal
+from typing_extensions import NotRequired, TypedDict
+
 
 # --- 常量 ---
 DEFAULT_USER_AGENT = (
@@ -27,9 +24,6 @@ DEFAULT_CLICK_TIMEOUT_MS = 5_000
 DEFAULT_SCROLL_TIMEOUT_MS = 2_000
 DEFAULT_CAPTURE_DELAY_MS = 300
 MAX_FIND_RESULTS = 5
-MAX_BROWSER_EVENTS = 1
-MAX_STATE_MESSAGES = 1
-
 STATE_SNAPSHOT_FILENAME = "browser_session_state.json"
 PLAYWRIGHT_STORAGE_STATE_FILENAME = "playwright_storage_state.json"
 
@@ -80,7 +74,9 @@ BROWSER_OBSERVER_SCRIPT = """(() => {
 })();"""
 
 WaitUntilState = Literal["commit", "domcontentloaded", "load", "networkidle"]
-# --- 数据类 ---
+
+
+# --- Action result payloads ---
 @dataclass(slots=True)
 class PageInfo:
     url: str
@@ -95,6 +91,21 @@ class QueryMatch:
     selector: str
     text: str
     attributes: dict[str, Any]
+
+
+# --- Unified session snapshot exposed to upper layers ---
+class BrowserPageState(TypedDict):
+    url: str
+    title: str | None
+    load_state: str
+
+
+class BrowserSessionSnapshot(TypedDict):
+    user_id: str
+    storage_dir: str
+    history_length: int
+    current_page: BrowserPageState
+    previous_page: NotRequired[BrowserPageState | None]
 
 
 class BrowserEventType(str, Enum):
