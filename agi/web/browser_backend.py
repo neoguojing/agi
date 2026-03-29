@@ -568,14 +568,4 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             metadata={"error": error, **metadata},
         )
 
-    @property
-    def min_text_length(self) -> int:
-        return 50
 
-    @property
-    def min_html_length(self) -> int:
-        return 100
-
-    @property
-    def ocr_keywords(self) -> List[str]:
-        return ["captcha", "验证", "blocked"]
