@@ -242,7 +242,7 @@ class BrowserMiddleware(AgentMiddleware):
         request: ModelRequest[ContextT],
         handler: Callable[[ModelRequest[ContextT]], ModelResponse[ResponseT]],
     ) -> ModelResponse[ResponseT]:
-        system_prompt = self._build_model_system_prompt(request)
+        system_prompt = self._build_model_system_prompt_sync(request)
         if system_prompt:
             request = request.override(system_message=append_to_system_message(request.system_message, system_prompt))
         return handler(request)
@@ -253,7 +253,7 @@ class BrowserMiddleware(AgentMiddleware):
         request: ModelRequest[ContextT],
         handler: Callable[[ModelRequest[ContextT]], Awaitable[ModelResponse[ResponseT]]],
     ) -> ModelResponse[ResponseT]:
-        system_prompt = self._build_model_system_prompt(request)
+        system_prompt = self._build_model_system_prompt_sync(request)
         print({"*******************": system_prompt})
         if system_prompt:
             request = request.override(system_message=append_to_system_message(request.system_message, system_prompt))
@@ -744,7 +744,7 @@ class BrowserMiddleware(AgentMiddleware):
                 return str(configurable["user_id"])
         return "default"
 
-    def _build_model_system_prompt(self, request: ModelRequest[ContextT]) -> str:
+    def _build_model_system_prompt_sync(self, request: ModelRequest[ContextT]) -> str:
         # system prompt = 浏览器工具说明 + 当前 live browser state 摘要。
         system_prompt = self._custom_system_prompt or BROWSER_SYSTEM_PROMPT
         session_state = self._resolve_session_state_for_request(request)
@@ -759,13 +759,13 @@ class BrowserMiddleware(AgentMiddleware):
             session_state = state.get("browser_session_state")
             if isinstance(session_state, dict):
                 user_id = session_state.get("user_id")
-                live_state = self._get_live_session_state(str(user_id)) if user_id else None
+                live_state = self._get_live_session_state_sync(str(user_id)) if user_id else None
                 return live_state or session_state
 
         user_id = self._resolve_user_id_from_request(request)
         if not user_id:
             return None
-        return self._get_live_session_state(user_id)
+        return self._get_live_session_state_sync(user_id)
 
     def _resolve_user_id_from_request(self, request: ModelRequest[ContextT]) -> str | None:
         state = getattr(request, "state", None) or {}
@@ -786,8 +786,10 @@ class BrowserMiddleware(AgentMiddleware):
             return str(configurable["user_id"])
         return None
 
-    async def _get_live_session_state(self, user_id: str) -> BrowserSessionState | None:
-        state = await self._session_manager.get_state(user_id)
+    def _get_live_session_state_sync(self, user_id: str) -> BrowserSessionState | None:
+        # 同步方法：使用 run_in_executor 避免阻塞事件循环
+        loop = asyncio.get_event_loop()
+        state = loop.run_until_complete(self._session_manager.get_state(user_id))
         if not state or "last_result" not in state:
             return None
         return self._build_session_state(state)
