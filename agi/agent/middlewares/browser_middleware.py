@@ -24,7 +24,9 @@ from typing_extensions import NotRequired, TypedDict
 
 from agi.config import BROWSER_STORAGE_PATH
 from agi.utils.common import append_to_system_message
-from agi.web.browser_session import BrowserBackendPool
+from agi.web.session_manager import BrowserSessionManager
+from agi.web.browser_session import BrowserSession
+from agi.web.browser_backend import StatefulBrowserBackend
 from agi.web.browser_types import PageInfo,UserBrowserSession
 
 
@@ -208,8 +210,8 @@ class BrowserMiddleware(AgentMiddleware):
         system_prompt: str | None = None,
     ):
         super().__init__()
-        self._session_pool = BrowserBackendPool(
-            storage_dir=storage_dir
+        self._session_manager = BrowserSessionManager(
+            backend_factory=lambda: StatefulBrowserBackend(storage_dir=storage_dir)
         )
         self.ocr = ocr_engine
         self.max_retries = max_retries
@@ -396,91 +398,94 @@ class BrowserMiddleware(AgentMiddleware):
 
     async def _tool_extract(self, runtime: ToolRuntime[None, BrowserState]) -> BrowserToolArtifact:
         """Extract page content from the last successfully loaded page, prioritizing OCR."""
-        async with self._session_for_user(runtime) as session:
-            if session.last_result is None:
-                return self._artifact_with_state(
-                    self._error_artifact("No page loaded. Please navigate first."),
-                    session,
-                )
-
-            html = session.last_result.html or ""
-            text = session.last_result.text or ""
-            ocr_text, screenshot_path = await self._extract_content_with_ocr(session)
-            if not ocr_text and not html and not text:
-                return self._artifact_with_state(
-                    self._error_artifact(
-                        "Page content is empty and OCR extraction was unavailable.",
-                        url=session.last_result.url,
-                        metadata=session.last_result.metadata,
-                        screenshot_path=screenshot_path,
-                    ),
-                    session,
-                )
-
-            primary_content = ocr_text or text or html
-            artifact: BrowserToolArtifact = {
-                "status": "success",
-                "url": session.last_result.url,
-                "title": session.last_result.title,
-                "metadata": {
-                    **dict(session.last_result.metadata),
-                    "ocr_priority": True,
-                    "ocr_applied": bool(ocr_text),
-                },
-                "content_preview": self._build_preview(primary_content),
-                "history_length": len(session.backend.get_history()),
-            }
-            if screenshot_path:
-                artifact["screenshot_path"] = screenshot_path
-            if ocr_text:
-                artifact["ocr_text_preview"] = self._build_preview(ocr_text, limit=self.content_limit)
-
-            if len(html) > self.content_limit:
-                artifact["html_preview"] = self._build_preview(html, limit=self.content_limit)
-                artifact["text_preview"] = self._build_preview(text, limit=self.content_limit)
-                artifact["is_truncated"] = True
-                if self.eviction_handler is not None:
-                    file_path = self.eviction_handler(html)
-                    artifact["full_content_path"] = file_path
-                    artifact["metadata"] = {
-                        **artifact["metadata"],
-                        "evicted": True,
-                        "full_content_path": file_path,
-                    }
-            else:
-                artifact["html_preview"] = html
-                artifact["text_preview"] = text
-                artifact["is_truncated"] = False
-
-            return self._artifact_with_state(artifact, session)
-
-    async def _tool_find(self, runtime: ToolRuntime[None, BrowserState], selector: str) -> BrowserToolArtifact:
-        """Find candidate elements on the current page."""
-        async with self._session_for_user(runtime) as session:
-            matches = await session.backend.find_elements(selector)
-            metadata = {
-                "selector": selector,
-                "count": len(matches),
-                "matches": [{"text": match.text, "attrs": match.attributes} for match in matches[:10]],
-            }
+        session = await self._get_session(runtime)
+        if session.last_result is None:
             return self._artifact_with_state(
-                {
-                    "status": "success",
-                    "url": session.last_result.url if session.last_result else "",
-                    "title": session.last_result.title if session.last_result else None,
-                    "metadata": metadata,
-                    "content_preview": f"Found {len(matches)} element(s) for selector: {selector}",
-                    "history_length": len(session.backend.get_history()),
-                },
+                self._error_artifact("No page loaded. Please navigate first."),
                 session,
             )
 
-    async def _extract_content_with_ocr(self, session: UserBrowserSession) -> tuple[str, str | None]:
+        html = session.last_result.html or ""
+        text = session.last_result.text or ""
+        ocr_text, screenshot_path = await self._extract_content_with_ocr(session)
+        if not ocr_text and not html and not text:
+            return self._artifact_with_state(
+                self._error_artifact(
+                    "Page content is empty and OCR extraction was unavailable.",
+                    url=session.last_result.url,
+                    metadata=session.last_result.metadata,
+                    screenshot_path=screenshot_path,
+                ),
+                session,
+            )
+
+        primary_content = ocr_text or text or html
+        artifact: BrowserToolArtifact = {
+            "status": "success",
+            "url": session.last_result.url,
+            "title": session.last_result.title,
+            "metadata": {
+                **dict(session.last_result.metadata),
+                "ocr_priority": True,
+                "ocr_applied": bool(ocr_text),
+            },
+            "content_preview": self._build_preview(primary_content),
+            "history_length": len(session.backend.get_history()),
+        }
+        if screenshot_path:
+            artifact["screenshot_path"] = screenshot_path
+        if ocr_text:
+            artifact["ocr_text_preview"] = self._build_preview(ocr_text, limit=self.content_limit)
+
+        if len(html) > self.content_limit:
+            artifact["html_preview"] = self._build_preview(html, limit=self.content_limit)
+            artifact["text_preview"] = self._build_preview(text, limit=self.content_limit)
+            artifact["is_truncated"] = True
+            if self.eviction_handler is not None:
+                file_path = self.eviction_handler(html)
+                artifact["full_content_path"] = file_path
+                artifact["metadata"] = {
+                    **artifact["metadata"],
+                    "evicted": True,
+                    "full_content_path": file_path,
+                }
+        else:
+            artifact["html_preview"] = html
+            artifact["text_preview"] = text
+            artifact["is_truncated"] = False
+
+        return self._artifact_with_state(artifact, session)
+
+    async def _tool_find(self, runtime: ToolRuntime[None, BrowserState], selector: str) -> BrowserToolArtifact:
+        """Find candidate elements on the current page."""
+        session = await self._get_session(runtime)
+        matches = await session.backend.find_elements(selector)
+        metadata = {
+            "selector": selector,
+            "count": len(matches),
+            "matches": [{"text": match.text, "attrs": match.attributes} for match in matches[:10]],
+        }
+        return self._artifact_with_state(
+            {
+                "status": "success",
+                "url": session.last_result.url if session.last_result else "",
+                "title": session.last_result.title if session.last_result else None,
+                "metadata": metadata,
+                "content_preview": f"Found {len(matches)} element(s) for selector: {selector}",
+                "history_length": len(session.backend.get_history()),
+            },
+            session,
+        )
+
+    async def _extract_content_with_ocr(self, session: BrowserSession) -> tuple[str, str | None]:
         """Capture a full-page screenshot and use OCR as the primary extraction path."""
         if not self.enable_ocr or self.ocr is None:
             return "", session.last_result.screenshot_path if session.last_result else None
 
-        screenshot = await session.backend.read_screenshot_bytes(full_page=True)
+        screenshot = await session.run(
+            session.backend.read_screenshot_bytes,
+            full_page=True
+        )
         if screenshot is None:
             return "", session.last_result.screenshot_path if session.last_result else None
 
@@ -511,106 +516,114 @@ class BrowserMiddleware(AgentMiddleware):
 
     async def _tool_screenshot(self, runtime: ToolRuntime[None, BrowserState], tool_call_id: str) -> ToolMessage | Command:
         """Capture a screenshot and return a multimodal tool response."""
-        async with self._session_for_user(runtime) as session:
-            screenshot = await session.backend.read_screenshot_bytes(full_page=True)
-            if screenshot is None:
-                artifact = self._artifact_with_state(self._error_artifact("Failed to take screenshot"), session)
-                return self._command_for_result(
-                    "browser_screenshot",
-                    tool_call_id,
-                    artifact,
-                    session_state=self._session_state_from_artifact(artifact),
-                )
-
-            screenshot_path, image_bytes = screenshot
-            # image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-            current_url = session.last_result.url if session.last_result else ""
-            text = f"Screenshot captured for {current_url}" if current_url else "Screenshot captured"
-            artifact: BrowserToolArtifact = {
-                "status": "success",
-                "url": current_url,
-                "title": session.last_result.title if session.last_result else None,
-                "metadata": {"screenshot_path": screenshot_path},
-                "content_preview": text,
-                "screenshot_path": screenshot_path,
-                "history_length": len(session.backend.get_history()),
-            }
-            artifact = self._artifact_with_state(artifact, session)
-            session_state = self._session_state_from_artifact(artifact)
-            return Command(
-                update={
-                    "browser_last_result": artifact,
-                    "browser_session_state": session_state,
-                    "messages": [
-                        ToolMessage(
-                            content=text,
-                            content_blocks=[create_image_block(file_id=screenshot_path, mime_type="image/png")],
-                            name="browser_screenshot",
-                            tool_call_id=tool_call_id,
-                            additional_kwargs={"artifact": artifact},
-                        )
-                    ],
-                }
+        session = await self._get_session(runtime)
+        screenshot = await session.backend.read_screenshot_bytes(full_page=True)
+        if screenshot is None:
+            artifact = self._artifact_with_state(self._error_artifact("Failed to take screenshot"), session)
+            return self._command_for_result(
+                "browser_screenshot",
+                tool_call_id,
+                artifact,
+                session_state=self._session_state_from_artifact(artifact),
             )
 
-    async def _execute_with_retry(self, runtime: ToolRuntime[None, BrowserState], action: str, **kwargs: Any) -> PageInfo:
-        """Execute a browser action with retries and optional OCR fallback."""
-        # 所有真正会改变页面状态的原子操作统一走这里：负责重试、OCR 补偿、写回 session.last_result。
+        screenshot_path, image_bytes = screenshot
+        # image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+        current_url = session.last_result.url if session.last_result else ""
+        text = f"Screenshot captured for {current_url}" if current_url else "Screenshot captured"
+        artifact: BrowserToolArtifact = {
+            "status": "success",
+            "url": current_url,
+            "title": session.last_result.title if session.last_result else None,
+            "metadata": {"screenshot_path": screenshot_path},
+            "content_preview": text,
+            "screenshot_path": screenshot_path,
+            "history_length": len(session.backend.get_history()),
+        }
+        artifact = self._artifact_with_state(artifact, session)
+        session_state = self._session_state_from_artifact(artifact)
+        return Command(
+            update={
+                "browser_last_result": artifact,
+                "browser_session_state": session_state,
+                "messages": [
+                    ToolMessage(
+                        content=text,
+                        content_blocks=[create_image_block(file_id=screenshot_path, mime_type="image/png")],
+                        name="browser_screenshot",
+                        tool_call_id=tool_call_id,
+                        additional_kwargs={"artifact": artifact},
+                    )
+                ],
+            }
+        )
+
+    async def _execute_with_retry(
+        self,
+        runtime: ToolRuntime[None, BrowserState],
+        action: str,
+        **kwargs: Any
+    ) -> PageInfo:
         last_error: Exception | None = None
         user_id = self._resolve_user_id(runtime)
 
-        async with self._session_pool.session(user_id) as session:
-            for attempt in range(self.max_retries):
-                try:
-                    if attempt > 0:
-                        delay = random.uniform(1.0, 3.0)
-                        logger.info("Retrying browser action '%s' for user_id=%s after %.2fs", action, user_id, delay)
-                        await asyncio.sleep(delay)
+        session = await self._session_manager.get_session(user_id)
 
-                    started_at = time.perf_counter()
-                    result = await self._dispatch_action(session, action, **kwargs)
-                    logger.info(
-                        "Browser action '%s' for user_id=%s completed in %.2fs",
-                        action,
-                        user_id,
-                        time.perf_counter() - started_at,
-                    )
+        for attempt in range(self.max_retries):
+            try:
+                if attempt > 0:
+                    delay = random.uniform(1.0, 3.0)
+                    await asyncio.sleep(delay)
 
-                    if result.metadata.get("error"):
-                        msg = str(result.metadata["error"])
-                        raise RuntimeError(msg)
+                started_at = time.perf_counter()
 
-                    # result = await self._extract_content_with_ocr(session)
-                    session.last_result = result
-                    result.metadata = {
-                        **result.metadata,
-                        "browser_session_state": self._build_session_state(session),
-                    }
-                    return result
-                except Exception as exc:
-                    last_error = exc
-                    logger.warning(
-                        "Browser action '%s' for user_id=%s attempt %s/%s failed: %s",
-                        action,
-                        user_id,
-                        attempt + 1,
-                        self.max_retries,
-                        exc,
-                    )
-                    if attempt < self.max_retries - 1:
-                        await asyncio.sleep(2**attempt)
+                result = await session.run(
+                    self._dispatch_action,
+                    session,
+                    action,
+                    **kwargs
+                )
 
-            error_url = kwargs.get("url") or (session.last_result.url if session.last_result else "unknown")
-            error_result = PageInfo(
-                url=error_url,
-                title=None,
-                html=None,
-                text=None,
-                screenshot_path=None,
-                metadata={"error": f"Failed after {self.max_retries} retries: {last_error}"},
-            )
-            error_result.metadata["browser_session_state"] = self._build_session_state(session)
-            return error_result
+                logger.info(
+                    "Browser action '%s' for user_id=%s completed in %.2fs",
+                    action,
+                    user_id,
+                    time.perf_counter() - started_at,
+                )
+
+                if result.metadata.get("error"):
+                    raise RuntimeError(str(result.metadata["error"]))
+
+                session.last_result = result
+
+                result.metadata = {
+                    **result.metadata,
+                    "browser_session_state": self._build_session_state(session),
+                }
+
+                return result
+
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "Browser action '%s' failed (%s/%s): %s",
+                    action,
+                    attempt + 1,
+                    self.max_retries,
+                    exc,
+                )
+
+                if attempt < self.max_retries - 1:
+                    await asyncio.sleep(2**attempt)
+
+        return PageInfo(
+            url=kwargs.get("url", "unknown"),
+            title=None,
+            html=None,
+            text=None,
+            screenshot_path=None,
+            metadata={"error": f"Failed after {self.max_retries}: {last_error}"},
+        )
 
     async def _dispatch_action(self, session: UserBrowserSession, action: str, **kwargs: Any) -> PageInfo:
         if action == "navigate":
@@ -667,9 +680,9 @@ class BrowserMiddleware(AgentMiddleware):
             artifact["screenshot_path"] = screenshot_path
         return artifact
 
-    def _session_for_user(self, runtime: ToolRuntime[None, BrowserState] | None = None):
+    async def _get_session(self, runtime: ToolRuntime[None, BrowserState]):
         user_id = self._resolve_user_id(runtime)
-        return self._session_pool.session(user_id)
+        return await self._session_manager.get_session(user_id)
 
     def _resolve_user_id(self, runtime: ToolRuntime[None, BrowserState] | None = None) -> str:
         if runtime is not None:
@@ -725,7 +738,7 @@ class BrowserMiddleware(AgentMiddleware):
         return None
 
     def _get_live_session_state(self, user_id: str) -> BrowserSessionState | None:
-        session = self._session_pool.get_existing_session(user_id)
+        session = self._session_manager._sessions.get(user_id)
         if session is None:
             return None
         return self._build_session_state(session)
