@@ -403,40 +403,42 @@ class BrowserMiddleware(AgentMiddleware):
     async def _tool_extract(self, runtime: ToolRuntime[None, BrowserState]) -> BrowserToolArtifact:
         """Extract page content from the last successfully loaded page, prioritizing OCR."""
         user_id = self._resolve_user_id(runtime)
-        session = await self._session_manager.get_session(user_id)
         
-        if session.last_result is None:
+        # 使用 session manager 的统一 API 获取状态
+        state = await self._session_manager.get_state(user_id)
+        
+        if state.get("last_result") is None:
             return self._artifact_with_state(
                 self._error_artifact("No page loaded. Please navigate first."),
-                session,
+                user_id,
             )
 
-        html = session.last_result.html or ""
-        text = session.last_result.text or ""
-        ocr_text, screenshot_path = await self._extract_content_with_ocr(session)
+        html = state["last_result"].get("html") or ""
+        text = state["last_result"].get("text") or ""
+        ocr_text, screenshot_path = await self._extract_content_with_ocr(state)
         if not ocr_text and not html and not text:
             return self._artifact_with_state(
                 self._error_artifact(
                     "Page content is empty and OCR extraction was unavailable.",
-                    url=session.last_result.url,
-                    metadata=session.last_result.metadata,
+                    url=state["last_result"].get("url"),
+                    metadata=state["last_result"].get("metadata", {}),
                     screenshot_path=screenshot_path,
                 ),
-                session,
+                user_id,
             )
 
         primary_content = ocr_text or text or html
         artifact: BrowserToolArtifact = {
             "status": "success",
-            "url": session.last_result.url,
-            "title": session.last_result.title,
+            "url": state["last_result"].get("url"),
+            "title": state["last_result"].get("title"),
             "metadata": {
-                **dict(session.last_result.metadata),
+                **dict(state["last_result"].get("metadata", {})),
                 "ocr_priority": True,
                 "ocr_applied": bool(ocr_text),
             },
             "content_preview": self._build_preview(primary_content),
-            "history_length": len(session.backend.get_history()),
+            "history_length": len(state.get("history", [])),
         }
         if screenshot_path:
             artifact["screenshot_path"] = screenshot_path
@@ -460,14 +462,15 @@ class BrowserMiddleware(AgentMiddleware):
             artifact["text_preview"] = text
             artifact["is_truncated"] = False
 
-        return self._artifact_with_state(artifact, session)
+        return self._artifact_with_state(artifact, user_id)
 
     async def _tool_find(self, runtime: ToolRuntime[None, BrowserState], selector: str) -> BrowserToolArtifact:
         """Find candidate elements on the current page."""
         user_id = self._resolve_user_id(runtime)
-        session = await self._session_manager.get_session(user_id)
         
-        matches = await session.backend.find_elements(selector)
+        # 使用 session manager 的统一 API
+        matches = await self._session_manager.find_elements(user_id, selector)
+        
         metadata = {
             "selector": selector,
             "count": len(matches),
@@ -476,26 +479,25 @@ class BrowserMiddleware(AgentMiddleware):
         return self._artifact_with_state(
             {
                 "status": "success",
-                "url": session.last_result.url if session.last_result else "",
-                "title": session.last_result.title if session.last_result else None,
+                "url": state["last_result"].get("url") if (state := await self._session_manager.get_state(user_id)) else "",
+                "title": state["last_result"].get("title") if state and state.get("last_result") else None,
                 "metadata": metadata,
                 "content_preview": f"Found {len(matches)} element(s) for selector: {selector}",
-                "history_length": len(session.backend.get_history()),
+                "history_length": len(state.get("history", [])) if state else 0,
             },
-            session,
+            user_id,
         )
 
-    async def _extract_content_with_ocr(self, session: BrowserSession) -> tuple[str, str | None]:
+    async def _extract_content_with_ocr(self, state: dict[str, Any]) -> tuple[str, str | None]:
         """Capture a full-page screenshot and use OCR as the primary extraction path."""
         if not self.enable_ocr or self.ocr is None:
-            return "", session.last_result.screenshot_path if session.last_result else None
+            return "", state["last_result"].get("screenshot_path") if state.get("last_result") else None
 
-        screenshot = await session.run(
-            session.backend.read_screenshot_bytes,
-            full_page=True
-        )
+        # 使用 session manager 的统一 API 获取截图
+        screenshot = await self._session_manager.screenshot(state["user_id"])
+        
         if screenshot is None:
-            return "", session.last_result.screenshot_path if session.last_result else None
+            return "", state["last_result"].get("screenshot_path") if state.get("last_result") else None
 
         screenshot_path, image_bytes = screenshot
         image_b64 = base64.b64encode(image_bytes).decode("utf-8")
@@ -507,15 +509,17 @@ class BrowserMiddleware(AgentMiddleware):
                         )
                     ])
         except Exception:
-            logger.exception("OCR extraction failed for %s", session.last_result.url if session.last_result else "current page")
+            logger.exception("OCR extraction failed for %s", state["last_result"].get("url") if state.get("last_result") else "current page")
             return "", screenshot_path
 
         normalized_text = str(ocr_text).strip()
-        if session.last_result is not None and normalized_text:
-            session.last_result.text = normalized_text
-            session.last_result.screenshot_path = screenshot_path
-            session.last_result.metadata = {
-                **session.last_result.metadata,
+        if state.get("last_result") and normalized_text:
+            # 更新状态中的文本和截图路径
+            last_result = state["last_result"]
+            last_result["text"] = normalized_text
+            last_result["screenshot_path"] = screenshot_path
+            last_result["metadata"] = {
+                **last_result.get("metadata", {}),
                 "ocr_applied": True,
                 "ocr_text_length": len(normalized_text),
                 "ocr_screenshot_path": screenshot_path,
@@ -525,11 +529,12 @@ class BrowserMiddleware(AgentMiddleware):
     async def _tool_screenshot(self, runtime: ToolRuntime[None, BrowserState], tool_call_id: str) -> ToolMessage | Command:
         """Capture a screenshot and return a multimodal tool response."""
         user_id = self._resolve_user_id(runtime)
-        session = await self._session_manager.get_session(user_id)
         
-        screenshot = await session.backend.read_screenshot_bytes(full_page=True)
+        # 使用 session manager 的统一 API 获取截图
+        screenshot = await self._session_manager.screenshot(user_id)
+        
         if screenshot is None:
-            artifact = self._artifact_with_state(self._error_artifact("Failed to take screenshot"), session)
+            artifact = self._artifact_with_state(self._error_artifact("Failed to take screenshot"), user_id)
             return self._command_for_result(
                 "browser_screenshot",
                 tool_call_id,
@@ -539,18 +544,19 @@ class BrowserMiddleware(AgentMiddleware):
 
         screenshot_path, image_bytes = screenshot
         # image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-        current_url = session.last_result.url if session.last_result else ""
+        state = await self._session_manager.get_state(user_id)
+        current_url = state["last_result"].get("url") if state.get("last_result") else ""
         text = f"Screenshot captured for {current_url}" if current_url else "Screenshot captured"
         artifact: BrowserToolArtifact = {
             "status": "success",
             "url": current_url,
-            "title": session.last_result.title if session.last_result else None,
+            "title": state["last_result"].get("title") if state.get("last_result") else None,
             "metadata": {"screenshot_path": screenshot_path},
             "content_preview": text,
             "screenshot_path": screenshot_path,
-            "history_length": len(session.backend.get_history()),
+            "history_length": len(state.get("history", [])) if state else 0,
         }
-        artifact = self._artifact_with_state(artifact, session)
+        artifact = self._artifact_with_state(artifact, user_id)
         session_state = self._session_state_from_artifact(artifact)
         return Command(
             update={
@@ -577,8 +583,6 @@ class BrowserMiddleware(AgentMiddleware):
         last_error: Exception | None = None
         user_id = self._resolve_user_id(runtime)
 
-        session = await self._session_manager.get_session(user_id)
-
         for attempt in range(self.max_retries):
             try:
                 if attempt > 0:
@@ -587,12 +591,16 @@ class BrowserMiddleware(AgentMiddleware):
 
                 started_at = time.perf_counter()
 
-                result = await session.run(
-                    self._dispatch_action,
-                    session,
-                    action,
-                    **kwargs
-                )
+                # 使用 session manager 的统一 API
+                if action == "navigate":
+                    result = await self._session_manager.navigate(user_id, kwargs["url"])
+                elif action == "click":
+                    result = await self._session_manager.click(user_id, kwargs["selector"])
+                elif action == "fill":
+                    result = await self._session_manager.fill(user_id, kwargs["selector"], kwargs["text"])
+                else:
+                    msg = f"Unknown action: {action}"
+                    raise ValueError(msg)
 
                 logger.info(
                     "Browser action '%s' for user_id=%s completed in %.2fs",
@@ -604,11 +612,13 @@ class BrowserMiddleware(AgentMiddleware):
                 if result.metadata.get("error"):
                     raise RuntimeError(str(result.metadata["error"]))
 
-                session.last_result = result
+                # 更新状态
+                state = await self._session_manager.get_state(user_id)
+                state["last_result"] = result
 
                 result.metadata = {
                     **result.metadata,
-                    "browser_session_state": self._build_session_state(session),
+                    "browser_session_state": self._build_session_state(state),
                 }
 
                 return result
@@ -634,16 +644,6 @@ class BrowserMiddleware(AgentMiddleware):
             screenshot_path=None,
             metadata={"error": f"Failed after {self.max_retries}: {last_error}"},
         )
-
-    async def _dispatch_action(self, session: BrowserSession, action: str, **kwargs: Any) -> PageInfo:
-        if action == "navigate":
-            return await session.backend.navigate(kwargs["url"])
-        if action == "click":
-            return await session.backend.click(kwargs["selector"])
-        if action == "fill":
-            return await session.backend.fill(kwargs["selector"], kwargs["text"])
-        msg = f"Unknown action: {action}"
-        raise ValueError(msg)
 
     def _format_page_result(self, result: PageInfo) -> BrowserToolArtifact:
         if result.metadata.get("error"):
@@ -689,10 +689,6 @@ class BrowserMiddleware(AgentMiddleware):
         if screenshot_path:
             artifact["screenshot_path"] = screenshot_path
         return artifact
-
-    async def _get_session(self, runtime: ToolRuntime[None, BrowserState]):
-        user_id = self._resolve_user_id(runtime)
-        return await self._session_manager.get_session(user_id)
 
     def _resolve_user_id(self, runtime: ToolRuntime[None, BrowserState] | None = None) -> str:
         if runtime is not None:
@@ -748,10 +744,10 @@ class BrowserMiddleware(AgentMiddleware):
         return None
 
     def _get_live_session_state(self, user_id: str) -> BrowserSessionState | None:
-        session = self._session_manager._sessions.get(user_id)
-        if session is None:
+        state = asyncio.run(self._session_manager.get_state(user_id))
+        if not state or "last_result" not in state:
             return None
-        return self._build_session_state(session)
+        return self._build_session_state(state)
 
     def _format_browser_state_for_prompt(self, session_state: BrowserSessionState) -> str:
         # 把结构化状态压缩成模型容易理解的文本，避免把完整 JSON 原样塞进 prompt。
@@ -792,13 +788,24 @@ class BrowserMiddleware(AgentMiddleware):
             ]
         )
 
-    def _build_session_state(self, session: BrowserSession) -> BrowserSessionState:
-        return session.backend.get_state_snapshot(user_id=session.user_id, last_result=session.last_result)
+    def _build_session_state(self, state: dict[str, Any]) -> BrowserSessionState:
+        return {
+            "user_id": state.get("user_id"),
+            "storage_dir": state.get("storage_dir", ""),
+            "browser": state.get("browser", {}),
+            "context": state.get("context", {}),
+            "page": state.get("page", {}),
+            "history_length": len(state.get("history", [])),
+            "recent_events": state.get("recent_events", [])[-MAX_PROMPT_EVENTS:],
+            "last_event": state.get("last_event"),
+            "event_version": state.get("event_version", 0),
+        }
 
-    def _artifact_with_state(self, artifact: BrowserToolArtifact, session: BrowserSession) -> BrowserToolArtifact:
+    def _artifact_with_state(self, artifact: BrowserToolArtifact, user_id: str) -> BrowserToolArtifact:
+        state = asyncio.run(self._session_manager.get_state(user_id))
         artifact["metadata"] = {
             **dict(artifact.get("metadata", {})),
-            "browser_session_state": self._build_session_state(session),
+            "browser_session_state": self._build_session_state(state),
         }
         return artifact
 
