@@ -2,6 +2,7 @@ import time
 import asyncio
 from typing import Any, Awaitable, Callable
 from .browser_protocal import AbstractBrowserBackend
+from .browser_types import PageInfo
 
 
 class BrowserSession:
@@ -15,6 +16,8 @@ class BrowserSession:
 
         self.created_at = time.time()
         self.last_active_at = time.time()
+        self.last_result: PageInfo | None = None
+        self.previous_result: PageInfo | None = None
 
         # 防止同一用户并发操作冲突
         self._lock = asyncio.Lock()
@@ -30,7 +33,11 @@ class BrowserSession:
         """
         async with self._lock:
             self.last_active_at = time.time()
-            return await op(*args, **kwargs)
+            result = await op(*args, **kwargs)
+            if isinstance(result, PageInfo):
+                self.previous_result = self.last_result
+                self.last_result = result
+            return result
 
     async def close(self):
         """
