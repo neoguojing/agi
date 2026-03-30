@@ -4,6 +4,7 @@ from typing import Dict, Callable, Optional, Any
 
 from .browser_protocal import AbstractBrowserBackend
 from .browser_session import BrowserSession
+from .browser_types import PageInfo
 
 
 class BrowserSessionManager:
@@ -108,6 +109,32 @@ class BrowserSessionManager:
             user_id=user_id,
             last_result=session.last_result,
             previous_result=session.previous_result,
+        )
+
+    async def get_last_result(self, user_id: str) -> PageInfo | None:
+        """获取该用户最近一次页面结果。"""
+        session = await self.get_session(user_id)
+        return await session.get_last_result()
+
+    async def get_history(self, user_id: str) -> list[dict[str, Any]]:
+        """获取该用户浏览动作历史。"""
+        session = await self.get_session(user_id)
+        return await session.get_history()
+
+    async def apply_ocr_result(
+        self,
+        user_id: str,
+        *,
+        text: str,
+        screenshot_path: str,
+        metadata_update: dict[str, Any],
+    ) -> None:
+        """回写 OCR 结果到当前会话的 last_result。"""
+        session = await self.get_session(user_id)
+        await session.apply_ocr_result(
+            text=text,
+            screenshot_path=screenshot_path,
+            metadata_update=metadata_update,
         )
 
     # ========================
