@@ -4,6 +4,7 @@ import logging
 import random
 import uuid
 from asyncio import Lock
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 from playwright.async_api import (
@@ -14,7 +15,7 @@ from .browser_types import (
     BrowserRuntimeState,
     DEFAULT_USER_AGENT, DEFAULT_VIEWPORT, DEFAULT_WAIT_UNTIL,
     STATE_SNAPSHOT_FILENAME, PLAYWRIGHT_STORAGE_STATE_FILENAME,
-    BrowserPageState,
+    BrowserHistoryEntry,
     BrowserSessionSnapshot,
     PageInfo, QueryMatch, WaitUntilState, MAX_FIND_RESULTS, DEFAULT_CLICK_TIMEOUT_MS,
     DEFAULT_SCROLL_TIMEOUT_MS, DEFAULT_SMART_WAIT_TIMEOUT_MS, DEFAULT_CAPTURE_DELAY_MS
@@ -52,8 +53,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
         # 初始化子模块
         restored_snapshot = self._load_persisted_state_snapshot()
-        self._history: list[dict[str, Any]] = []
-        self._page_runtime_state: dict[str, dict[str, Any]] = {}
+        self._history: list[BrowserHistoryEntry] = []
+        self._page_runtime_state: dict[str, PageInfo] = {}
         self._persister = BrowserStatePersister(self.storage_dir, restored_snapshot)
 
         self._init_lock = Lock()
@@ -80,12 +81,18 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
     def _update_page_runtime_state(self, page: Page, *, load_state: str | None = None) -> None:
         page_id = self._page_id(page)
-        state = self._page_runtime_state.get(page_id, {})
-        self._page_runtime_state[page_id] = {
-            "url": page.url,
-            "title": state.get("title"),
-            "load_state": load_state or state.get("load_state", "unknown"),
-        }
+        previous = self._page_runtime_state.get(page_id)
+        metadata = dict(previous.metadata) if previous else {}
+        metadata["load_state"] = load_state or metadata.get("load_state", "unknown")
+        self._page_runtime_state[page_id] = PageInfo(
+            url=page.url,
+            title=previous.title if previous else None,
+            html=previous.html if previous else None,
+            text=previous.text if previous else None,
+            screenshot_path=previous.screenshot_path if previous else None,
+            metadata=metadata,
+        )
+        logger.debug("Updated runtime state for %s: url=%s load_state=%s", page_id, page.url, metadata["load_state"])
 
     def _load_persisted_state_snapshot(self) -> dict[str, Any] | None:
         snapshot_path = self.storage_dir / STATE_SNAPSHOT_FILENAME
@@ -200,7 +207,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         *,
         action: str,
         operation: Callable[[Page], Awaitable[Response | None]],
-        history_entry: dict[str, Any],
+        history_entry: dict[str, Any] | None,
         capture_url: str | None = None,
     ) -> PageInfo:
         """执行页面动作并自动处理重试/恢复。
@@ -217,7 +224,14 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             try:
                 response = await operation(page)
                 await self._smart_wait(page)
-                self._history.append(history_entry)
+                if history_entry:
+                    structured_entry: BrowserHistoryEntry = {
+                        "action": str(history_entry.get("action", action)),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "params": {k: v for k, v in history_entry.items() if k != "action"},
+                    }
+                    self._history.append(structured_entry)
+                    logger.info("Recorded browser history entry: %s", structured_entry)
                 if self._context is not None:
                     await self._persister.persist_playwright_storage_state(self._context)
                 return await self._capture_page_info(
@@ -360,14 +374,24 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             logger.exception("Screenshot failed")
             return ""
 
-    def _page_summary(self, result: PageInfo | None, fallback_state: Any | None = None) -> BrowserPageState:
-        fallback_url = fallback_state.get("url") if isinstance(fallback_state, dict) else ""
-        fallback_title = fallback_state.get("title") if isinstance(fallback_state, dict) else None
-        fallback_load_state = fallback_state.get("load_state") if isinstance(fallback_state, dict) else "unknown"
+    def _page_summary(self, result: PageInfo | None, fallback_state: PageInfo | None = None) -> dict[str, Any]:
+        source = result or fallback_state
+        if source is None:
+            return {
+                "url": "",
+                "title": None,
+                "html": None,
+                "text": None,
+                "screenshot_path": None,
+                "metadata": {"load_state": "unknown"},
+            }
         return {
-            "url": (result.url if result else "") or fallback_url,
-            "title": (result.title if result else None) or fallback_title,
-            "load_state": fallback_load_state,
+            "url": source.url,
+            "title": source.title,
+            "html": source.html,
+            "text": source.text,
+            "screenshot_path": source.screenshot_path,
+            "metadata": dict(source.metadata),
         }
 
     def get_state_snapshot(
@@ -393,7 +417,17 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             "current_page": self._page_summary(last_result, current_page_state),
             "previous_page": self._page_summary(previous_result) if previous_result else None,
         }
+        logger.debug(
+            "Generated browser snapshot: is_open=%s current_url=%s",
+            snapshot["browser"]["is_open"],
+            snapshot["current_page"].get("url"),
+        )
         return snapshot
+
+    def get_history(self) -> list[dict[str, Any]]:
+        """Return a copy of structured browser history entries."""
+        logger.debug("Returning browser history, size=%s", len(self._history))
+        return [dict(entry) for entry in self._history]
 
     # --- Internal Action Implementations ---
 
@@ -424,6 +458,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     "history_length": len(self._history),
                 }
             )
+            self._page_runtime_state[self._page_id(page)] = page_info
+            logger.info("Captured page info: url=%s title=%s", page_info.url, page_info.title)
 
             return page_info
         except Exception as exc:

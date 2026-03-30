@@ -640,9 +640,18 @@ class BrowserMiddleware(AgentMiddleware):
             "content_preview": self._build_preview(result.text),
             "element": result.html,
             "history_length": int(result.metadata.get("history_length", 0)),
+            "page_info": {
+                "url": result.url,
+                "title": result.title,
+                "html": result.html,
+                "text": result.text,
+                "screenshot_path": result.screenshot_path,
+                "metadata": dict(result.metadata),
+            },
         }
         if result.screenshot_path:
             artifact["screenshot_path"] = result.screenshot_path
+        logger.info("Formatted tool artifact with full PageInfo for url=%s", result.url)
         return artifact
 
     def _error_artifact(
@@ -739,18 +748,12 @@ class BrowserMiddleware(AgentMiddleware):
         browser = session_state.get("browser", {}) or {}
         current_page = session_state.get("current_page", {}) or {}
         previous_page = session_state.get("previous_page")
-        previous_line = "previous_page: <none>"
-        if isinstance(previous_page, dict):
-            previous_line = (
-                f"previous_page: url={previous_page.get('url')}, "
-                f"title={previous_page.get('title')}, "
-                f"load_state={previous_page.get('load_state')}"
-            )
+        previous_line = f"previous_page: {previous_page if isinstance(previous_page, dict) else '<none>'}"
         return "\n".join(
             [
                 "## Current Browser Session State",
                 f"browser: is_open={browser.get('is_open')} is_closed={browser.get('is_closed')}",
-                f"current_page: url={current_page.get('url')}, title={current_page.get('title')}, load_state={current_page.get('load_state')}",
+                f"current_page: {current_page}",
                 previous_line,
                 "Use only this state to decide next step: navigate, find, click, fill, extract, screenshot.",
             ]
@@ -759,18 +762,29 @@ class BrowserMiddleware(AgentMiddleware):
     def _normalize_llm_state(self, state: dict[str, Any] | None) -> BrowserSessionSnapshot:
         """Normalize arbitrary/raw state to the single LLM-facing schema."""
         source = state or {}
+        current_page = source.get("current_page", {})
+        previous_page = source.get("previous_page")
+        logger.debug(
+            "Normalizing browser state: current_page_keys=%s previous_page_type=%s",
+            list(current_page.keys()) if isinstance(current_page, dict) else [],
+            type(previous_page).__name__,
+        )
         return {
             "browser": dict(source.get("browser", {"is_open": False, "is_closed": True})),
-            "current_page": dict(source.get("current_page", {})),
-            "previous_page": source.get("previous_page"),
+            "current_page": dict(current_page) if isinstance(current_page, dict) else {},
+            "previous_page": dict(previous_page) if isinstance(previous_page, dict) else previous_page,
         }
 
     async def _artifact_with_state(self, artifact: dict[str, Any], user_id: str) -> dict[str, Any]:
         state = await self._session_manager.get_state(user_id)
+        normalized_state = self._normalize_llm_state(state)
         artifact["metadata"] = {
             **dict(artifact.get("metadata", {})),
-            "browser_session_state": self._normalize_llm_state(state),
+            "browser_session_state": normalized_state,
         }
+        if "page_info" not in artifact and isinstance(normalized_state.get("current_page"), dict):
+            artifact["page_info"] = dict(normalized_state["current_page"])
+        logger.debug("Attached browser state and page_info to artifact for user_id=%s", user_id)
         return artifact
 
     def _extract_state_from_result(self, result: PageInfo) -> BrowserSessionSnapshot | None:

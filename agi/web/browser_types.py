@@ -94,10 +94,10 @@ class QueryMatch:
 
 
 # --- Unified session snapshot exposed to upper layers ---
-class BrowserPageState(TypedDict):
-    url: str
-    title: str | None
-    load_state: str
+class BrowserHistoryEntry(TypedDict):
+    action: str
+    timestamp: str
+    params: dict[str, Any]
 
 
 class BrowserRuntimeState(TypedDict):
@@ -107,8 +107,8 @@ class BrowserRuntimeState(TypedDict):
 
 class BrowserSessionSnapshot(TypedDict):
     browser: BrowserRuntimeState
-    current_page: BrowserPageState
-    previous_page: NotRequired[BrowserPageState | None]
+    current_page: dict[str, Any]
+    previous_page: NotRequired[dict[str, Any] | None]
 
 
 class BrowserEventType(str, Enum):
