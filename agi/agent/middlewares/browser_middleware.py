@@ -632,26 +632,21 @@ class BrowserMiddleware(AgentMiddleware):
             )
 
         result.metadata.pop('elements', None)
-        artifact: dict[str, Any] = {
-            "status": "success",
+        current_page = {
             "url": result.url,
             "title": result.title,
+            "html": result.html,
+            "text": result.text,
+            "screenshot_path": result.screenshot_path,
+            "metadata": dict(result.metadata),
+        }
+        artifact: dict[str, Any] = {
+            "status": "success",
             "metadata": dict(result.metadata),
             "content_preview": self._build_preview(result.text),
-            "element": result.html,
-            "history_length": int(result.metadata.get("history_length", 0)),
-            "page_info": {
-                "url": result.url,
-                "title": result.title,
-                "html": result.html,
-                "text": result.text,
-                "screenshot_path": result.screenshot_path,
-                "metadata": dict(result.metadata),
-            },
+            "current_page": current_page,
         }
-        if result.screenshot_path:
-            artifact["screenshot_path"] = result.screenshot_path
-        logger.info("Formatted tool artifact with full PageInfo for url=%s", result.url)
+        logger.info("Formatted tool artifact with current_page for url=%s", result.url)
         return artifact
 
     def _error_artifact(
@@ -663,17 +658,21 @@ class BrowserMiddleware(AgentMiddleware):
         metadata: dict[str, Any] | None = None,
         screenshot_path: str | None = None,
     ) -> dict[str, Any]:
-        artifact: dict[str, Any] = {
-            "status": "error",
+        current_page = {
             "url": url,
             "title": title,
+            "html": None,
+            "text": None,
+            "screenshot_path": screenshot_path,
+            "metadata": dict(metadata or {}),
+        }
+        artifact: dict[str, Any] = {
+            "status": "error",
             "metadata": dict(metadata or {}),
             "content_preview": error,
             "error": error,
-            "history_length": 0,
+            "current_page": current_page,
         }
-        if screenshot_path:
-            artifact["screenshot_path"] = screenshot_path
         return artifact
 
     def _resolve_user_id(self, runtime: ToolRuntime[None, MiddlewareBrowserState] | None = None) -> str:
@@ -778,13 +777,19 @@ class BrowserMiddleware(AgentMiddleware):
     async def _artifact_with_state(self, artifact: dict[str, Any], user_id: str) -> dict[str, Any]:
         state = await self._session_manager.get_state(user_id)
         normalized_state = self._normalize_llm_state(state)
+        current_page = normalized_state.get("current_page")
         artifact["metadata"] = {
             **dict(artifact.get("metadata", {})),
             "browser_session_state": normalized_state,
         }
-        if "page_info" not in artifact and isinstance(normalized_state.get("current_page"), dict):
-            artifact["page_info"] = dict(normalized_state["current_page"])
-        logger.debug("Attached browser state and page_info to artifact for user_id=%s", user_id)
+        if isinstance(current_page, dict):
+            artifact["current_page"] = dict(current_page)
+        previous_page = normalized_state.get("previous_page")
+        if isinstance(previous_page, dict):
+            artifact["previous_page"] = dict(previous_page)
+        for legacy_key in ("url", "title", "screenshot_path", "element", "history_length", "page_info"):
+            artifact.pop(legacy_key, None)
+        logger.debug("Attached browser state/current_page to artifact for user_id=%s", user_id)
         return artifact
 
     def _extract_state_from_result(self, result: PageInfo) -> BrowserSessionSnapshot | None:
@@ -821,20 +826,25 @@ class BrowserMiddleware(AgentMiddleware):
 
     def _artifact_to_text(self, artifact: dict[str, Any]) -> str:
         lines = [f"status: {artifact['status']}"]
-        if artifact.get("url"):
-            lines.append(f"url: {artifact['url']}")
-        if artifact.get("title"):
-            lines.append(f"title: {artifact['title']}")
+        current_page = artifact.get("current_page", {})
+        if isinstance(current_page, dict) and current_page.get("url"):
+            lines.append(f"url: {current_page['url']}")
+        if isinstance(current_page, dict) and current_page.get("title"):
+            lines.append(f"title: {current_page['title']}")
         if artifact.get("content_preview"):
             lines.append(f"preview: {artifact['content_preview']}")
         if artifact.get("error"):
             lines.append(f"error: {artifact['error']}")
-        if artifact.get("screenshot_path"):
-            lines.append(f"screenshot_path: {artifact['screenshot_path']}")
+        if isinstance(current_page, dict) and current_page.get("screenshot_path"):
+            lines.append(f"screenshot_path: {current_page['screenshot_path']}")
         if artifact.get("ocr_text_preview"):
             lines.append(f"ocr_text_preview: {artifact['ocr_text_preview']}")
         if artifact.get("full_content_path"):
             lines.append(f"full_content_path: {artifact['full_content_path']}")
+        if artifact.get("current_page"):
+            lines.append(f"current_page: {artifact['current_page']}")
+        if artifact.get("previous_page"):
+            lines.append(f"previous_page: {artifact['previous_page']}")
         if artifact.get("metadata"):
             lines.append(f"metadata: {artifact['metadata']}")
         return "\n".join(lines)
