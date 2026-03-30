@@ -157,19 +157,6 @@ class BrowserState(AgentState):
     browser_session_state: NotRequired[dict[str, Any]]
 
 
-
-class BrowserSessionState(TypedDict):
-    """Legacy alias kept for middleware state typing.
-
-    NOTE: canonical state structure is BrowserSessionSnapshot from agi.web.
-    """
-    user_id: str
-    storage_dir: str
-    history_length: int
-    current_page: dict[str, Any]
-    previous_page: NotRequired[dict[str, Any] | None]
-
-
 class BrowserToolArtifact(TypedDict):
     """Structured browser tool payload returned alongside text results."""
 
@@ -248,7 +235,7 @@ class BrowserMiddleware(AgentMiddleware):
         request: ModelRequest[ContextT],
         handler: Callable[[ModelRequest[ContextT]], Awaitable[ModelResponse[ResponseT]]],
     ) -> ModelResponse[ResponseT]:
-        system_prompt = self._build_model_system_prompt(request)
+        system_prompt = await self._build_model_system_prompt(request)
         if system_prompt:
             request = request.override(system_message=append_to_system_message(request.system_message, system_prompt))
         return await handler(request)
@@ -298,7 +285,7 @@ class BrowserMiddleware(AgentMiddleware):
                 "browser_navigate",
                 runtime.tool_call_id,
                 self._format_page_result(result),
-                session_state=self._session_state_from_result(result),
+                session_state=self._extract_state_from_result(result),
             )
 
         return StructuredTool.from_function(
@@ -317,7 +304,7 @@ class BrowserMiddleware(AgentMiddleware):
                 "browser_click",
                 runtime.tool_call_id,
                 self._format_page_result(result),
-                session_state=self._session_state_from_result(result),
+                session_state=self._extract_state_from_result(result),
             )
 
         return StructuredTool.from_function(
@@ -337,7 +324,7 @@ class BrowserMiddleware(AgentMiddleware):
                 "browser_fill",
                 runtime.tool_call_id,
                 self._format_page_result(result),
-                session_state=self._session_state_from_result(result),
+                session_state=self._extract_state_from_result(result),
             )
 
         return StructuredTool.from_function(
@@ -353,7 +340,7 @@ class BrowserMiddleware(AgentMiddleware):
                 "browser_extract",
                 runtime.tool_call_id,
                 artifact,
-                session_state=self._session_state_from_artifact(artifact),
+                session_state=self._extract_state_from_artifact(artifact),
             )
 
         return StructuredTool.from_function(
@@ -382,7 +369,7 @@ class BrowserMiddleware(AgentMiddleware):
                 "browser_find",
                 runtime.tool_call_id,
                 artifact,
-                session_state=self._session_state_from_artifact(artifact),
+                session_state=self._extract_state_from_artifact(artifact),
             )
 
         return StructuredTool.from_function(
@@ -541,7 +528,7 @@ class BrowserMiddleware(AgentMiddleware):
                 "browser_screenshot",
                 tool_call_id,
                 artifact,
-                session_state=self._session_state_from_artifact(artifact),
+                session_state=self._extract_state_from_artifact(artifact),
             )
 
         # 单独读取文件内容获取 image_bytes（如果需要）
@@ -554,7 +541,7 @@ class BrowserMiddleware(AgentMiddleware):
                 "browser_screenshot",
                 tool_call_id,
                 artifact,
-                session_state=self._session_state_from_artifact(artifact),
+                session_state=self._extract_state_from_artifact(artifact),
             )
         
         try:
@@ -566,7 +553,7 @@ class BrowserMiddleware(AgentMiddleware):
                 "browser_screenshot",
                 tool_call_id,
                 artifact,
-                session_state=self._session_state_from_artifact(artifact),
+                session_state=self._extract_state_from_artifact(artifact),
             )
 
         # image_b64 = base64.b64encode(image_bytes).decode("utf-8")
@@ -583,7 +570,7 @@ class BrowserMiddleware(AgentMiddleware):
             "history_length": len(session.backend.get_history()),
         }
         artifact = self._artifact_with_state(artifact, user_id)
-        session_state = self._session_state_from_artifact(artifact)
+        session_state = self._extract_state_from_artifact(artifact)
         return Command(
             update={
                 "browser_last_result": artifact,
@@ -641,7 +628,7 @@ class BrowserMiddleware(AgentMiddleware):
                 state = await self._session_manager.get_state(user_id)
                 result.metadata = {
                     **result.metadata,
-                    "browser_session_state": self._build_session_state(state or {}),
+                    "browser_session_state": self._normalize_llm_state(state),
                 }
 
                 return result
@@ -733,14 +720,16 @@ class BrowserMiddleware(AgentMiddleware):
         return f"{system_prompt}\n\n{self._format_browser_state_for_prompt(session_state)}"
 
     async def _resolve_session_state_for_request(self, request: ModelRequest[ContextT]) -> BrowserSessionSnapshot | None:
-        # 优先使用 request.state 里的状态；如果 state 里只有 user_id，则回到 session pool 读取最新 live snapshot。
+        """Resolve a single compact state schema for LLM context."""
         state = getattr(request, "state", None) or {}
         if isinstance(state, dict):
             session_state = state.get("browser_session_state")
             if isinstance(session_state, dict):
                 user_id = session_state.get("user_id")
                 live_state = await self._get_live_session_state(str(user_id)) if user_id else None
-                return live_state or session_state
+                if live_state:
+                    return live_state
+                return self._normalize_llm_state(session_state)
 
         user_id = await self._resolve_user_id_from_request(request)
         if not user_id:
@@ -770,7 +759,7 @@ class BrowserMiddleware(AgentMiddleware):
         state = await self._session_manager.get_state(user_id)
         if not state:
             return None
-        return state
+        return self._normalize_llm_state(state)
 
     def _format_browser_state_for_prompt(self, session_state: BrowserSessionSnapshot) -> str:
         """Generate a compact LLM-facing state summary.
@@ -799,31 +788,33 @@ class BrowserMiddleware(AgentMiddleware):
             ]
         )
 
-    def _build_session_state(self, state: dict[str, Any]) -> BrowserSessionSnapshot:
+    def _normalize_llm_state(self, state: dict[str, Any] | None) -> BrowserSessionSnapshot:
+        """Normalize arbitrary/raw state to the single LLM-facing schema."""
+        source = state or {}
         return {
-            "user_id": str(state.get("user_id", "default")),
-            "storage_dir": str(state.get("storage_dir", "")),
-            "history_length": int(state.get("history_length", 0)),
-            "current_page": dict(state.get("current_page", {})),
-            "previous_page": state.get("previous_page"),
+            "user_id": str(source.get("user_id", "default")),
+            "storage_dir": str(source.get("storage_dir", "")),
+            "history_length": int(source.get("history_length", 0)),
+            "current_page": dict(source.get("current_page", {})),
+            "previous_page": source.get("previous_page"),
         }
 
     async def _artifact_with_state(self, artifact: BrowserToolArtifact, user_id: str) -> BrowserToolArtifact:
         state = await self._session_manager.get_state(user_id)
         artifact["metadata"] = {
             **dict(artifact.get("metadata", {})),
-            "browser_session_state": self._build_session_state(state or {}),
+            "browser_session_state": self._normalize_llm_state(state),
         }
         return artifact
 
-    def _session_state_from_result(self, result: PageInfo) -> BrowserSessionSnapshot | None:
+    def _extract_state_from_result(self, result: PageInfo) -> BrowserSessionSnapshot | None:
         state = result.metadata.get("browser_session_state")
-        return state if isinstance(state, dict) else None
+        return self._normalize_llm_state(state) if isinstance(state, dict) else None
 
-    def _session_state_from_artifact(self, artifact: BrowserToolArtifact) -> BrowserSessionSnapshot | None:
+    def _extract_state_from_artifact(self, artifact: BrowserToolArtifact) -> BrowserSessionSnapshot | None:
         metadata = artifact.get("metadata", {})
         state = metadata.get("browser_session_state") if isinstance(metadata, dict) else None
-        return state if isinstance(state, dict) else None
+        return self._normalize_llm_state(state) if isinstance(state, dict) else None
 
     def _command_for_result(
         # 把浏览器工具结果统一包装成 LangGraph Command，便于更新 agent state。
