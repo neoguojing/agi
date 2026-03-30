@@ -1,0 +1,31 @@
+name: "whisper"
+backend: "python"
+max_batch_size: 8
+
+input [
+  {
+    name: "AUDIO_DATA"
+    data_type: TYPE_UINT8   # 推荐用 bytes 传 wav
+    dims: [ -1 ]            # 可变长度
+  }
+]
+
+output [
+  {
+    name: "TRANSCRIPTION"
+    data_type: TYPE_STRING
+    dims: [ 1 ]
+  }
+]
+
+instance_group [
+  {
+    kind: KIND_GPU
+    count: 1
+  }
+]
+
+dynamic_batching {
+  preferred_batch_size: [2, 4, 8]
+  max_queue_delay_microseconds: 20000
+}
