@@ -11,8 +11,11 @@ from playwright.async_api import (
     async_playwright
 )
 from .browser_types import (
+    BrowserRuntimeState,
     DEFAULT_USER_AGENT, DEFAULT_VIEWPORT, DEFAULT_WAIT_UNTIL,
     STATE_SNAPSHOT_FILENAME, PLAYWRIGHT_STORAGE_STATE_FILENAME,
+    BrowserPageState,
+    BrowserSessionSnapshot,
     PageInfo, QueryMatch, WaitUntilState, MAX_FIND_RESULTS, DEFAULT_CLICK_TIMEOUT_MS,
     DEFAULT_SCROLL_TIMEOUT_MS, DEFAULT_SMART_WAIT_TIMEOUT_MS, DEFAULT_CAPTURE_DELAY_MS
 )
@@ -147,10 +150,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             self._browser = None
             self._playwright = None
             self._event_manager.set_active_page(None)
-            # Clear internal states
-            self._event_manager._page_runtime_state.clear()
-            self._event_manager._state_messages.clear()
-            self._event_manager._instrumented_pages.clear()
+            self._event_manager.clear()
             logger.info("Browser backend closed")
 
     @property
@@ -572,18 +572,35 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         """Return a copy of the most recent browser/page events."""
         return self._event_manager.get_recent_events(limit)
 
-    def get_state_snapshot(self, *, user_id: str | None = None, last_result: PageInfo | None = None) -> dict[str, Any]:
-        """Return the current browser/context/page state for agent decision making."""
-        current_page_state_obj = self._event_manager.get_page_runtime_state(self._page_id(self._page)) if self._page else None
-        
-        snapshot = {
-            "current_url": self._page.url if self._page else None,
-            "current_title": self._page.title() if self._page else None,
-            "load_state": current_page_state_obj.load_state if current_page_state_obj else "unknown",
-            "user_interaction_count": current_page_state_obj.user_interaction_count if current_page_state_obj else 0,
-            "history_length": len(self._event_manager.get_history()),
-            "user_id": user_id,
-            "last_result": last_result,
+    def _page_summary(self, result: PageInfo | None, fallback_state: Any | None = None) -> BrowserPageState:
+        return {
+            "url": (result.url if result else "") or (fallback_state.url if fallback_state else ""),
+            "title": (result.title if result else None) or (fallback_state.title if fallback_state else None),
+            "load_state": fallback_state.load_state if fallback_state else "unknown",
+        }
+
+    def get_state_snapshot(
+        self,
+        *,
+        user_id: str | None = None,
+        last_result: PageInfo | None = None,
+        previous_result: PageInfo | None = None,
+    ) -> BrowserSessionSnapshot:
+        """Return a compact state snapshot for middleware/LLM planning.
+
+        Schema is intentionally minimal:
+        - current_page: latest known page summary.
+        - previous_page: immediate previous page summary (if any).
+        """
+        current_page_state = self._event_manager.get_page_runtime_state(self._page_id(self._page)) if self._page else None
+        browser_state: BrowserRuntimeState = {
+            "is_open": not self.is_closed,
+            "is_closed": self.is_closed,
+        }
+        snapshot: BrowserSessionSnapshot = {
+            "browser": browser_state,
+            "current_page": self._page_summary(last_result, current_page_state),
+            "previous_page": self._page_summary(previous_result) if previous_result else None,
         }
         return snapshot
 
@@ -717,5 +734,3 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             screenshot_path=None,
             metadata={"error": error, **metadata},
         )
-
-

@@ -90,6 +90,12 @@ class AbstractBrowserBackend(ABC):
         pass
 
     @abstractmethod
-    def get_state_snapshot(self, *, user_id: Optional[str] = None, last_result: Optional[PageInfo] = None) -> Dict[str, Any]:
+    def get_state_snapshot(
+        self,
+        *,
+        user_id: Optional[str] = None,
+        last_result: Optional[PageInfo] = None,
+        previous_result: Optional[PageInfo] = None,
+    ) -> Dict[str, Any]:
         """获取当前浏览器状态的快照。"""
         pass
