@@ -15,7 +15,7 @@ class DebugLLMContextMiddleware(AgentMiddleware):
         show_tools: bool = True, 
         show_state: bool = False,
         show_settings: bool = False,
-        content_limit: int = 300,
+        content_limit: int = 100000,
         color_header: str = "\033[95m", # 紫色
         color_reset: str = "\033[0m"
     ):

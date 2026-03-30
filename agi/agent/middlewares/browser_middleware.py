@@ -631,13 +631,14 @@ class BrowserMiddleware(AgentMiddleware):
                 screenshot_path=result.screenshot_path,
             )
 
-        preview_source = result.text or result.html or ""
+        result.metadata.pop('elements', None)
         artifact: dict[str, Any] = {
             "status": "success",
             "url": result.url,
             "title": result.title,
             "metadata": dict(result.metadata),
-            "content_preview": self._build_preview(preview_source),
+            "content_preview": self._build_preview(result.text),
+            "element": result.html,
             "history_length": int(result.metadata.get("history_length", 0)),
         }
         if result.screenshot_path:

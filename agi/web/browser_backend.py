@@ -38,7 +38,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         self,
         storage_dir: str,
         headless: bool = False,
-        timeout: int = 30_000,
+        timeout: int = 60_000,
         max_content_length: int = 2_000_000,
         max_retry: int = 2,
     ):
@@ -417,12 +417,10 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 text="",
                 screenshot_path=screenshot_path,
                 metadata={
-                    "requested_url": url,
                     "status": response.status if response is not None else 200,
-                    "content_length": len(html_repr),
+                    "html_length": len(html_repr),
                     "text_length": len(page_text),
                     "has_screenshot": screenshot_path is not None,
-                    "ocr_ready": screenshot_path is not None,
                     "history_length": len(self._history),
                 }
             )
