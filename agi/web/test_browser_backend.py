@@ -70,18 +70,6 @@ def backend(tmp_path: Path) -> StatefulBrowserBackend:
 
 
 @pytest.mark.asyncio
-async def test_read_screenshot_bytes_reads_saved_file(backend: StatefulBrowserBackend, tmp_path: Path) -> None:
-    image_path = tmp_path / "capture.png"
-    image_path.write_bytes(b"png-bytes")
-    backend.get_screenshot = AsyncMock(return_value=str(image_path))
-
-    screenshot = await backend.read_screenshot_bytes()
-
-    assert screenshot == (str(image_path), b"png-bytes")
-    backend.get_screenshot.assert_awaited_once_with(full_page=True)
-
-
-@pytest.mark.asyncio
 async def test_capture_page_info_truncates_html_and_marks_ocr_ready(backend: StatefulBrowserBackend, tmp_path: Path) -> None:
     page = backend._page
     assert page is not None

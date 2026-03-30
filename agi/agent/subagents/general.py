@@ -1,6 +1,6 @@
 
 from agi.agent.middlewares.debug_middleware import DebugLLMContextMiddleware
-from agi.agent.tools import RemoteImageEditTool,RemoteImageGenTool,RemoteMultiModalTool,RemoteTranscriptionTool,RemoteTTSTool
+from agi.agent.tools import RemoteImageEditTool,RemoteImageGenTool,RemoteMultiModalTool,RemoteTranscriptionTool,RemoteTTSTool,SearchEngineSelector
 from agi.agent.middlewares import BrowserMiddleware,FfmpegMiddleware
 from agi.agent.models import ModelProvider
 from agi.agent.sandbox.docker import DockerSandbox
@@ -86,6 +86,23 @@ browser_subagent = {
             ocr_engine=ModelProvider.get_chat_model()
         ),
         DebugLLMContextMiddleware(name="browser_subagent")
+    ]
+}
+
+search_tool = SearchEngineSelector()
+web_search_subagent = {
+    "name": "web-search-expert",
+    "description": (
+        "Specialized in web search and information retrieval. "
+        "Can search the internet, summarize results, "
+        "and provide structured answers from online sources. "
+        "Operates on public web data and returns concise, relevant information."
+    ),
+    "system_prompt": "",
+    "tools": [search_tool],
+
+    "middleware": [
+        DebugLLMContextMiddleware(name="web_search_subagent")
     ]
 }
 

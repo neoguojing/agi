@@ -16,7 +16,6 @@ from agi.web.search_engine import SearchEngineSelector
 buildin_tools: List[BaseTool] = [
     get_weather_info,
     get_stock,
-    # SearchEngineSelector()
 ]
 
 # 导出清单，方便其他模块调用

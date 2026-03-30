@@ -359,13 +359,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         except Exception:
             logger.exception("Screenshot failed")
             return ""
-    
-    async def read_screenshot_bytes(self, *, full_page: bool = True) -> tuple[str, bytes] | None:
-        """Capture a screenshot for OCR/inspection and return both path and raw bytes."""
-        screenshot_path = await self.get_screenshot(full_page=full_page)
-        if not screenshot_path:
-            return None
-        return screenshot_path, Path(screenshot_path).read_bytes()
 
     def _page_summary(self, result: PageInfo | None, fallback_state: Any | None = None) -> BrowserPageState:
         fallback_url = fallback_state.get("url") if isinstance(fallback_state, dict) else ""
