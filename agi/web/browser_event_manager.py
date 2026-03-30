@@ -27,12 +27,16 @@ class BrowserEventManager:
 
     def __init__(self, storage_dir: Path):
         self.storage_dir = storage_dir
+        # 1) 动作历史：供 backend 统计 history_length 和回放动作。
         self._history: List[Dict[str, Any]] = []
+        # 2) 最近事件：供 agent 判断最近浏览器动态。
         self._recent_events: Deque[BrowserEvent] = deque(maxlen=10)
-        self._state_messages: Deque[Dict[str, Any]] = deque(maxlen=10)
-        self._active_page: Optional[Page] = None
+        # 3) 待消费消息：给上层做流式同步（peek/drain）。
+        self._pending_messages: Deque[Dict[str, Any]] = deque(maxlen=10)
+        # 4) 页面运行态：按 page_id 维护最小状态(url/title/load_state)。
         self._page_runtime_state: Dict[str, PageRuntimeState] = {}
-        self._instrumented_pages: set[str] = set()
+        # 5) 已追踪页面：保证 instrument_page 幂等。
+        self._tracked_pages: set[str] = set()
 
     def _page_id(self, page: Page | None) -> str:
         if page is None:
@@ -41,7 +45,6 @@ class BrowserEventManager:
 
     def set_active_page(self, page: Optional[Page]) -> None:
         """Set active page and initialize compact runtime state if needed."""
-        self._active_page = page
         if page is None:
             return
 
@@ -94,7 +97,7 @@ class BrowserEventManager:
             metadata=safe_metadata,
         )
         self._recent_events.append(event)
-        self._state_messages.append({"type": "event", "data": event.to_dict()})
+        self._pending_messages.append({"type": "event", "data": event.to_dict()})
 
         if page is not None:
             self.update_page_state(
@@ -126,20 +129,20 @@ class BrowserEventManager:
     async def instrument_page(self, page: Page, *, source: str) -> None:
         """Mark page as tracked without JS injection."""
         page_id = self._page_id(page)
-        if page_id in self._instrumented_pages:
+        if page_id in self._tracked_pages:
             return
-        self._instrumented_pages.add(page_id)
+        self._tracked_pages.add(page_id)
         self.set_active_page(page)
         self.update_page_state(page, title=await page.title(), load_state="ready")
         self.record_event(BrowserEventType.INSTRUMENTED, page=page, metadata={"source": source, "url": page.url})
 
     def peek_state_messages(self, limit: int = 1) -> List[Dict[str, Any]]:
-        return list(self._state_messages)[:limit]
+        return list(self._pending_messages)[:limit]
 
     def drain_state_messages(self, limit: int = 1) -> List[Dict[str, Any]]:
         messages: List[Dict[str, Any]] = []
-        while self._state_messages and len(messages) < limit:
-            messages.append(self._state_messages.popleft())
+        while self._pending_messages and len(messages) < limit:
+            messages.append(self._pending_messages.popleft())
         return messages
 
     def get_recent_events(self, limit: int = 5) -> List[Dict[str, Any]]:
@@ -152,3 +155,11 @@ class BrowserEventManager:
 
     def get_page_runtime_state(self, page_id: str) -> Optional[PageRuntimeState]:
         return self._page_runtime_state.get(page_id)
+
+    def clear(self) -> None:
+        """Clear all in-memory runtime state."""
+        self._history.clear()
+        self._recent_events.clear()
+        self._pending_messages.clear()
+        self._page_runtime_state.clear()
+        self._tracked_pages.clear()

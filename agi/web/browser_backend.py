@@ -150,10 +150,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             self._browser = None
             self._playwright = None
             self._event_manager.set_active_page(None)
-            # Clear internal states
-            self._event_manager._page_runtime_state.clear()
-            self._event_manager._state_messages.clear()
-            self._event_manager._instrumented_pages.clear()
+            self._event_manager.clear()
             logger.info("Browser backend closed")
 
     @property
