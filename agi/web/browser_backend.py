@@ -11,6 +11,7 @@ from playwright.async_api import (
     async_playwright
 )
 from .browser_types import (
+    BrowserRuntimeState,
     DEFAULT_USER_AGENT, DEFAULT_VIEWPORT, DEFAULT_WAIT_UNTIL,
     STATE_SNAPSHOT_FILENAME, PLAYWRIGHT_STORAGE_STATE_FILENAME,
     BrowserPageState,
@@ -595,10 +596,12 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         - previous_page: immediate previous page summary (if any).
         """
         current_page_state = self._event_manager.get_page_runtime_state(self._page_id(self._page)) if self._page else None
+        browser_state: BrowserRuntimeState = {
+            "is_open": not self.is_closed,
+            "is_closed": self.is_closed,
+        }
         snapshot: BrowserSessionSnapshot = {
-            "user_id": user_id or "default",
-            "storage_dir": str(self.storage_dir),
-            "history_length": len(self._event_manager.get_history()),
+            "browser": browser_state,
             "current_page": self._page_summary(last_result, current_page_state),
             "previous_page": self._page_summary(previous_result) if previous_result else None,
         }
@@ -734,4 +737,3 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             screenshot_path=None,
             metadata={"error": error, **metadata},
         )
-

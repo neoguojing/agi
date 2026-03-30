@@ -100,10 +100,13 @@ class BrowserPageState(TypedDict):
     load_state: str
 
 
+class BrowserRuntimeState(TypedDict):
+    is_open: bool
+    is_closed: bool
+
+
 class BrowserSessionSnapshot(TypedDict):
-    user_id: str
-    storage_dir: str
-    history_length: int
+    browser: BrowserRuntimeState
     current_page: BrowserPageState
     previous_page: NotRequired[BrowserPageState | None]
 

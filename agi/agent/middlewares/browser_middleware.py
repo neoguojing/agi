@@ -725,8 +725,8 @@ class BrowserMiddleware(AgentMiddleware):
         if isinstance(state, dict):
             session_state = state.get("browser_session_state")
             if isinstance(session_state, dict):
-                user_id = session_state.get("user_id")
-                live_state = await self._get_live_session_state(str(user_id)) if user_id else None
+                user_id = await self._resolve_user_id_from_request(request)
+                live_state = await self._get_live_session_state(user_id) if user_id else None
                 if live_state:
                     return live_state
                 return self._normalize_llm_state(session_state)
@@ -765,9 +765,11 @@ class BrowserMiddleware(AgentMiddleware):
         """Generate a compact LLM-facing state summary.
 
         Keep only what helps action planning:
+        0) browser state
         1) current page
         2) previous page (if available)
         """
+        browser = session_state.get("browser", {}) or {}
         current_page = session_state.get("current_page", {}) or {}
         previous_page = session_state.get("previous_page")
         previous_line = "previous_page: <none>"
@@ -780,8 +782,7 @@ class BrowserMiddleware(AgentMiddleware):
         return "\n".join(
             [
                 "## Current Browser Session State",
-                f"user_id: {session_state.get('user_id')}",
-                f"history_length: {session_state.get('history_length', 0)}",
+                f"browser: is_open={browser.get('is_open')} is_closed={browser.get('is_closed')}",
                 f"current_page: url={current_page.get('url')}, title={current_page.get('title')}, load_state={current_page.get('load_state')}",
                 previous_line,
                 "Use only this state to decide next step: navigate, find, click, fill, extract, screenshot.",
@@ -792,9 +793,7 @@ class BrowserMiddleware(AgentMiddleware):
         """Normalize arbitrary/raw state to the single LLM-facing schema."""
         source = state or {}
         return {
-            "user_id": str(source.get("user_id", "default")),
-            "storage_dir": str(source.get("storage_dir", "")),
-            "history_length": int(source.get("history_length", 0)),
+            "browser": dict(source.get("browser", {"is_open": False, "is_closed": True})),
             "current_page": dict(source.get("current_page", {})),
             "previous_page": source.get("previous_page"),
         }
