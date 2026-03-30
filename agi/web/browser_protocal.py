@@ -1,6 +1,6 @@
 # browser_interface.py
 from abc import ABC, abstractmethod
-from typing import Any, List, Dict, Optional
+from typing import Any, Dict, List, Optional
 from .browser_types import PageInfo, QueryMatch, WaitUntilState
 
 class AbstractBrowserBackend(ABC):
@@ -72,21 +72,6 @@ class AbstractBrowserBackend(ABC):
     @abstractmethod
     def get_history(self) -> List[Dict[str, Any]]:
         """获取操作历史记录。"""
-        pass
-
-    @abstractmethod
-    def get_recent_events(self, limit: int = 5) -> List[Dict[str, Any]]:
-        """获取最近的事件列表。"""
-        pass
-
-    @abstractmethod
-    def peek_state_messages(self, limit: int = 1) -> List[Dict[str, Any]]:
-        """预览而不消耗最新的状态消息。"""
-        pass
-
-    @abstractmethod
-    def drain_state_messages(self, limit: int = 1) -> List[Dict[str, Any]]:
-        """获取并清空最新的状态消息。"""
         pass
 
     @abstractmethod

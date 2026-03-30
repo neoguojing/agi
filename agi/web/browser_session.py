@@ -1,5 +1,6 @@
 import time
 import asyncio
+from copy import deepcopy
 from typing import Any, Awaitable, Callable
 from .browser_protocal import AbstractBrowserBackend
 from .browser_types import PageInfo
@@ -44,3 +45,34 @@ class BrowserSession:
         关闭session
         """
         await self.backend.close()
+
+    async def get_last_result(self) -> PageInfo | None:
+        """线程安全读取最近一次页面结果（返回副本，避免外部误改）。"""
+        async with self._lock:
+            self.last_active_at = time.time()
+            return deepcopy(self.last_result) if self.last_result is not None else None
+
+    async def get_history(self) -> list[dict[str, Any]]:
+        """线程安全读取 backend 历史记录。"""
+        async with self._lock:
+            self.last_active_at = time.time()
+            return self.backend.get_history()
+
+    async def apply_ocr_result(
+        self,
+        *,
+        text: str,
+        screenshot_path: str,
+        metadata_update: dict[str, Any],
+    ) -> None:
+        """把 OCR 结果回写到 last_result，供后续 extract/snapshot 复用。"""
+        async with self._lock:
+            self.last_active_at = time.time()
+            if self.last_result is None:
+                return
+            self.last_result.text = text
+            self.last_result.screenshot_path = screenshot_path
+            self.last_result.metadata = {
+                **self.last_result.metadata,
+                **metadata_update,
+            }
