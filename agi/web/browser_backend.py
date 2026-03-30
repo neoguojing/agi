@@ -20,7 +20,6 @@ from .browser_types import (
     DEFAULT_SCROLL_TIMEOUT_MS, DEFAULT_SMART_WAIT_TIMEOUT_MS, DEFAULT_CAPTURE_DELAY_MS
 )
 from .browser_protocal import AbstractBrowserBackend
-from .browser_event_manager import BrowserEventManager
 from .browser_state_persister import BrowserStatePersister
 
 logger = logging.getLogger(__name__)
@@ -46,7 +45,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
         # 初始化子模块
         restored_snapshot = self._load_persisted_state_snapshot()
-        self._event_manager = BrowserEventManager(self.storage_dir)
+        self._history: list[dict[str, Any]] = []
+        self._page_runtime_state: dict[str, dict[str, Any]] = {}
         self._persister = BrowserStatePersister(self.storage_dir, restored_snapshot)
 
         self._init_lock = Lock()
@@ -70,6 +70,15 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             except Exception:
                 return False
         return False
+
+    def _update_page_runtime_state(self, page: Page, *, load_state: str | None = None) -> None:
+        page_id = self._page_id(page)
+        state = self._page_runtime_state.get(page_id, {})
+        self._page_runtime_state[page_id] = {
+            "url": page.url,
+            "title": state.get("title"),
+            "load_state": load_state or state.get("load_state", "unknown"),
+        }
 
     def _load_persisted_state_snapshot(self) -> dict[str, Any] | None:
         snapshot_path = self.storage_dir / STATE_SNAPSHOT_FILENAME
@@ -115,24 +124,13 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
         self._context = await self._browser.new_context(**context_kwargs)
         
-        # 将事件注册逻辑委托给 EventManager
-        await self._event_manager.register_context_instrumentation(self._context)
-        
         self._page = await self._context.new_page()
-        self._event_manager.set_active_page(self._page)
-        
-        # 将页面仪器化逻辑也委托给 EventManager
-        await self._event_manager.instrument_page(self._page, source="initialize")
+        self._update_page_runtime_state(self._page, load_state="ready")
         
         logger.info("Browser backend ready")
 
     async def close(self) -> None:
         """Close the browser session and release Playwright resources."""
-        self._event_manager.record_event(
-            "browser_closed",
-            page=self._page,
-            metadata={"storage_dir": str(self.storage_dir)},
-        )
         try:
             if self._context is not None:
                 await self._persister.persist_playwright_storage_state(self._context)
@@ -149,8 +147,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             self._context = None
             self._browser = None
             self._playwright = None
-            self._event_manager.set_active_page(None)
-            self._event_manager.clear()
+            self._page_runtime_state.clear()
+            self._history.clear()
             logger.info("Browser backend closed")
 
     @property
@@ -171,9 +169,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 live_pages = [p for p in self._context.pages if not self._page_is_closed(p)]
                 if live_pages:
                     self._page = live_pages[-1]
-                    self._event_manager.set_active_page(self._page)
-                    # 确保新激活的页面也被仪器化
-                    await self._event_manager.instrument_page(self._page, source="ensure_page")
+                    self._update_page_runtime_state(self._page, load_state="ready")
 
             if self._page is None:
                 msg = "Browser page is not available after initialization"
@@ -193,7 +189,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             
             # 记录历史
             history_entry = {"action": "navigate", "url": url, "wait_until": wait_until}
-            self._event_manager.add_to_history(history_entry)
+            self._history.append(history_entry)
             
             # 持久化状态
             if self._context is not None:
@@ -218,7 +214,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     response = await page.goto(url, wait_until=wait_until, timeout=self.timeout)
                     await self._smart_wait(page)
                     history_entry = {"action": "navigate", "url": url, "wait_until": wait_until}
-                    self._event_manager.add_to_history(history_entry)
+                    self._history.append(history_entry)
                     if self._context is not None:
                         await self._persister.persist_playwright_storage_state(self._context)
                     return await self._capture_page_info(page, url, response, capture_content=False)
@@ -244,7 +240,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             
             # 记录历史
             history_entry = {"action": "click", "selector": selector}
-            self._event_manager.add_to_history(history_entry)
+            self._history.append(history_entry)
             
             # 持久化状态
             if self._context is not None:
@@ -271,7 +267,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     await page.click(selector, timeout=DEFAULT_CLICK_TIMEOUT_MS)
                     await self._smart_wait(page)
                     history_entry = {"action": "click", "selector": selector}
-                    self._event_manager.add_to_history(history_entry)
+                    self._history.append(history_entry)
                     if self._context is not None:
                         await self._persister.persist_playwright_storage_state(self._context)
                     return await self._capture_page_info(page, None, None, capture_content=False)
@@ -301,7 +297,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             
             # 记录历史
             history_entry = {"action": "click_by_text", "text": text}
-            self._event_manager.add_to_history(history_entry)
+            self._history.append(history_entry)
             
             # 持久化状态
             if self._context is not None:
@@ -332,7 +328,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     await elements[0].click(timeout=DEFAULT_CLICK_TIMEOUT_MS)
                     await self._smart_wait(page)
                     history_entry = {"action": "click_by_text", "text": text}
-                    self._event_manager.add_to_history(history_entry)
+                    self._history.append(history_entry)
                     if self._context is not None:
                         await self._persister.persist_playwright_storage_state(self._context)
                     return await self._capture_page_info(page, None, None, capture_content=False)
@@ -357,7 +353,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             
             # 记录历史
             history_entry = {"action": "fill", "selector": selector, "value": value}
-            self._event_manager.add_to_history(history_entry)
+            self._history.append(history_entry)
             
             # 持久化状态
             if self._context is not None:
@@ -383,7 +379,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     await page.fill(selector, value, timeout=DEFAULT_CLICK_TIMEOUT_MS)
                     await self._smart_wait(page)
                     history_entry = {"action": "fill", "selector": selector, "value": value}
-                    self._event_manager.add_to_history(history_entry)
+                    self._history.append(history_entry)
                     if self._context is not None:
                         await self._persister.persist_playwright_storage_state(self._context)
                     return await self._capture_page_info(page, None, None, capture_content=False)
@@ -412,7 +408,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             
             # 记录历史
             history_entry = {"action": "fill_by_label", "label_text": label_text, "value": value}
-            self._event_manager.add_to_history(history_entry)
+            self._history.append(history_entry)
             
             # 持久化状态
             if self._context is not None:
@@ -442,7 +438,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     await element.fill(value)
                     await self._smart_wait(page)
                     history_entry = {"action": "fill_by_label", "label_text": label_text, "value": value}
-                    self._event_manager.add_to_history(history_entry)
+                    self._history.append(history_entry)
                     if self._context is not None:
                         await self._persister.persist_playwright_storage_state(self._context)
                     return await self._capture_page_info(page, None, None, capture_content=False)
@@ -472,7 +468,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             
             # 记录历史
             history_entry = {"action": "fill_human_like", "selector": selector, "value": value}
-            self._event_manager.add_to_history(history_entry)
+            self._history.append(history_entry)
             
             # 持久化状态
             if self._context is not None:
@@ -504,7 +500,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     
                     await self._smart_wait(page)
                     history_entry = {"action": "fill_human_like", "selector": selector, "value": value}
-                    self._event_manager.add_to_history(history_entry)
+                    self._history.append(history_entry)
                     if self._context is not None:
                         await self._persister.persist_playwright_storage_state(self._context)
                     return await self._capture_page_info(page, None, None, capture_content=False)
@@ -518,7 +514,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
     async def find_elements(self, selector: str) -> List[QueryMatch]:
         """Return text and attributes for elements matching a CSS selector."""
         page = await self.ensure_page()
-        self._event_manager.set_active_page(page)
+        self._update_page_runtime_state(page, load_state="ready")
         
         try:
             elements = await page.query_selector_all(selector)
@@ -558,25 +554,28 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
     def get_history(self) -> List[Dict[str, Any]]:
         """Return a copy of the recorded browser action history."""
-        return self._event_manager.get_history()
+        return self._history.copy()
 
     def peek_state_messages(self, limit: int = 1) -> List[Dict[str, Any]]:
-        """Return recently published state messages without consuming them."""
-        return self._event_manager.peek_state_messages(limit)
+        """Event streaming is disabled in simplified backend."""
+        return []
 
     def drain_state_messages(self, limit: int = 1) -> List[Dict[str, Any]]:
-        """Drain pending state messages for downstream synchronizers."""
-        return self._event_manager.drain_state_messages(limit)
+        """Event streaming is disabled in simplified backend."""
+        return []
 
     def get_recent_events(self, limit: int = 5) -> List[Dict[str, Any]]:
-        """Return a copy of the most recent browser/page events."""
-        return self._event_manager.get_recent_events(limit)
+        """Event tracking is disabled in simplified backend."""
+        return []
 
     def _page_summary(self, result: PageInfo | None, fallback_state: Any | None = None) -> BrowserPageState:
+        fallback_url = fallback_state.get("url") if isinstance(fallback_state, dict) else ""
+        fallback_title = fallback_state.get("title") if isinstance(fallback_state, dict) else None
+        fallback_load_state = fallback_state.get("load_state") if isinstance(fallback_state, dict) else "unknown"
         return {
-            "url": (result.url if result else "") or (fallback_state.url if fallback_state else ""),
-            "title": (result.title if result else None) or (fallback_state.title if fallback_state else None),
-            "load_state": fallback_state.load_state if fallback_state else "unknown",
+            "url": (result.url if result else "") or fallback_url,
+            "title": (result.title if result else None) or fallback_title,
+            "load_state": fallback_load_state,
         }
 
     def get_state_snapshot(
@@ -592,7 +591,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         - current_page: latest known page summary.
         - previous_page: immediate previous page summary (if any).
         """
-        current_page_state = self._event_manager.get_page_runtime_state(self._page_id(self._page)) if self._page else None
+        current_page_state = self._page_runtime_state.get(self._page_id(self._page)) if self._page else None
         browser_state: BrowserRuntimeState = {
             "is_open": not self.is_closed,
             "is_closed": self.is_closed,
@@ -624,7 +623,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 title=page_title,
                 html=html_repr,
                 text="",
-                # screenshot_path=screenshot_path,
+                screenshot_path=screenshot_path,
                 metadata={
                     "requested_url": url,
                     "status": response.status if response is not None else 200,
@@ -632,7 +631,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     "text_length": len(page_text),
                     "has_screenshot": screenshot_path is not None,
                     "ocr_ready": screenshot_path is not None,
-                    "history_length": len(self._event_manager.get_history()),
+                    "history_length": len(self._history),
                 }
             )
 
