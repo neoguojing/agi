@@ -18,6 +18,7 @@ from .browser_types import (
     BrowserHistoryEntry,
     BrowserSessionSnapshot,
     PageInfo, QueryMatch, WaitUntilState, MAX_FIND_RESULTS, DEFAULT_CLICK_TIMEOUT_MS,
+    normalize_browser_session_snapshot,
     DEFAULT_SCROLL_TIMEOUT_MS, DEFAULT_SMART_WAIT_TIMEOUT_MS, DEFAULT_CAPTURE_DELAY_MS
 )
 from .browser_protocal import AbstractBrowserBackend
@@ -417,6 +418,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             "current_page": self._page_summary(last_result, current_page_state),
             "previous_page": self._page_summary(previous_result) if previous_result else None,
         }
+        snapshot = normalize_browser_session_snapshot(snapshot)
         logger.debug(
             "Generated browser snapshot: is_open=%s current_url=%s",
             snapshot["browser"]["is_open"],

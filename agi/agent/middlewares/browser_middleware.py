@@ -25,7 +25,7 @@ from agi.config import BROWSER_STORAGE_PATH
 from agi.utils.common import append_to_system_message
 from agi.web.session_manager import BrowserSessionManager
 from agi.web.browser_backend import StatefulBrowserBackend
-from agi.web.browser_types import BrowserSessionSnapshot, PageInfo
+from agi.web.browser_types import BrowserSessionSnapshot, PageInfo, normalize_browser_session_snapshot
 
 logger = logging.getLogger(__name__)
 # middleware 的定位：
@@ -765,20 +765,14 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _normalize_llm_state(self, state: dict[str, Any] | None) -> BrowserSessionSnapshot:
-        """Normalize arbitrary/raw state to the single LLM-facing schema."""
-        source = state or {}
-        current_page = source.get("current_page", {})
-        previous_page = source.get("previous_page")
+        """Normalize arbitrary/raw state using shared browser_types schema helper."""
+        normalized = normalize_browser_session_snapshot(state)
         logger.debug(
-            "Normalizing browser state: current_page_keys=%s previous_page_type=%s",
-            list(current_page.keys()) if isinstance(current_page, dict) else [],
-            type(previous_page).__name__,
+            "Normalizing browser state via shared helper: current_page_keys=%s previous_page_type=%s",
+            list(normalized.get("current_page", {}).keys()),
+            type(normalized.get("previous_page")).__name__,
         )
-        return {
-            "browser": dict(source.get("browser", {"is_open": False, "is_closed": True})),
-            "current_page": dict(current_page) if isinstance(current_page, dict) else {},
-            "previous_page": dict(previous_page) if isinstance(previous_page, dict) else previous_page,
-        }
+        return normalized
 
     async def _artifact_with_state(self, artifact: dict[str, Any], user_id: str) -> dict[str, Any]:
         normalized_state = await self._get_canonical_session_state(user_id)

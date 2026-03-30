@@ -111,6 +111,51 @@ class BrowserSessionSnapshot(TypedDict):
     previous_page: NotRequired[dict[str, Any] | None]
 
 
+def _normalize_page_snapshot(page: Any) -> dict[str, Any]:
+    if isinstance(page, PageInfo):
+        return {
+            "url": page.url,
+            "title": page.title,
+            "html": page.html,
+            "text": page.text,
+            "screenshot_path": page.screenshot_path,
+            "metadata": dict(page.metadata),
+        }
+    if not isinstance(page, dict):
+        return {
+            "url": "",
+            "title": None,
+            "html": None,
+            "text": None,
+            "screenshot_path": None,
+            "metadata": {},
+        }
+    return {
+        "url": str(page.get("url", "")),
+        "title": page.get("title"),
+        "html": page.get("html"),
+        "text": page.get("text"),
+        "screenshot_path": page.get("screenshot_path"),
+        "metadata": dict(page.get("metadata", {})) if isinstance(page.get("metadata"), dict) else {},
+    }
+
+
+def normalize_browser_session_snapshot(state: dict[str, Any] | None) -> BrowserSessionSnapshot:
+    """Single normalization entrypoint for middleware/backend session schema."""
+    source = state or {}
+    browser = source.get("browser", {})
+    browser_state: BrowserRuntimeState = {
+        "is_open": bool(browser.get("is_open", False)) if isinstance(browser, dict) else False,
+        "is_closed": bool(browser.get("is_closed", True)) if isinstance(browser, dict) else True,
+    }
+    previous = source.get("previous_page")
+    return {
+        "browser": browser_state,
+        "current_page": _normalize_page_snapshot(source.get("current_page")),
+        "previous_page": _normalize_page_snapshot(previous) if previous is not None else None,
+    }
+
+
 class BrowserEventType(str, Enum):
     NAVIGATE = "navigate"
     CLICK = "click"
