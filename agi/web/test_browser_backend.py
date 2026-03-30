@@ -131,7 +131,6 @@ async def test_run_page_action_records_history_and_uses_capture(backend: Statefu
     )
 
     assert result == captured
-    assert backend.get_history() == [history_entry]
     backend._smart_wait.assert_awaited_once_with(page)
     backend._capture_page_info.assert_awaited_once()
 
@@ -186,7 +185,6 @@ async def test_click_by_text_clicks_first_match_and_updates_history(backend: Sta
     assert result == expected
     element.scroll_into_view_if_needed.assert_awaited_once()
     element.click.assert_awaited_once()
-    assert backend.get_history()[-1] == {"action": "click_by_text", "text": "Open"}
 
 
 @pytest.mark.asyncio
@@ -230,7 +228,6 @@ async def test_fill_human_like_types_each_character(backend: StatefulBrowserBack
     page.focus.assert_awaited_once_with("#query")
     page.fill.assert_awaited_once_with("#query", "")
     assert page.keyboard.type.await_count == 3
-    assert backend.get_history()[-1] == {"action": "fill_human_like", "selector": "#query", "value": "abc"}
     assert result.title == "Filled"
 
 
@@ -310,16 +307,3 @@ async def test_state_snapshot_is_persisted_and_restored(tmp_path: Path) -> None:
     assert snapshot["page"]["last_user_event"]["type"] == "dom_click"
     assert snapshot["state_messages"][-1]["event"]["type"] == "dom_click"
 
-
-@pytest.mark.asyncio
-async def test_state_messages_can_be_drained(backend: StatefulBrowserBackend) -> None:
-    page = backend._page
-    assert page is not None
-
-    backend._record_event("page_load", page=page, metadata={"url": page.url})
-
-    drained = backend.drain_state_messages()
-
-    assert drained
-    assert drained[-1]["kind"] == "browser_state"
-    assert backend.drain_state_messages() == []

@@ -362,8 +362,7 @@ class BrowserMiddleware(AgentMiddleware):
     async def _tool_extract(self, runtime: ToolRuntime[None, MiddlewareBrowserState]) -> dict[str, Any]:
         """Extract page content from the last successfully loaded page, prioritizing OCR."""
         user_id = self._resolve_user_id(runtime)
-        session = await self._session_manager.get_session(user_id)
-        last_result = session.last_result
+        last_result = await self._session_manager.get_last_result(user_id)
         if not last_result:
             return self._artifact_with_state(
                 self._error_artifact("No page loaded. Please navigate first."),
@@ -426,9 +425,8 @@ class BrowserMiddleware(AgentMiddleware):
         
         # 使用 session manager 的统一 API
         matches = await self._session_manager.find_elements(user_id, selector)
-        session = await self._session_manager.get_session(user_id)
         state = await self._session_manager.get_state(user_id)
-        last_result = session.last_result
+        last_result = await self._session_manager.get_last_result(user_id)
         
         metadata = {
             "selector": selector,
@@ -485,14 +483,16 @@ class BrowserMiddleware(AgentMiddleware):
 
         normalized_text = str(ocr_text).strip()
         if normalized_text:
-            last_result.text = normalized_text
-            last_result.screenshot_path = screenshot_path
-            last_result.metadata = {
-                **last_result.metadata,
-                "ocr_applied": True,
-                "ocr_text_length": len(normalized_text),
-                "ocr_screenshot_path": screenshot_path,
-            }
+            await self._session_manager.apply_ocr_result(
+                user_id,
+                text=normalized_text,
+                screenshot_path=screenshot_path,
+                metadata_update={
+                    "ocr_applied": True,
+                    "ocr_text_length": len(normalized_text),
+                    "ocr_screenshot_path": screenshot_path,
+                },
+            )
         return normalized_text, screenshot_path
 
     async def _tool_screenshot(self, runtime: ToolRuntime[None, MiddlewareBrowserState], tool_call_id: str) -> ToolMessage | Command:
@@ -523,27 +523,15 @@ class BrowserMiddleware(AgentMiddleware):
                 artifact,
                 session_state=self._extract_state_from_artifact(artifact),
             )
-        
-        try:
-            image_bytes = image_path.read_bytes()
-        except Exception as e:
-            logger.exception("Failed to read screenshot bytes from %s", screenshot_path, exc_info=True)
-            artifact = self._artifact_with_state(self._error_artifact(f"Failed to read screenshot: {e}"), user_id)
-            return self._command_for_result(
-                "browser_screenshot",
-                tool_call_id,
-                artifact,
-                session_state=self._extract_state_from_artifact(artifact),
-            )
 
         # image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-        session = await self._session_manager.get_session(user_id)
-        current_url = session.last_result.url if session.last_result else ""
+        last_result = await self._session_manager.get_last_result(user_id)
+        current_url = last_result.url if last_result else ""
         text = f"Screenshot captured for {current_url}" if current_url else "Screenshot captured"
         artifact: dict[str, Any] = {
             "status": "success",
             "url": current_url,
-            "title": session.last_result.title if session.last_result else None,
+            "title": last_result.title if last_result else None,
             "metadata": {"screenshot_path": screenshot_path},
             "content_preview": text,
             "screenshot_path": screenshot_path,

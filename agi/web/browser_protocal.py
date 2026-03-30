@@ -1,4 +1,3 @@
-# browser_interface.py
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 from .browser_types import PageInfo, QueryMatch, WaitUntilState
@@ -66,12 +65,6 @@ class AbstractBrowserBackend(ABC):
     @abstractmethod
     async def get_screenshot(self, *, full_page: bool = True) -> str:
         """获取当前页面的截图。"""
-        pass
-
-    # --- 历史与状态 ---
-    @abstractmethod
-    def get_history(self) -> List[Dict[str, Any]]:
-        """获取操作历史记录。"""
         pass
 
     @abstractmethod

@@ -367,22 +367,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             return None
         return screenshot_path, Path(screenshot_path).read_bytes()
 
-    def get_history(self) -> List[Dict[str, Any]]:
-        """Return a copy of the recorded browser action history."""
-        return self._history.copy()
-
-    def peek_state_messages(self, limit: int = 1) -> List[Dict[str, Any]]:
-        """Event streaming is disabled in simplified backend."""
-        return []
-
-    def drain_state_messages(self, limit: int = 1) -> List[Dict[str, Any]]:
-        """Event streaming is disabled in simplified backend."""
-        return []
-
-    def get_recent_events(self, limit: int = 5) -> List[Dict[str, Any]]:
-        """Event tracking is disabled in simplified backend."""
-        return []
-
     def _page_summary(self, result: PageInfo | None, fallback_state: Any | None = None) -> BrowserPageState:
         fallback_url = fallback_state.get("url") if isinstance(fallback_state, dict) else ""
         fallback_title = fallback_state.get("title") if isinstance(fallback_state, dict) else None
