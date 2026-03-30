@@ -395,7 +395,6 @@ class BrowserMiddleware(AgentMiddleware):
                 "ocr_applied": bool(ocr_text),
             },
             "content_preview": self._build_preview(primary_content),
-            "history_length": len(session.backend.get_history()),
         }
         if screenshot_path:
             artifact["screenshot_path"] = screenshot_path
@@ -548,7 +547,6 @@ class BrowserMiddleware(AgentMiddleware):
             "metadata": {"screenshot_path": screenshot_path},
             "content_preview": text,
             "screenshot_path": screenshot_path,
-            "history_length": len(session.backend.get_history()),
         }
         artifact = self._artifact_with_state(artifact, user_id)
         session_state = self._extract_state_from_artifact(artifact)
