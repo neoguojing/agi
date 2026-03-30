@@ -591,10 +591,10 @@ class BrowserMiddleware(AgentMiddleware):
                 if result.metadata.get("error"):
                     raise RuntimeError(str(result.metadata["error"]))
 
-                state = await self._session_manager.get_state(user_id)
+                canonical_state = await self._get_canonical_session_state(user_id)
                 result.metadata = {
                     **result.metadata,
-                    "browser_session_state": self._normalize_llm_state(state),
+                    "browser_session_state": canonical_state or {"browser": {"is_open": False, "is_closed": True}, "current_page": {}, "previous_page": None},
                 }
 
                 return result
@@ -695,13 +695,13 @@ class BrowserMiddleware(AgentMiddleware):
         return f"{system_prompt}\n\n{self._format_browser_state_for_prompt(session_state)}"
 
     async def _resolve_session_state_for_request(self, request: ModelRequest[ContextT]) -> BrowserSessionSnapshot | None:
-        """Resolve a single compact state schema for LLM context."""
+        """Resolve canonical browser session state for LLM context."""
         state = getattr(request, "state", None) or {}
         if isinstance(state, dict):
             session_state = state.get("browser_session_state")
             if isinstance(session_state, dict):
                 user_id = await self._resolve_user_id_from_request(request)
-                live_state = await self._get_live_session_state(user_id) if user_id else None
+                live_state = await self._get_canonical_session_state(user_id=user_id) if user_id else None
                 if live_state:
                     return live_state
                 return self._normalize_llm_state(session_state)
@@ -709,7 +709,7 @@ class BrowserMiddleware(AgentMiddleware):
         user_id = await self._resolve_user_id_from_request(request)
         if not user_id:
             return None
-        return await self._get_live_session_state(user_id)
+        return await self._get_canonical_session_state(user_id=user_id)
 
     async def _resolve_user_id_from_request(self, request: ModelRequest[ContextT]) -> str | None:
         state = getattr(request, "state", None) or {}
@@ -731,6 +731,12 @@ class BrowserMiddleware(AgentMiddleware):
         return None
 
     async def _get_live_session_state(self, user_id: str) -> BrowserSessionSnapshot | None:
+        return await self._get_canonical_session_state(user_id=user_id)
+
+    async def _get_canonical_session_state(self, user_id: str | None) -> BrowserSessionSnapshot | None:
+        """Single source of truth for middleware/browser state normalization."""
+        if not user_id:
+            return None
         state = await self._session_manager.get_state(user_id)
         if not state:
             return None
@@ -775,8 +781,10 @@ class BrowserMiddleware(AgentMiddleware):
         }
 
     async def _artifact_with_state(self, artifact: dict[str, Any], user_id: str) -> dict[str, Any]:
-        state = await self._session_manager.get_state(user_id)
-        normalized_state = self._normalize_llm_state(state)
+        normalized_state = await self._get_canonical_session_state(user_id)
+        if normalized_state is None:
+            logger.debug("No live browser state for user_id=%s when building artifact", user_id)
+            return artifact
         current_page = normalized_state.get("current_page")
         artifact["metadata"] = {
             **dict(artifact.get("metadata", {})),
