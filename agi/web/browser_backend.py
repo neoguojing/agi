@@ -469,19 +469,10 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             return self._build_error_page_info(url, str(exc), action="capture")
 
     async def extract_ui(self, page: Page):
-        """Extract UI elements from the page."""
+        """Extract simplified UI elements from the page."""
         return await page.evaluate(""" () => {
-            function getSelector(el) {
-                if (el.id) return "#" + el.id;
-                if (el.name) return `[name="${el.name}"]`;
-                return el.tagName.toLowerCase();
-            }
-
-            function isVisible(el) {
-                return !!(el.offsetParent);
-            }
-
             function getText(el) {
+                // 优先获取可见文本，其次是输入值或无障碍标签
                 return (
                     el.innerText ||
                     el.value ||
@@ -491,34 +482,36 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 ).trim();
             }
 
+            function isVisible(el) {
+                return !!(el.offsetParent);
+            }
+
             const elements = Array.from(
                 document.querySelectorAll('input, button, textarea, select, a')
             )
             .filter(isVisible)
             .map((el, idx) => {
-                const rect = el.getBoundingClientRect();
                 return {
-                    id: idx + 1,
+                    // 1. 仅保留类型
                     type: el.tagName.toLowerCase(),
-                    text: getText(el),
-                    href: el.href || "",
-                    role: el.getAttribute("role") || "",
-                    placeholder: el.placeholder || "",
-                    selector: getSelector(el),
-                    x: rect.x,
-                    y: rect.y,
-                    width: rect.width,
-                    height: rect.height
+                    
+                    // 2. 仅保留核心文本内容
+                    content: getText(el),
+                    
+                    // 3. 仅保留链接地址 (如果是链接)
+                    link: el.href || null,
+                    
+                    // 4. 仅保留输入框提示 (如果是输入框)
+                    hint: el.placeholder || null
                 };
             })
-            .filter(el => el.text.length > 0 || el.type === "input");
+            // 过滤掉既没有文字内容，又不是输入框的纯装饰性元素
+            .filter(el => el.content.length > 0 || el.type === "input");
 
             return {
-                page: {
-                    title: document.title,
-                    url: location.href
-                },
-                elements
+                title: document.title,
+                url: location.href,
+                elements: elements
             };
         } """)
 
