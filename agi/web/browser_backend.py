@@ -577,29 +577,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 document.querySelectorAll('input, button, textarea, select, a')
             )
             .filter(isVisible)
-            .filter(inViewport)
             .map((el) => {
-                const text = getText(el);
-
-                // 过滤掉无效的 JS 链接 (如 href="javascript:void(0)")
-                if (el.tagName === "A" && (!el.href || el.href.startsWith("javascript:"))) {
-                    return null;
-                }
-
-                const rect = el.getBoundingClientRect();
-
-                // 推断操作类型
-                let action = "unknown";
-                if (el.tagName === "INPUT") action = "type";
-                else if (el.tagName === "BUTTON") action = "click";
-                else if (el.tagName === "A") {
-                    if (el.hasAttribute('download')) action = "download";
-                    else action = "navigate";
-                }
-                else if (el.tagName === "SELECT") action = "select";
-
                 return {
-                    id: idx + 1,
                     type: el.tagName.toLowerCase(),
                     text: getText(el).slice(0, 60),
                     placeholder: (el.placeholder || "").slice(0, 40),
