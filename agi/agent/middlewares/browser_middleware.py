@@ -364,7 +364,7 @@ class BrowserMiddleware(AgentMiddleware):
         user_id = self._resolve_user_id(runtime)
         last_result = await self._session_manager.get_last_result(user_id)
         if not last_result:
-            return self._artifact_with_state(
+            return await self._artifact_with_state(
                 self._error_artifact("No page loaded. Please navigate first."),
                 user_id,
             )
@@ -373,7 +373,7 @@ class BrowserMiddleware(AgentMiddleware):
         text = last_result.text or ""
         ocr_text, screenshot_path = await self._extract_content_with_ocr(user_id, last_result)
         if not ocr_text and not html and not text:
-            return self._artifact_with_state(
+            return await self._artifact_with_state(
                 self._error_artifact(
                     "Page content is empty and OCR extraction was unavailable.",
                     url=last_result.url,
@@ -417,7 +417,7 @@ class BrowserMiddleware(AgentMiddleware):
             artifact["text_preview"] = text
             artifact["is_truncated"] = False
 
-        return self._artifact_with_state(artifact, user_id)
+        return await self._artifact_with_state(artifact, user_id)
 
     async def _tool_find(self, runtime: ToolRuntime[None, MiddlewareBrowserState], selector: str) -> dict[str, Any]:
         """Find candidate elements on the current page."""
@@ -432,8 +432,9 @@ class BrowserMiddleware(AgentMiddleware):
             "selector": selector,
             "count": len(matches),
             "matches": [{"text": match.text, "attrs": match.attributes} for match in matches[:10]],
+            "empty_result": len(matches) == 0,
         }
-        return self._artifact_with_state(
+        return await self._artifact_with_state(
             {
                 "status": "success",
                 "url": last_result.url if last_result else "",
@@ -503,7 +504,7 @@ class BrowserMiddleware(AgentMiddleware):
         screenshot_path = await self._session_manager.screenshot(user_id)
         
         if not screenshot_path:
-            artifact = self._artifact_with_state(self._error_artifact("Failed to take screenshot"), user_id)
+            artifact = await self._artifact_with_state(self._error_artifact("Failed to take screenshot"), user_id)
             return self._command_for_result(
                 "browser_screenshot",
                 tool_call_id,
@@ -516,7 +517,7 @@ class BrowserMiddleware(AgentMiddleware):
         image_path = Path(screenshot_path)
         if not image_path.exists():
             logger.warning("Screenshot file not found: %s", screenshot_path)
-            artifact = self._artifact_with_state(self._error_artifact(f"Screenshot file not found: {screenshot_path}"), user_id)
+            artifact = await self._artifact_with_state(self._error_artifact(f"Screenshot file not found: {screenshot_path}"), user_id)
             return self._command_for_result(
                 "browser_screenshot",
                 tool_call_id,
@@ -536,7 +537,7 @@ class BrowserMiddleware(AgentMiddleware):
             "content_preview": text,
             "screenshot_path": screenshot_path,
         }
-        artifact = self._artifact_with_state(artifact, user_id)
+        artifact = await self._artifact_with_state(artifact, user_id)
         session_state = self._extract_state_from_artifact(artifact)
         return Command(
             update={
@@ -631,7 +632,13 @@ class BrowserMiddleware(AgentMiddleware):
                 screenshot_path=result.screenshot_path,
             )
 
-        result.metadata.pop('elements', None)
+        result.metadata.pop("elements", None)
+        action = result.metadata.get("action")
+        if action != "navigate":
+            # actionable_elements are most useful immediately after navigation;
+            # avoid repeatedly injecting them into every tool result.
+            result.metadata.pop("actionable_elements", None)
+            result.metadata.pop("actionable_count", None)
         current_page = {
             "url": result.url,
             "title": result.title,
@@ -743,24 +750,28 @@ class BrowserMiddleware(AgentMiddleware):
         return self._normalize_llm_state(state)
 
     def _format_browser_state_for_prompt(self, session_state: BrowserSessionSnapshot) -> str:
-        """Generate a compact LLM-facing state summary.
-
-        Keep only what helps action planning:
-        0) browser state
-        1) current page
-        2) previous page (if available)
-        """
+        """Generate compact, task-relevant LLM-facing browser state."""
         browser = session_state.get("browser", {}) or {}
         current_page = session_state.get("current_page", {}) or {}
-        previous_page = session_state.get("previous_page")
-        previous_line = f"previous_page: {previous_page if isinstance(previous_page, dict) else '<none>'}"
+        previous_page = session_state.get("previous_page") if isinstance(session_state.get("previous_page"), dict) else {}
+
+        def _compact_page(page: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "url": page.get("url"),
+                "title": page.get("title"),
+                "screenshot_path": page.get("screenshot_path"),
+            }
+
+        current_page_compact = _compact_page(current_page) if isinstance(current_page, dict) else {}
+        previous_page_compact = _compact_page(previous_page) if isinstance(previous_page, dict) else None
         return "\n".join(
             [
                 "## Current Browser Session State",
                 f"browser: is_open={browser.get('is_open')} is_closed={browser.get('is_closed')}",
-                f"current_page: {current_page}",
-                previous_line,
-                "Use only this state to decide next step: navigate, find, click, fill, extract, screenshot.",
+                f"current_page: {current_page_compact}",
+                f"previous_page: {previous_page_compact or '<none>'}",
+                f"last_action: {current_page.get('metadata', {}).get('action') if isinstance(current_page.get('metadata'), dict) else None}",
+                "Decide next action only from this summary: navigate, find, click, fill, extract, screenshot.",
             ]
         )
 
@@ -811,7 +822,7 @@ class BrowserMiddleware(AgentMiddleware):
         artifact: dict[str, Any],
         session_state: BrowserSessionSnapshot | None = None,
     ) -> Command:
-        text = self._artifact_to_text(artifact)
+        text = self._artifact_to_text(tool_name, artifact)
         update: dict[str, Any] = {
             "messages": [
                 ToolMessage(
@@ -826,30 +837,101 @@ class BrowserMiddleware(AgentMiddleware):
             update["browser_session_state"] = session_state
         return Command(update=update)
 
-    def _artifact_to_text(self, artifact: dict[str, Any]) -> str:
+    def _artifact_to_text(self, tool_name: str, artifact: dict[str, Any]) -> str:
+        compact_current_page = self._compact_page_for_text(artifact.get("current_page"))
+        compact_previous_page = self._compact_page_for_text(artifact.get("previous_page"))
         lines = [f"status: {artifact['status']}"]
-        current_page = artifact.get("current_page", {})
-        if isinstance(current_page, dict) and current_page.get("url"):
-            lines.append(f"url: {current_page['url']}")
-        if isinstance(current_page, dict) and current_page.get("title"):
-            lines.append(f"title: {current_page['title']}")
+        if compact_current_page.get("url"):
+            lines.append(f"url: {compact_current_page['url']}")
+        if compact_current_page.get("title"):
+            lines.append(f"title: {compact_current_page['title']}")
+
         if artifact.get("content_preview"):
-            lines.append(f"preview: {artifact['content_preview']}")
+            preview_limit = 800 if tool_name == "browser_extract" else 240
+            lines.append(f"preview: {self._build_preview(str(artifact['content_preview']), limit=preview_limit)}")
         if artifact.get("error"):
             lines.append(f"error: {artifact['error']}")
-        if isinstance(current_page, dict) and current_page.get("screenshot_path"):
-            lines.append(f"screenshot_path: {current_page['screenshot_path']}")
+        if compact_current_page.get("screenshot_path"):
+            lines.append(f"screenshot_path: {compact_current_page['screenshot_path']}")
         if artifact.get("ocr_text_preview"):
-            lines.append(f"ocr_text_preview: {artifact['ocr_text_preview']}")
+            lines.append(f"ocr_text_preview: {self._build_preview(str(artifact['ocr_text_preview']), limit=400)}")
         if artifact.get("full_content_path"):
             lines.append(f"full_content_path: {artifact['full_content_path']}")
-        if artifact.get("current_page"):
-            lines.append(f"current_page: {artifact['current_page']}")
-        if artifact.get("previous_page"):
-            lines.append(f"previous_page: {artifact['previous_page']}")
-        if artifact.get("metadata"):
-            lines.append(f"metadata: {artifact['metadata']}")
+
+        metadata = artifact.get("metadata", {})
+        if isinstance(metadata, dict):
+            if tool_name == "browser_find":
+                lines.append(f"matches_count: {metadata.get('count', 0)}")
+            elif tool_name == "browser_navigate":
+                lines.extend(self._format_actionable_elements(metadata))
+            elif tool_name == "browser_extract":
+                lines.append(f"is_truncated: {artifact.get('is_truncated', False)}")
+                lines.append(f"evicted: {bool(metadata.get('evicted'))}")
+            elif tool_name == "browser_screenshot" and metadata.get("screenshot_path"):
+                lines.append(f"metadata_screenshot_path: {metadata['screenshot_path']}")
+
+        if compact_current_page:
+            lines.append(f"current_page: {compact_current_page}")
+        if compact_previous_page:
+            lines.append(f"previous_page: {compact_previous_page}")
+        hint = self._next_step_hint(tool_name, artifact)
+        if hint:
+            lines.append(f"next_step_hint: {hint}")
         return "\n".join(lines)
+
+    def _compact_page_for_text(self, page: Any) -> dict[str, Any]:
+        if not isinstance(page, dict):
+            return {}
+        return {
+            "url": page.get("url"),
+            "title": page.get("title"),
+            "screenshot_path": page.get("screenshot_path"),
+        }
+
+    def _next_step_hint(self, tool_name: str, artifact: dict[str, Any]) -> str:
+        """Provide concise, scenario-specific guidance for the next LLM action."""
+        status = artifact.get("status")
+        if status == "error":
+            if tool_name in {"browser_click", "browser_fill"}:
+                return "Run browser_find to verify selector before retry."
+            if tool_name == "browser_extract":
+                return "Try browser_screenshot or browser_navigate to recover content."
+            return "Check page state and retry with a safer action."
+
+        metadata = artifact.get("metadata", {}) if isinstance(artifact.get("metadata"), dict) else {}
+        if tool_name == "browser_find" and metadata.get("count", 0) == 0:
+            return "No matching element found; try broader selector or browser_extract first."
+        if tool_name == "browser_extract" and not artifact.get("content_preview"):
+            return "Extracted content is empty; try browser_screenshot or navigate/reload."
+        if tool_name == "browser_navigate":
+            metadata = artifact.get("metadata", {}) if isinstance(artifact.get("metadata"), dict) else {}
+            if metadata.get("actionable_count", 0) > 0:
+                return "Use suggested selectors from actionable_elements for click/fill."
+            return "No clear controls found; run browser_extract then browser_find with broader selectors."
+        if tool_name == "browser_screenshot":
+            return "Use browser_extract to read text after visual confirmation."
+        return ""
+
+    def _format_actionable_elements(self, metadata: dict[str, Any], *, limit: int = 5) -> list[str]:
+        actionable = metadata.get("actionable_elements")
+        if not isinstance(actionable, list) or not actionable:
+            return ["actionable_elements: []"]
+        lines = [f"actionable_count: {metadata.get('actionable_count', len(actionable))}"]
+        for idx, item in enumerate(actionable[:limit], start=1):
+            if not isinstance(item, dict):
+                continue
+            lines.append(
+                "actionable_{idx}: type={type} selector={selector} text={text} placeholder={placeholder}".format(
+                    idx=idx,
+                    type=item.get("type", ""),
+                    selector=item.get("selector", ""),
+                    text=item.get("text", ""),
+                    placeholder=item.get("placeholder", ""),
+                )
+            )
+        if len(actionable) > limit:
+            lines.append(f"actionable_more: {len(actionable) - limit}")
+        return lines
 
     def _build_preview(self, content: str, *, limit: int = 500) -> str:
         if len(content) <= limit:

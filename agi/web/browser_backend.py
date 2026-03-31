@@ -240,6 +240,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     capture_url or page.url,
                     response,
                     capture_content=False,
+                    action=action,
                 )
             except PlaywrightTimeoutError as exc:
                 logger.warning("%s timed out: %s", action, exc)
@@ -386,13 +387,26 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 "screenshot_path": None,
                 "metadata": {"load_state": "unknown"},
             }
+        metadata = dict(source.metadata)
+        compact_metadata = {
+            "status": metadata.get("status"),
+            "load_state": metadata.get("load_state"),
+            "history_length": metadata.get("history_length"),
+            "error": metadata.get("error"),
+            "empty_page": metadata.get("empty_page", False),
+            "text_length": metadata.get("text_length", 0),
+            "html_length": metadata.get("html_length", 0),
+            "has_screenshot": bool(source.screenshot_path),
+            "actionable_count": metadata.get("actionable_count", 0),
+        }
         return {
             "url": source.url,
             "title": source.title,
-            "html": source.html,
-            "text": source.text,
+            # Snapshot for middleware should stay compact; keep raw page content in last_result only.
+            "html": None,
+            "text": None,
             "screenshot_path": source.screenshot_path,
-            "metadata": dict(source.metadata),
+            "metadata": compact_metadata,
         }
 
     def get_state_snapshot(
@@ -433,14 +447,26 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
     # --- Internal Action Implementations ---
 
-    async def _capture_page_info(self, page: Page, url: str, response: Response | None, capture_content: bool = True) -> PageInfo:
+    async def _capture_page_info(
+        self,
+        page: Page,
+        url: str,
+        response: Response | None,
+        capture_content: bool = True,
+        action: str | None = None,
+    ) -> PageInfo:
         """Capture normalized page metadata after an action completes."""
         try:
-            html_repr = await self.extract_ui(page)
+            html_repr = await self.extract_ui(page, limit=8)
+            actionable_elements = html_repr.get("elements", []) if isinstance(html_repr, dict) else []
             
             page_text = await page.inner_text("body")
             page_title = await page.title()
-            
+            normalized_text = page_text.strip()
+            normalized_html = html_repr if isinstance(html_repr, str) else json.dumps(html_repr, ensure_ascii=False)
+            text_is_empty = len(normalized_text) == 0
+            html_is_empty = len(normalized_html.strip()) == 0
+
             # 仅在需要内容时才进行截图和 OCR
             screenshot_path = None
             if capture_content:
@@ -449,15 +475,21 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             page_info = PageInfo(
                 url=page.url,
                 title=page_title,
-                html=html_repr,
-                text="",
+                html=normalized_html[: self.max_content_length],
+                text=normalized_text[: self.max_content_length],
                 screenshot_path=screenshot_path,
                 metadata={
                     "status": response.status if response is not None else 200,
-                    "html_length": len(html_repr),
-                    "text_length": len(page_text),
+                    "action": action,
+                    "html_length": len(normalized_html),
+                    "text_length": len(normalized_text),
                     "has_screenshot": screenshot_path is not None,
                     "history_length": len(self._history),
+                    "empty_page": text_is_empty and html_is_empty,
+                    "text_truncated": len(normalized_text) > self.max_content_length,
+                    "html_truncated": len(normalized_html) > self.max_content_length,
+                    "actionable_elements": actionable_elements,
+                    "actionable_count": len(actionable_elements),
                 }
             )
             self._page_runtime_state[self._page_id(page)] = page_info
@@ -468,9 +500,9 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             logger.exception("Failed to capture page info for %s", url)
             return self._build_error_page_info(url, str(exc), action="capture")
 
-    async def extract_ui(self, page: Page):
-        """Extract UI elements from the page."""
-        return await page.evaluate(""" () => {
+    async def extract_ui(self, page: Page, *, limit: int = 8):
+        """Extract compact actionable UI elements from the page."""
+        return await page.evaluate(""" ({ limit }) => {
             function getSelector(el) {
                 if (el.id) return "#" + el.id;
                 if (el.name) return `[name="${el.name}"]`;
@@ -495,23 +527,16 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 document.querySelectorAll('input, button, textarea, select, a')
             )
             .filter(isVisible)
-            .map((el, idx) => {
-                const rect = el.getBoundingClientRect();
+            .map((el) => {
                 return {
-                    id: idx + 1,
                     type: el.tagName.toLowerCase(),
-                    text: getText(el),
-                    href: el.href || "",
-                    role: el.getAttribute("role") || "",
-                    placeholder: el.placeholder || "",
-                    selector: getSelector(el),
-                    x: rect.x,
-                    y: rect.y,
-                    width: rect.width,
-                    height: rect.height
+                    text: getText(el).slice(0, 60),
+                    placeholder: (el.placeholder || "").slice(0, 40),
+                    selector: (getSelector(el) || "").slice(0, 80),
                 };
             })
-            .filter(el => el.text.length > 0 || el.type === "input");
+            .filter(el => (el.text.length > 0 || el.type === "input") && el.selector.length > 0)
+            .slice(0, Number(limit) || 8);
 
             return {
                 page: {
@@ -520,7 +545,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 },
                 elements
             };
-        } """)
+        } """, {"limit": limit})
 
     async def _take_screenshot(self, page: Page, *, prefix: str, full_page: bool = False) -> Path:
         """Take a screenshot and save to storage."""
