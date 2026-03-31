@@ -468,11 +468,20 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             logger.exception("Failed to capture page info for %s", url)
             return self._build_error_page_info(url, str(exc), action="capture")
 
-    async def extract_ui(self, page: Page):
-        """Extract simplified UI elements from the page."""
-        return await page.evaluate(""" () => {
+    async def extract_ui(self, page):
+        """
+        提取页面核心交互元素。
+        特点：
+        1. 智能评分：优先返回输入框、首屏按钮。
+        2. 唯一选择器：确保每个元素都有可定位的 CSS Selector。
+        3. 动作推断：明确告诉 AI 该元素是点击、输入还是跳转。
+        4. 极简输出：去除坐标尺寸，仅保留核心语义。
+        """
+        return await page.evaluate("""() => {
+            // --- 辅助函数 ---
+
+            // 1. 获取文本内容
             function getText(el) {
-                // 优先获取可见文本，其次是输入值或无障碍标签
                 return (
                     el.innerText ||
                     el.value ||
@@ -482,39 +491,109 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 ).trim();
             }
 
+            // 2. 检查可见性
             function isVisible(el) {
-                return !!(el.offsetParent);
+                const style = window.getComputedStyle(el);
+                return (
+                    el.offsetParent !== null &&
+                    style.visibility !== "hidden" &&
+                    style.display !== "none"
+                );
             }
 
-            const elements = Array.from(
+            // 3. 检查是否在视口内 (稍微放宽范围以捕捉边缘元素)
+            function inViewport(el) {
+                const rect = el.getBoundingClientRect();
+                return rect.top >= -100 && rect.bottom <= window.innerHeight + 100;
+            }
+
+            // 4. 生成唯一选择器 (核心优化)
+            function getSelector(el) {
+                if (el.id) return `#${el.id}`;
+                if (el.name) return `[name="${el.name}"]`;
+                
+                // 如果没 ID/Name，使用 nth-child 保证唯一性
+                const parent = el.parentElement;
+                if (parent) {
+                    const siblings = Array.from(parent.children);
+                    // 找到当前元素在兄弟节点中的位置 (从1开始)
+                    const index = siblings.indexOf(el) + 1;
+                    return `${el.tagName.toLowerCase()}:nth-child(${index})`;
+                }
+                return el.tagName.toLowerCase();
+            }
+
+            // 5. 评分系统 (决定哪些元素更重要)
+            function score(el, text) {
+                let s = 0;
+                if (text.length > 0) s += 2; // 有文字加分
+                if (el.tagName === "BUTTON" || el.tagName === "A") s += 3; // 交互元素加分
+                if (el.tagName === "INPUT") s += 5; // 输入框权重最高
+                if (el.placeholder) s += 2; // 有提示文字加分
+                
+                // 视口上半部分加分 (首屏优先)
+                const rect = el.getBoundingClientRect();
+                if (rect.top < window.innerHeight * 0.5) s += 1;
+
+                return s;
+            }
+
+            // --- 主逻辑 ---
+
+            const raw = Array.from(
                 document.querySelectorAll('input, button, textarea, select, a')
             )
             .filter(isVisible)
-            .map((el, idx) => {
+            .filter(inViewport)
+            .map((el) => {
+                const text = getText(el);
+
+                // 过滤掉无效的 JS 链接 (如 href="javascript:void(0)")
+                if (el.tagName === "A" && (!el.href || el.href.startsWith("javascript:"))) {
+                    return null;
+                }
+
+                const rect = el.getBoundingClientRect();
+
+                // 推断操作类型
+                let action = "unknown";
+                if (el.tagName === "INPUT") action = "type";
+                else if (el.tagName === "BUTTON") action = "click";
+                else if (el.tagName === "A") {
+                    if (el.hasAttribute('download')) action = "download";
+                    else action = "navigate";
+                }
+                else if (el.tagName === "SELECT") action = "select";
+
                 return {
-                    // 1. 仅保留类型
-                    type: el.tagName.toLowerCase(),
-                    
-                    // 2. 仅保留核心文本内容
-                    content: getText(el),
-                    
-                    // 3. 仅保留链接地址 (如果是链接)
-                    link: el.href || null,
-                    
-                    // 4. 仅保留输入框提示 (如果是输入框)
-                    hint: el.placeholder || null
+                    t: el.tagName.toLowerCase(),
+                    c: text.slice(0, 40),   // 内容截断，防止过长
+                    sel: getSelector(el),   // 唯一选择器
+                    y: Math.round(rect.top),// 垂直坐标 (用于排序/定位)
+                    action: action,         // 建议操作
+                    s: score(el, text)      // 内部评分
                 };
             })
-            // 过滤掉既没有文字内容，又不是输入框的纯装饰性元素
-            .filter(el => el.content.length > 0 || el.type === "input");
+            .filter(Boolean) // 去除 null
+            .filter(el => el.c.length > 0 || el.t === "input") // 必须有内容或是输入框
+            .sort((a, b) => b.s - a.s) // 按评分降序
+            .slice(0, 30); // 限制最多 30 个元素
 
+            // --- 格式化输出 ---
             return {
                 title: document.title,
                 url: location.href,
-                elements: elements
+                elements: raw.map((el, i) => ({
+                    id: i + 1, // 重新分配 1-based ID
+                    t: el.t,
+                    c: el.c,
+                    sel: el.sel,
+                    y: el.y,
+                    action: el.action
+                }))
             };
-        } """)
-
+        }""")
+        
     async def _take_screenshot(self, page: Page, *, prefix: str, full_page: bool = False) -> Path:
         """Take a screenshot and save to storage."""
         file_path = self.storage_dir / f"{prefix}_{uuid.uuid4().hex[:10]}.png"
