@@ -386,13 +386,25 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 "screenshot_path": None,
                 "metadata": {"load_state": "unknown"},
             }
+        metadata = dict(source.metadata)
+        compact_metadata = {
+            "status": metadata.get("status"),
+            "load_state": metadata.get("load_state"),
+            "history_length": metadata.get("history_length"),
+            "error": metadata.get("error"),
+            "empty_page": metadata.get("empty_page", False),
+            "text_length": metadata.get("text_length", 0),
+            "html_length": metadata.get("html_length", 0),
+            "has_screenshot": bool(source.screenshot_path),
+        }
         return {
             "url": source.url,
             "title": source.title,
-            "html": source.html,
-            "text": source.text,
+            # Snapshot for middleware should stay compact; keep raw page content in last_result only.
+            "html": None,
+            "text": None,
             "screenshot_path": source.screenshot_path,
-            "metadata": dict(source.metadata),
+            "metadata": compact_metadata,
         }
 
     def get_state_snapshot(
@@ -440,7 +452,11 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             
             page_text = await page.inner_text("body")
             page_title = await page.title()
-            
+            normalized_text = page_text.strip()
+            normalized_html = html_repr if isinstance(html_repr, str) else json.dumps(html_repr, ensure_ascii=False)
+            text_is_empty = len(normalized_text) == 0
+            html_is_empty = len(normalized_html.strip()) == 0
+
             # 仅在需要内容时才进行截图和 OCR
             screenshot_path = None
             if capture_content:
@@ -449,15 +465,18 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             page_info = PageInfo(
                 url=page.url,
                 title=page_title,
-                html=html_repr,
-                text="",
+                html=normalized_html[: self.max_content_length],
+                text=normalized_text[: self.max_content_length],
                 screenshot_path=screenshot_path,
                 metadata={
                     "status": response.status if response is not None else 200,
-                    "html_length": len(html_repr),
-                    "text_length": len(page_text),
+                    "html_length": len(normalized_html),
+                    "text_length": len(normalized_text),
                     "has_screenshot": screenshot_path is not None,
                     "history_length": len(self._history),
+                    "empty_page": text_is_empty and html_is_empty,
+                    "text_truncated": len(normalized_text) > self.max_content_length,
+                    "html_truncated": len(normalized_html) > self.max_content_length,
                 }
             )
             self._page_runtime_state[self._page_id(page)] = page_info
