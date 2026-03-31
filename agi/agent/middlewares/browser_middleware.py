@@ -364,7 +364,7 @@ class BrowserMiddleware(AgentMiddleware):
         user_id = self._resolve_user_id(runtime)
         last_result = await self._session_manager.get_last_result(user_id)
         if not last_result:
-            return self._artifact_with_state(
+            return await self._artifact_with_state(
                 self._error_artifact("No page loaded. Please navigate first."),
                 user_id,
             )
@@ -373,7 +373,7 @@ class BrowserMiddleware(AgentMiddleware):
         text = last_result.text or ""
         ocr_text, screenshot_path = await self._extract_content_with_ocr(user_id, last_result)
         if not ocr_text and not html and not text:
-            return self._artifact_with_state(
+            return await self._artifact_with_state(
                 self._error_artifact(
                     "Page content is empty and OCR extraction was unavailable.",
                     url=last_result.url,
@@ -417,7 +417,7 @@ class BrowserMiddleware(AgentMiddleware):
             artifact["text_preview"] = text
             artifact["is_truncated"] = False
 
-        return self._artifact_with_state(artifact, user_id)
+        return await self._artifact_with_state(artifact, user_id)
 
     async def _tool_find(self, runtime: ToolRuntime[None, MiddlewareBrowserState], selector: str) -> dict[str, Any]:
         """Find candidate elements on the current page."""
@@ -433,7 +433,7 @@ class BrowserMiddleware(AgentMiddleware):
             "count": len(matches),
             "matches": [{"text": match.text, "attrs": match.attributes} for match in matches[:10]],
         }
-        return self._artifact_with_state(
+        return await self._artifact_with_state(
             {
                 "status": "success",
                 "url": last_result.url if last_result else "",
@@ -503,7 +503,7 @@ class BrowserMiddleware(AgentMiddleware):
         screenshot_path = await self._session_manager.screenshot(user_id)
         
         if not screenshot_path:
-            artifact = self._artifact_with_state(self._error_artifact("Failed to take screenshot"), user_id)
+            artifact = await self._artifact_with_state(self._error_artifact("Failed to take screenshot"), user_id)
             return self._command_for_result(
                 "browser_screenshot",
                 tool_call_id,
@@ -516,7 +516,7 @@ class BrowserMiddleware(AgentMiddleware):
         image_path = Path(screenshot_path)
         if not image_path.exists():
             logger.warning("Screenshot file not found: %s", screenshot_path)
-            artifact = self._artifact_with_state(self._error_artifact(f"Screenshot file not found: {screenshot_path}"), user_id)
+            artifact = await self._artifact_with_state(self._error_artifact(f"Screenshot file not found: {screenshot_path}"), user_id)
             return self._command_for_result(
                 "browser_screenshot",
                 tool_call_id,
@@ -536,7 +536,7 @@ class BrowserMiddleware(AgentMiddleware):
             "content_preview": text,
             "screenshot_path": screenshot_path,
         }
-        artifact = self._artifact_with_state(artifact, user_id)
+        artifact = await self._artifact_with_state(artifact, user_id)
         session_state = self._extract_state_from_artifact(artifact)
         return Command(
             update={
