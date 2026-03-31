@@ -1,0 +1,37 @@
+name: "image2image"
+backend: "python"
+
+max_batch_size: 1
+
+input [
+  {
+    name: "PROMPT"
+    data_type: TYPE_STRING
+    dims: [1]
+  },
+  {
+    name: "IMAGE"
+    data_type: TYPE_UINT8
+    dims: [ -1 ]
+  },
+  {
+    name: "FORMAT"
+    data_type: TYPE_STRING
+    dims: [1]
+  }
+]
+
+output [
+  {
+    name: "OUTPUT"
+    data_type: TYPE_STRING
+    dims: [1]
+  }
+]
+
+instance_group [
+  {
+    kind: KIND_GPU
+    count: 1
+  }
+]
