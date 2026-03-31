@@ -240,6 +240,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     capture_url or page.url,
                     response,
                     capture_content=False,
+                    action=action,
                 )
             except PlaywrightTimeoutError as exc:
                 logger.warning("%s timed out: %s", action, exc)
@@ -396,6 +397,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             "text_length": metadata.get("text_length", 0),
             "html_length": metadata.get("html_length", 0),
             "has_screenshot": bool(source.screenshot_path),
+            "actionable_count": metadata.get("actionable_count", 0),
         }
         return {
             "url": source.url,
@@ -445,10 +447,18 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
     # --- Internal Action Implementations ---
 
-    async def _capture_page_info(self, page: Page, url: str, response: Response | None, capture_content: bool = True) -> PageInfo:
+    async def _capture_page_info(
+        self,
+        page: Page,
+        url: str,
+        response: Response | None,
+        capture_content: bool = True,
+        action: str | None = None,
+    ) -> PageInfo:
         """Capture normalized page metadata after an action completes."""
         try:
-            html_repr = await self.extract_ui(page)
+            html_repr = await self.extract_ui(page, limit=8)
+            actionable_elements = html_repr.get("elements", []) if isinstance(html_repr, dict) else []
             
             page_text = await page.inner_text("body")
             page_title = await page.title()
@@ -470,6 +480,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 screenshot_path=screenshot_path,
                 metadata={
                     "status": response.status if response is not None else 200,
+                    "action": action,
                     "html_length": len(normalized_html),
                     "text_length": len(normalized_text),
                     "has_screenshot": screenshot_path is not None,
@@ -477,6 +488,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     "empty_page": text_is_empty and html_is_empty,
                     "text_truncated": len(normalized_text) > self.max_content_length,
                     "html_truncated": len(normalized_html) > self.max_content_length,
+                    "actionable_elements": actionable_elements,
+                    "actionable_count": len(actionable_elements),
                 }
             )
             self._page_runtime_state[self._page_id(page)] = page_info
@@ -487,17 +500,18 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             logger.exception("Failed to capture page info for %s", url)
             return self._build_error_page_info(url, str(exc), action="capture")
 
-    async def extract_ui(self, page):
-        """
-        提取页面核心交互元素。
-        特点：
-        1. 智能评分：优先返回输入框、首屏按钮。
-        2. 唯一选择器：确保每个元素都有可定位的 CSS Selector。
-        3. 动作推断：明确告诉 AI 该元素是点击、输入还是跳转。
-        4. 极简输出：去除坐标尺寸，仅保留核心语义。
-        """
-        return await page.evaluate("""() => {
-            // --- 辅助函数 ---
+    async def extract_ui(self, page: Page, *, limit: int = 8):
+        """Extract compact actionable UI elements from the page."""
+        return await page.evaluate(""" ({ limit }) => {
+            function getSelector(el) {
+                if (el.id) return "#" + el.id;
+                if (el.name) return `[name="${el.name}"]`;
+                return el.tagName.toLowerCase();
+            }
+
+            function isVisible(el) {
+                return !!(el.offsetParent);
+            }
 
             // 1. 获取文本内容
             function getText(el) {
@@ -585,18 +599,15 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 else if (el.tagName === "SELECT") action = "select";
 
                 return {
-                    t: el.tagName.toLowerCase(),
-                    c: text.slice(0, 40),   // 内容截断，防止过长
-                    sel: getSelector(el),   // 唯一选择器
-                    y: Math.round(rect.top),// 垂直坐标 (用于排序/定位)
-                    action: action,         // 建议操作
-                    s: score(el, text)      // 内部评分
+                    id: idx + 1,
+                    type: el.tagName.toLowerCase(),
+                    text: getText(el).slice(0, 60),
+                    placeholder: (el.placeholder || "").slice(0, 40),
+                    selector: (getSelector(el) || "").slice(0, 80),
                 };
             })
-            .filter(Boolean) // 去除 null
-            .filter(el => el.c.length > 0 || el.t === "input") // 必须有内容或是输入框
-            .sort((a, b) => b.s - a.s) // 按评分降序
-            .slice(0, 30); // 限制最多 30 个元素
+            .filter(el => (el.text.length > 0 || el.type === "input") && el.selector.length > 0)
+            .slice(0, Number(limit) || 8);
 
             // --- 格式化输出 ---
             return {
@@ -611,8 +622,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     action: el.action
                 }))
             };
-        }""")
-        
+        } """, {"limit": limit})
+
     async def _take_screenshot(self, page: Page, *, prefix: str, full_page: bool = False) -> Path:
         """Take a screenshot and save to storage."""
         file_path = self.storage_dir / f"{prefix}_{uuid.uuid4().hex[:10]}.png"

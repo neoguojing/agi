@@ -632,7 +632,13 @@ class BrowserMiddleware(AgentMiddleware):
                 screenshot_path=result.screenshot_path,
             )
 
-        result.metadata.pop('elements', None)
+        result.metadata.pop("elements", None)
+        action = result.metadata.get("action")
+        if action != "navigate":
+            # actionable_elements are most useful immediately after navigation;
+            # avoid repeatedly injecting them into every tool result.
+            result.metadata.pop("actionable_elements", None)
+            result.metadata.pop("actionable_count", None)
         current_page = {
             "url": result.url,
             "title": result.title,
@@ -764,6 +770,7 @@ class BrowserMiddleware(AgentMiddleware):
                 f"browser: is_open={browser.get('is_open')} is_closed={browser.get('is_closed')}",
                 f"current_page: {current_page_compact}",
                 f"previous_page: {previous_page_compact or '<none>'}",
+                f"last_action: {current_page.get('metadata', {}).get('action') if isinstance(current_page.get('metadata'), dict) else None}",
                 "Decide next action only from this summary: navigate, find, click, fill, extract, screenshot.",
             ]
         )
@@ -855,6 +862,8 @@ class BrowserMiddleware(AgentMiddleware):
         if isinstance(metadata, dict):
             if tool_name == "browser_find":
                 lines.append(f"matches_count: {metadata.get('count', 0)}")
+            elif tool_name == "browser_navigate":
+                lines.extend(self._format_actionable_elements(metadata))
             elif tool_name == "browser_extract":
                 lines.append(f"is_truncated: {artifact.get('is_truncated', False)}")
                 lines.append(f"evicted: {bool(metadata.get('evicted'))}")
@@ -895,10 +904,34 @@ class BrowserMiddleware(AgentMiddleware):
         if tool_name == "browser_extract" and not artifact.get("content_preview"):
             return "Extracted content is empty; try browser_screenshot or navigate/reload."
         if tool_name == "browser_navigate":
-            return "Use browser_find before click/fill if selector is uncertain."
+            metadata = artifact.get("metadata", {}) if isinstance(artifact.get("metadata"), dict) else {}
+            if metadata.get("actionable_count", 0) > 0:
+                return "Use suggested selectors from actionable_elements for click/fill."
+            return "No clear controls found; run browser_extract then browser_find with broader selectors."
         if tool_name == "browser_screenshot":
             return "Use browser_extract to read text after visual confirmation."
         return ""
+
+    def _format_actionable_elements(self, metadata: dict[str, Any], *, limit: int = 5) -> list[str]:
+        actionable = metadata.get("actionable_elements")
+        if not isinstance(actionable, list) or not actionable:
+            return ["actionable_elements: []"]
+        lines = [f"actionable_count: {metadata.get('actionable_count', len(actionable))}"]
+        for idx, item in enumerate(actionable[:limit], start=1):
+            if not isinstance(item, dict):
+                continue
+            lines.append(
+                "actionable_{idx}: type={type} selector={selector} text={text} placeholder={placeholder}".format(
+                    idx=idx,
+                    type=item.get("type", ""),
+                    selector=item.get("selector", ""),
+                    text=item.get("text", ""),
+                    placeholder=item.get("placeholder", ""),
+                )
+            )
+        if len(actionable) > limit:
+            lines.append(f"actionable_more: {len(actionable) - limit}")
+        return lines
 
     def _build_preview(self, content: str, *, limit: int = 500) -> str:
         if len(content) <= limit:
