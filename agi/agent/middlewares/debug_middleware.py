@@ -1,22 +1,23 @@
 import json
 import time
 import traceback
-from typing import Callable, Awaitable, List, Any, Optional
+from typing import Callable, Awaitable, List, Any, Optional, Union, Generator
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from langchain_core.messages import BaseMessage, ToolMessage
 from langgraph.types import Command
 from langchain.tools.tool_node import ToolCallRequest
 
+
 class DebugLLMContextMiddleware(AgentMiddleware):
     def __init__(
-        self, 
-        name: str = "DEFAULT",  # 新增：Namespace/模块名称
-        show_messages: bool = True, 
-        show_tools: bool = True, 
+        self,
+        name: str = "DEFAULT",
+        show_messages: bool = True,
+        show_tools: bool = True,
         show_state: bool = False,
         show_settings: bool = False,
-        content_limit: int = 100000,
-        color_header: str = "\033[95m", # 紫色
+        content_limit: int = 500,
+        color_header: str = "\033[95m",
         color_reset: str = "\033[0m"
     ):
         self.namespace = name.upper()
@@ -28,143 +29,129 @@ class DebugLLMContextMiddleware(AgentMiddleware):
         self.c1 = color_header
         self.reset = color_reset
 
-    def _format_content(self, content: Any,id: Any) -> str:
+    def _yield_formatted_parts(self, content: Any, msg_id: Any = None) -> Generator[str, None, None]:
         """
-        统一处理消息内容提取与截断。
-        支持：纯文本、多模态列表（Image, File, Audio, Video）。
+        将复杂内容拆解为独立可打印字符串，支持列表、生成器、字典等。
         """
-        if isinstance(content, str):
-            res = content.strip()
+        if content is None:
+            return
+
+        # 支持生成器、列表、单条内容
+        if isinstance(content, Generator):
+            items = list(content)
         elif isinstance(content, list):
-            parts = []
-            for item in content:
-                if not isinstance(item, dict):
-                    parts.append(str(item))
-                    continue
-                
-                # 提取类型
-                c_type = item.get("type", "unknown").upper()
-                
+            items = content
+        else:
+            items = [content]
+
+        for item in items:
+            prefix = f"[{msg_id}] " if msg_id else ""
+            res = ""
+
+            if isinstance(item, str):
+                res = item.strip()
+            elif isinstance(item, dict):
+                c_type = str(item.get("type", "unknown")).upper()
                 if c_type == "TEXT":
-                    parts.append(item.get("text", "").strip())
-                
-                # 处理多媒体/文件类型: image, file, audio, video
+                    res = str(item.get("text", "")).strip()
                 elif c_type in ["IMAGE", "FILE", "AUDIO", "VIDEO"]:
-                    # 识别来源标识
                     source = "unknown"
                     if "url" in item:
                         source = f"URL: {item['url']}"
                     elif "file_id" in item:
                         source = f"FileID: {item['file_id']}"
                     elif "base64" in item:
-                        # Base64 太长，只显示前 10 位和长度，以及 MIME 类型
                         mime = item.get("mime_type", "unknown-mime")
-                        b64_val = str(item['base64'])
-                        source = f"Base64({mime}, len={len(b64_val)}) {b64_val[:10]}..."
-                    
-                    parts.append(f"[{c_type} | {source}]")
-                
+                        source = f"Base64({mime}, len={len(str(item['base64']))})"
+                    res = f"[{c_type} | {source}]"
                 else:
-                    parts.append(f"[Unsupported Type: {c_type}]")
-            
-            res = "\n".join(parts).strip()
-        else:
-            res = str(content).strip()
+                    res = f"[Unsupported Type: {c_type}]"
+            else:
+                res = str(item).strip()
 
-        if not res:
-            return "[Empty Content]"
-        
-        # 截断长内容逻辑
-        if len(res) > self.limit:
-            half = self.limit // 2
-            return f"{res[:half]}\n... [已省略 {len(res)-self.limit} 字] ...\n{res[-half:]}"
-        return f"{id}-{res}"
+            if not res:
+                continue
+
+            # 截断处理，保证省略字数非负
+            if len(res) > self.limit:
+                half = self.limit // 2
+                omitted = max(len(res) - self.limit, 0)
+                res = f"{res[:half]}\n    ... [已省略 {omitted} 字] ...\n    {res[-half:]}"
+
+            yield f"{prefix}{res}"
+
+    def _append_log_line(self, lines: List[str], icon: str, role: str, content: Any, msg_id: Any = None):
+        """将消息内容拆分为多行并添加到 lines 列表"""
+        for part in self._yield_formatted_parts(content, ""):
+            for i, line in enumerate(part.splitlines()):
+                if i == 0:
+                    lines.append(f"{icon} [{role:^7}] | {line}")
+                else:
+                    lines.append(f"{'':10} | {line}")  # 统一对齐
 
     async def awrap_model_call(
         self,
         request: ModelRequest,
-        handler: Callable[[ModelRequest], Awaitable[ModelResponse]], 
+        handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse:
-        # 构建头部日志
         header = f"\n{self.c1}>>> [{self.namespace}] LLM CALL START <<<{self.reset}"
-        lines = [header]
+        lines: List[str] = [header]
 
-        # 1. 模型与基础信息
+        # 1️⃣ 元信息
         model_id = getattr(request.model, "model_name", "Unknown Model")
-        lines.append(f"【Model】: {model_id}")
+        lines.append(f" 🤖 【Model】: {model_id}")
 
-        if self.show_settings and request.model_settings:
-            lines.append(f"【Config】: {request.model_settings}")
-        
         if self.show_tools and request.tools:
             t_names = [getattr(t, 'name', str(t)) for t in request.tools]
-            lines.append(f"【Tools】: {', '.join(t_names)}")
-            if request.tool_choice:
-                lines.append(f"【Policy】: {request.tool_choice}")
+            lines.append(f" 🛠️ 【Tools】: {', '.join(t_names)}")
 
-        if self.show_state and request.state:
-            lines.append(f"【State】: {str(request.state)[:200]}...")
+        lines.append("=" * 60)
 
-        lines.append("-" * 50)
-
-        # 2. 消息流解析
+        # 2️⃣ 消息流解析
         if self.show_messages:
             if request.system_message:
-                msg = request.system_message
-                role = "SYSTEM"
-                icon = "⚙️"
-                # content = self._format_content(msg.content)
-                content = msg.content
-                lines.append(f"{icon} [{role:^6}] | {content}")
-            for msg in list(request.messages):
-                role = msg.type.upper()
-                icon = {"SYSTEM": "⚙️", "HUMAN": "👤", "AI": "🤖", "TOOL": "🛠️"}.get(role, "📝")
-                content = self._format_content(msg.content,msg.id)
-                lines.append(f"{icon} [{role:^6}] | {content}")
+                self._append_log_line(lines, "⚙️", "SYSTEM", request.system_message.content, "SYS")
+
+            for msg in request.messages:
+                role_map = {"human": ("👤", "USER"), "ai": ("🤖", "ASSIST"), "tool": ("🛠️", "TOOL")}
+                icon, role_name = role_map.get(str(msg.type), ("📝", str(msg.type).upper()))
+                self._append_log_line(lines, icon, role_name, msg.content, getattr(msg, 'id', None))
 
         lines.append(f"{self.c1}>>> [{self.namespace}] END CALL <<<{self.reset}\n")
-        
-        # 一次性打印，减少异步干扰
         print("\n".join(lines))
 
         return await handler(request)
-    
+
     async def awrap_tool_call(
         self,
         request: ToolCallRequest,
-        handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]],
-    ) -> ToolMessage | Command[Any]:
-        
+        handler: Callable[[ToolCallRequest], Awaitable[Union[ToolMessage, Command[Any]]]],
+    ) -> Union[ToolMessage, Command[Any]]:
+
         tool_call = request.tool_call
         t_name = tool_call.get("name", "unknown")
-        t_id = tool_call.get("id", "no-id")
-        
-        print(f"\n{self.c1}🛠️  [{self.namespace}] TOOL EXE: {t_name}{self.reset}")
-        print(f"   Args: {json.dumps(tool_call.get('args', {}), ensure_ascii=False)[:200]}...")
+
+        print(f"\n{self.c1}🚀 [{self.namespace}] TOOL START: {t_name}{self.reset}")
+        print(f"   📥 Args: {json.dumps(tool_call.get('args', {}), ensure_ascii=False)}")
 
         start_t = time.perf_counter()
         try:
             result = await handler(request)
             duration = time.perf_counter() - start_t
-            
-            # 结果预览处理
-            if isinstance(result, ToolMessage):
-                preview = self._format_content(result.content,result.id)
-                status = "✅"
-            elif isinstance(result, Command):
-                preview = f"Command(goto={result.goto})"
-                status = "🔀"
-            else:
-                preview = str(result)
-                status = "❓"
 
-            print(f"{status} [{self.namespace}] DONE in {duration:.3f}s")
-            print(f"   Result: {preview[:150]}...")
+            # 提取 result preview
+            res_id = getattr(result, 'id', 'res')
+            content = getattr(result, 'content', str(result))
+            parts = list(self._yield_formatted_parts(content, ""))
+            preview = parts[0] if parts else "[No Preview]"
+
+            status = "✅" if not isinstance(result, Exception) else "❌"
+            print(f"{status} [{self.namespace}] COMPLETED ({duration:.3f}s)")
+            print(f"   📤 Result: {preview}")
+
             return result
 
         except Exception as e:
-            duration = time.perf_counter() - start_t
-            print(f"❌ [{self.namespace}] ERROR in {t_name} ({duration:.3f}s)")
-            print(f"   {type(e).__name__}: {str(e)}")
+            print(f"❌ [{self.namespace}] FAILED: {type(e).__name__}")
             traceback.print_exc()
             raise e
