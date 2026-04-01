@@ -459,7 +459,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         try:
             html_repr = await self.extract_ui(page, limit=8)
             print("🇨🇳 [Python端接收到的结果]:", html_repr)
-            import pdb; pdb.set_trace()
             actionable_elements = html_repr.get("elements", []) if isinstance(html_repr, dict) else []
             
             page_text = await page.inner_text("body")
