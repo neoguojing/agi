@@ -4,15 +4,23 @@
 
 FROM nvcr.io/nvidia/tritonserver:25.06-py3
 
+# -------------------------
+# 基础环境变量
+# -------------------------
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
+ENV PYTHONUNBUFFERED=1
 
 # -------------------------
-# 系统依赖
+# 修复系统依赖 (重点修复处)
 # -------------------------
-RUN apt-get update && apt-get install -y \
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    # 彻底清除 Triton 镜像自带的干扰钩子
+    rm -rf /etc/apt/apt.conf.d/* && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/01build-fix && \
+    # 更新并安装基础工具
+    apt-get update && apt-get install -y --no-install-recommends \
     git \
-    git-lfs \
     curl \
     wget \
     ffmpeg \
@@ -20,14 +28,19 @@ RUN apt-get update && apt-get install -y \
     libgl1 \
     build-essential \
     cmake \
-    && rm -rf /var/lib/apt/lists/*
+    ca-certificates \
+    tzdata && \
+    # 清理缓存
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # -------------------------
-# Python 依赖
+# Python 依赖优化
 # -------------------------
-RUN pip3 install --upgrade pip
+ENV PIP_PROGRESS_BAR=off
 
-RUN pip3 install \
+# 分层安装以利用缓存，CosyVoice 核心依赖
+RUN pip3 install --no-cache-dir \
     huggingface_hub \
     transformers \
     sentencepiece \
@@ -44,19 +57,11 @@ RUN pip3 install \
     mpi4py
 
 # -------------------------
-# Git LFS
-# -------------------------
-RUN git lfs install
-
-# -------------------------
-# 工作目录
+# 工作目录与代码 Clone
 # -------------------------
 WORKDIR /workspace
 
-# -------------------------
-# 仅 clone 代码（不下载模型）
-# -------------------------
-RUN git clone --recursive https://github.com/FunAudioLLM/CosyVoice.git
+COPY CosyVoice /workspace/CosyVoice
 
 WORKDIR /workspace/CosyVoice
 RUN git submodule update --init --recursive
