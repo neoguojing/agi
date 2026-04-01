@@ -458,6 +458,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         """Capture normalized page metadata after an action completes."""
         try:
             html_repr = await self.extract_ui(page, limit=8)
+            print("🇨🇳 [Python端接收到的结果]:", html_repr)
+            import pdb; pdb.set_trace()
             actionable_elements = html_repr.get("elements", []) if isinstance(html_repr, dict) else []
             
             page_text = await page.inner_text("body")
@@ -504,16 +506,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
     async def extract_ui(self, page: Page, *, limit: int = 8):
         """Extract compact actionable UI elements from the page."""
         return await page.evaluate(""" ({ limit }) => {
-            function getSelector(el) {
-                if (el.id) return "#" + el.id;
-                if (el.name) return `[name="${el.name}"]`;
-                return el.tagName.toLowerCase();
-            }
-
-            function isVisible(el) {
-                return !!(el.offsetParent);
-            }
-
             // 1. 获取文本内容
             function getText(el) {
                 return (
@@ -535,71 +527,57 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 );
             }
 
-            // 3. 检查是否在视口内 (稍微放宽范围以捕捉边缘元素)
-            function inViewport(el) {
-                const rect = el.getBoundingClientRect();
-                return rect.top >= -100 && rect.bottom <= window.innerHeight + 100;
-            }
-
-            // 4. 生成唯一选择器 (核心优化)
+            // 3. 生成唯一选择器
             function getSelector(el) {
                 if (el.id) return `#${el.id}`;
                 if (el.name) return `[name="${el.name}"]`;
                 
-                // 如果没 ID/Name，使用 nth-child 保证唯一性
+                // 使用 nth-child 保证唯一性
                 const parent = el.parentElement;
                 if (parent) {
                     const siblings = Array.from(parent.children);
-                    // 找到当前元素在兄弟节点中的位置 (从1开始)
                     const index = siblings.indexOf(el) + 1;
                     return `${el.tagName.toLowerCase()}:nth-child(${index})`;
                 }
                 return el.tagName.toLowerCase();
             }
 
-            // 5. 评分系统 (决定哪些元素更重要)
-            function score(el, text) {
-                let s = 0;
-                if (text.length > 0) s += 2; // 有文字加分
-                if (el.tagName === "BUTTON" || el.tagName === "A") s += 3; // 交互元素加分
-                if (el.tagName === "INPUT") s += 5; // 输入框权重最高
-                if (el.placeholder) s += 2; // 有提示文字加分
-                
-                // 视口上半部分加分 (首屏优先)
-                const rect = el.getBoundingClientRect();
-                if (rect.top < window.innerHeight * 0.5) s += 1;
-
-                return s;
-            }
-
             // --- 主逻辑 ---
 
-            const raw = Array.from(
+            const candidates = Array.from(
                 document.querySelectorAll('input, button, textarea, select, a')
-            )
-            .filter(isVisible)
-            .map((el) => {
-                return {
-                    type: el.tagName.toLowerCase(),
-                    text: getText(el).slice(0, 60),
-                    placeholder: (el.placeholder || "").slice(0, 40),
-                    selector: (getSelector(el) || "").slice(0, 80),
-                };
-            })
-            .filter(el => (el.text.length > 0 || el.type === "input") && el.selector.length > 0)
-            .slice(0, Number(limit) || 8);
+            );
 
-            // --- 格式化输出 ---
+            const raw = candidates
+                .filter(isVisible)
+                .map((el) => {
+                    const text = getText(el);
+                    return {
+                        type: el.tagName.toLowerCase(),
+                        text: text.slice(0, 60),
+                        placeholder: (el.placeholder || "").slice(0, 40),
+                        selector: (getSelector(el) || "").slice(0, 80),
+                        // 额外信息：用于调试或排序
+                        y: el.getBoundingClientRect().top
+                    };
+                })
+                // 过滤：必须有文本内容，或者是 input 标签（通常有 placeholder）
+                .filter(el => (el.text.length > 0 || el.type === "input") && el.selector.length > 0)
+                // 排序：优先显示视口上方的元素
+                .sort((a, b) => a.y - b.y) 
+                .slice(0, Number(limit) || 8);
+
+            // --- 格式化输出 (修复了字段映射错误) ---
             return {
                 title: document.title,
                 url: location.href,
                 elements: raw.map((el, i) => ({
-                    id: i + 1, // 重新分配 1-based ID
-                    t: el.t,
-                    c: el.c,
-                    sel: el.sel,
-                    y: el.y,
-                    action: el.action
+                    id: i + 1, 
+                    t: el.type,        // 修正：对应上面的 type
+                    c: el.text,        // 修正：对应上面的 text
+                    sel: el.selector,  // 修正：对应上面的 selector
+                    y: el.y,           // 修正：对应上面的 y
+                    action: ""         // 默认空动作，或者根据 type 填充
                 }))
             };
         } """, {"limit": limit})

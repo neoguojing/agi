@@ -1,7 +1,7 @@
 from huggingface_hub import snapshot_download
-snapshot_download('FunAudioLLM/Fun-CosyVoice3-0.5B-2512', 
-                  local_dir='/data/model/Fun-CosyVoice3-0.5B',
-                  resume_download=True)
+# snapshot_download('FunAudioLLM/Fun-CosyVoice3-0.5B-2512', 
+#                   local_dir='/data/model/Fun-CosyVoice3-0.5B',
+#                   resume_download=True)
 # -----------------------------
 # 下载 LLM 模型（文本 → audio token）
 # -----------------------------

@@ -383,7 +383,7 @@ class BrowserMiddleware(AgentMiddleware):
                 user_id,
             )
 
-        primary_content = ocr_text or text or html
+        primary_content = ocr_text or text
         artifact: dict[str, Any] = {
             "status": "success",
             "url": last_result.url,

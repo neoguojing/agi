@@ -2,7 +2,7 @@
 # CosyVoice3 TRT Build Makefile
 # =========================================
 
-IMAGE_NAME=cosyvoice-builder
+IMAGE_NAME=triton:25.06
 CONTAINER_NAME=cosyvoice-build
 
 # 挂载目录（宿主机）
@@ -21,7 +21,7 @@ MAX_NUM_TOKENS?=4096
 # 构建镜像
 # -----------------------------------------
 build-image:
-	docker build -t $(IMAGE_NAME) -f docker/Dockerfile .
+	docker build -t $(IMAGE_NAME) -f Dockerfile .
 
 # -----------------------------------------
 # 进入容器（调试用）
