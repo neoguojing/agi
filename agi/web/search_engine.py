@@ -9,7 +9,7 @@ from langchain_core.callbacks import CallbackManagerForToolRun
 # 核心配置与日志
 from agi.config import EXA_API_KEY, log, TAVILY_API_KEY,SEARXNG_BASE_URL
 
-class SearchEngineSelector(BaseTool):
+class SearchEngineSelector:
     name: str = "search"
     description: str = "Search for real-time information. Best for news, facts, and complex queries."
     
@@ -179,37 +179,3 @@ class SearchEngineSelector(BaseTool):
         log.info(f"Batch search complete. Questions: {len(questions)}, Success: {len(final_results)}")
         return final_results
 
-    # --- 完善同步接口 ---
-    def _run(
-        self, 
-        query: str, 
-        run_manager: Optional[CallbackManagerForToolRun] = None
-    ) -> List[Dict]:
-        """LangChain 同步接口：在单独的线程中运行异步逻辑"""
-        import asyncio
-        try:
-            # 尝试在现有事件循环中运行（如果是在异步环境中调用同步方法）
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                from concurrent.futures import ThreadPoolExecutor
-                with ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, self._search_single(query))
-                    return future.result()
-            return asyncio.run(self._search_single(query))
-        except Exception as e:
-            log.error(f"Sync execution failed: {e}")
-            return []
-
-    # --- 完善异步接口 (LangChain 推荐用法) ---
-    async def _arun(
-        self, 
-        query: str, 
-        run_manager: Optional[CallbackManagerForToolRun] = None
-    ) -> List[Dict]:
-        """LangChain 异步接口：直接调用核心搜索逻辑"""
-        try:
-            results = await self._search_single(query)
-            return results
-        except Exception as e:
-            log.error(f"Async execution failed: {e}")
-            return []

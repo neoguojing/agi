@@ -80,7 +80,7 @@ Entity Data: Save to /entities/{user_id}/entities.json
             # "memory": self.memory_paths,
             "middleware": [
                 # BrowserMiddleware(ocr_engine=self.llm),
-                # ContextEngineeringMiddleware(extractor_model=self.llm),
+                ContextEngineeringMiddleware(extractor_model=self.llm),
                 DebugLLMContextMiddleware(),
                 MultimodalBase64Middleware()
             ],
