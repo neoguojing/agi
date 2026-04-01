@@ -513,6 +513,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 return !!(el.offsetParent);
             }
 
+            // 1. 获取文本内容
             function getText(el) {
                 return (
                     el.innerText ||
@@ -523,7 +524,56 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 ).trim();
             }
 
-            const elements = Array.from(
+            // 2. 检查可见性
+            function isVisible(el) {
+                const style = window.getComputedStyle(el);
+                return (
+                    el.offsetParent !== null &&
+                    style.visibility !== "hidden" &&
+                    style.display !== "none"
+                );
+            }
+
+            // 3. 检查是否在视口内 (稍微放宽范围以捕捉边缘元素)
+            function inViewport(el) {
+                const rect = el.getBoundingClientRect();
+                return rect.top >= -100 && rect.bottom <= window.innerHeight + 100;
+            }
+
+            // 4. 生成唯一选择器 (核心优化)
+            function getSelector(el) {
+                if (el.id) return `#${el.id}`;
+                if (el.name) return `[name="${el.name}"]`;
+                
+                // 如果没 ID/Name，使用 nth-child 保证唯一性
+                const parent = el.parentElement;
+                if (parent) {
+                    const siblings = Array.from(parent.children);
+                    // 找到当前元素在兄弟节点中的位置 (从1开始)
+                    const index = siblings.indexOf(el) + 1;
+                    return `${el.tagName.toLowerCase()}:nth-child(${index})`;
+                }
+                return el.tagName.toLowerCase();
+            }
+
+            // 5. 评分系统 (决定哪些元素更重要)
+            function score(el, text) {
+                let s = 0;
+                if (text.length > 0) s += 2; // 有文字加分
+                if (el.tagName === "BUTTON" || el.tagName === "A") s += 3; // 交互元素加分
+                if (el.tagName === "INPUT") s += 5; // 输入框权重最高
+                if (el.placeholder) s += 2; // 有提示文字加分
+                
+                // 视口上半部分加分 (首屏优先)
+                const rect = el.getBoundingClientRect();
+                if (rect.top < window.innerHeight * 0.5) s += 1;
+
+                return s;
+            }
+
+            // --- 主逻辑 ---
+
+            const raw = Array.from(
                 document.querySelectorAll('input, button, textarea, select, a')
             )
             .filter(isVisible)
@@ -538,12 +588,18 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             .filter(el => (el.text.length > 0 || el.type === "input") && el.selector.length > 0)
             .slice(0, Number(limit) || 8);
 
+            // --- 格式化输出 ---
             return {
-                page: {
-                    title: document.title,
-                    url: location.href
-                },
-                elements
+                title: document.title,
+                url: location.href,
+                elements: raw.map((el, i) => ({
+                    id: i + 1, // 重新分配 1-based ID
+                    t: el.t,
+                    c: el.c,
+                    sel: el.sel,
+                    y: el.y,
+                    action: el.action
+                }))
             };
         } """, {"limit": limit})
 
