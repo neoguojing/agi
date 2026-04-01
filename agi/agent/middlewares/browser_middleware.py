@@ -846,7 +846,7 @@ class BrowserMiddleware(AgentMiddleware):
         if compact_current_page.get("title"):
             lines.append(f"title: {compact_current_page['title']}")
 
-        if artifact.get("content_preview"):
+        if artifact.get("content_preview") and tool_name != "browser_navigate":
             preview_limit = 800 if tool_name == "browser_extract" else 240
             lines.append(f"preview: {self._build_preview(str(artifact['content_preview']), limit=preview_limit)}")
         if artifact.get("error"):
@@ -905,7 +905,7 @@ class BrowserMiddleware(AgentMiddleware):
             return "Extracted content is empty; try browser_screenshot or navigate/reload."
         if tool_name == "browser_navigate":
             metadata = artifact.get("metadata", {}) if isinstance(artifact.get("metadata"), dict) else {}
-            if metadata.get("actionable_count", 0) > 0:
+            if self._count_valid_actionable_elements(metadata) > 0:
                 return "Use suggested selectors from actionable_elements for click/fill."
             return "No clear controls found; run browser_extract then browser_find with broader selectors."
         if tool_name == "browser_screenshot":
@@ -916,22 +916,55 @@ class BrowserMiddleware(AgentMiddleware):
         actionable = metadata.get("actionable_elements")
         if not isinstance(actionable, list) or not actionable:
             return ["actionable_elements: []"]
-        lines = [f"actionable_count: {metadata.get('actionable_count', len(actionable))}"]
-        for idx, item in enumerate(actionable[:limit], start=1):
+        valid_items = []
+        for item in actionable:
+            if not isinstance(item, dict):
+                continue
+            selector = str(item.get("selector", "")).strip()
+            text = str(item.get("text", "")).strip()
+            kind = str(item.get("type", "")).strip()
+            placeholder = str(item.get("placeholder", "")).strip()
+            if not selector and not text and not kind and not placeholder:
+                continue
+            valid_items.append(
+                {
+                    "type": kind,
+                    "selector": selector,
+                    "text": text,
+                    "placeholder": placeholder,
+                }
+            )
+        if not valid_items:
+            return ["actionable_elements: []"]
+
+        lines = [f"actionable_count: {len(valid_items)}"]
+        for idx, item in enumerate(valid_items[:limit], start=1):
             if not isinstance(item, dict):
                 continue
             lines.append(
                 "actionable_{idx}: type={type} selector={selector} text={text} placeholder={placeholder}".format(
                     idx=idx,
-                    type=item.get("type", ""),
-                    selector=item.get("selector", ""),
-                    text=item.get("text", ""),
-                    placeholder=item.get("placeholder", ""),
+                    type=item.get("type", "-"),
+                    selector=item.get("selector", "-"),
+                    text=item.get("text", "-"),
+                    placeholder=item.get("placeholder", "-"),
                 )
             )
-        if len(actionable) > limit:
-            lines.append(f"actionable_more: {len(actionable) - limit}")
+        if len(valid_items) > limit:
+            lines.append(f"actionable_more: {len(valid_items) - limit}")
         return lines
+
+    def _count_valid_actionable_elements(self, metadata: dict[str, Any]) -> int:
+        actionable = metadata.get("actionable_elements")
+        if not isinstance(actionable, list):
+            return 0
+        count = 0
+        for item in actionable:
+            if not isinstance(item, dict):
+                continue
+            if any(str(item.get(key, "")).strip() for key in ("selector", "text", "type", "placeholder")):
+                count += 1
+        return count
 
     def _build_preview(self, content: str, *, limit: int = 500) -> str:
         if len(content) <= limit:
