@@ -1,54 +1,96 @@
-import subprocess
-import uuid
-import os
+import atexit
+import logging
 import shutil
-from typing import List
-from deepagents.backends.protocol import (
-    ExecuteResponse,
-    FileUploadResponse,
-    FileDownloadResponse,
-)
+import subprocess
+import threading
+import time
+import uuid
+from dataclasses import dataclass
 from pathlib import Path
-from deepagents.backends.sandbox import BaseSandbox  # 你之前的基类
+from typing import Dict, List
 
-class DockerSandbox(BaseSandbox):
-    """Stateful Docker sandbox implementation."""
+from deepagents.backends.protocol import ExecuteResponse, FileDownloadResponse, FileUploadResponse
+from deepagents.backends.sandbox import BaseSandbox
 
-    def __init__(self, image: str = "eswardudi/python-ffmpeg:3.13.3", workspace: str | None = None):
-        """
-        Args:
-            image: Docker image to use
-            workspace: Optional host path to mount for persistence
-        """
-        self._image = image
-        self._id = f"docker_sandbox_{uuid.uuid4().hex[:8]}"
-        self._workspace_host = workspace or f"/tmp/{self._id}_workspace"
-        self._workspace_container = "/workspace"
-        os.makedirs(self._workspace_host, exist_ok=True)
-        self._container_running = False
-        self._start_container()
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _DockerSession:
+    user_id: str
+    container_id: str
+    workspace_host: str
+    created_at: float
+    last_active_at: float
+
+
+class _UserScopedDockerSandbox(BaseSandbox):
+    """A user-scoped sandbox view backed by DockerSandbox session manager."""
+
+    def __init__(self, manager: "DockerSandbox", user_id: str):
+        self._manager = manager
+        self._user_id = user_id
 
     @property
     def id(self) -> str:
-        return self._id
+        return self._manager.get_container_id(self._user_id)
 
-    def _start_container(self):
-        """Start the Docker container if not running."""
-        cmd = [
-            "docker", "run", "-d",
-            "--name", self._id,
-            "-v", f"{self._workspace_host}:{self._workspace_container}",
-            "-w", self._workspace_container,
-            "--rm",  # remove on stop
-            self._image,
-            "tail", "-f", "/dev/null"  # keep container alive
-        ]
-        subprocess.run(cmd, check=True)
-        self._container_running = True
+    def execute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:
+        return self._manager.execute_for_user(self._user_id, command, timeout=timeout)
 
-    def _exec_docker(self, command: str, timeout: int | None = None) -> ExecuteResponse:
-        """Execute command inside the container."""
-        docker_cmd = ["docker", "exec", self._id, "bash", "-c", command]
+    def upload_files(self, files: List[tuple[str, bytes]]) -> List[FileUploadResponse]:
+        return self._manager.upload_files_for_user(self._user_id, files)
+
+    def download_files(self, paths: List[str]) -> List[FileDownloadResponse]:
+        return self._manager.download_files_for_user(self._user_id, paths)
+
+
+class DockerSandbox(BaseSandbox):
+    """Multi-tenant Docker sandbox manager.
+
+    - One container per user_id.
+    - Lazy session creation (no container starts at init).
+    - Idle-session TTL cleanup to avoid leaked containers.
+    """
+
+    def __init__(
+        self,
+        image: str = "eswardudi/python-ffmpeg:3.13.3",
+        workspace_root: str = "/tmp/docker_sandbox_workspaces",
+        session_ttl: int = 1800,
+        cleanup_interval: int = 60,
+    ):
+        self._image = image
+        self._workspace_container = "/workspace"
+        self._workspace_root = Path(workspace_root)
+        self._workspace_root.mkdir(parents=True, exist_ok=True)
+
+        self._session_ttl = max(60, int(session_ttl))
+        self._cleanup_interval = max(10, int(cleanup_interval))
+
+        self._sessions: Dict[str, _DockerSession] = {}
+        self._lock = threading.RLock()
+        self._stop_event = threading.Event()
+        self._cleanup_thread = threading.Thread(target=self._cleanup_loop, daemon=True)
+        self._cleanup_thread.start()
+        atexit.register(self.close)
+
+    @property
+    def id(self) -> str:
+        # keep compatibility for code paths that still call manager directly
+        return self.get_container_id("default")
+
+    def for_user(self, user_id: str | None) -> BaseSandbox:
+        resolved_user_id = self._normalize_user_id(user_id)
+        return _UserScopedDockerSandbox(self, resolved_user_id)
+
+    def get_container_id(self, user_id: str | None) -> str:
+        session = self._ensure_session(self._normalize_user_id(user_id))
+        return session.container_id
+
+    def execute_for_user(self, user_id: str, command: str, *, timeout: int | None = None) -> ExecuteResponse:
+        session = self._ensure_session(self._normalize_user_id(user_id))
+        docker_cmd = ["docker", "exec", session.container_id, "bash", "-c", command]
         try:
             result = subprocess.run(
                 docker_cmd,
@@ -56,52 +98,186 @@ class DockerSandbox(BaseSandbox):
                 text=True,
                 timeout=timeout,
             )
+            self._touch_session(session.user_id)
             return ExecuteResponse(
                 output=result.stdout + result.stderr,
                 exit_code=result.returncode,
                 truncated=False,
             )
         except subprocess.TimeoutExpired:
+            self._touch_session(session.user_id)
             return ExecuteResponse(output="Timeout", exit_code=124, truncated=True)
 
-    def execute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:
-        return self._exec_docker(command, timeout=timeout)
+    def upload_files_for_user(self, user_id: str, files: List[tuple[str, bytes]]) -> List[FileUploadResponse]:
+        session = self._ensure_session(self._normalize_user_id(user_id))
+        responses: List[FileUploadResponse] = []
 
-    def upload_files(self, files: List[tuple[str, bytes]]) -> List[FileUploadResponse]:
-        responses = []
-        for file_name, content in files:
-            host_path = Path(self._workspace_host) / file_name
+        for container_path, content in files:
+            host_path = self._to_host_path(session, container_path)
             host_path.parent.mkdir(parents=True, exist_ok=True)
             try:
                 host_path.write_bytes(content)
-                responses.append(FileUploadResponse(path=str(file_name)))
+                responses.append(FileUploadResponse(path=str(container_path)))
             except Exception as e:
-                responses.append(FileUploadResponse(path=str(file_name), error=str(e)))
+                responses.append(FileUploadResponse(path=str(container_path), error=str(e)))
+
+        self._touch_session(session.user_id)
         return responses
 
-    def download_files(self, paths: List[str]) -> List[FileDownloadResponse]:
-        """返回文件完整宿主机路径，不加载内容到内存"""
-        responses = []
-        workspace = Path(self._workspace_host)  # 容器挂载到宿主机的目录
-        for file_name in paths:
-            host_path = (workspace / file_name).resolve()  # 获取绝对路径
+    def download_files_for_user(self, user_id: str, paths: List[str]) -> List[FileDownloadResponse]:
+        session = self._ensure_session(self._normalize_user_id(user_id))
+        responses: List[FileDownloadResponse] = []
+
+        for container_path in paths:
+            host_path = self._to_host_path(session, container_path)
             try:
                 if not host_path.exists():
                     raise FileNotFoundError(f"{host_path} not found")
-                # path = 完整路径, content = None
                 responses.append(FileDownloadResponse(path=str(host_path), content=None))
             except Exception as e:
                 responses.append(FileDownloadResponse(path=str(host_path), content=None, error=str(e)))
+
+        self._touch_session(session.user_id)
         return responses
 
-    def close(self):
-        """Stop and remove container."""
-        if self._container_running:
-            subprocess.run(["docker", "stop", self._id], capture_output=True)
-            self._container_running = False
-        # Optional: cleanup workspace if not mounted externally
-        if self._workspace_host.startswith("/tmp/") and Path(self._workspace_host).exists():
-            shutil.rmtree(self._workspace_host)
+    # BaseSandbox compatibility (default user)
+    def execute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:
+        return self.execute_for_user("default", command, timeout=timeout)
+
+    def upload_files(self, files: List[tuple[str, bytes]]) -> List[FileUploadResponse]:
+        return self.upload_files_for_user("default", files)
+
+    def download_files(self, paths: List[str]) -> List[FileDownloadResponse]:
+        return self.download_files_for_user("default", paths)
+
+    def close_user_session(self, user_id: str | None) -> None:
+        resolved_user_id = self._normalize_user_id(user_id)
+        with self._lock:
+            session = self._sessions.pop(resolved_user_id, None)
+        if not session:
+            return
+
+        self._stop_container(session.container_id)
+        self._remove_workspace(session.workspace_host)
+        logger.info("Docker sandbox session closed: user_id=%s container=%s", resolved_user_id, session.container_id)
+
+    def close(self) -> None:
+        if self._stop_event.is_set():
+            return
+
+        self._stop_event.set()
+        if self._cleanup_thread.is_alive():
+            self._cleanup_thread.join(timeout=1.0)
+
+        with self._lock:
+            sessions = list(self._sessions.values())
+            self._sessions.clear()
+
+        for session in sessions:
+            self._stop_container(session.container_id)
+            self._remove_workspace(session.workspace_host)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
+
+    # internal helpers
+    def _normalize_user_id(self, user_id: str | None) -> str:
+        value = (user_id or "default").strip()
+        return value or "default"
+
+    def _ensure_session(self, user_id: str) -> _DockerSession:
+        with self._lock:
+            existing = self._sessions.get(user_id)
+            if existing:
+                existing.last_active_at = time.time()
+                return existing
+
+            session = self._start_session(user_id)
+            self._sessions[user_id] = session
+            return session
+
+    def _touch_session(self, user_id: str) -> None:
+        with self._lock:
+            session = self._sessions.get(user_id)
+            if session:
+                session.last_active_at = time.time()
+
+    def _start_session(self, user_id: str) -> _DockerSession:
+        safe_user = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in user_id)[:32] or "default"
+        suffix = uuid.uuid4().hex[:8]
+        container_id = f"docker_sandbox_{safe_user}_{suffix}"
+        workspace_host = self._workspace_root / f"{container_id}_workspace"
+        workspace_host.mkdir(parents=True, exist_ok=True)
+
+        cmd = [
+            "docker",
+            "run",
+            "-d",
+            "--name",
+            container_id,
+            "-v",
+            f"{workspace_host}:{self._workspace_container}",
+            "-w",
+            self._workspace_container,
+            "--rm",
+            self._image,
+            "tail",
+            "-f",
+            "/dev/null",
+        ]
+        subprocess.run(cmd, check=True)
+        now = time.time()
+        logger.info("Docker sandbox session started: user_id=%s container=%s", user_id, container_id)
+        return _DockerSession(
+            user_id=user_id,
+            container_id=container_id,
+            workspace_host=str(workspace_host),
+            created_at=now,
+            last_active_at=now,
+        )
+
+    def _stop_container(self, container_id: str) -> None:
+        subprocess.run(["docker", "stop", container_id], capture_output=True)
+
+    def _remove_workspace(self, workspace_host: str) -> None:
+        path = Path(workspace_host)
+        if path.exists() and str(path).startswith(str(self._workspace_root)):
+            shutil.rmtree(path, ignore_errors=True)
+
+    def _to_host_path(self, session: _DockerSession, container_path: str) -> Path:
+        normalized = (container_path or "").strip()
+        if not normalized:
+            raise ValueError("container path cannot be empty")
+
+        if normalized.startswith(self._workspace_container + "/"):
+            relative = normalized[len(self._workspace_container) + 1 :]
+        elif normalized == self._workspace_container:
+            relative = ""
+        else:
+            relative = normalized.lstrip("/")
+
+        return (Path(session.workspace_host) / relative).resolve()
+
+    def _cleanup_loop(self) -> None:
+        while not self._stop_event.wait(self._cleanup_interval):
+            self._cleanup_idle_sessions()
+
+    def _cleanup_idle_sessions(self) -> None:
+        now = time.time()
+        expired: list[_DockerSession] = []
+
+        with self._lock:
+            for user_id, session in list(self._sessions.items()):
+                if now - session.last_active_at > self._session_ttl:
+                    expired.append(session)
+                    self._sessions.pop(user_id, None)
+
+        for session in expired:
+            logger.info(
+                "Docker sandbox session expired: user_id=%s container=%s idle=%ss",
+                session.user_id,
+                session.container_id,
+                int(now - session.last_active_at),
+            )
+            self._stop_container(session.container_id)
+            self._remove_workspace(session.workspace_host)

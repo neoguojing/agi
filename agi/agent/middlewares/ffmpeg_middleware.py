@@ -60,6 +60,21 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
         self.backend = backend
         self.tools = self._create_tools()
 
+    def _resolve_user_id(self, runtime: ToolRuntime[None, FfmpegState] | None = None) -> str:
+        if runtime is not None:
+            context = getattr(runtime, "context", None)
+            if getattr(context, "user_id", None):
+                return str(context.user_id)
+            config = getattr(runtime, "config", {}) or {}
+            configurable = config.get("configurable", {}) if isinstance(config, dict) else {}
+            if configurable.get("user_id"):
+                return str(configurable["user_id"])
+        return "default"
+
+    def _backend_for_runtime(self, runtime: ToolRuntime[None, FfmpegState]) -> Any:
+        user_id = self._resolve_user_id(runtime)
+        return self.backend.for_user(user_id)
+
     # -------------------------
     # 文件状态
     # -------------------------
@@ -133,12 +148,13 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             local_path: Annotated[str, "Host local file path to upload."],
             container_path: Annotated[str, "Destination path inside container workspace."] = "",
         ) -> Command | str:
+            backend = self._backend_for_runtime(runtime)
             source_path = Path(local_path).expanduser().resolve()
             if not source_path.exists() or not source_path.is_file():
                 return f"❌ local file not found: {local_path}"
             target_path = container_path.strip() or f"/workspace/{source_path.name}"
             payload = source_path.read_bytes()
-            upload_res = await self.backend.aupload_files([(target_path, payload)])
+            upload_res = await backend.aupload_files([(target_path, payload)])
             if upload_res and upload_res[0].error:
                 return f"❌ upload failed: {upload_res[0].error}"
 
@@ -176,7 +192,8 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             runtime: ToolRuntime[None, FfmpegState],
             container_path: Annotated[str, "Processed file path in container workspace."],
         ) -> Command | str:
-            download_res = await self.backend.adownload_files([container_path])
+            backend = self._backend_for_runtime(runtime)
+            download_res = await backend.adownload_files([container_path])
             if not download_res:
                 return f"❌ download failed: no response for {container_path}"
             first = download_res[0]
@@ -224,6 +241,7 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             start: Annotated[float, "Start time in seconds"],
             end: Annotated[float, "End time in seconds"],
         ) -> Command | str:
+            backend = self._backend_for_runtime(runtime)
 
             cmd = (
                 f"ffmpeg -y -i {input_path} "
@@ -231,7 +249,7 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
                 f"-c:v libx264 -c:a aac {output_path}"
             )
 
-            result = await self.backend.aexecute(cmd)
+            result = await backend.aexecute(cmd)
             if result.exit_code != 0:
                 return result.output
 
@@ -283,7 +301,7 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             ],
         ) -> Command | str:
 
-            backend = self.backend
+            backend = self._backend_for_runtime(runtime)
 
             if not await self._ensure_file_exists(backend, input_path, runtime):
                 return f"❌ file not found: {input_path}"
@@ -348,7 +366,7 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             ],
         ) -> Command | str:
 
-            backend = self.backend
+            backend = self._backend_for_runtime(runtime)
 
             # 构建 concat list 文件
             list_file = "/tmp/concat_list.txt"
@@ -398,13 +416,14 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             width: Annotated[int, "Target width in pixels"],
             height: Annotated[int, "Target height in pixels"],
         ):
+            backend = self._backend_for_runtime(runtime)
 
             cmd = (
                 f"ffmpeg -y -i {input_path} "
                 f"-vf scale={width}:{height} {output_path}"
             )
 
-            result = await self.backend.aexecute(cmd)
+            result = await backend.aexecute(cmd)
             if result.exit_code != 0:
                 return result.output
 
@@ -445,6 +464,7 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             width: Annotated[int, "Crop width"],
             height: Annotated[int, "Crop height"],
         ):
+            backend = self._backend_for_runtime(runtime)
 
             cmd = (
                 f"ffmpeg -y -i {input_path} "
@@ -452,7 +472,7 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
                 f"{output_path}"
             )
 
-            result = await self.backend.aexecute(cmd)
+            result = await backend.aexecute(cmd)
             if result.exit_code != 0:
                 return result.output
 
@@ -493,6 +513,7 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             x: Annotated[int, "X position"],
             y: Annotated[int, "Y position"],
         ):
+            backend = self._backend_for_runtime(runtime)
 
             cmd = (
                 f"ffmpeg -y -i {input_path} "
@@ -500,7 +521,7 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
                 f"{output_path}"
             )
 
-            result = await self.backend.aexecute(cmd)
+            result = await backend.aexecute(cmd)
             if result.exit_code != 0:
                 return result.output
 
@@ -538,6 +559,7 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             image_path: Annotated[str, "Overlay image"],
             output_path: Annotated[str, "Output video"],
         ):
+            backend = self._backend_for_runtime(runtime)
 
             cmd = (
                 f"ffmpeg -y -i {video_path} -i {image_path} "
@@ -545,7 +567,7 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
                 f"{output_path}"
             )
 
-            result = await self.backend.aexecute(cmd)
+            result = await backend.aexecute(cmd)
             if result.exit_code != 0:
                 return result.output
 
