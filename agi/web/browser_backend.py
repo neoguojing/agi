@@ -398,6 +398,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             "html_length": metadata.get("html_length", 0),
             "has_screenshot": bool(source.screenshot_path),
             "actionable_count": metadata.get("actionable_count", 0),
+            "actionable_elements": metadata.get("actionable_elements", []),
         }
         return {
             "url": source.url,
@@ -458,8 +459,9 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         """Capture normalized page metadata after an action completes."""
         try:
             html_repr = await self.extract_ui(page, limit=8)
-            print("🇨🇳 [Python端接收到的结果]:", html_repr)
-            actionable_elements = html_repr.get("elements", []) if isinstance(html_repr, dict) else []
+            actionable_elements = self._normalize_actionable_elements(
+                html_repr.get("elements", []) if isinstance(html_repr, dict) else []
+            )
             
             page_text = await page.inner_text("body")
             page_title = await page.title()
@@ -572,14 +574,40 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 url: location.href,
                 elements: raw.map((el, i) => ({
                     id: i + 1, 
-                    t: el.type,        // 修正：对应上面的 type
-                    c: el.text,        // 修正：对应上面的 text
-                    sel: el.selector,  // 修正：对应上面的 selector
-                    y: el.y,           // 修正：对应上面的 y
-                    action: ""         // 默认空动作，或者根据 type 填充
+                    type: el.type,
+                    text: el.text,
+                    placeholder: el.placeholder,
+                    selector: el.selector,
+                    y: el.y,
+                    action: ""
                 }))
             };
         } """, {"limit": limit})
+
+    def _normalize_actionable_elements(self, elements: Any) -> list[dict[str, Any]]:
+        """Normalize actionable elements from JS payload into a stable schema."""
+        if not isinstance(elements, list):
+            return []
+        normalized: list[dict[str, Any]] = []
+        for item in elements:
+            if not isinstance(item, dict):
+                continue
+            selector = str(item.get("selector") or item.get("sel") or "").strip()
+            text = str(item.get("text") or item.get("c") or "").strip()
+            kind = str(item.get("type") or item.get("t") or "").strip()
+            placeholder = str(item.get("placeholder") or "").strip()
+            if not any((selector, text, kind, placeholder)):
+                continue
+            normalized.append(
+                {
+                    "type": kind,
+                    "text": text,
+                    "placeholder": placeholder,
+                    "selector": selector,
+                    "action": str(item.get("action") or ""),
+                }
+            )
+        return normalized
 
     async def _take_screenshot(self, page: Page, *, prefix: str, full_page: bool = False) -> Path:
         """Take a screenshot and save to storage."""
