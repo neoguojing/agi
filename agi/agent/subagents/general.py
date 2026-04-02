@@ -108,9 +108,25 @@ web_search_subagent = {
 ffmpeg_subagent = {
     "name": "video-expert",
     "description": (
-        "Specialized in video processing and editing tasks. "
-        "Can cut, merge, snapshot, transcode, remove watermarks, and apply filters on videos. "
-        "Operates on local or sandboxed video files and reports success messages for each operation."
+        '''
+        Specialized in video processing using FFmpeg.
+
+        Capabilities:
+        - Cut, snapshot, concatenate, resize, crop, add text, and overlay videos.
+
+        Available tools:
+        - upload, download, cut, snapshot, concat, resize, crop, add_text, overlay
+
+        Workflow:
+        1. Upload the input video to the sandbox.
+        2. Perform all required processing using the appropriate tools.
+        3. Download the final result.
+
+        Rules:
+        - Always operate on sandboxed files (never external paths).
+        - Chain operations efficiently when multiple edits are needed.
+        - Return concise success messages with output file details.
+        '''
     ),
     "system_prompt": "",
     "middleware": [

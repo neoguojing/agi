@@ -36,7 +36,12 @@
 | 版本   | Git                  |
 | 执行   | subprocess / sandbox |
 
-
+#### triton模型部署
+- 镜像打包： Done
+- cosyvoice3 测试 doing
+- whisper
+- 图片生成
+- reranker
 ### 三、通用组件
 #### 上下文管理
 - 上下文调试中间件，可以调试当前上下文; 打印不清晰，需查看混乱的消息格式
