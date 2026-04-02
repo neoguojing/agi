@@ -920,9 +920,9 @@ class BrowserMiddleware(AgentMiddleware):
         for item in actionable:
             if not isinstance(item, dict):
                 continue
-            selector = str(item.get("selector", "")).strip()
-            text = str(item.get("text", "")).strip()
-            kind = str(item.get("type", "")).strip()
+            selector = str(item.get("selector") or item.get("sel") or "").strip()
+            text = str(item.get("text") or item.get("c") or "").strip()
+            kind = str(item.get("type") or item.get("t") or "").strip()
             placeholder = str(item.get("placeholder", "")).strip()
             if not selector and not text and not kind and not placeholder:
                 continue
@@ -962,7 +962,14 @@ class BrowserMiddleware(AgentMiddleware):
         for item in actionable:
             if not isinstance(item, dict):
                 continue
-            if any(str(item.get(key, "")).strip() for key in ("selector", "text", "type", "placeholder")):
+            if any(
+                (
+                    str(item.get("selector") or item.get("sel") or "").strip(),
+                    str(item.get("text") or item.get("c") or "").strip(),
+                    str(item.get("type") or item.get("t") or "").strip(),
+                    str(item.get("placeholder") or "").strip(),
+                )
+            ):
                 count += 1
         return count
 
