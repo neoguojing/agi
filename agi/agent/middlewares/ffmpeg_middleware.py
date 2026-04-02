@@ -146,21 +146,19 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
         async def async_video_upload(
             runtime: ToolRuntime[None, FfmpegState],
             local_path: Annotated[str, "Host local file path to upload."],
-            container_path: Annotated[str, "Destination path inside container workspace."] = "",
         ) -> Command | str:
             backend = self._backend_for_runtime(runtime)
             source_path = Path(local_path).expanduser().resolve()
             if not source_path.exists() or not source_path.is_file():
                 return f"❌ local file not found: {local_path}"
-            target_path = container_path.strip() or f"/workspace/{source_path.name}"
             payload = source_path.read_bytes()
-            upload_res = await backend.aupload_files([(target_path, payload)])
+            upload_res = await backend.aupload_files([(source_path, payload)])
             if upload_res and upload_res[0].error:
                 return f"❌ upload failed: {upload_res[0].error}"
-
+            target_container_path = upload_res[0].path
             return Command(update={
                 "files": self._build_file_state(
-                    target_path,
+                    target_container_path,
                     status="uploaded",
                     local_path=str(source_path),
                 ),
@@ -168,12 +166,12 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
                     "action": "video_upload",
                     "status": "success",
                     "local_path": str(source_path),
-                    "container_path": target_path,
+                    "container_path": target_container_path,
                     "next_step": "Run FFmpeg tool with this container_path as input.",
                 },
                 "messages": [
                     ToolMessage(
-                        content=f"✅ uploaded: {source_path} -> {target_path}",
+                        content=f"✅ uploaded: {source_path} -> {target_container_path}",
                         tool_call_id=runtime.tool_call_id,
                     )
                 ],
