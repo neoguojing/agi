@@ -1,4 +1,5 @@
 from datetime import datetime
+from pathlib import Path
 import shlex
 from typing import Any, Callable, Awaitable, Annotated
 
@@ -17,6 +18,13 @@ from typing_extensions import NotRequired, TypedDict
 from agi.utils.common import append_to_system_message
 from agi.agent.sandbox.docker import DockerSandbox
 
+FFMPEG_TOOL_GUIDANCE = """You are running in a Docker sandbox workspace.
+Required workflow for video tasks:
+1) Use `video_upload` first to upload local video/image files into the container.
+2) Run FFmpeg processing tools (`video_cut`, `video_resize`, etc.) against container paths.
+3) Use `video_download` after processing to get the output file host path and return that local path to the user.
+"""
+
 # =========================
 # State 定义
 # =========================
@@ -26,10 +34,14 @@ class FileData(TypedDict, total=False):
     created_at: str
     modified_at: str
     type: str
+    status: str
+    container_path: str
+    local_path: str
 
 
 class FfmpegState(AgentState):
     files: Annotated[NotRequired[dict[str, FileData]], "_file_data_reducer"]
+    last_operation: NotRequired[dict[str, Any]]
 
 
 # =========================
@@ -52,7 +64,14 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
     # 文件状态
     # -------------------------
 
-    def _build_file_state(self, path: str, type_: str = "video") -> dict[str, FileData]:
+    def _build_file_state(
+        self,
+        path: str,
+        *,
+        type_: str = "video",
+        status: str = "ready",
+        local_path: str | None = None,
+    ) -> dict[str, FileData]:
         now = datetime.utcnow().isoformat()
         return {
             path: {
@@ -60,6 +79,9 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
                 "created_at": now,
                 "modified_at": now,
                 "type": type_,
+                "status": status,
+                "container_path": path,
+                "local_path": local_path or "",
             }
         }
 
@@ -79,8 +101,8 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
         if file_data:
             # 自动上传到 sandbox/backend
             content = "\n".join(file_data.get("content", []))
-            upload_res = await backend.upload_files(path, content)
-            if upload_res.error:
+            upload_res = await backend.aupload_files([(path, content.encode("utf-8"))])
+            if upload_res and upload_res[0].error:
                 return False
             return True
 
@@ -92,6 +114,8 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
 
     def _create_tools(self):
         return [
+            self._create_video_upload_tool(),
+            self._create_video_download_tool(),
             self._create_video_cut_tool(),
             self._create_video_snapshot_tool(),
             self._create_video_concat_tool(),
@@ -100,6 +124,90 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             self._create_video_add_text_tool(),
             self._create_video_overlay_tool(),
         ]
+
+    def _create_video_upload_tool(self):
+        tool_description = "Upload a local file into Docker workspace before FFmpeg processing."
+
+        async def async_video_upload(
+            runtime: ToolRuntime[None, FfmpegState],
+            local_path: Annotated[str, "Host local file path to upload."],
+            container_path: Annotated[str, "Destination path inside container workspace."] = "",
+        ) -> Command | str:
+            source_path = Path(local_path).expanduser().resolve()
+            if not source_path.exists() or not source_path.is_file():
+                return f"❌ local file not found: {local_path}"
+            target_path = container_path.strip() or f"/workspace/{source_path.name}"
+            payload = source_path.read_bytes()
+            upload_res = await self.backend.aupload_files([(target_path, payload)])
+            if upload_res and upload_res[0].error:
+                return f"❌ upload failed: {upload_res[0].error}"
+
+            return Command(update={
+                "files": self._build_file_state(
+                    target_path,
+                    status="uploaded",
+                    local_path=str(source_path),
+                ),
+                "last_operation": {
+                    "action": "video_upload",
+                    "status": "success",
+                    "local_path": str(source_path),
+                    "container_path": target_path,
+                    "next_step": "Run FFmpeg tool with this container_path as input.",
+                },
+                "messages": [
+                    ToolMessage(
+                        content=f"✅ uploaded: {source_path} -> {target_path}",
+                        tool_call_id=runtime.tool_call_id,
+                    )
+                ],
+            })
+
+        return StructuredTool.from_function(
+            name="video_upload",
+            description=tool_description,
+            coroutine=async_video_upload,
+        )
+
+    def _create_video_download_tool(self):
+        tool_description = "Download processed file from container and return host local path."
+
+        async def async_video_download(
+            runtime: ToolRuntime[None, FfmpegState],
+            container_path: Annotated[str, "Processed file path in container workspace."],
+        ) -> Command | str:
+            download_res = await self.backend.adownload_files([container_path])
+            if not download_res:
+                return f"❌ download failed: no response for {container_path}"
+            first = download_res[0]
+            if first.error:
+                return f"❌ download failed: {first.error}"
+            local_path = first.path
+            return Command(update={
+                "files": self._build_file_state(
+                    container_path,
+                    status="downloaded",
+                    local_path=local_path,
+                ),
+                "last_operation": {
+                    "action": "video_download",
+                    "status": "success",
+                    "container_path": container_path,
+                    "local_path": local_path,
+                },
+                "messages": [
+                    ToolMessage(
+                        content=f"✅ downloaded: {container_path} -> {local_path}",
+                        tool_call_id=runtime.tool_call_id,
+                    )
+                ]
+            })
+
+        return StructuredTool.from_function(
+            name="video_download",
+            description=tool_description,
+            coroutine=async_video_download,
+        )
 
     # 🎬 video_cut
     def _create_video_cut_tool(self):
@@ -128,7 +236,14 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
                 return result.output
 
             return Command(update={
-                "files": self._build_file_state(output_path),
+                "files": self._build_file_state(output_path, status="processed"),
+                "last_operation": {
+                    "action": "video_cut",
+                    "status": "success",
+                    "input_path": input_path,
+                    "output_path": output_path,
+                    "next_step": f"Call video_download with container_path={output_path}",
+                },
                 "messages": [
                         ToolMessage(
                             content=f"✅ trim video from {start}s → {end},output path: {output_path}",
@@ -189,6 +304,13 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             return Command(
                 update={
                     "files": files_update,
+                    "last_operation": {
+                        "action": "video_snapshot",
+                        "status": "success",
+                        "input_path": input_path,
+                        "output_path": output_path,
+                        "next_step": f"Call video_download with container_path={output_path}",
+                    },
                     "messages": [
                         ToolMessage(
                             content=f"✅ snapshot created at {time_sec}s → {output_path}",
@@ -243,7 +365,14 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
                 return f"❌ ffmpeg error:\n{result.output}"
 
             return Command(update={
-                "files": self._build_file_state(output_path),
+                "files": self._build_file_state(output_path, status="processed"),
+                "last_operation": {
+                    "action": "video_concat",
+                    "status": "success",
+                    "input_paths": input_paths,
+                    "output_path": output_path,
+                    "next_step": f"Call video_download with container_path={output_path}",
+                },
                 "messages": [
                         ToolMessage(
                             content=f"✅ concatenate success,output path: {output_path}",
@@ -280,7 +409,15 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
                 return result.output
 
             return Command(update={
-                "files": self._build_file_state(output_path),
+                "files": self._build_file_state(output_path, status="processed"),
+                "last_operation": {
+                    "action": "video_resize",
+                    "status": "success",
+                    "input_path": input_path,
+                    "output_path": output_path,
+                    "size": {"width": width, "height": height},
+                    "next_step": f"Call video_download with container_path={output_path}",
+                },
                 "messages": [
                         ToolMessage(
                             content=f"✅ resize video to width:{width},height:{height},output path: {output_path}",
@@ -320,7 +457,15 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
                 return result.output
 
             return Command(update={
-                "files": self._build_file_state(output_path),
+                "files": self._build_file_state(output_path, status="processed"),
+                "last_operation": {
+                    "action": "video_crop",
+                    "status": "success",
+                    "input_path": input_path,
+                    "output_path": output_path,
+                    "crop": {"x": x, "y": y, "width": width, "height": height},
+                    "next_step": f"Call video_download with container_path={output_path}",
+                },
                 "messages": [
                         ToolMessage(
                             content=f"✅ crop video to width:{width},height:{height},output path: {output_path}",
@@ -360,7 +505,14 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
                 return result.output
 
             return Command(update={
-                "files": self._build_file_state(output_path),
+                "files": self._build_file_state(output_path, status="processed"),
+                "last_operation": {
+                    "action": "video_add_text",
+                    "status": "success",
+                    "input_path": input_path,
+                    "output_path": output_path,
+                    "next_step": f"Call video_download with container_path={output_path}",
+                },
                 "messages": [
                         ToolMessage(
                             content=f"✅ Overlay text on video:{text},output path: {output_path}",
@@ -398,7 +550,15 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
                 return result.output
 
             return Command(update={
-                "files": self._build_file_state(output_path),
+                "files": self._build_file_state(output_path, status="processed"),
+                "last_operation": {
+                    "action": "video_watermark",
+                    "status": "success",
+                    "video_path": video_path,
+                    "image_path": image_path,
+                    "output_path": output_path,
+                    "next_step": f"Call video_download with container_path={output_path}",
+                },
                 "messages": [
                         ToolMessage(
                             content=f"✅ Overlay an image watermark:{image_path},output path: {output_path}",
@@ -430,7 +590,11 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
         request = request.override(tools=available_tools)
 
         # 系统 prompt
-        system_prompt = self._custom_system_prompt or f"You can use the following video tools: {', '.join(tool_names)}"
+        default_prompt = (
+            f"You can use the following tools: {', '.join(tool_names)}\n\n"
+            f"{FFMPEG_TOOL_GUIDANCE}"
+        )
+        system_prompt = self._custom_system_prompt or default_prompt
         new_system_message = append_to_system_message(request.system_message, system_prompt)
         request = request.override(system_message=new_system_message)
 
