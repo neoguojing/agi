@@ -77,8 +77,7 @@ class DockerSandbox(BaseSandbox):
 
     @property
     def id(self) -> str:
-        # keep compatibility for code paths that still call manager directly
-        return self.get_container_id("default")
+        raise RuntimeError("DockerSandbox id is user-scoped. Use for_user(user_id).id instead.")
 
     def for_user(self, user_id: str | None) -> BaseSandbox:
         resolved_user_id = self._normalize_user_id(user_id)
@@ -141,15 +140,14 @@ class DockerSandbox(BaseSandbox):
         self._touch_session(session.user_id)
         return responses
 
-    # BaseSandbox compatibility (default user)
     def execute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:
-        return self.execute_for_user("default", command, timeout=timeout)
+        raise RuntimeError("DockerSandbox is user-scoped. Use for_user(user_id).execute(...)")
 
     def upload_files(self, files: List[tuple[str, bytes]]) -> List[FileUploadResponse]:
-        return self.upload_files_for_user("default", files)
+        raise RuntimeError("DockerSandbox is user-scoped. Use for_user(user_id).upload_files(...)")
 
     def download_files(self, paths: List[str]) -> List[FileDownloadResponse]:
-        return self.download_files_for_user("default", paths)
+        raise RuntimeError("DockerSandbox is user-scoped. Use for_user(user_id).download_files(...)")
 
     def close_user_session(self, user_id: str | None) -> None:
         resolved_user_id = self._normalize_user_id(user_id)
@@ -183,15 +181,26 @@ class DockerSandbox(BaseSandbox):
 
     # internal helpers
     def _normalize_user_id(self, user_id: str | None) -> str:
-        value = (user_id or "default").strip()
-        return value or "default"
+        value = (user_id or "").strip()
+        if not value:
+            raise ValueError("user_id is required for DockerSandbox")
+        return value
 
     def _ensure_session(self, user_id: str) -> _DockerSession:
         with self._lock:
             existing = self._sessions.get(user_id)
             if existing:
-                existing.last_active_at = time.time()
-                return existing
+                if not self._is_container_running(existing.container_id):
+                    logger.warning(
+                        "Docker sandbox container not running, recreating: user_id=%s container=%s",
+                        user_id,
+                        existing.container_id,
+                    )
+                    self._sessions.pop(user_id, None)
+                    self._remove_workspace(existing.workspace_host)
+                else:
+                    existing.last_active_at = time.time()
+                    return existing
 
             session = self._start_session(user_id)
             self._sessions[user_id] = session
@@ -239,6 +248,14 @@ class DockerSandbox(BaseSandbox):
 
     def _stop_container(self, container_id: str) -> None:
         subprocess.run(["docker", "stop", container_id], capture_output=True)
+
+    def _is_container_running(self, container_id: str) -> bool:
+        result = subprocess.run(
+            ["docker", "inspect", "-f", "{{.State.Running}}", container_id],
+            capture_output=True,
+            text=True,
+        )
+        return result.returncode == 0 and result.stdout.strip() == "true"
 
     def _remove_workspace(self, workspace_host: str) -> None:
         path = Path(workspace_host)

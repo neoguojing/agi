@@ -1,7 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 import shlex
-from typing import Any, Callable, Awaitable, Annotated
+from typing import Any, Annotated
 
 from langchain.agents.middleware.types import (
     AgentMiddleware,
@@ -10,7 +10,6 @@ from langchain.agents.middleware.types import (
     ModelResponse,
 )
 from langchain.tools import ToolRuntime
-from langchain.tools.tool_node import ToolCallRequest
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import StructuredTool
 from langgraph.types import Command
@@ -69,11 +68,42 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             configurable = config.get("configurable", {}) if isinstance(config, dict) else {}
             if configurable.get("user_id"):
                 return str(configurable["user_id"])
-        return "default"
+        raise ValueError("user_id is required for ffmpeg tools")
 
     def _backend_for_runtime(self, runtime: ToolRuntime[None, FfmpegState]) -> Any:
         user_id = self._resolve_user_id(runtime)
         return self.backend.for_user(user_id)
+
+    async def _run_ffmpeg(self, backend: Any, cmd: str) -> str | None:
+        result = await backend.aexecute(cmd)
+        if result.exit_code != 0:
+            return result.output
+        return None
+
+    def _tool_success(
+        self,
+        runtime: ToolRuntime[None, FfmpegState],
+        *,
+        action: str,
+        output_path: str,
+        message: str,
+        extra: dict[str, Any] | None = None,
+    ) -> Command:
+        payload = {
+            "action": action,
+            "status": "success",
+            "output_path": output_path,
+            "next_step": f"Call video_download with container_path={output_path}",
+        }
+        if extra:
+            payload.update(extra)
+        return Command(
+            update={
+                "files": self._build_file_state(output_path, status="processed"),
+                "last_operation": payload,
+                "messages": [ToolMessage(content=message, tool_call_id=runtime.tool_call_id)],
+            }
+        )
 
     # -------------------------
     # 文件状态
@@ -242,31 +272,20 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             backend = self._backend_for_runtime(runtime)
 
             cmd = (
-                f"ffmpeg -y -i {input_path} "
+                f"ffmpeg -y -i {shlex.quote(input_path)} "
                 f"-ss {start} -to {end} "
-                f"-c:v libx264 -c:a aac {output_path}"
+                f"-c:v libx264 -c:a aac {shlex.quote(output_path)}"
             )
-
-            result = await backend.aexecute(cmd)
-            if result.exit_code != 0:
-                return result.output
-
-            return Command(update={
-                "files": self._build_file_state(output_path, status="processed"),
-                "last_operation": {
-                    "action": "video_cut",
-                    "status": "success",
-                    "input_path": input_path,
-                    "output_path": output_path,
-                    "next_step": f"Call video_download with container_path={output_path}",
-                },
-                "messages": [
-                        ToolMessage(
-                            content=f"✅ trim video from {start}s → {end},output path: {output_path}",
-                            tool_call_id=runtime.tool_call_id,
-                        )
-                    ]
-                })
+            error = await self._run_ffmpeg(backend, cmd)
+            if error:
+                return error
+            return self._tool_success(
+                runtime,
+                action="video_cut",
+                output_path=output_path,
+                message=f"✅ trim video from {start}s → {end}, output path: {output_path}",
+                extra={"input_path": input_path},
+            )
         
         return StructuredTool.from_function(
             name="video_cut",
@@ -371,31 +390,17 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             content = "\n".join([f"file '{p}'" for p in input_paths])
             await backend.awrite(list_file, content)
 
-            cmd = (
-                f"ffmpeg -y -f concat -safe 0 -i {list_file} "
-                f"-c copy {output_path}"
+            cmd = f"ffmpeg -y -f concat -safe 0 -i {list_file} -c copy {shlex.quote(output_path)}"
+            error = await self._run_ffmpeg(backend, cmd)
+            if error:
+                return f"❌ ffmpeg error:\n{error}"
+            return self._tool_success(
+                runtime,
+                action="video_concat",
+                output_path=output_path,
+                message=f"✅ concatenate success, output path: {output_path}",
+                extra={"input_paths": input_paths},
             )
-
-            result = await backend.aexecute(cmd)
-            if result.exit_code != 0:
-                return f"❌ ffmpeg error:\n{result.output}"
-
-            return Command(update={
-                "files": self._build_file_state(output_path, status="processed"),
-                "last_operation": {
-                    "action": "video_concat",
-                    "status": "success",
-                    "input_paths": input_paths,
-                    "output_path": output_path,
-                    "next_step": f"Call video_download with container_path={output_path}",
-                },
-                "messages": [
-                        ToolMessage(
-                            content=f"✅ concatenate success,output path: {output_path}",
-                            tool_call_id=runtime.tool_call_id,
-                        )
-                    ]
-                })
         
         return StructuredTool.from_function(
             name="video_concat",
@@ -416,32 +421,17 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
         ):
             backend = self._backend_for_runtime(runtime)
 
-            cmd = (
-                f"ffmpeg -y -i {input_path} "
-                f"-vf scale={width}:{height} {output_path}"
+            cmd = f"ffmpeg -y -i {shlex.quote(input_path)} -vf scale={width}:{height} {shlex.quote(output_path)}"
+            error = await self._run_ffmpeg(backend, cmd)
+            if error:
+                return error
+            return self._tool_success(
+                runtime,
+                action="video_resize",
+                output_path=output_path,
+                message=f"✅ resize video to width:{width}, height:{height}, output path: {output_path}",
+                extra={"input_path": input_path, "size": {"width": width, "height": height}},
             )
-
-            result = await backend.aexecute(cmd)
-            if result.exit_code != 0:
-                return result.output
-
-            return Command(update={
-                "files": self._build_file_state(output_path, status="processed"),
-                "last_operation": {
-                    "action": "video_resize",
-                    "status": "success",
-                    "input_path": input_path,
-                    "output_path": output_path,
-                    "size": {"width": width, "height": height},
-                    "next_step": f"Call video_download with container_path={output_path}",
-                },
-                "messages": [
-                        ToolMessage(
-                            content=f"✅ resize video to width:{width},height:{height},output path: {output_path}",
-                            tool_call_id=runtime.tool_call_id,
-                        )
-                    ]
-                })
         
         return StructuredTool.from_function(
             name="video_resize",
@@ -465,32 +455,19 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             backend = self._backend_for_runtime(runtime)
 
             cmd = (
-                f"ffmpeg -y -i {input_path} "
-                f"-vf crop={width}:{height}:{x}:{y} "
-                f"{output_path}"
+                f"ffmpeg -y -i {shlex.quote(input_path)} "
+                f"-vf crop={width}:{height}:{x}:{y} {shlex.quote(output_path)}"
             )
-
-            result = await backend.aexecute(cmd)
-            if result.exit_code != 0:
-                return result.output
-
-            return Command(update={
-                "files": self._build_file_state(output_path, status="processed"),
-                "last_operation": {
-                    "action": "video_crop",
-                    "status": "success",
-                    "input_path": input_path,
-                    "output_path": output_path,
-                    "crop": {"x": x, "y": y, "width": width, "height": height},
-                    "next_step": f"Call video_download with container_path={output_path}",
-                },
-                "messages": [
-                        ToolMessage(
-                            content=f"✅ crop video to width:{width},height:{height},output path: {output_path}",
-                            tool_call_id=runtime.tool_call_id,
-                        )
-                    ]
-                })
+            error = await self._run_ffmpeg(backend, cmd)
+            if error:
+                return error
+            return self._tool_success(
+                runtime,
+                action="video_crop",
+                output_path=output_path,
+                message=f"✅ crop video to width:{width}, height:{height}, output path: {output_path}",
+                extra={"input_path": input_path, "crop": {"x": x, "y": y, "width": width, "height": height}},
+            )
         
         return StructuredTool.from_function(
             name="video_crop",
@@ -513,32 +490,22 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
         ):
             backend = self._backend_for_runtime(runtime)
 
+            escaped_text = text.replace("'", r"\'")
             cmd = (
-                f"ffmpeg -y -i {input_path} "
-                f"-vf drawtext=text='{text}':x={x}:y={y}:fontsize=24:fontcolor=white "
-                f"{output_path}"
+                f"ffmpeg -y -i {shlex.quote(input_path)} "
+                f"-vf drawtext=text='{escaped_text}':x={x}:y={y}:fontsize=24:fontcolor=white "
+                f"{shlex.quote(output_path)}"
             )
-
-            result = await backend.aexecute(cmd)
-            if result.exit_code != 0:
-                return result.output
-
-            return Command(update={
-                "files": self._build_file_state(output_path, status="processed"),
-                "last_operation": {
-                    "action": "video_add_text",
-                    "status": "success",
-                    "input_path": input_path,
-                    "output_path": output_path,
-                    "next_step": f"Call video_download with container_path={output_path}",
-                },
-                "messages": [
-                        ToolMessage(
-                            content=f"✅ Overlay text on video:{text},output path: {output_path}",
-                            tool_call_id=runtime.tool_call_id,
-                        )
-                    ]
-                })
+            error = await self._run_ffmpeg(backend, cmd)
+            if error:
+                return error
+            return self._tool_success(
+                runtime,
+                action="video_add_text",
+                output_path=output_path,
+                message=f"✅ overlay text on video: {text}, output path: {output_path}",
+                extra={"input_path": input_path},
+            )
         
         return StructuredTool.from_function(
             name="video_add_text",
@@ -560,32 +527,19 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             backend = self._backend_for_runtime(runtime)
 
             cmd = (
-                f"ffmpeg -y -i {video_path} -i {image_path} "
-                f"-filter_complex overlay=10:10 "
-                f"{output_path}"
+                f"ffmpeg -y -i {shlex.quote(video_path)} -i {shlex.quote(image_path)} "
+                f"-filter_complex overlay=10:10 {shlex.quote(output_path)}"
             )
-
-            result = await backend.aexecute(cmd)
-            if result.exit_code != 0:
-                return result.output
-
-            return Command(update={
-                "files": self._build_file_state(output_path, status="processed"),
-                "last_operation": {
-                    "action": "video_watermark",
-                    "status": "success",
-                    "video_path": video_path,
-                    "image_path": image_path,
-                    "output_path": output_path,
-                    "next_step": f"Call video_download with container_path={output_path}",
-                },
-                "messages": [
-                        ToolMessage(
-                            content=f"✅ Overlay an image watermark:{image_path},output path: {output_path}",
-                            tool_call_id=runtime.tool_call_id,
-                        )
-                    ]
-                })
+            error = await self._run_ffmpeg(backend, cmd)
+            if error:
+                return error
+            return self._tool_success(
+                runtime,
+                action="video_watermark",
+                output_path=output_path,
+                message=f"✅ overlay an image watermark: {image_path}, output path: {output_path}",
+                extra={"video_path": video_path, "image_path": image_path},
+            )
         
         return StructuredTool.from_function(
             name="video_watermark",
@@ -598,16 +552,7 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
 
     def wrap_model_call(self, request: ModelRequest, handler):
         # 过滤工具，仅保留视频工具 + 原工具
-        available_tools = []
         tool_names = [getattr(t, "name", None) or t.get("name") for t in self.tools]
-        for tool in request.tools:
-            name = getattr(tool, "name", None) or tool.get("name")
-            if name in tool_names:
-                available_tools.append(tool)
-            else:
-                available_tools.append(tool)  # 非视频工具保持不变
-
-        request = request.override(tools=available_tools)
 
         # 系统 prompt
         default_prompt = (
