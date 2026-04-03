@@ -214,8 +214,7 @@ class DockerSandbox(BaseSandbox):
 
     def _start_session(self, user_id: str) -> _DockerSession:
         safe_user = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in user_id)[:32] or "default"
-        suffix = uuid.uuid4().hex[:8]
-        container_id = f"docker_sandbox_{safe_user}_{suffix}"
+        container_id = f"docker_sandbox_{safe_user}"
         workspace_host = self._workspace_root / f"{container_id}_workspace"
         workspace_host.mkdir(parents=True, exist_ok=True)
 

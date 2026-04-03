@@ -55,7 +55,8 @@ Entity Data: Save to /entities/{user_id}/entities.json
 
     def make_backend(self, runtime):
         return CompositeBackend(
-            default=LocalShellBackend(root_dir=".", env={"PATH": "/usr/bin:/bin"}),
+            # default=LocalShellBackend(root_dir=".", env={"PATH": "/usr/bin:/bin"}),
+            default=FilesystemBackend("./"),
             routes={
                 # 用户画像：偏好、历史行为、个性化配置
                 "/profiles/{user_id}/": StoreBackend(runtime),
