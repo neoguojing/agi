@@ -112,8 +112,9 @@ class DockerSandbox(BaseSandbox):
         session = self._ensure_session(self._normalize_user_id(user_id))
         responses: List[FileUploadResponse] = []
 
-        for container_path, content in files:
-            host_path = self._to_host_path(session, container_path)
+        for host_path, content in files:
+            host_path = self._to_host_path(session, host_path)
+            container_path = self.to_container_path(session, host_path)
             host_path.parent.mkdir(parents=True, exist_ok=True)
             try:
                 host_path.write_bytes(content)
@@ -244,19 +245,35 @@ class DockerSandbox(BaseSandbox):
         if path.exists() and str(path).startswith(str(self._workspace_root)):
             shutil.rmtree(path, ignore_errors=True)
 
-    def _to_host_path(self, session: _DockerSession, container_path: str) -> Path:
-        normalized = (container_path or "").strip()
+    def _to_host_path(self, session: _DockerSession, path: str) -> Path:
+        normalized = str(path or "").strip()
         if not normalized:
             raise ValueError("container path cannot be empty")
 
-        if normalized.startswith(self._workspace_container + "/"):
-            relative = normalized[len(self._workspace_container) + 1 :]
-        elif normalized == self._workspace_container:
-            relative = ""
-        else:
-            relative = normalized.lstrip("/")
+        # 只保留文件名（去掉所有路径前缀）
+        filename = Path(normalized).name
+        if not filename:
+            raise ValueError(f"invalid path, no filename: {path}")
 
-        return (Path(session.workspace_host) / relative).resolve()
+        # 拼接到宿主机 workspace
+        return (Path(session.workspace_host) / filename).resolve()
+    
+    def to_container_path(self, session: _DockerSession, host_path: Path) -> str:
+        host_path = Path(host_path).resolve()
+        workspace_host = Path(session.workspace_host).resolve()
+
+        # 校验必须在 workspace 内
+        try:
+            host_path.relative_to(workspace_host)
+        except ValueError:
+            raise ValueError(f"path {host_path} is outside workspace {workspace_host}")
+
+        # 只保留文件名
+        filename = host_path.name
+        if not filename:
+            raise ValueError(f"invalid path, no filename: {host_path}")
+
+        return f"{self._workspace_container}/{filename}"
 
     def _cleanup_loop(self) -> None:
         while not self._stop_event.wait(self._cleanup_interval):
