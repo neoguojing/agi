@@ -504,21 +504,21 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             logger.exception("Failed to capture page info for %s", url)
             return self._build_error_page_info(url, str(exc), action="capture")
 
-    async def extract_ui(self, page: Page, *, limit: int = 8):
-        """Extract compact actionable UI elements from the page."""
+    async def extract_ui(self, page: Page, *, limit: int = 12):
+        """Extract navigation-oriented actionable UI elements."""
         return await page.evaluate(""" ({ limit }) => {
-            // 1. 获取文本内容
+
             function getText(el) {
                 return (
                     el.innerText ||
                     el.value ||
                     el.getAttribute("aria-label") ||
+                    el.placeholder ||
                     el.title ||
                     ""
                 ).trim();
             }
 
-            // 2. 检查可见性
             function isVisible(el) {
                 const style = window.getComputedStyle(el);
                 return (
@@ -528,12 +528,10 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 );
             }
 
-            // 3. 生成唯一选择器
             function getSelector(el) {
                 if (el.id) return `#${el.id}`;
                 if (el.name) return `[name="${el.name}"]`;
-                
-                // 使用 nth-child 保证唯一性
+
                 const parent = el.parentElement;
                 if (parent) {
                     const siblings = Array.from(parent.children);
@@ -543,45 +541,143 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 return el.tagName.toLowerCase();
             }
 
-            // --- 主逻辑 ---
+            function getRole(el) {
+                const role = el.getAttribute("role") || "";
+                if (role) return role;
 
-            const candidates = Array.from(
-                document.querySelectorAll('input, button, textarea, select, a')
-            );
+                const tag = el.tagName.toLowerCase();
 
-            const raw = candidates
-                .filter(isVisible)
-                .map((el) => {
-                    const text = getText(el);
-                    return {
-                        type: el.tagName.toLowerCase(),
-                        text: text.slice(0, 60),
-                        placeholder: (el.placeholder || "").slice(0, 40),
-                        selector: (getSelector(el) || "").slice(0, 80),
-                        // 额外信息：用于调试或排序
-                        y: el.getBoundingClientRect().top
-                    };
-                })
-                // 过滤：必须有文本内容，或者是 input 标签（通常有 placeholder）
-                .filter(el => (el.text.length > 0 || el.type === "input") && el.selector.length > 0)
-                // 排序：优先显示视口上方的元素
-                .sort((a, b) => a.y - b.y) 
-                .slice(0, Number(limit) || 8);
+                if (tag === "a") return "link";
+                if (tag === "button") return "button";
+                if (tag === "input") {
+                    if (el.type === "search") return "search";
+                    if (el.type === "text") return "input";
+                }
 
-            // --- 格式化输出 (修复了字段映射错误) ---
+                return "";
+            }
+
+            function isSearch(el) {
+                return (
+                    el.tagName === "INPUT" &&
+                    (
+                        el.type === "search" ||
+                        (el.placeholder || "").toLowerCase().includes("search")
+                    )
+                );
+            }
+
+            function isNavLike(el) {
+                const tag = el.tagName.toLowerCase();
+                const role = el.getAttribute("role") || "";
+
+                return (
+                    tag === "nav" ||
+                    tag === "aside" ||
+                    tag === "header" ||
+                    role.includes("navigation") ||
+                    role === "tablist"
+                );
+            }
+
+            function isTab(el) {
+                return (
+                    el.getAttribute("role") === "tab" ||
+                    el.getAttribute("aria-selected") !== null
+                );
+            }
+
+            function isLink(el) {
+                return el.tagName === "A" && el.href;
+            }
+
+            function isNavButton(el) {
+                const txt = getText(el).toLowerCase();
+                return (
+                    el.tagName === "BUTTON" &&
+                    (
+                        txt.includes("login") ||
+                        txt.includes("sign") ||
+                        txt.includes("menu") ||
+                        txt.includes("next") ||
+                        txt.includes("back")
+                    )
+                );
+            }
+
+            // ---- 主逻辑 ----
+
+            const all = Array.from(document.querySelectorAll("*"));
+
+            const candidates = all.filter(el => {
+                if (!isVisible(el)) return false;
+
+                return (
+                    isSearch(el) ||
+                    isTab(el) ||
+                    isLink(el) ||
+                    isNavButton(el) ||
+                    isNavLike(el)
+                );
+            });
+
+            const raw = candidates.map(el => {
+                const rect = el.getBoundingClientRect();
+
+                return {
+                    type: el.tagName.toLowerCase(),
+                    role: getRole(el),
+                    text: getText(el).slice(0, 60),
+                    placeholder: (el.placeholder || "").slice(0, 40),
+                    selector: (getSelector(el) || "").slice(0, 80),
+                    href: el.href || "",
+                    y: rect.top,
+                    area: rect.width * rect.height
+                };
+            })
+            // 过滤垃圾
+            .filter(el =>
+                el.selector &&
+                (
+                    el.text.length > 0 ||
+                    el.placeholder.length > 0 ||
+                    el.href
+                )
+            )
+            // 排序：优先顶部 + 大区域（导航栏）
+            .sort((a, b) => {
+                if (Math.abs(a.y - b.y) < 50) {
+                    return b.area - a.area;
+                }
+                return a.y - b.y;
+            })
+            .slice(0, Number(limit) || 12);
+
             return {
                 title: document.title,
                 url: location.href,
                 elements: raw.map((el, i) => ({
-                    id: i + 1, 
+                    id: i + 1,
                     type: el.type,
+                    role: el.role,
                     text: el.text,
                     placeholder: el.placeholder,
                     selector: el.selector,
-                    y: el.y,
-                    action: ""
+                    href: el.href,
+                    action: inferAction(el),
+                    y: el.y
                 }))
             };
+
+            // ---- 行为推断 ----
+            function inferAction(el) {
+                if (el.role === "search") return "search";
+                if (el.role === "tab") return "switch_tab";
+                if (el.type === "a") return "navigate";
+                if (el.type === "button") return "click";
+                return "interact";
+            }
+
         } """, {"limit": limit})
 
     def _normalize_actionable_elements(self, elements: Any) -> list[dict[str, Any]]:
