@@ -10,7 +10,8 @@ from agi.utils.common import append_to_system_message
 class ContextEngineeringMiddleware(AgentMiddleware):
     """
     上下文工程中间件：
-    1. 并发加载 RAG 知识与用户画像
+    1. 空闲时更新上下文，而不是实时更新
+    2. 保留
     2. 动态注入模型 Prompt
     3. 异步、非阻塞地更新用户画像
     """

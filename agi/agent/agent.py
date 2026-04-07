@@ -1,5 +1,6 @@
 import os
 import uuid
+from pathlib import Path
 import sqlite3
 import aiosqlite
 import asyncio
@@ -13,7 +14,7 @@ from agi.agent.tools import buildin_tools
 from agi.agent.subagents import buildin_agents
 from agi.agent.context import Context
 
-from agi.config import OLLAMA_DEFAULT_MODE
+from agi.config import OLLAMA_DEFAULT_MODE,CACHE_DIR
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.store.sqlite import SqliteStore
@@ -35,11 +36,7 @@ class DeepAgentBuilder:
         self.name = name
         self.llm = ModelProvider.get_chat_model(provider="ollama", model_name=OLLAMA_DEFAULT_MODE)
         self.embd = ModelProvider.get_embeddings(provider="ollama", model_name="embeddinggemma:latest")
-        self.system_prompt = '''Please structure the data storage paths as follows, ensuring that the {user_id} placeholder is replaced with the actual user ID:
-User Preferences: Save to /profiles/{user_id}/preferences.json
-Session History: Store in /sessions/{user_id}/{conversation_id}/chat_history.json
-Entity Data: Save to /entities/{user_id}/entities.json
-        '''
+        self.system_prompt = ""
         self.tools = list(buildin_tools)
         self.subagents = list(buildin_agents)
         self.memory_paths = ["./memories/AGENT.md"]
@@ -54,18 +51,19 @@ Entity Data: Save to /entities/{user_id}/entities.json
         return self
 
     def make_backend(self, runtime):
+        root = Path(CACHE_DIR).resolve()
+
         return CompositeBackend(
-            # default=LocalShellBackend(root_dir=".", env={"PATH": "/usr/bin:/bin"}),
-            default=FilesystemBackend("./"),
+            default=FilesystemBackend(root),
             routes={
                 # 用户画像：偏好、历史行为、个性化配置
-                "/profiles/{user_id}/": StoreBackend(runtime),
+                f"/profiles/": FilesystemBackend(root),
                 # 会话：跨线程持久对话历史
-                "/sessions/{user_id}/{conversation_id}/": StoreBackend(runtime),
+                f"/sessions/": FilesystemBackend(root),
                 # 实体：产品、联系人、订单等结构化数据
-                "/entities/{user_id}/": StoreBackend(runtime),
+                f"/entities/": FilesystemBackend(root),
                 # 全局：系统配置、模板
-                "/shared/": StoreBackend(runtime),
+                f"/shared/": FilesystemBackend(root),
             },
         )
 
@@ -80,8 +78,7 @@ Entity Data: Save to /entities/{user_id}/entities.json
             "backend": self.make_backend,
             # "memory": self.memory_paths,
             "middleware": [
-                # BrowserMiddleware(ocr_engine=self.llm),
-                # ContextEngineeringMiddleware(extractor_model=self.llm),
+                ContextEngineeringMiddleware(extractor_model=self.llm),
                 DebugLLMContextMiddleware(),
                 MultimodalBase64Middleware()
             ],

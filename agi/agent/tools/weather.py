@@ -90,22 +90,25 @@ search_list = build_search_list()
 
 # 模糊匹配城市名称，返回最佳匹配的代码和 URL
 def find_best_match(input_name):
+    try:
+        words = pseg.cut(input_name)
+        locations = []
+        for word, flag in words:
+            if flag == 'ns':  # 'ns'表示地名
+                locations.append(word)
+        if locations:
+            input_name = locations[-1]
+        names = search_list.keys()
+        # 使用 difflib 进行模糊匹配，cutoff=0.6 表示至少 60% 相似度
+        best_matches = difflib.get_close_matches(input_name, names, n=1, cutoff=0.6)
+        if best_matches:
+            match_name = best_matches[0]
+            item = search_list.get(match_name,None)
+            return match_name,item['code'], item['url']
+        return None,None, None
+    except Exception as e:
+        print(e)
     
-    words = pseg.cut(input_name)
-    locations = []
-    for word, flag in words:
-        if flag == 'ns':  # 'ns'表示地名
-            locations.append(word)
-    if locations:
-        input_name = locations[-1]
-    names = search_list.keys()
-    # 使用 difflib 进行模糊匹配，cutoff=0.6 表示至少 60% 相似度
-    best_matches = difflib.get_close_matches(input_name, names, n=1, cutoff=0.6)
-    if best_matches:
-        match_name = best_matches[0]
-        item = search_list.get(match_name,None)
-        return match_name,item['code'], item['url']
-    return None,None, None
 
 def get_nmc_weather(station_id: str, timeout: float = 5.0) -> Dict[str, Any]:
     """
