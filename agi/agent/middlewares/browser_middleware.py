@@ -128,6 +128,23 @@ Guidelines:
 - Prefer this before click/fill when uncertain.
 """
 
+BROWSER_STATUS_TOOL_DESCRIPTION = """
+Gets the current browser session status without performing any page interaction.
+
+Key Behavior:
+- Returns canonical browser session state for the active user/session.
+- Does not navigate, click, or mutate page content.
+
+Returns:
+- Browser open/closed flags
+- Current page summary (URL/title/screenshot path when available)
+- Previous page summary (if available)
+
+Guidelines:
+- Use this when you need to confirm browser state before deciding next action.
+- If no page is loaded yet, navigate first.
+"""
+
 
 class MiddlewareBrowserState(AgentState):
     """Single middleware state schema.
@@ -179,6 +196,7 @@ class BrowserMiddleware(AgentMiddleware):
             self._create_extract_tool(),
             self._create_screenshot_tool(),
             self._create_find_tool(),
+            self._create_status_tool(),
         ]
 
     # 同步模型调用入口：在真正调用模型前，把当前浏览器状态摘要拼到 system prompt。
@@ -340,6 +358,44 @@ class BrowserMiddleware(AgentMiddleware):
             name="browser_find",
             description=BROWSER_FIND_TOOL_DESCRIPTION,
             coroutine=async_find,
+        )
+
+    def _create_status_tool(self) -> BaseTool:
+        async def async_status(runtime: ToolRuntime[None, MiddlewareBrowserState]) -> Command:
+            user_id = self._resolve_user_id(runtime)
+            session_state = await self._get_canonical_session_state(user_id)
+            if session_state is None:
+                artifact = self._error_artifact("No active browser session. Please navigate first.")
+                return self._command_for_result(
+                    "browser_status",
+                    runtime.tool_call_id,
+                    artifact,
+                    session_state=None,
+                )
+
+            browser = session_state.get("browser", {}) if isinstance(session_state, dict) else {}
+            current_page = session_state.get("current_page", {}) if isinstance(session_state, dict) else {}
+            previous_page = session_state.get("previous_page") if isinstance(session_state.get("previous_page"), dict) else None
+            artifact: dict[str, Any] = {
+                "status": "success",
+                "content_preview": "Fetched current browser session status.",
+                "metadata": {"browser_session_state": session_state},
+                "current_page": dict(current_page) if isinstance(current_page, dict) else {},
+            }
+            if isinstance(previous_page, dict):
+                artifact["previous_page"] = dict(previous_page)
+            artifact["browser"] = dict(browser) if isinstance(browser, dict) else {}
+            return self._command_for_result(
+                "browser_status",
+                runtime.tool_call_id,
+                artifact,
+                session_state=session_state,
+            )
+
+        return StructuredTool.from_function(
+            name="browser_status",
+            description=BROWSER_STATUS_TOOL_DESCRIPTION,
+            coroutine=async_status,
         )
 
     async def _tool_extract(self, runtime: ToolRuntime[None, MiddlewareBrowserState]) -> dict[str, Any]:
@@ -754,7 +810,7 @@ class BrowserMiddleware(AgentMiddleware):
                 f"current_page: {current_page_compact}",
                 f"previous_page: {previous_page_compact or '<none>'}",
                 f"last_action: {current_page.get('metadata', {}).get('action') if isinstance(current_page.get('metadata'), dict) else None}",
-                "Decide next action only from this summary: navigate, find, click, fill, extract, screenshot.",
+                "Decide next action only from this summary: status, navigate, find, click, fill, extract, screenshot.",
             ]
         )
 
