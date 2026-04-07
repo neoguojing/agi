@@ -26,26 +26,9 @@ from agi.utils.common import append_to_system_message
 from agi.web.session_manager import BrowserSessionManager
 from agi.web.browser_backend import StatefulBrowserBackend
 from agi.web.browser_types import BrowserSessionSnapshot, PageInfo, normalize_browser_session_snapshot
+from agi.agent.prompt import get_middleware_prompt
 
 logger = logging.getLogger(__name__)
-# middleware 的定位：
-# - 对外暴露浏览器工具集；
-# - 在模型调用前，把当前浏览器状态同步到 system prompt；
-# - 把 backend 的状态结果包装成 agent state / tool messages。
-
-BROWSER_SYSTEM_PROMPT = """## Browser Tools
-
-You have access to a stateful, real-time browser session.
-
-### Core Principles
-- **State Awareness**: Always check the current URL and recent events (navigation, DOM updates, user interaction) before acting. Adapt your plan if the page context has changed; do not repeat actions that have already succeeded.
-- **Tool Strategy**:
-  - Call `browser_navigate` before interacting with a new site.
-  - Use `browser_find` to locate selectors before clicking or filling.
-  - Use `browser_extract` (OCR prioritized) as the primary way to read content; use `browser_screenshot` for visual layout or debugging.
-- **Efficiency**: Avoid redundant clicks or inputs. If the page appears unchanged, re-extract content or verify via screenshot.
-- **Large Content**: HTML may be truncated. Rely on extraction tools rather than raw HTML dumps.
-"""
 
 BROWSER_NAVIGATE_TOOL_DESCRIPTION = """
 Navigates the browser to a specific URL.
@@ -205,7 +188,7 @@ class BrowserMiddleware(AgentMiddleware):
         handler: Callable[[ModelRequest[ContextT]], ModelResponse[ResponseT]],
     ) -> ModelResponse[ResponseT]:
         # Sync hook cannot await live browser state safely; use static guidance.
-        system_prompt = self._custom_system_prompt or BROWSER_SYSTEM_PROMPT
+        system_prompt = self._custom_system_prompt or get_middleware_prompt("browser")
         if system_prompt:
             request = request.override(system_message=append_to_system_message(request.system_message, system_prompt))
         return handler(request)
@@ -695,7 +678,7 @@ class BrowserMiddleware(AgentMiddleware):
 
     async def _build_model_system_prompt(self, request: ModelRequest[ContextT]) -> str:
         # system prompt = 浏览器工具说明 + 当前 live browser state 摘要。
-        system_prompt = self._custom_system_prompt or BROWSER_SYSTEM_PROMPT
+        system_prompt = self._custom_system_prompt or get_middleware_prompt("browser")
         session_state = await self._resolve_session_state_for_request(request)
         if not session_state:
             return system_prompt

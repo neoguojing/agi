@@ -18,10 +18,11 @@ class SearchEngineSelector:
     timeout_per_query: float = 10.0  # 单个引擎响应上限
 
     _engines: Dict[str, Any] = PrivateAttr(default_factory=dict)
-    _stats: Dict[str, Dict] = PrivateAttr(default_factory=lambda: defaultdict(lambda: {'success': 1, 'total': 2}))
+    _stats: Dict[str, Dict] = PrivateAttr(default_factory=dict)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self._stats = {} 
         self._init_engines()
 
     def _init_engines(self):
@@ -46,14 +47,11 @@ class SearchEngineSelector:
                     engine_instance = init_func()
                     if engine_instance:
                         self._engines[name] = engine_instance
-                        log.info(f"Engine '{name}' initialized successfully.")
+                        # --- 修复点：初始化统计信息 ---
+                        self._stats[name] = {"success": 1, "total": 2} 
+                        log.info(f"Engine '{name}' initialized.")
                 except Exception as e:
-                    log.warning(f"Engine '{name}' failed to load: {e}")
-            else:
-                log.debug(f"Engine '{name}' skipped: Missing credentials or URL.")
-
-        if not self._engines:
-            log.error("Critical: No search engines were successfully initialized!")
+                    log.warning(f"Engine '{name}' failed: {e}")
 
     # --- 具体的引擎实例化逻辑（方便单独维护） ---
 

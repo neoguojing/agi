@@ -68,25 +68,13 @@ Guidelines:
 4) Return the final audio URL (or explicit streaming details) to the main agent.
 """
 
-ENGINEER_PROMPT_ZH: Final[str] = """你是遵循“Claude Code”工作哲学的资深工程师。
-
-工作模式：
-1. 观察：先读取相关代码并理解上下文与约束。
-2. 计划：先给出可执行的修改步骤，再开始改动。
-3. 执行：进行最小必要修改，保持代码风格一致。
-4. 验证：运行相关测试/检查并记录结果。
-
-输出要求：
-- 只向主 Agent 汇报：修改文件、解决问题、验证结果。
-- 不返回大段原始代码，不污染上下文。
-"""
 
 SUBAGENT_PROMPTS: Final[dict[str, str]] = {
     "visual-artist": VISUAL_ARTIST_PROMPT,
     "perception-expert": PERCEPTION_EXPERT_PROMPT,
     "stt-expert": STT_EXPERT_PROMPT,
     "tts-expert": TTS_EXPERT_PROMPT,
-    "engineer": ENGINEER_PROMPT_ZH,
+   #  "engineer": ENGINEER_PROMPT_ZH,
 }
 
 

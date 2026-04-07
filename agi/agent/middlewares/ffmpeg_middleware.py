@@ -16,13 +16,8 @@ from langgraph.types import Command
 from typing_extensions import NotRequired, TypedDict
 from agi.utils.common import append_to_system_message
 from agi.agent.sandbox.docker import DockerSandbox
+from agi.agent.prompt import get_middleware_prompt
 
-FFMPEG_TOOL_GUIDANCE = """You are running in a Docker sandbox workspace.
-Required workflow for video tasks:
-1) Use `video_upload` first to upload local video/image files into the container.
-2) Run FFmpeg processing tools (`video_cut`, `video_resize`, etc.) against container paths.
-3) Use `video_download` after processing to get the output file host path and return that local path to the user.
-"""
 
 # =========================
 # State 定义
@@ -557,7 +552,7 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
         # 系统 prompt
         default_prompt = (
             f"You can use the following tools: {', '.join(tool_names)}\n\n"
-            f"{FFMPEG_TOOL_GUIDANCE}"
+            f"{get_middleware_prompt('ffmpeg')}"
         )
         system_prompt = self._custom_system_prompt or default_prompt
         new_system_message = append_to_system_message(request.system_message, system_prompt)

@@ -122,9 +122,9 @@ class DeepAgentManager:
             
             # 2. 初始化独立连接用于 Store (向量/记忆存储)
             # 指向同一个文件没问题，WAL 模式下并发安全
-            conn_store = await aiosqlite.connect(DB_PATH_STRORE)
-            await conn_store.execute("PRAGMA journal_mode=WAL")
-            await conn_store.execute("PRAGMA synchronous=NORMAL")
+            # conn_store = await aiosqlite.connect(DB_PATH_STRORE)
+            # await conn_store.execute("PRAGMA journal_mode=WAL")
+            # await conn_store.execute("PRAGMA synchronous=NORMAL")
 
             saver = AsyncSqliteSaver(conn=conn_saver)
             # store = AsyncSqliteStore(conn=conn_store)
