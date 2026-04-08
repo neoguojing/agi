@@ -145,6 +145,22 @@ Guidelines:
 - If no page is loaded yet, navigate first.
 """
 
+BROWSER_SCROLL_TOOL_DESCRIPTION = """
+Scrolls the viewport to reveal off-screen content and trigger lazy-loaded sections.
+Input: direction (up/down), distance (pixels).
+Returns: unified action feedback (URL/title/network-idle/screenshot/actionable elements).
+"""
+
+BROWSER_ENV_TOOL_DESCRIPTION = """
+Fetches closed-loop environment status after interactions.
+Returns: current URL/title, network idle state, recent console/network failures.
+"""
+
+BROWSER_PROBE_TOOL_DESCRIPTION = """
+Checks a runtime element property/attribute for decision making.
+Input: selector + property_name (e.g., disabled, aria-busy).
+"""
+
 
 class MiddlewareBrowserState(AgentState):
     """Single middleware state schema.
@@ -193,9 +209,12 @@ class BrowserMiddleware(AgentMiddleware):
             self._create_navigate_tool(),
             self._create_click_tool(),
             self._create_fill_tool(),
+            self._create_scroll_tool(),
             self._create_extract_tool(),
             self._create_screenshot_tool(),
             self._create_find_tool(),
+            self._create_probe_tool(),
+            self._create_environment_tool(),
             self._create_status_tool(),
         ]
 
@@ -331,6 +350,26 @@ class BrowserMiddleware(AgentMiddleware):
             coroutine=async_extract,
         )
 
+    def _create_scroll_tool(self) -> BaseTool:
+        async def async_scroll(
+            direction: Annotated[str, "Scroll direction: up/down."],
+            distance: Annotated[int, "Scroll distance in px."],
+            runtime: ToolRuntime[None, MiddlewareBrowserState],
+        ) -> Command:
+            result = await self._execute_with_retry(runtime, "scroll", direction=direction, distance=distance)
+            return self._command_for_result(
+                "browser_scroll",
+                runtime.tool_call_id,
+                self._format_page_result(result),
+                session_state=self._extract_state_from_result(result),
+            )
+
+        return StructuredTool.from_function(
+            name="browser_scroll",
+            description=BROWSER_SCROLL_TOOL_DESCRIPTION,
+            coroutine=async_scroll,
+        )
+
     def _create_screenshot_tool(self) -> BaseTool:
         async def async_screenshot(runtime: ToolRuntime[None, MiddlewareBrowserState]) -> ToolMessage | Command:
             return await self._tool_screenshot(runtime, runtime.tool_call_id)
@@ -396,6 +435,60 @@ class BrowserMiddleware(AgentMiddleware):
             name="browser_status",
             description=BROWSER_STATUS_TOOL_DESCRIPTION,
             coroutine=async_status,
+        )
+
+    def _create_probe_tool(self) -> BaseTool:
+        async def async_probe(
+            selector: Annotated[str, "CSS selector."],
+            property_name: Annotated[str, "DOM property/attribute name to inspect."],
+            runtime: ToolRuntime[None, MiddlewareBrowserState],
+        ) -> Command:
+            user_id = self._resolve_user_id(runtime)
+            probe = await self._session_manager.inspect_element_property(user_id, selector, property_name)
+            artifact = await self._artifact_with_state(
+                {
+                    "status": "success" if probe.get("ok") else "error",
+                    "metadata": {"probe": probe},
+                    "content_preview": str(probe),
+                },
+                user_id,
+            )
+            return self._command_for_result(
+                "browser_probe",
+                runtime.tool_call_id,
+                artifact,
+                session_state=self._extract_state_from_artifact(artifact),
+            )
+
+        return StructuredTool.from_function(
+            name="browser_probe",
+            description=BROWSER_PROBE_TOOL_DESCRIPTION,
+            coroutine=async_probe,
+        )
+
+    def _create_environment_tool(self) -> BaseTool:
+        async def async_environment(runtime: ToolRuntime[None, MiddlewareBrowserState]) -> Command:
+            user_id = self._resolve_user_id(runtime)
+            env = await self._session_manager.get_environment_status(user_id)
+            artifact = await self._artifact_with_state(
+                {
+                    "status": "success",
+                    "metadata": {"environment": env},
+                    "content_preview": f"url={env.get('url')} network_idle={env.get('network_idle')}",
+                },
+                user_id,
+            )
+            return self._command_for_result(
+                "browser_environment",
+                runtime.tool_call_id,
+                artifact,
+                session_state=self._extract_state_from_artifact(artifact),
+            )
+
+        return StructuredTool.from_function(
+            name="browser_environment",
+            description=BROWSER_ENV_TOOL_DESCRIPTION,
+            coroutine=async_environment,
         )
 
     async def _tool_extract(self, runtime: ToolRuntime[None, MiddlewareBrowserState]) -> dict[str, Any]:
@@ -617,6 +710,8 @@ class BrowserMiddleware(AgentMiddleware):
                     result = await self._session_manager.click(user_id, kwargs["selector"])
                 elif action == "fill":
                     result = await self._session_manager.fill(user_id, kwargs["selector"], kwargs["text"])
+                elif action == "scroll":
+                    result = await self._session_manager.scroll(user_id, kwargs["direction"], kwargs["distance"])
                 else:
                     msg = f"Unknown action: {action}"
                     raise ValueError(msg)
@@ -672,12 +767,6 @@ class BrowserMiddleware(AgentMiddleware):
             )
 
         result.metadata.pop("elements", None)
-        action = result.metadata.get("action")
-        if action != "navigate":
-            # actionable_elements are most useful immediately after navigation;
-            # avoid repeatedly injecting them into every tool result.
-            result.metadata.pop("actionable_elements", None)
-            result.metadata.pop("actionable_count", None)
         current_page = {
             "url": result.url,
             "title": result.title,
@@ -901,13 +990,22 @@ class BrowserMiddleware(AgentMiddleware):
         if isinstance(metadata, dict):
             if tool_name == "browser_find":
                 lines.append(f"matches_count: {metadata.get('count', 0)}")
-            elif tool_name == "browser_navigate":
+            elif tool_name in {"browser_navigate", "browser_click", "browser_fill", "browser_scroll"}:
                 lines.extend(self._format_actionable_elements(metadata))
+                env = metadata.get("environment")
+                if isinstance(env, dict):
+                    lines.append(f"network_idle: {env.get('network_idle')}")
+                    lines.append(f"url_changed: {env.get('url_changed')}")
+                    lines.append(f"current_url: {env.get('current_url')}")
             elif tool_name == "browser_extract":
                 lines.append(f"is_truncated: {artifact.get('is_truncated', False)}")
                 lines.append(f"evicted: {bool(metadata.get('evicted'))}")
             elif tool_name == "browser_screenshot" and metadata.get("screenshot_path"):
                 lines.append(f"metadata_screenshot_path: {metadata['screenshot_path']}")
+            elif tool_name == "browser_environment":
+                env = metadata.get("environment")
+                if isinstance(env, dict):
+                    lines.append(f"environment: {env}")
 
         if compact_current_page:
             lines.append(f"current_page: {compact_current_page}")
