@@ -525,8 +525,6 @@ class BrowserMiddleware(AgentMiddleware):
         primary_content = ocr_text or text
         artifact: dict[str, Any] = {
             "status": "success",
-            "url": last_result.url,
-            "title": last_result.title,
             "metadata": {
                 **dict(last_result.metadata),
                 "ocr_priority": True,
@@ -565,7 +563,6 @@ class BrowserMiddleware(AgentMiddleware):
         # 使用 session manager 的统一 API
         matches = await self._session_manager.find_elements(user_id, selector)
         runtime_context = await self._session_manager.get_runtime_context(user_id)
-        state = runtime_context.get("state")
         last_result = runtime_context.get("last_result")
         
         metadata = {
@@ -581,7 +578,6 @@ class BrowserMiddleware(AgentMiddleware):
                 "title": last_result.title if last_result else None,
                 "metadata": metadata,
                 "content_preview": f"Found {len(matches)} element(s) for selector: {selector}",
-                "history_length": int(state.get("history_length", 0)) if state else 0,
             },
             user_id,
         )
