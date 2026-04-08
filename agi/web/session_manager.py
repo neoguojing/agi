@@ -82,17 +82,13 @@ class BrowserSessionManager:
         session = await self.get_session(user_id)
         return await session.run(session.backend.click, selector)
 
-    async def click_by_text(self, user_id: str, text: str):
-        session = await self.get_session(user_id)
-        return await session.run(session.backend.click_by_text, text)
-
     async def fill(self, user_id: str, selector: str, value: str):
         session = await self.get_session(user_id)
         return await session.run(session.backend.fill, selector, value)
 
-    async def fill_human_like(self, user_id: str, selector: str, value: str):
+    async def scroll(self, user_id: str, direction: str = "down", distance: int = 800):
         session = await self.get_session(user_id)
-        return await session.run(session.backend.fill_human_like, selector, value)
+        return await session.run(session.backend.scroll, direction, distance)
 
     async def scroll(self, user_id: str, direction: str = "down", distance: int = 800):
         session = await self.get_session(user_id)
@@ -102,26 +98,22 @@ class BrowserSessionManager:
         session = await self.get_session(user_id)
         return await session.run(session.backend.find_elements, selector)
 
+    async def extract_ui(self, user_id: str, limit: int = 12):
+        session = await self.get_session(user_id)
+        return await session.run(session.backend.extract_ui, limit)
+
     async def inspect_element_property(self, user_id: str, selector: str, property_name: str):
         session = await self.get_session(user_id)
         return await session.run(session.backend.inspect_element_property, selector, property_name)
-
-    async def get_environment_status(self, user_id: str):
-        context = await self.get_runtime_context(user_id, include_environment=True)
-        return context.get("environment", {})
 
     async def screenshot(self, user_id: str):
         session = await self.get_session(user_id)
         return await session.run(session.backend.get_screenshot)
 
-    async def get_state(self, user_id: str):
-        context = await self.get_runtime_context(user_id, include_environment=False)
-        return context.get("state")
-
-    async def get_runtime_context(self, user_id: str, *, include_environment: bool = False) -> dict[str, Any]:
-        """统一读取状态/最近结果/环境，避免中间件多次重复调用。"""
+    async def get_runtime_context(self, user_id: str) -> dict[str, Any]:
+        """统一读取状态与最近结果，避免中间件多次重复调用。"""
         session = await self.get_session(user_id)
-        return await session.get_runtime_context(include_environment=include_environment)
+        return await session.get_runtime_context()
 
     async def apply_ocr_result(
         self,

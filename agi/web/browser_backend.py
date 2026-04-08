@@ -309,25 +309,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             history_entry={"action": "scroll", "direction": normalized_direction, "distance": signed_distance},
         )
 
-    async def click_by_text(self, text: str) -> PageInfo:
-        """Click the first element matching visible text."""
-        async def _operation(page: Page) -> None:
-            elements = await page.query_selector_all(f"text={text}")
-            if not elements:
-                raise ValueError(f"No element with text '{text}'")
-            await elements[0].scroll_into_view_if_needed(timeout=DEFAULT_SCROLL_TIMEOUT_MS)
-            await self._human_delay(100, 400)
-            await elements[0].click(timeout=DEFAULT_CLICK_TIMEOUT_MS)
-            return None
-
-        return await self._run_page_action(
-            action="click_by_text",
-            operation=_operation,
-            history_entry={"action": "click_by_text", "text": text},
-        )
-
     async def fill(self, selector: str, value: str) -> PageInfo:
-        """Fill an editable element with text."""
+        """Unified fill action (covers direct fill and human-like interaction intent)."""
         async def _operation(page: Page) -> None:
             await self._scroll_into_view(page, selector)
             await page.fill(selector, value, timeout=DEFAULT_CLICK_TIMEOUT_MS)
@@ -337,39 +320,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             action="fill",
             operation=_operation,
             history_entry={"action": "fill", "selector": selector, "value": value},
-        )
-
-    async def fill_by_label(self, label_text: str, value: str) -> PageInfo:
-        """Fill the first input associated with a matching label."""
-        async def _operation(page: Page) -> None:
-            element = await page.query_selector(f"label:has-text('{label_text}') >> input")
-            if element is None:
-                raise ValueError(f"No input for label '{label_text}'")
-            await element.scroll_into_view_if_needed(timeout=DEFAULT_SCROLL_TIMEOUT_MS)
-            await element.fill(value)
-            return None
-
-        return await self._run_page_action(
-            action="fill_by_label",
-            operation=_operation,
-            history_entry={"action": "fill_by_label", "label_text": label_text, "value": value},
-        )
-
-    async def fill_human_like(self, selector: str, value: str) -> PageInfo:
-        """Type into a field character-by-character to mimic human input."""
-        async def _operation(page: Page) -> None:
-            await self._scroll_into_view(page, selector)
-            await page.focus(selector)
-            await page.fill(selector, "")
-            for char in value:
-                await page.keyboard.type(char, delay=random.randint(50, 150))
-                await self._human_delay()
-            return None
-
-        return await self._run_page_action(
-            action="fill_human_like",
-            operation=_operation,
-            history_entry={"action": "fill_human_like", "selector": selector, "value": value},
         )
 
     async def find_elements(self, selector: str) -> List[QueryMatch]:
@@ -394,6 +344,11 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         except Exception:
             logger.exception("find_elements failed for selector=%s", selector)
             return []
+
+    async def extract_ui(self, limit: int = 12) -> Dict[str, Any]:
+        """Public UI-structure extractor for LLM planning."""
+        page = await self.ensure_page()
+        return await self._extract_ui_from_page(page, limit=limit)
 
     async def get_screenshot(self, *, full_page: bool = True) -> str:
         """Capture a screenshot for OCR/inspection and return the absolute file path."""
@@ -421,22 +376,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             property_name,
         )
         return {"ok": True, "selector": selector, "property": property_name, "value": value}
-
-    async def get_environment_status(self) -> Dict[str, Any]:
-        """Get URL/title and network-idle validation for closed-loop checks."""
-        # 环境校验原子：显式返回 network_idle，避免“点击成功=页面已稳定”的误判。
-        page = await self.ensure_page()
-        url_before = page.url
-        network_idle = await self._wait_for_network_idle(page, timeout_ms=DEFAULT_NETWORK_IDLE_TIMEOUT_MS)
-        current_url = page.url
-        return {
-            "url": current_url,
-            "title": await page.title(),
-            "network_idle": network_idle,
-            "url_changed": current_url != url_before,
-            "console_errors": list(self._recent_console_errors[-10:]),
-            "request_failures": list(self._recent_request_failures[-10:]),
-        }
 
     def _page_summary(self, result: PageInfo | None, fallback_state: PageInfo | None = None) -> dict[str, Any]:
         source = result or fallback_state
@@ -469,7 +408,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             "status": source.status,
             "action": source.action,
             "actionable_elements": list(source.actionable_elements),
-            "environment": dict(source.environment),
+            "network_idle": source.network_idle,
+            "url_changed": source.url_changed,
             "diagnostics": dict(source.diagnostics),
             "metadata": compact_metadata,
         }
@@ -519,7 +459,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         """Capture normalized page metadata after an action completes."""
         try:
             # 语义感知：输出精简后的可操作元素，而不是完整 DOM。
-            html_repr = await self.extract_ui(page, limit=8)
+            html_repr = await self._extract_ui_from_page(page, limit=8)
             actionable_elements = self._normalize_actionable_elements(
                 html_repr.get("elements", []) if isinstance(html_repr, dict) else []
             )
@@ -533,8 +473,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
             # 视觉捕获：动作结束后优先记录截图路径，供多模态对齐/回放。
             screenshot_path = str(await self._take_screenshot(page, prefix="page", full_page=True)) if capture_content else None
-            # 闭环反馈：每次动作后都附带 URL/title/network_idle。
-            env_status = await self._capture_environment_feedback(page, action=action, previous_url=previous_url)
+            # 闭环反馈：每次动作后都附带 network_idle/url_changed。
+            network_idle, url_changed = await self._capture_environment_feedback(page, previous_url=previous_url)
 
             page_info = PageInfo(
                 url=page.url,
@@ -546,7 +486,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 status=response.status if response is not None else 200,
                 action=action,
                 actionable_elements=actionable_elements,
-                environment=env_status,
+                network_idle=network_idle,
+                url_changed=url_changed,
                 diagnostics={
                     "console_errors": list(self._recent_console_errors[-10:]),
                     "request_failures": list(self._recent_request_failures[-10:]),
@@ -569,8 +510,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             logger.exception("Failed to capture page info for %s", url)
             return self._build_error_page_info(url, str(exc), action="capture")
 
-    async def extract_ui(self, page: Page, *, limit: int = 12):
-        """Extract navigation-oriented actionable UI elements."""
+    async def _extract_ui_from_page(self, page: Page, *, limit: int = 12) -> dict[str, Any]:
+        """Extract navigation-oriented actionable UI elements from a concrete page."""
         return await page.evaluate(""" ({ limit }) => {
 
             function getText(el) {
@@ -817,14 +758,10 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             metadata={"error": error, **metadata},
         )
 
-    async def _capture_environment_feedback(self, page: Page, *, action: str | None, previous_url: str | None) -> dict[str, Any]:
+    async def _capture_environment_feedback(self, page: Page, *, previous_url: str | None) -> tuple[bool, bool]:
         # 统一动作反馈结构：供 middleware 直接透出给 LLM。
         network_idle = await self._wait_for_network_idle(page, timeout_ms=DEFAULT_NETWORK_IDLE_TIMEOUT_MS)
-        return {
-            "action": action or "unknown",
-            "network_idle": network_idle,
-            "url_changed": bool(previous_url) and previous_url != page.url,
-        }
+        return network_idle, bool(previous_url) and previous_url != page.url
 
     def _attach_page_audit_hooks(self, page: Page) -> None:
         """Attach console/network listeners once per page for异常审计."""

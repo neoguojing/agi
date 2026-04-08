@@ -151,14 +151,15 @@ Input: direction (up/down), distance (pixels).
 Returns: unified action feedback (URL/title/network-idle/screenshot/actionable elements).
 """
 
-BROWSER_ENV_TOOL_DESCRIPTION = """
-Fetches closed-loop environment status after interactions.
-Returns: current URL/title, network idle state, recent console/network failures.
-"""
-
 BROWSER_PROBE_TOOL_DESCRIPTION = """
 Checks a runtime element property/attribute for decision making.
 Input: selector + property_name (e.g., disabled, aria-busy).
+"""
+
+BROWSER_EXTRACT_UI_TOOL_DESCRIPTION = """
+Extracts a compact actionable UI structure (AOM-style) from current page.
+Input: limit of returned elements.
+Returns: title/url + actionable elements list for planning click/fill.
 """
 
 
@@ -211,10 +212,10 @@ class BrowserMiddleware(AgentMiddleware):
             self._create_fill_tool(),
             self._create_scroll_tool(),
             self._create_extract_tool(),
+            self._create_extract_ui_tool(),
             self._create_screenshot_tool(),
             self._create_find_tool(),
             self._create_probe_tool(),
-            self._create_environment_tool(),
             self._create_status_tool(),
         ]
 
@@ -381,6 +382,34 @@ class BrowserMiddleware(AgentMiddleware):
             coroutine=async_screenshot,
         )
 
+    def _create_extract_ui_tool(self) -> BaseTool:
+        async def async_extract_ui(
+            runtime: ToolRuntime[None, MiddlewareBrowserState],
+            limit: Annotated[int, "Maximum number of actionable elements to return."] = 12,
+        ) -> Command:
+            user_id = self._resolve_user_id(runtime)
+            ui_payload = await self._session_manager.extract_ui(user_id, max(1, min(int(limit or 12), 50)))
+            artifact = await self._artifact_with_state(
+                {
+                    "status": "success",
+                    "metadata": {"ui": ui_payload},
+                    "content_preview": f"Extracted {len(ui_payload.get('elements', [])) if isinstance(ui_payload, dict) else 0} actionable UI element(s).",
+                },
+                user_id,
+            )
+            return self._command_for_result(
+                "browser_extract_ui",
+                runtime.tool_call_id,
+                artifact,
+                session_state=self._extract_state_from_artifact(artifact),
+            )
+
+        return StructuredTool.from_function(
+            name="browser_extract_ui",
+            description=BROWSER_EXTRACT_UI_TOOL_DESCRIPTION,
+            coroutine=async_extract_ui,
+        )
+
     def _create_find_tool(self) -> BaseTool:
         async def async_find(
             selector: Annotated[str, "CSS selector to query on the current page."],
@@ -468,37 +497,10 @@ class BrowserMiddleware(AgentMiddleware):
             coroutine=async_probe,
         )
 
-    def _create_environment_tool(self) -> BaseTool:
-        # 环境校验原子：提供动作后的 URL/title/network idle 闭环确认。
-        async def async_environment(runtime: ToolRuntime[None, MiddlewareBrowserState]) -> Command:
-            user_id = self._resolve_user_id(runtime)
-            runtime_context = await self._session_manager.get_runtime_context(user_id, include_environment=True)
-            env = runtime_context.get("environment", {})
-            artifact = await self._artifact_with_state(
-                {
-                    "status": "success",
-                    "metadata": {"environment": env},
-                    "content_preview": f"url={env.get('url')} network_idle={env.get('network_idle')}",
-                },
-                user_id,
-            )
-            return self._command_for_result(
-                "browser_environment",
-                runtime.tool_call_id,
-                artifact,
-                session_state=self._extract_state_from_artifact(artifact),
-            )
-
-        return StructuredTool.from_function(
-            name="browser_environment",
-            description=BROWSER_ENV_TOOL_DESCRIPTION,
-            coroutine=async_environment,
-        )
-
     async def _tool_extract(self, runtime: ToolRuntime[None, MiddlewareBrowserState]) -> dict[str, Any]:
         """Extract page content from the last successfully loaded page, prioritizing OCR."""
         user_id = self._resolve_user_id(runtime)
-        runtime_context = await self._session_manager.get_runtime_context(user_id, include_environment=False)
+        runtime_context = await self._session_manager.get_runtime_context(user_id)
         last_result = runtime_context.get("last_result")
         if not last_result:
             return await self._artifact_with_state(
@@ -562,7 +564,7 @@ class BrowserMiddleware(AgentMiddleware):
         
         # 使用 session manager 的统一 API
         matches = await self._session_manager.find_elements(user_id, selector)
-        runtime_context = await self._session_manager.get_runtime_context(user_id, include_environment=False)
+        runtime_context = await self._session_manager.get_runtime_context(user_id)
         state = runtime_context.get("state")
         last_result = runtime_context.get("last_result")
         
@@ -664,7 +666,7 @@ class BrowserMiddleware(AgentMiddleware):
             )
 
         # image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-        runtime_context = await self._session_manager.get_runtime_context(user_id, include_environment=False)
+        runtime_context = await self._session_manager.get_runtime_context(user_id)
         last_result = runtime_context.get("last_result")
         current_url = last_result.url if last_result else ""
         text = f"Screenshot captured for {current_url}" if current_url else "Screenshot captured"
@@ -784,7 +786,8 @@ class BrowserMiddleware(AgentMiddleware):
             "status": result.status,
             "action": result.action,
             "actionable_elements": list(result.actionable_elements),
-            "environment": dict(result.environment),
+            "network_idle": result.network_idle,
+            "url_changed": result.url_changed,
             "diagnostics": dict(result.diagnostics),
             "metadata": dict(result.metadata),
         }
@@ -882,7 +885,7 @@ class BrowserMiddleware(AgentMiddleware):
         """Single source of truth for middleware/browser state normalization."""
         if not user_id:
             return None
-        runtime_context = await self._session_manager.get_runtime_context(user_id, include_environment=False)
+        runtime_context = await self._session_manager.get_runtime_context(user_id)
         state = runtime_context.get("state")
         if not state:
             return None
@@ -1004,21 +1007,20 @@ class BrowserMiddleware(AgentMiddleware):
             elif tool_name in {"browser_navigate", "browser_click", "browser_fill", "browser_scroll"}:
                 # 非 navigate 动作也回传可交互元素，减少模型盲点。
                 lines.extend(self._format_actionable_elements(artifact.get("current_page")))
-                env = artifact.get("current_page", {}).get("environment") if isinstance(artifact.get("current_page"), dict) else None
-                if isinstance(env, dict):
-                    # 显式透出网络空闲/URL变化，避免重复点击未加载完成的元素。
-                    lines.append(f"network_idle: {env.get('network_idle')}")
-                    lines.append(f"url_changed: {env.get('url_changed')}")
+                current_page = artifact.get("current_page", {}) if isinstance(artifact.get("current_page"), dict) else {}
+                # 显式透出网络空闲/URL变化，避免重复点击未加载完成的元素。
+                lines.append(f"network_idle: {current_page.get('network_idle')}")
+                lines.append(f"url_changed: {current_page.get('url_changed')}")
             elif tool_name == "browser_extract":
                 lines.append(f"is_truncated: {artifact.get('is_truncated', False)}")
                 lines.append(f"evicted: {bool(metadata.get('evicted'))}")
             elif tool_name == "browser_screenshot" and metadata.get("screenshot_path"):
                 lines.append(f"metadata_screenshot_path: {metadata['screenshot_path']}")
-            elif tool_name == "browser_environment":
-                env = metadata.get("environment")
-                if isinstance(env, dict):
-                    lines.append(f"environment: {env}")
-
+            elif tool_name == "browser_extract_ui":
+                ui = metadata.get("ui")
+                if isinstance(ui, dict):
+                    elements = ui.get("elements")
+                    lines.append(f"ui_elements_count: {len(elements) if isinstance(elements, list) else 0}")
         if compact_current_page:
             lines.append(f"current_page: {compact_current_page}")
         if compact_previous_page:

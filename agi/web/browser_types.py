@@ -88,7 +88,8 @@ class PageInfo:
     status: int | None = None
     action: str | None = None
     actionable_elements: list[dict[str, Any]] = field(default_factory=list)
-    environment: dict[str, Any] = field(default_factory=dict)
+    network_idle: bool | None = None
+    url_changed: bool | None = None
     diagnostics: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -135,7 +136,8 @@ def _normalize_page_snapshot(page: Any) -> dict[str, Any]:
             "status": page.status,
             "action": page.action,
             "actionable_elements": list(page.actionable_elements),
-            "environment": dict(page.environment),
+            "network_idle": page.network_idle,
+            "url_changed": page.url_changed,
             "diagnostics": dict(page.diagnostics),
             "metadata": dict(page.metadata),
         }
@@ -149,7 +151,8 @@ def _normalize_page_snapshot(page: Any) -> dict[str, Any]:
             "status": None,
             "action": None,
             "actionable_elements": [],
-            "environment": {},
+            "network_idle": None,
+            "url_changed": None,
             "diagnostics": {},
             "metadata": {},
         }
@@ -162,7 +165,8 @@ def _normalize_page_snapshot(page: Any) -> dict[str, Any]:
         "status": page.get("status"),
         "action": page.get("action"),
         "actionable_elements": list(page.get("actionable_elements", [])) if isinstance(page.get("actionable_elements"), list) else [],
-        "environment": dict(page.get("environment", {})) if isinstance(page.get("environment"), dict) else {},
+        "network_idle": page.get("network_idle"),
+        "url_changed": page.get("url_changed"),
         "diagnostics": dict(page.get("diagnostics", {})) if isinstance(page.get("diagnostics"), dict) else {},
         "metadata": dict(page.get("metadata", {})) if isinstance(page.get("metadata"), dict) else {},
     }
