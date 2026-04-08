@@ -351,6 +351,7 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_scroll_tool(self) -> BaseTool:
+        # 视口操纵原子：用于触发懒加载并暴露屏外元素。
         async def async_scroll(
             direction: Annotated[str, "Scroll direction: up/down."],
             distance: Annotated[int, "Scroll distance in px."],
@@ -438,6 +439,7 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_probe_tool(self) -> BaseTool:
+        # 属性探测原子：在 click 前确认按钮是否 disabled/隐藏/忙碌。
         async def async_probe(
             selector: Annotated[str, "CSS selector."],
             property_name: Annotated[str, "DOM property/attribute name to inspect."],
@@ -467,6 +469,7 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_environment_tool(self) -> BaseTool:
+        # 环境校验原子：提供动作后的 URL/title/network idle 闭环确认。
         async def async_environment(runtime: ToolRuntime[None, MiddlewareBrowserState]) -> Command:
             user_id = self._resolve_user_id(runtime)
             env = await self._session_manager.get_environment_status(user_id)
@@ -727,6 +730,7 @@ class BrowserMiddleware(AgentMiddleware):
                     raise RuntimeError(str(result.metadata["error"]))
 
                 canonical_state = await self._get_canonical_session_state(user_id)
+                # 把实时会话快照塞回每次动作结果，确保“动作-反馈一体化”。
                 result.metadata = {
                     **result.metadata,
                     "browser_session_state": canonical_state or {"browser": {"is_open": False, "is_closed": True}, "current_page": {}, "previous_page": None},
@@ -991,9 +995,11 @@ class BrowserMiddleware(AgentMiddleware):
             if tool_name == "browser_find":
                 lines.append(f"matches_count: {metadata.get('count', 0)}")
             elif tool_name in {"browser_navigate", "browser_click", "browser_fill", "browser_scroll"}:
+                # 非 navigate 动作也回传可交互元素，减少模型盲点。
                 lines.extend(self._format_actionable_elements(metadata))
                 env = metadata.get("environment")
                 if isinstance(env, dict):
+                    # 显式透出网络空闲/URL变化，避免重复点击未加载完成的元素。
                     lines.append(f"network_idle: {env.get('network_idle')}")
                     lines.append(f"url_changed: {env.get('url_changed')}")
                     lines.append(f"current_url: {env.get('current_url')}")

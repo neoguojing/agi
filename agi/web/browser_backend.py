@@ -286,6 +286,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
     async def scroll(self, direction: str = "down", distance: int = 800) -> PageInfo:
         """Scroll viewport to reveal off-screen content and trigger lazy-loading."""
+        # 统一滚动参数：仅接受方向+距离，避免上层传坐标导致跨页面不稳定。
         normalized_direction = direction.lower().strip()
         signed_distance = abs(int(distance or 800))
         if normalized_direction in {"up", "backward"}:
@@ -405,6 +406,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
     async def inspect_element_property(self, selector: str, property_name: str) -> Dict[str, Any]:
         """Inspect element property/attribute for decision support."""
+        # 属性探测原子：用于在动作前判断可交互性（如 disabled/aria-busy）。
         page = await self.ensure_page()
         element = await page.query_selector(selector)
         if element is None:
@@ -420,6 +422,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
     async def get_environment_status(self) -> Dict[str, Any]:
         """Get URL/title and network-idle validation for closed-loop checks."""
+        # 环境校验原子：显式返回 network_idle，避免“点击成功=页面已稳定”的误判。
         page = await self.ensure_page()
         url_before = page.url
         network_idle = await self._wait_for_network_idle(page, timeout_ms=DEFAULT_NETWORK_IDLE_TIMEOUT_MS)
@@ -515,6 +518,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
     ) -> PageInfo:
         """Capture normalized page metadata after an action completes."""
         try:
+            # 语义感知：输出精简后的可操作元素，而不是完整 DOM。
             html_repr = await self.extract_ui(page, limit=8)
             actionable_elements = self._normalize_actionable_elements(
                 html_repr.get("elements", []) if isinstance(html_repr, dict) else []
@@ -527,8 +531,9 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             text_is_empty = len(normalized_text) == 0
             html_is_empty = len(normalized_html.strip()) == 0
 
-            # 仅在需要内容时才进行截图和 OCR
+            # 视觉捕获：动作结束后优先记录截图路径，供多模态对齐/回放。
             screenshot_path = str(await self._take_screenshot(page, prefix="page", full_page=True)) if capture_content else None
+            # 闭环反馈：每次动作后都附带 URL/title/network_idle。
             env_status = await self._capture_environment_feedback(page, action=action, screenshot_path=screenshot_path)
 
             page_info = PageInfo(
@@ -777,6 +782,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         await page.wait_for_timeout(delay)
 
     async def _wait_for_network_idle(self, page: Page, *, timeout_ms: int) -> bool:
+        # click/fill 等动作完成后必须等待“网络空闲”确认，而不是立即判定结束。
         try:
             await page.wait_for_load_state("networkidle", timeout=timeout_ms)
             return True
@@ -810,6 +816,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         )
 
     async def _capture_environment_feedback(self, page: Page, *, action: str | None, screenshot_path: str | None) -> dict[str, Any]:
+        # 统一动作反馈结构：供 middleware 直接透出给 LLM。
         network_idle = await self._wait_for_network_idle(page, timeout_ms=DEFAULT_NETWORK_IDLE_TIMEOUT_MS)
         return {
             "action": action or "unknown",
@@ -822,6 +829,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
     def _attach_page_audit_hooks(self, page: Page) -> None:
         """Attach console/network listeners once per page for异常审计."""
+        # 异常审计为“被动监控”，在动作无响应时给 LLM 提供排障线索。
         if getattr(page, "__agi_audit_hooked__", False):
             return
 
