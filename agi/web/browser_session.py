@@ -46,17 +46,20 @@ class BrowserSession:
         """
         await self.backend.close()
 
-    async def get_last_result(self) -> PageInfo | None:
-        """线程安全读取最近一次页面结果（返回副本，避免外部误改）。"""
+    async def get_runtime_context(self) -> dict[str, Any]:
+        """线程安全读取会话核心上下文（state + last_result）。"""
         async with self._lock:
             self.last_active_at = time.time()
-            return deepcopy(self.last_result) if self.last_result is not None else None
-
-    async def get_history(self) -> list[dict[str, Any]]:
-        """线程安全读取 backend 历史记录。"""
-        async with self._lock:
-            self.last_active_at = time.time()
-            return self.backend.get_history()
+            state_snapshot = self.backend.get_state_snapshot(
+                user_id=self.user_id,
+                last_result=self.last_result,
+                previous_result=self.previous_result,
+            )
+            context: dict[str, Any] = {
+                "state": state_snapshot,
+                "last_result": deepcopy(self.last_result) if self.last_result is not None else None,
+            }
+            return context
 
     async def apply_ocr_result(
         self,

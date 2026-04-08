@@ -4,7 +4,6 @@ from typing import Dict, Callable, Optional, Any
 
 from .browser_protocal import AbstractBrowserBackend
 from .browser_session import BrowserSession
-from .browser_types import PageInfo
 
 
 class BrowserSessionManager:
@@ -83,43 +82,34 @@ class BrowserSessionManager:
         session = await self.get_session(user_id)
         return await session.run(session.backend.click, selector)
 
-    async def click_by_text(self, user_id: str, text: str):
-        session = await self.get_session(user_id)
-        return await session.run(session.backend.click_by_text, text)
-
     async def fill(self, user_id: str, selector: str, value: str):
         session = await self.get_session(user_id)
         return await session.run(session.backend.fill, selector, value)
 
-    async def fill_human_like(self, user_id: str, selector: str, value: str):
+    async def scroll(self, user_id: str, direction: str = "down", distance: int = 800):
         session = await self.get_session(user_id)
-        return await session.run(session.backend.fill_human_like, selector, value)
+        return await session.run(session.backend.scroll, direction, distance)
 
     async def find_elements(self, user_id: str, selector: str):
         session = await self.get_session(user_id)
         return await session.run(session.backend.find_elements, selector)
 
+    async def extract_ui(self, user_id: str, limit: int = 12):
+        session = await self.get_session(user_id)
+        return await session.run(session.backend.extract_ui, limit)
+
+    async def inspect_element_property(self, user_id: str, selector: str, property_name: str):
+        session = await self.get_session(user_id)
+        return await session.run(session.backend.inspect_element_property, selector, property_name)
+
     async def screenshot(self, user_id: str):
         session = await self.get_session(user_id)
         return await session.run(session.backend.get_screenshot)
 
-    async def get_state(self, user_id: str):
+    async def get_runtime_context(self, user_id: str) -> dict[str, Any]:
+        """统一读取状态与最近结果，避免中间件多次重复调用。"""
         session = await self.get_session(user_id)
-        return session.backend.get_state_snapshot(
-            user_id=user_id,
-            last_result=session.last_result,
-            previous_result=session.previous_result,
-        )
-
-    async def get_last_result(self, user_id: str) -> PageInfo | None:
-        """获取该用户最近一次页面结果。"""
-        session = await self.get_session(user_id)
-        return await session.get_last_result()
-
-    async def get_history(self, user_id: str) -> list[dict[str, Any]]:
-        """获取该用户浏览动作历史。"""
-        session = await self.get_session(user_id)
-        return await session.get_history()
+        return await session.get_runtime_context()
 
     async def apply_ocr_result(
         self,

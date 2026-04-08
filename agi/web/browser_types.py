@@ -23,6 +23,7 @@ DEFAULT_SMART_WAIT_TIMEOUT_MS = 5_000
 DEFAULT_CLICK_TIMEOUT_MS = 5_000
 DEFAULT_SCROLL_TIMEOUT_MS = 2_000
 DEFAULT_CAPTURE_DELAY_MS = 300
+DEFAULT_NETWORK_IDLE_TIMEOUT_MS = 5_000
 MAX_FIND_RESULTS = 5
 STATE_SNAPSHOT_FILENAME = "browser_session_state.json"
 PLAYWRIGHT_STORAGE_STATE_FILENAME = "playwright_storage_state.json"
@@ -84,6 +85,12 @@ class PageInfo:
     html: str | None
     text: str | None
     screenshot_path: str | None
+    status: int | None = None
+    action: str | None = None
+    actionable_elements: list[dict[str, Any]] = field(default_factory=list)
+    network_idle: bool | None = None
+    url_changed: bool | None = None
+    diagnostics: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
 @dataclass(slots=True)
@@ -119,6 +126,12 @@ def _normalize_page_snapshot(page: Any) -> dict[str, Any]:
             "html": page.html,
             "text": page.text,
             "screenshot_path": page.screenshot_path,
+            "status": page.status,
+            "action": page.action,
+            "actionable_elements": list(page.actionable_elements),
+            "network_idle": page.network_idle,
+            "url_changed": page.url_changed,
+            "diagnostics": dict(page.diagnostics),
             "metadata": dict(page.metadata),
         }
     if not isinstance(page, dict):
@@ -128,6 +141,12 @@ def _normalize_page_snapshot(page: Any) -> dict[str, Any]:
             "html": None,
             "text": None,
             "screenshot_path": None,
+            "status": None,
+            "action": None,
+            "actionable_elements": [],
+            "network_idle": None,
+            "url_changed": None,
+            "diagnostics": {},
             "metadata": {},
         }
     return {
@@ -136,6 +155,12 @@ def _normalize_page_snapshot(page: Any) -> dict[str, Any]:
         "html": page.get("html"),
         "text": page.get("text"),
         "screenshot_path": page.get("screenshot_path"),
+        "status": page.get("status"),
+        "action": page.get("action"),
+        "actionable_elements": list(page.get("actionable_elements", [])) if isinstance(page.get("actionable_elements"), list) else [],
+        "network_idle": page.get("network_idle"),
+        "url_changed": page.get("url_changed"),
+        "diagnostics": dict(page.get("diagnostics", {})) if isinstance(page.get("diagnostics"), dict) else {},
         "metadata": dict(page.get("metadata", {})) if isinstance(page.get("metadata"), dict) else {},
     }
 
