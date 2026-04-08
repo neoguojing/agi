@@ -6,6 +6,7 @@ import aiosqlite
 import asyncio
 from typing import List, Optional, Dict, Any, AsyncGenerator, Union
 from contextlib import asynccontextmanager
+from langchain.tools import ToolRuntime
 
 from agi.rag.retriever import MultiCollectionRAGManager
 from agi.agent.models import ModelProvider
@@ -50,20 +51,22 @@ class DeepAgentBuilder:
         self.system_prompt = prompt
         return self
 
-    def make_backend(self, runtime):
+    def make_backend(self, runtime:ToolRuntime):
         root = Path(CACHE_DIR).resolve()
-
+        user_id = runtime.context.user_id
+        session_id = runtime.context.conversation_id
+        
         return CompositeBackend(
-            default=FilesystemBackend(root),
+            default=FilesystemBackend(root / user_id,virtual_mode=True),
             routes={
                 # 用户画像：偏好、历史行为、个性化配置
-                f"/profiles/": FilesystemBackend(root),
+                "/profiles/": FilesystemBackend(root / user_id,virtual_mode=True),
                 # 会话：跨线程持久对话历史
-                f"/sessions/": FilesystemBackend(root),
+                "/sessions/": FilesystemBackend(root / user_id / session_id,virtual_mode=True),
                 # 实体：产品、联系人、订单等结构化数据
-                f"/entities/": FilesystemBackend(root),
+                "/entities/": FilesystemBackend(root / user_id / session_id,virtual_mode=True),
                 # 全局：系统配置、模板
-                f"/shared/": FilesystemBackend(root),
+                "/shared/": FilesystemBackend(root / user_id,virtual_mode=True),
             },
         )
 
