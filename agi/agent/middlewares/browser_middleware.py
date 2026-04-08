@@ -156,6 +156,12 @@ Checks a runtime element property/attribute for decision making.
 Input: selector + property_name (e.g., disabled, aria-busy).
 """
 
+BROWSER_EXTRACT_UI_TOOL_DESCRIPTION = """
+Extracts a compact actionable UI structure (AOM-style) from current page.
+Input: limit of returned elements.
+Returns: title/url + actionable elements list for planning click/fill.
+"""
+
 
 class MiddlewareBrowserState(AgentState):
     """Single middleware state schema.
@@ -206,6 +212,7 @@ class BrowserMiddleware(AgentMiddleware):
             self._create_fill_tool(),
             self._create_scroll_tool(),
             self._create_extract_tool(),
+            self._create_extract_ui_tool(),
             self._create_screenshot_tool(),
             self._create_find_tool(),
             self._create_probe_tool(),
@@ -373,6 +380,34 @@ class BrowserMiddleware(AgentMiddleware):
             name="browser_screenshot",
             description=BROWSER_SCREENSHOT_TOOL_DESCRIPTION,
             coroutine=async_screenshot,
+        )
+
+    def _create_extract_ui_tool(self) -> BaseTool:
+        async def async_extract_ui(
+            runtime: ToolRuntime[None, MiddlewareBrowserState],
+            limit: Annotated[int, "Maximum number of actionable elements to return."] = 12,
+        ) -> Command:
+            user_id = self._resolve_user_id(runtime)
+            ui_payload = await self._session_manager.extract_ui(user_id, max(1, min(int(limit or 12), 50)))
+            artifact = await self._artifact_with_state(
+                {
+                    "status": "success",
+                    "metadata": {"ui": ui_payload},
+                    "content_preview": f"Extracted {len(ui_payload.get('elements', [])) if isinstance(ui_payload, dict) else 0} actionable UI element(s).",
+                },
+                user_id,
+            )
+            return self._command_for_result(
+                "browser_extract_ui",
+                runtime.tool_call_id,
+                artifact,
+                session_state=self._extract_state_from_artifact(artifact),
+            )
+
+        return StructuredTool.from_function(
+            name="browser_extract_ui",
+            description=BROWSER_EXTRACT_UI_TOOL_DESCRIPTION,
+            coroutine=async_extract_ui,
         )
 
     def _create_find_tool(self) -> BaseTool:
@@ -981,6 +1016,11 @@ class BrowserMiddleware(AgentMiddleware):
                 lines.append(f"evicted: {bool(metadata.get('evicted'))}")
             elif tool_name == "browser_screenshot" and metadata.get("screenshot_path"):
                 lines.append(f"metadata_screenshot_path: {metadata['screenshot_path']}")
+            elif tool_name == "browser_extract_ui":
+                ui = metadata.get("ui")
+                if isinstance(ui, dict):
+                    elements = ui.get("elements")
+                    lines.append(f"ui_elements_count: {len(elements) if isinstance(elements, list) else 0}")
         if compact_current_page:
             lines.append(f"current_page: {compact_current_page}")
         if compact_previous_page:

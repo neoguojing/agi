@@ -94,6 +94,10 @@ class BrowserSessionManager:
         session = await self.get_session(user_id)
         return await session.run(session.backend.find_elements, selector)
 
+    async def extract_ui(self, user_id: str, limit: int = 12):
+        session = await self.get_session(user_id)
+        return await session.run(session.backend.extract_ui, limit)
+
     async def inspect_element_property(self, user_id: str, selector: str, property_name: str):
         session = await self.get_session(user_id)
         return await session.run(session.backend.inspect_element_property, selector, property_name)

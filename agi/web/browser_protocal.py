@@ -53,6 +53,11 @@ class AbstractBrowserBackend(ABC):
 
     # --- 查询与获取 ---
     @abstractmethod
+    async def extract_ui(self, limit: int = 12) -> Dict[str, Any]:
+        """抽取当前页面精简可交互结构（AOM风格）。"""
+        pass
+
+    @abstractmethod
     async def find_elements(self, selector: str) -> List[QueryMatch]:
         """查找匹配给定 CSS 选择器的元素列表。"""
         pass

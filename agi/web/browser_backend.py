@@ -345,6 +345,11 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             logger.exception("find_elements failed for selector=%s", selector)
             return []
 
+    async def extract_ui(self, limit: int = 12) -> Dict[str, Any]:
+        """Public UI-structure extractor for LLM planning."""
+        page = await self.ensure_page()
+        return await self._extract_ui_from_page(page, limit=limit)
+
     async def get_screenshot(self, *, full_page: bool = True) -> str:
         """Capture a screenshot for OCR/inspection and return the absolute file path."""
         page = await self.ensure_page()
@@ -453,7 +458,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         """Capture normalized page metadata after an action completes."""
         try:
             # 语义感知：输出精简后的可操作元素，而不是完整 DOM。
-            html_repr = await self.extract_ui(page, limit=8)
+            html_repr = await self._extract_ui_from_page(page, limit=8)
             actionable_elements = self._normalize_actionable_elements(
                 html_repr.get("elements", []) if isinstance(html_repr, dict) else []
             )
@@ -503,8 +508,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             logger.exception("Failed to capture page info for %s", url)
             return self._build_error_page_info(url, str(exc), action="capture")
 
-    async def extract_ui(self, page: Page, *, limit: int = 12):
-        """Extract navigation-oriented actionable UI elements."""
+    async def _extract_ui_from_page(self, page: Page, *, limit: int = 12) -> dict[str, Any]:
+        """Extract navigation-oriented actionable UI elements from a concrete page."""
         return await page.evaluate(""" ({ limit }) => {
 
             function getText(el) {
