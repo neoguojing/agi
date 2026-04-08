@@ -90,6 +90,10 @@ class BrowserSessionManager:
         session = await self.get_session(user_id)
         return await session.run(session.backend.scroll, direction, distance)
 
+    async def scroll(self, user_id: str, direction: str = "down", distance: int = 800):
+        session = await self.get_session(user_id)
+        return await session.run(session.backend.scroll, direction, distance)
+
     async def find_elements(self, user_id: str, selector: str):
         session = await self.get_session(user_id)
         return await session.run(session.backend.find_elements, selector)
