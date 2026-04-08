@@ -116,16 +116,16 @@ Guidelines:
 """
 
 BROWSER_FIND_TOOL_DESCRIPTION = """
-Finds elements on the current page matching a CSS selector.
+Finds elements by a known CSS selector (precision lookup).
 
 Key Behavior:
 - Returns text and attributes of up to 10 matches.
 
 Guidelines:
 - Use for:
-  - discovering selectors
-  - verifying element presence
-- Prefer this before click/fill when uncertain.
+  - verifying a selector already obtained from browser_extract_ui
+  - checking attribute values before click/fill
+- If selector is unknown, use browser_extract_ui first.
 """
 
 BROWSER_STATUS_TOOL_DESCRIPTION = """
@@ -159,7 +159,7 @@ Input: selector + property_name (e.g., disabled, aria-busy).
 BROWSER_EXTRACT_UI_TOOL_DESCRIPTION = """
 Extracts a compact actionable UI structure (AOM-style) from current page.
 Input: limit of returned elements.
-Returns: title/url + actionable elements list for planning click/fill.
+Returns: title/url + ranked actionable elements (id/selector/text/role/disabled) for planning click/fill.
 """
 
 
@@ -1077,6 +1077,7 @@ class BrowserMiddleware(AgentMiddleware):
             text = str(item.get("text") or item.get("c") or "").strip()
             kind = str(item.get("type") or item.get("t") or "").strip()
             placeholder = str(item.get("placeholder", "")).strip()
+            disabled = bool(item.get("disabled", False))
             if not selector and not text and not kind and not placeholder:
                 continue
             valid_items.append(
@@ -1085,6 +1086,7 @@ class BrowserMiddleware(AgentMiddleware):
                     "selector": selector,
                     "text": text,
                     "placeholder": placeholder,
+                    "disabled": disabled,
                 }
             )
         if not valid_items:
@@ -1095,12 +1097,13 @@ class BrowserMiddleware(AgentMiddleware):
             if not isinstance(item, dict):
                 continue
             lines.append(
-                "actionable_{idx}: type={type} selector={selector} text={text} placeholder={placeholder}".format(
+                "actionable_{idx}: type={type} selector={selector} text={text} placeholder={placeholder} disabled={disabled}".format(
                     idx=idx,
                     type=item.get("type", "-"),
                     selector=item.get("selector", "-"),
                     text=item.get("text", "-"),
                     placeholder=item.get("placeholder", "-"),
+                    disabled=item.get("disabled", False),
                 )
             )
         if len(valid_items) > limit:

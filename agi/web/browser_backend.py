@@ -563,6 +563,14 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 return "";
             }
 
+            function isDisabled(el) {
+                return Boolean(
+                    el.disabled ||
+                    el.getAttribute("aria-disabled") === "true" ||
+                    el.getAttribute("aria-busy") === "true"
+                );
+            }
+
             function isSearch(el) {
                 return (
                     el.tagName === "INPUT" &&
@@ -634,9 +642,12 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     type: el.tagName.toLowerCase(),
                     role: getRole(el),
                     text: getText(el).slice(0, 60),
+                    ariaLabel: (el.getAttribute("aria-label") || "").slice(0, 60),
                     placeholder: (el.placeholder || "").slice(0, 40),
                     selector: (getSelector(el) || "").slice(0, 80),
+                    inputType: (el.type || "").slice(0, 20),
                     href: el.href || "",
+                    disabled: isDisabled(el),
                     y: rect.top,
                     area: rect.width * rect.height
                 };
@@ -667,8 +678,11 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     type: el.type,
                     role: el.role,
                     text: el.text,
+                    aria_label: el.ariaLabel,
                     placeholder: el.placeholder,
                     selector: el.selector,
+                    input_type: el.inputType,
+                    disabled: el.disabled,
                     href: el.href,
                     action: inferAction(el),
                     y: el.y
@@ -698,14 +712,20 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             text = str(item.get("text") or item.get("c") or "").strip()
             kind = str(item.get("type") or item.get("t") or "").strip()
             placeholder = str(item.get("placeholder") or "").strip()
+            aria_label = str(item.get("aria_label") or item.get("ariaLabel") or "").strip()
+            input_type = str(item.get("input_type") or item.get("inputType") or "").strip()
+            disabled = bool(item.get("disabled", False))
             if not any((selector, text, kind, placeholder)):
                 continue
             normalized.append(
                 {
                     "type": kind,
                     "text": text,
+                    "aria_label": aria_label,
                     "placeholder": placeholder,
                     "selector": selector,
+                    "input_type": input_type,
+                    "disabled": disabled,
                     "action": str(item.get("action") or ""),
                 }
             )
