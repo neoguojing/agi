@@ -51,11 +51,6 @@ class AbstractBrowserBackend(ABC):
         """探测元素实时交互属性（如 disabled / aria-busy）。"""
         pass
 
-    @abstractmethod
-    async def get_environment_status(self) -> Dict[str, Any]:
-        """返回 URL / title / network idle 等环境校验结果。"""
-        pass
-
     # --- 查询与获取 ---
     @abstractmethod
     async def find_elements(self, selector: str) -> List[QueryMatch]:

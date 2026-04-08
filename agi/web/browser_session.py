@@ -46,8 +46,8 @@ class BrowserSession:
         """
         await self.backend.close()
 
-    async def get_runtime_context(self, *, include_environment: bool = False) -> dict[str, Any]:
-        """线程安全读取会话核心上下文，减少重复 get_state/get_last_result 调用。"""
+    async def get_runtime_context(self) -> dict[str, Any]:
+        """线程安全读取会话核心上下文（state + last_result）。"""
         async with self._lock:
             self.last_active_at = time.time()
             state_snapshot = self.backend.get_state_snapshot(
@@ -59,8 +59,6 @@ class BrowserSession:
                 "state": state_snapshot,
                 "last_result": deepcopy(self.last_result) if self.last_result is not None else None,
             }
-            if include_environment:
-                context["environment"] = await self.backend.get_environment_status()
             return context
 
     async def apply_ocr_result(

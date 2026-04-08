@@ -98,18 +98,14 @@ class BrowserSessionManager:
         session = await self.get_session(user_id)
         return await session.run(session.backend.inspect_element_property, selector, property_name)
 
-    async def get_environment_status(self, user_id: str):
-        context = await self.get_runtime_context(user_id, include_environment=True)
-        return context.get("environment", {})
-
     async def screenshot(self, user_id: str):
         session = await self.get_session(user_id)
         return await session.run(session.backend.get_screenshot)
 
-    async def get_runtime_context(self, user_id: str, *, include_environment: bool = False) -> dict[str, Any]:
-        """统一读取状态/最近结果/环境，避免中间件多次重复调用。"""
+    async def get_runtime_context(self, user_id: str) -> dict[str, Any]:
+        """统一读取状态与最近结果，避免中间件多次重复调用。"""
         session = await self.get_session(user_id)
-        return await session.get_runtime_context(include_environment=include_environment)
+        return await session.get_runtime_context()
 
     async def apply_ocr_result(
         self,

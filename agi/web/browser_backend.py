@@ -372,22 +372,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         )
         return {"ok": True, "selector": selector, "property": property_name, "value": value}
 
-    async def get_environment_status(self) -> Dict[str, Any]:
-        """Get URL/title and network-idle validation for closed-loop checks."""
-        # 环境校验原子：显式返回 network_idle，避免“点击成功=页面已稳定”的误判。
-        page = await self.ensure_page()
-        url_before = page.url
-        network_idle = await self._wait_for_network_idle(page, timeout_ms=DEFAULT_NETWORK_IDLE_TIMEOUT_MS)
-        current_url = page.url
-        return {
-            "url": current_url,
-            "title": await page.title(),
-            "network_idle": network_idle,
-            "url_changed": current_url != url_before,
-            "console_errors": list(self._recent_console_errors[-10:]),
-            "request_failures": list(self._recent_request_failures[-10:]),
-        }
-
     def _page_summary(self, result: PageInfo | None, fallback_state: PageInfo | None = None) -> dict[str, Any]:
         source = result or fallback_state
         if source is None:

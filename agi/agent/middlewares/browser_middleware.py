@@ -151,11 +151,6 @@ Input: direction (up/down), distance (pixels).
 Returns: unified action feedback (URL/title/network-idle/screenshot/actionable elements).
 """
 
-BROWSER_ENV_TOOL_DESCRIPTION = """
-Fetches closed-loop environment status after interactions.
-Returns: current URL/title, network idle state, recent console/network failures.
-"""
-
 BROWSER_PROBE_TOOL_DESCRIPTION = """
 Checks a runtime element property/attribute for decision making.
 Input: selector + property_name (e.g., disabled, aria-busy).
@@ -214,7 +209,6 @@ class BrowserMiddleware(AgentMiddleware):
             self._create_screenshot_tool(),
             self._create_find_tool(),
             self._create_probe_tool(),
-            self._create_environment_tool(),
             self._create_status_tool(),
         ]
 
@@ -468,37 +462,10 @@ class BrowserMiddleware(AgentMiddleware):
             coroutine=async_probe,
         )
 
-    def _create_environment_tool(self) -> BaseTool:
-        # 环境校验原子：提供动作后的 URL/title/network idle 闭环确认。
-        async def async_environment(runtime: ToolRuntime[None, MiddlewareBrowserState]) -> Command:
-            user_id = self._resolve_user_id(runtime)
-            runtime_context = await self._session_manager.get_runtime_context(user_id, include_environment=True)
-            env = runtime_context.get("environment", {})
-            artifact = await self._artifact_with_state(
-                {
-                    "status": "success",
-                    "metadata": {"environment": env},
-                    "content_preview": f"url={env.get('url')} network_idle={env.get('network_idle')}",
-                },
-                user_id,
-            )
-            return self._command_for_result(
-                "browser_environment",
-                runtime.tool_call_id,
-                artifact,
-                session_state=self._extract_state_from_artifact(artifact),
-            )
-
-        return StructuredTool.from_function(
-            name="browser_environment",
-            description=BROWSER_ENV_TOOL_DESCRIPTION,
-            coroutine=async_environment,
-        )
-
     async def _tool_extract(self, runtime: ToolRuntime[None, MiddlewareBrowserState]) -> dict[str, Any]:
         """Extract page content from the last successfully loaded page, prioritizing OCR."""
         user_id = self._resolve_user_id(runtime)
-        runtime_context = await self._session_manager.get_runtime_context(user_id, include_environment=False)
+        runtime_context = await self._session_manager.get_runtime_context(user_id)
         last_result = runtime_context.get("last_result")
         if not last_result:
             return await self._artifact_with_state(
@@ -562,7 +529,7 @@ class BrowserMiddleware(AgentMiddleware):
         
         # 使用 session manager 的统一 API
         matches = await self._session_manager.find_elements(user_id, selector)
-        runtime_context = await self._session_manager.get_runtime_context(user_id, include_environment=False)
+        runtime_context = await self._session_manager.get_runtime_context(user_id)
         state = runtime_context.get("state")
         last_result = runtime_context.get("last_result")
         
@@ -664,7 +631,7 @@ class BrowserMiddleware(AgentMiddleware):
             )
 
         # image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-        runtime_context = await self._session_manager.get_runtime_context(user_id, include_environment=False)
+        runtime_context = await self._session_manager.get_runtime_context(user_id)
         last_result = runtime_context.get("last_result")
         current_url = last_result.url if last_result else ""
         text = f"Screenshot captured for {current_url}" if current_url else "Screenshot captured"
@@ -882,7 +849,7 @@ class BrowserMiddleware(AgentMiddleware):
         """Single source of truth for middleware/browser state normalization."""
         if not user_id:
             return None
-        runtime_context = await self._session_manager.get_runtime_context(user_id, include_environment=False)
+        runtime_context = await self._session_manager.get_runtime_context(user_id)
         state = runtime_context.get("state")
         if not state:
             return None
@@ -1014,11 +981,6 @@ class BrowserMiddleware(AgentMiddleware):
                 lines.append(f"evicted: {bool(metadata.get('evicted'))}")
             elif tool_name == "browser_screenshot" and metadata.get("screenshot_path"):
                 lines.append(f"metadata_screenshot_path: {metadata['screenshot_path']}")
-            elif tool_name == "browser_environment":
-                env = metadata.get("environment")
-                if isinstance(env, dict):
-                    lines.append(f"environment: {env}")
-
         if compact_current_page:
             lines.append(f"current_page: {compact_current_page}")
         if compact_previous_page:
