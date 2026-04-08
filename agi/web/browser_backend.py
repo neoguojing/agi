@@ -408,7 +408,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             "status": source.status,
             "action": source.action,
             "actionable_elements": list(source.actionable_elements),
-            "environment": dict(source.environment),
+            "network_idle": source.network_idle,
+            "url_changed": source.url_changed,
             "diagnostics": dict(source.diagnostics),
             "metadata": compact_metadata,
         }
@@ -472,8 +473,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
             # 视觉捕获：动作结束后优先记录截图路径，供多模态对齐/回放。
             screenshot_path = str(await self._take_screenshot(page, prefix="page", full_page=True)) if capture_content else None
-            # 闭环反馈：每次动作后都附带 URL/title/network_idle。
-            env_status = await self._capture_environment_feedback(page, action=action, previous_url=previous_url)
+            # 闭环反馈：每次动作后都附带 network_idle/url_changed。
+            network_idle, url_changed = await self._capture_environment_feedback(page, previous_url=previous_url)
 
             page_info = PageInfo(
                 url=page.url,
@@ -485,7 +486,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 status=response.status if response is not None else 200,
                 action=action,
                 actionable_elements=actionable_elements,
-                environment=env_status,
+                network_idle=network_idle,
+                url_changed=url_changed,
                 diagnostics={
                     "console_errors": list(self._recent_console_errors[-10:]),
                     "request_failures": list(self._recent_request_failures[-10:]),
@@ -756,14 +758,10 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             metadata={"error": error, **metadata},
         )
 
-    async def _capture_environment_feedback(self, page: Page, *, action: str | None, previous_url: str | None) -> dict[str, Any]:
+    async def _capture_environment_feedback(self, page: Page, *, previous_url: str | None) -> tuple[bool, bool]:
         # 统一动作反馈结构：供 middleware 直接透出给 LLM。
         network_idle = await self._wait_for_network_idle(page, timeout_ms=DEFAULT_NETWORK_IDLE_TIMEOUT_MS)
-        return {
-            "action": action or "unknown",
-            "network_idle": network_idle,
-            "url_changed": bool(previous_url) and previous_url != page.url,
-        }
+        return network_idle, bool(previous_url) and previous_url != page.url
 
     def _attach_page_audit_hooks(self, page: Page) -> None:
         """Attach console/network listeners once per page for异常审计."""

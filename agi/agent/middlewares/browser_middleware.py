@@ -786,7 +786,8 @@ class BrowserMiddleware(AgentMiddleware):
             "status": result.status,
             "action": result.action,
             "actionable_elements": list(result.actionable_elements),
-            "environment": dict(result.environment),
+            "network_idle": result.network_idle,
+            "url_changed": result.url_changed,
             "diagnostics": dict(result.diagnostics),
             "metadata": dict(result.metadata),
         }
@@ -1006,11 +1007,10 @@ class BrowserMiddleware(AgentMiddleware):
             elif tool_name in {"browser_navigate", "browser_click", "browser_fill", "browser_scroll"}:
                 # 非 navigate 动作也回传可交互元素，减少模型盲点。
                 lines.extend(self._format_actionable_elements(artifact.get("current_page")))
-                env = artifact.get("current_page", {}).get("environment") if isinstance(artifact.get("current_page"), dict) else None
-                if isinstance(env, dict):
-                    # 显式透出网络空闲/URL变化，避免重复点击未加载完成的元素。
-                    lines.append(f"network_idle: {env.get('network_idle')}")
-                    lines.append(f"url_changed: {env.get('url_changed')}")
+                current_page = artifact.get("current_page", {}) if isinstance(artifact.get("current_page"), dict) else {}
+                # 显式透出网络空闲/URL变化，避免重复点击未加载完成的元素。
+                lines.append(f"network_idle: {current_page.get('network_idle')}")
+                lines.append(f"url_changed: {current_page.get('url_changed')}")
             elif tool_name == "browser_extract":
                 lines.append(f"is_truncated: {artifact.get('is_truncated', False)}")
                 lines.append(f"evicted: {bool(metadata.get('evicted'))}")
