@@ -56,6 +56,21 @@ class AbstractBrowserBackend(ABC):
         """模拟人类打字速度向输入框填充文本。"""
         pass
 
+    @abstractmethod
+    async def scroll(self, direction: str = "down", distance: int = 800) -> PageInfo:
+        """滚动视口，暴露视口外内容并触发懒加载。"""
+        pass
+
+    @abstractmethod
+    async def inspect_element_property(self, selector: str, property_name: str) -> Dict[str, Any]:
+        """探测元素实时交互属性（如 disabled / aria-busy）。"""
+        pass
+
+    @abstractmethod
+    async def get_environment_status(self) -> Dict[str, Any]:
+        """返回 URL / title / network idle 等环境校验结果。"""
+        pass
+
     # --- 查询与获取 ---
     @abstractmethod
     async def find_elements(self, selector: str) -> List[QueryMatch]:
