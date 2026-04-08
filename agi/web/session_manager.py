@@ -95,9 +95,21 @@ class BrowserSessionManager:
         session = await self.get_session(user_id)
         return await session.run(session.backend.fill_human_like, selector, value)
 
+    async def scroll(self, user_id: str, direction: str = "down", distance: int = 800):
+        session = await self.get_session(user_id)
+        return await session.run(session.backend.scroll, direction, distance)
+
     async def find_elements(self, user_id: str, selector: str):
         session = await self.get_session(user_id)
         return await session.run(session.backend.find_elements, selector)
+
+    async def inspect_element_property(self, user_id: str, selector: str, property_name: str):
+        session = await self.get_session(user_id)
+        return await session.run(session.backend.inspect_element_property, selector, property_name)
+
+    async def get_environment_status(self, user_id: str):
+        session = await self.get_session(user_id)
+        return await session.run(session.backend.get_environment_status)
 
     async def screenshot(self, user_id: str):
         session = await self.get_session(user_id)

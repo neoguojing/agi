@@ -23,6 +23,7 @@ DEFAULT_SMART_WAIT_TIMEOUT_MS = 5_000
 DEFAULT_CLICK_TIMEOUT_MS = 5_000
 DEFAULT_SCROLL_TIMEOUT_MS = 2_000
 DEFAULT_CAPTURE_DELAY_MS = 300
+DEFAULT_NETWORK_IDLE_TIMEOUT_MS = 5_000
 MAX_FIND_RESULTS = 5
 STATE_SNAPSHOT_FILENAME = "browser_session_state.json"
 PLAYWRIGHT_STORAGE_STATE_FILENAME = "playwright_storage_state.json"
@@ -109,6 +110,17 @@ class BrowserSessionSnapshot(TypedDict):
     browser: BrowserRuntimeState
     current_page: dict[str, Any]
     previous_page: NotRequired[dict[str, Any] | None]
+
+
+class ActionFeedback(TypedDict):
+    """统一动作反馈：动作执行后强制回传环境校验 + 视觉 + 语义信息。"""
+    action: str
+    url_changed: bool
+    network_idle: bool
+    current_url: str
+    current_title: str | None
+    screenshot_path: str | None
+    actionable_count: int
 
 
 def _normalize_page_snapshot(page: Any) -> dict[str, Any]:
