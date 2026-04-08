@@ -118,6 +118,13 @@ class BrowserSessionSnapshot(TypedDict):
     previous_page: NotRequired[dict[str, Any] | None]
 
 
+class ActionFeedback(TypedDict):
+    """统一动作反馈：动作执行后强制回传环境校验 + 视觉 + 语义信息。"""
+    action: str
+    url_changed: bool
+    network_idle: bool
+
+
 def _normalize_page_snapshot(page: Any) -> dict[str, Any]:
     if isinstance(page, PageInfo):
         return {
