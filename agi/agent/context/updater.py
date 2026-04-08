@@ -165,53 +165,87 @@ class UnifiedContextUpdater:
 
     async def _update_user_profile(self, runtime, user_id, user_msg, ai_msg):
         try:
-            # 1. 获取现有数据
-            existing = False
+            current_val = UserPersona().model_dump()
+            file_path = f"/profiles/{user_id}/profile.json"
+
+            # 读取现有数据
             if self.backend:
-                await self.backend.aread()
-            existing = await runtime.store.aget(user_id, USER_PROFILE_CONTEXT)
-            current_val = existing.value if existing else UserPersona().model_dump()
-            
-            # 2. LLM 提取补丁
+                existing = await self.backend.aread(file_path)
+                if existing:
+                    current_val = existing
+            else:
+                existing = await runtime.store.aget(user_id, USER_PROFILE_CONTEXT)
+                if existing:
+                    current_val = existing.value
+
+            # LLM 提取补丁
             prompt = PROMPT_USER_PROFILE.format(
                 current_val=current_val, user_msg=user_msg, ai_msg=ai_msg
             )
             patch = await self.user_extractor.ainvoke(prompt)
-            # print(f"User Profile Patch: {patch.model_dump(exclude_none=True)}")
-            # 3. 智能合并并存入 Store
+
+            # 合并
             updated_val = self._smart_merge_user(current_val, patch.model_dump(exclude_none=True))
-            # print(f"Updated User Profile: {updated_val}")
-            await runtime.store.aput(user_id, USER_PROFILE_CONTEXT, updated_val)
+
+            # 写入
+            if self.backend:
+                await self.backend.awrite(file_path, updated_val)
+            else:
+                await runtime.store.aput(user_id, USER_PROFILE_CONTEXT, updated_val)
+
         except Exception as e:
-            traceback.print_stack()
+            traceback.print_exc()
             print(f"User Profile Update Error: {e}")
 
-    async def _update_session_context(self, runtime,user_id, session_id, user_msg):
-        prompt = PROMPT_SESSION_STATE.format(user_msg=user_msg)
+
+    async def _update_session_context(self, runtime, user_id, session_id, user_msg):
         try:
+            file_path = f"/sessions/{user_id}/{session_id}/session.json"
+            prompt = PROMPT_SESSION_STATE.format(user_msg=user_msg)
             update = await self.session_extractor.ainvoke(prompt)
-            # Session 数据通常直接覆盖或存入时序记录
-            await runtime.store.aput(user_id, get_session_context_id(session_id), update.model_dump())
-        except Exception: 
-            pass
+            update_val = update.model_dump()
 
-    async def _update_entities(self, runtime,user_id, session_id, user_msg, ai_msg):
-        prompt = PROMPT_ENTITY_EXTRACTION.format(user_msg=user_msg, ai_msg=ai_msg)
+            if self.backend:
+                await self.backend.awrite(file_path, update_val)
+            else:
+                await runtime.store.aput(user_id, get_session_context_id(session_id), update_val)
+
+        except Exception as e:
+            traceback.print_exc()
+            print(f"Session Update Error: {e}")
+
+
+    async def _update_entities(self, runtime, user_id, session_id, user_msg, ai_msg):
         try:
+            file_path = f"/entities/{user_id}/{session_id}/entities.json"
+            prompt = PROMPT_ENTITY_EXTRACTION.format(user_msg=user_msg, ai_msg=ai_msg)
             new_entities = await self.entity_extractor.ainvoke(prompt)
-            if new_entities.entities:
-                # 获取旧实体列表并合并
-                existing = await runtime.store.aget(user_id,get_session_entity_id(session_id))
-                existing_list = existing.value if existing else []
-                
-                # 简单去重合并 (根据名称)
-                seen_names = {e['name'] for e in existing_list}
-                for ent in new_entities.entities:
-                    if ent.name not in seen_names:
-                        existing_list.append(ent.model_dump())
 
+            if not new_entities.entities:
+                return
+
+            # 读取旧实体
+            if self.backend:
+                existing_list = await self.backend.aread(file_path) or []
+            else:
+                existing = await runtime.store.aget(user_id, get_session_entity_id(session_id))
+                existing_list = existing.value if existing else []
+
+            # 合并去重
+            seen_names = {e['name'] for e in existing_list}
+            for ent in new_entities.entities:
+                if ent.name not in seen_names:
+                    existing_list.append(ent.model_dump())
+
+            # 写入
+            if self.backend:
+                await self.backend.awrite(file_path, existing_list)
+            else:
                 await runtime.store.aput(user_id, get_session_entity_id(session_id), existing_list)
-        except Exception: pass
+
+        except Exception as e:
+            traceback.print_exc()
+            print(f"Entity Update Error: {e}")
 
     def _smart_merge_user(self, old: dict, new: dict) -> dict:
         """保持 UserPersona 逻辑一致"""
