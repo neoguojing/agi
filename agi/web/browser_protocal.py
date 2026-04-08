@@ -37,26 +37,26 @@ class AbstractBrowserBackend(ABC):
         pass
 
     @abstractmethod
-    async def click_by_text(self, text: str) -> PageInfo:
-        """点击包含指定文本的元素。"""
-        pass
-
-    @abstractmethod
     async def fill(self, selector: str, value: str) -> PageInfo:
         """向匹配给定 CSS 选择器的输入框填充文本。"""
         pass
 
     @abstractmethod
-    async def fill_by_label(self, label_text: str, value: str) -> PageInfo:
-        """根据标签文本找到对应的输入框并填充。"""
+    async def scroll(self, direction: str = "down", distance: int = 800) -> PageInfo:
+        """滚动视口，暴露视口外内容并触发懒加载。"""
         pass
 
     @abstractmethod
-    async def fill_human_like(self, selector: str, value: str) -> PageInfo:
-        """模拟人类打字速度向输入框填充文本。"""
+    async def inspect_element_property(self, selector: str, property_name: str) -> Dict[str, Any]:
+        """探测元素实时交互属性（如 disabled / aria-busy）。"""
         pass
 
     # --- 查询与获取 ---
+    @abstractmethod
+    async def extract_ui(self, limit: int = 12) -> Dict[str, Any]:
+        """抽取当前页面精简可交互结构（AOM风格）。"""
+        pass
+
     @abstractmethod
     async def find_elements(self, selector: str) -> List[QueryMatch]:
         """查找匹配给定 CSS 选择器的元素列表。"""
