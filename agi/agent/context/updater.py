@@ -4,6 +4,7 @@ from typing import List, Dict, Optional,Any
 from pydantic import BaseModel, Field
 from .context import USER_PROFILE_CONTEXT,get_session_context_id,get_session_entity_id
 from agi.utils.common import extract_messages_content
+from deepagents.backends.protocol import BackendProtocol
 import traceback
 # --- Prompt Constants ---
 
@@ -127,8 +128,9 @@ class EntityList(BaseModel):
     entities: List[Entity] = Field(default_factory=list)
 
 class UnifiedContextUpdater:
-    def __init__(self, model):
+    def __init__(self, model,backend:BackendProtocol=None):
         self.model = model
+        self.backend = backend
         # 绑定结构化输出
         self.user_extractor = model.with_structured_output(UserPersona)
         self.session_extractor = model.with_structured_output(SessionUpdate)
@@ -164,7 +166,9 @@ class UnifiedContextUpdater:
     async def _update_user_profile(self, runtime, user_id, user_msg, ai_msg):
         try:
             # 1. 获取现有数据
-
+            existing = False
+            if self.backend:
+                await self.backend.aread()
             existing = await runtime.store.aget(user_id, USER_PROFILE_CONTEXT)
             current_val = existing.value if existing else UserPersona().model_dump()
             
@@ -197,7 +201,7 @@ class UnifiedContextUpdater:
             new_entities = await self.entity_extractor.ainvoke(prompt)
             if new_entities.entities:
                 # 获取旧实体列表并合并
-                existing = await runtime.store.阿get(user_id,get_session_entity_id(session_id))
+                existing = await runtime.store.aget(user_id,get_session_entity_id(session_id))
                 existing_list = existing.value if existing else []
                 
                 # 简单去重合并 (根据名称)
