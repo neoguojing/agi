@@ -34,13 +34,14 @@ async def search_web(query: str, runtime: ToolRuntime) -> Command:
 
     # 4. 返回 Command
     # 仅更新 messages 列表，不修改图状态的其他字段
-    return Command(
-        update={
-            "messages": [
-                ToolMessage(
-                    content=content,
-                    tool_call_id=runtime.tool_call_id,
-                )
-            ]
-        }
-    )
+    # return Command(
+    #     update={
+    #         "messages": [
+    #             ToolMessage(
+    #                 content=content,
+    #                 tool_call_id=runtime.tool_call_id,
+    #             )
+    #         ]
+    #     }
+    # )
+    return content
