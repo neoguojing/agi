@@ -18,14 +18,15 @@ class ContextEngineeringMiddleware(AgentMiddleware):
     def __init__(
         self, 
         extractor_model, 
+        backend,
         retriever=None, 
         timeout: float = 2.0
     ):
         # --- 内部直接构建，减少外部参数 ---
-        self.builder = create_default_context_manager(retriever=retriever)
+        self.builder = create_default_context_manager(retriever=retriever,backend=backend)
         
         # 显式持有 updater，消除 runtime.extra 依赖
-        self.updater = UnifiedContextUpdater(model=extractor_model)
+        self.updater = UnifiedContextUpdater(model=extractor_model,backend=backend)
         self.last_message_count = 0
 
     async def awrap_model_call(
@@ -55,7 +56,7 @@ class ContextEngineeringMiddleware(AgentMiddleware):
                     logger.error(f"Failed to update user profile: {e}")
         
             asyncio.create_task(update_profile_task())
-        self.last_message_count = len(request.messages)
+            self.last_message_count = len(request.messages)
         return response
 
 

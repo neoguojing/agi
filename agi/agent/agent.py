@@ -14,6 +14,7 @@ from agi.agent.middlewares import DebugLLMContextMiddleware, ContextEngineeringM
 from agi.agent.tools import buildin_tools
 from agi.agent.subagents import buildin_agents
 from agi.agent.context import Context
+from deepagents.backends.protocol import BACKEND_TYPES as BACKEND_TYPES
 
 from agi.config import OLLAMA_DEFAULT_MODE,CACHE_DIR
 
@@ -41,7 +42,7 @@ class DeepAgentBuilder:
         self.tools = list(buildin_tools)
         self.subagents = list(buildin_agents)
         self.memory_paths = ["./memories/AGENT.md"]
-        self.backend = None
+        self.backend = self.make_backend
         
     def with_model(self, provider: str, name: str):
         self.llm = ModelProvider.get_chat_model(provider, name)
@@ -51,7 +52,7 @@ class DeepAgentBuilder:
         self.system_prompt = prompt
         return self
 
-    def make_backend(self, runtime:ToolRuntime):
+    def make_backend(self, runtime):
         root = Path(CACHE_DIR).resolve()
         user_id = runtime.context.user_id
         session_id = runtime.context.conversation_id
@@ -81,7 +82,7 @@ class DeepAgentBuilder:
             "backend": self.make_backend,
             # "memory": self.memory_paths,
             "middleware": [
-                ContextEngineeringMiddleware(extractor_model=self.llm),
+                ContextEngineeringMiddleware(extractor_model=self.llm,backend=self.backend),
                 DebugLLMContextMiddleware(),
                 MultimodalBase64Middleware()
             ],

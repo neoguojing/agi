@@ -1,30 +1,36 @@
 import asyncio
 import datetime
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import List, Dict, Optional, Any, Callable,Tuple
+from typing import List, Dict, Optional, Any, Callable, Tuple
 
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-from pydantic import BaseModel, Field
-from .context import USER_PROFILE_CONTEXT,get_session_entity_id,get_session_context_id
+from deepagents.backends.protocol import BackendProtocol
+from .context import (
+    USER_PROFILE_CONTEXT,
+    get_session_entity_id,
+    get_session_context_id,
+    BackendMixin,
+)
 
-# --- Constants & Key Management ---
+# =========================
+# Constants
+# =========================
 
 class ContextKeys:
-    """Centralized keys to ensure consistency between Providers and Renderer."""
     ENV = "env"
     USER = "user_profile"
     SESSION = "session"
     ENTITY = "entities"
     KNOWLEDGE = "knowledge"
 
-# --- Context Providers ---
+# =========================
+# Providers
+# =========================
 
 class ContextProvider(ABC):
     @abstractmethod
     async def load(self, runtime: Any, state: Dict) -> Dict:
-        """Asynchronously load specific context data."""
         pass
+
 
 class EnvironmentProvider(ContextProvider):
     async def load(self, runtime, state) -> dict:
@@ -34,108 +40,185 @@ class EnvironmentProvider(ContextProvider):
                 "local_time": now.strftime("%Y-%m-%d %H:%M:%S"),
                 "weekday": now.strftime("%A"),
                 "platform": getattr(runtime.context, "platform", "web"),
-                "location": getattr(runtime.context, "location", "unknown")
+                "location": getattr(runtime.context, "location", "unknown"),
             }
         }
 
-class UserProfileProvider(ContextProvider):
+
+# =========================
+# User Profile
+# =========================
+
+class UserProfileProvider(ContextProvider, BackendMixin):
+    def __init__(self, backend: Optional[Any] = None):
+        self.backend = backend
+
+    def _get_backend(self, runtime) -> Optional[BackendProtocol]:
+        return self.backend(runtime) if callable(self.backend) else self.backend
+
     async def load(self, runtime, state):
         user_id = runtime.context.user_id
-        # Assuming USER_PROFILE_CONTEXT is defined in your constants
-        profile_data = await runtime.store.aget(user_id, USER_PROFILE_CONTEXT)
-        return {
-            ContextKeys.USER: profile_data.value if profile_data else {}
-        }
+        path = "/profiles/profile.json"  # ✅ 修复路径
 
-class SessionContextProvider(ContextProvider):
+        backend = self._get_backend(runtime)
+
+        if backend is not None:
+            raw = await backend.aread(path)
+            print(f"********{path}**********{raw}")
+
+            data = self._load_json(raw, {})
+            print(f"******************{data}")
+            return {ContextKeys.USER: data}
+
+        # fallback
+        profile_data = await runtime.store.aget(user_id, USER_PROFILE_CONTEXT)
+        return {ContextKeys.USER: profile_data.value if profile_data else {}}
+
+
+# =========================
+# Session
+# =========================
+
+class SessionContextProvider(ContextProvider, BackendMixin):
+    def __init__(self, backend: Optional[Any] = None):
+        self.backend = backend
+
+    def _get_backend(self, runtime) -> Optional[BackendProtocol]:
+        return self.backend(runtime) if callable(self.backend) else self.backend
+
     async def load(self, runtime, state) -> dict:
         user_id = runtime.context.user_id
         session_id = runtime.context.conversation_id
-        # get_session_context_id is your helper for namespacing
-        session_meta = await runtime.store.aget(user_id, get_session_context_id(session_id))
-        
-        messages = state.get("messages", [])
+        path = "/sessions/session.json"  # ✅ 修复路径
+
+        backend = self._get_backend(runtime)
+
+        if backend is not None:
+            raw = await backend.aread(path)
+            session_meta = self._load_json(raw, {})
+        else:
+            existing = await runtime.store.aget(
+                user_id, get_session_context_id(session_id)
+            )
+            session_meta = existing.value if existing else {}
+
+        messages = state.get("messages", []) or []
+
         return {
             ContextKeys.SESSION: {
                 "turn_count": len(messages) // 2,
-                "metadata": session_meta.value if session_meta else {}
+                "metadata": session_meta,
             }
         }
 
-class EntityContextProvider(ContextProvider):
+
+# =========================
+# Entities
+# =========================
+
+class EntityContextProvider(ContextProvider, BackendMixin):
+    def __init__(self, backend: Optional[Any] = None):
+        self.backend = backend
+
+    def _get_backend(self, runtime) -> Optional[BackendProtocol]:
+        return self.backend(runtime) if callable(self.backend) else self.backend
+
     async def load(self, runtime, state) -> dict:
         user_id = runtime.context.user_id
         session_id = runtime.context.conversation_id
-        active_entities = await runtime.store.aget(user_id, get_session_entity_id(session_id))
-        return {
-            ContextKeys.ENTITY: active_entities.value if active_entities else []
-        }
+        path = "/entities/entities.json"  # ✅ 修复路径
+
+        backend = self._get_backend(runtime)
+
+        if backend is not None:
+            raw = await backend.aread(path)
+            active_entities = self._load_json(raw, [])  # ✅ 修复类型
+        else:
+            existing = await runtime.store.aget(
+                user_id, get_session_entity_id(session_id)
+            )
+            active_entities = existing.value if existing else []
+
+        return {ContextKeys.ENTITY: active_entities}
+
+
+# =========================
+# Knowledge
+# =========================
 
 class KnowledgeProvider(ContextProvider):
     def __init__(self, retriever):
         self.retriever = retriever
 
     async def load(self, runtime, state):
-        last_msg = state["messages"][-1].content if state["messages"] else ""
+        messages = state.get("messages", [])
+        last_msg = messages[-1].content if messages else ""
         docs = await self.retriever.aretrieve(last_msg) if last_msg else ""
         return {ContextKeys.KNOWLEDGE: docs}
 
-# --- Context Builder & Renderer ---
+
+# =========================
+# Renderer
+# =========================
 
 FormatterConfig = Tuple[str, Callable[[Any], str]]
 
+
 class ContextRenderer:
-    """Handles the transformation of raw context data into a structured SystemMessage."""
-    
     def __init__(self):
-        # 明确指定类型为 Dict[str, FormatterConfig]
         self._formatters: Dict[str, FormatterConfig] = {
             ContextKeys.ENV: ("Current Environment", self._fmt_env),
             ContextKeys.USER: ("User Persona & Preferences", self._fmt_user),
             ContextKeys.SESSION: ("Session State", self._fmt_session),
             ContextKeys.ENTITY: ("Active Entities", self._fmt_entities),
-            ContextKeys.KNOWLEDGE: ("Relevant Knowledge", lambda x: str(x))
+            ContextKeys.KNOWLEDGE: ("Relevant Knowledge", lambda x: str(x)),
         }
 
-    def render(self, ctx: Dict[str, Any]) ->str:
-        core_instruction = "Use the context below to tailor your response."
-        sections = [core_instruction, "---"]
+    def render(self, ctx: Dict[str, Any]) -> str:
+        sections = ["Use the context below to tailor your response.", "---"]
 
-        for key, config in self._formatters.items():
-            # 显式解包，提高代码可读性
-            header, formatter = config
-            
-            if data := ctx.get(key):
-                # 此时 Lint 会识别到 formatter 是 Callable，不再报错
-                formatted_content = formatter(data)
-                if formatted_content:
-                    sections.append(f"## {header}\n{formatted_content}")
+        for key, (header, formatter) in self._formatters.items():
+            data = ctx.get(key)
+            if data:
+                content = formatter(data)
+                if content:
+                    sections.append(f"## {header}\n{content}")
 
-        sections.append("---\nRespond to the user's latest query based on the information above.")
+        sections.append("---\nRespond to the user's latest query.")
         return "\n".join(sections)
 
-    # 确保辅助函数遵循 (Any) -> str 的签名
-    def _fmt_env(self, d: Any) -> str:
-        # 增加一些健壮性检查
+    def _fmt_env(self, d):
         if not isinstance(d, dict): return str(d)
         return f"- Time: {d.get('local_time')} ({d.get('weekday')})\n- Platform: {d.get('platform')}"
 
-    def _fmt_user(self, d: Any) -> str:
+    def _fmt_user(self, d):
         if not isinstance(d, dict): return str(d)
-        return "\n".join([f"- {k.replace('_', ' ').title()}: {v}" for k, v in d.items() if v])
+        return "\n".join([f"- {k}: {v}" for k, v in d.items() if v])
 
-    def _fmt_session(self, d: Any) -> str:
+    def _fmt_session(self, d):
         if not isinstance(d, dict): return str(d)
         meta = d.get("metadata", {})
         return f"- Intent: {meta.get('current_intent', 'General')}\n- Turn: {d.get('turn_count', 0)}"
 
-    def _fmt_entities(self, d: Any) -> str:
+    def _fmt_entities(self, d):
         if not isinstance(d, list): return str(d)
-        return "\n".join([f"- {e['name']} ({e['type']}): {e.get('attributes', {})}" for e in d])
+
+        safe_lines = []
+        for e in d:
+            if isinstance(e, dict):
+                name = e.get("name", "unknown")
+                typ = e.get("type", "unknown")
+                attr = e.get("attributes", {})
+                safe_lines.append(f"- {name} ({typ}): {attr}")
+
+        return "\n".join(safe_lines)
+
+
+# =========================
+# Manager
+# =========================
 
 class AsyncContextManager:
-    """Unified Pipeline to Build and Render Context."""
-    
     def __init__(self, providers: List[ContextProvider], timeout: float = 2.0):
         self.providers = providers
         self.timeout = timeout
@@ -143,30 +226,33 @@ class AsyncContextManager:
 
     async def get_context_str(self, runtime, state) -> str:
         tasks = [
-            asyncio.wait_for(p.load(runtime, state), timeout=self.timeout) 
+            asyncio.wait_for(p.load(runtime, state), timeout=self.timeout)
             for p in self.providers
         ]
-        
+
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        merged_context = {}
+
+        merged = {}
         for r in results:
             if isinstance(r, dict):
-                merged_context.update(r)
-            # Log exceptions/timeouts here in production
-            
-        return self.renderer.render(merged_context)
+                merged.update(r)
 
-# --- Default Implementation Factory ---
+        return self.renderer.render(merged)
 
-def create_default_context_manager(retriever=None) -> AsyncContextManager:
+
+# =========================
+# Factory
+# =========================
+
+def create_default_context_manager(retriever=None, backend=None):
     providers = [
         EnvironmentProvider(),
-        UserProfileProvider(),
-        SessionContextProvider(),
-        EntityContextProvider()
+        UserProfileProvider(backend),
+        SessionContextProvider(backend),
+        EntityContextProvider(backend),
     ]
+
     if retriever:
         providers.append(KnowledgeProvider(retriever))
-    
-    return AsyncContextManager(providers=providers)
+
+    return AsyncContextManager(providers)

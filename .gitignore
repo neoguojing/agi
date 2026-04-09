@@ -184,3 +184,5 @@ agent_store.db-shm
 .fuse_hidden0000187c00000004
 .fuse_hidden0000188100000005
 .fuse_hidden0000188000000006
+search_list.json
+admin/profile.json
