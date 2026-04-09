@@ -91,6 +91,7 @@ class UnifiedContextManager:
                 runtime.store.aget(user_id, f"{session_id}:entities")
             )
             context = {
+                "env": self._build_environment_context(),
                 "profile": profile_data.value if profile_data else {},
                 "session": session_data.value if session_data else {},
                 "entities": entity_data.value if entity_data else []
@@ -147,6 +148,7 @@ class UnifiedContextManager:
 
             # F. 刷新缓存
             self._cache[session_id] = {
+                "env": self._build_environment_context(),
                 "profile": merged_profile,
                 "session": merged_session,
                 "entities": merged_entities
@@ -170,7 +172,6 @@ class UnifiedContextManager:
     def _build_unified_prompt(self, history, curr_profile, curr_session, curr_entities):
         # 动态注入 Schema，确保输出格式正确
         schema_json = json.dumps(UnifiedUpdateResult.model_json_schema(), ensure_ascii=False, indent=2)
-        env_context = json.dumps(self._build_environment_context(), ensure_ascii=False, indent=2)
         
         return f"""
 ### ROLE
@@ -188,11 +189,6 @@ STRICT RULES:
 - **Profile**: {curr_profile}
 - **Session**: {curr_session}
 - **Entities**: {curr_entities}
-
-### RUNTIME ENVIRONMENT CONTEXT (Reference only)
-```json
-{env_context}
-```
 
 ### OUTPUT SCHEMA
 ```json
