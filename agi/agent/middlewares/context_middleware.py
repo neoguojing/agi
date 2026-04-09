@@ -41,13 +41,12 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         # 4. 执行模型调用
         self._log_debug_info(injected_context_str, len(request.messages))
         response = await handler(request)
-        print(f"****************{len(request.messages)} {self.last_message_count}")
         if len(request.messages) - self.last_message_count > 10:
             async def update_profile_task():
                 try:
                     await self.manager.update(
                         runtime=request.runtime,
-                        messages=request.messages[-10]
+                        messages=request.messages[-10:]
                     )
                 except Exception as e:
                     logger.error(f"Failed to update user profile: {e}")
