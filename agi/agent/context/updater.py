@@ -128,8 +128,9 @@ class UnifiedContextManager:
             # D. 调用 LLM
             try:
                 result = await self.extractor.ainvoke(prompt)
-            except Exception:
-                logger.error("LLM parse failed")
+                print(f"********************{result}")
+            except Exception as e:
+                logger.error(f"LLM parse failed {e}")
                 return
             
             merged_profile = _merge_dict(current_ctx['profile'], result.user_profile.model_dump())
