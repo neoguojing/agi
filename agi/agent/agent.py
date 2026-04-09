@@ -59,12 +59,7 @@ class DeepAgentBuilder:
         return CompositeBackend(
             default=StateBackend(runtime),
             routes={
-                # 用户画像：偏好、历史行为、个性化配置
-                "/profiles/": FilesystemBackend(root / user_id,virtual_mode=True),
-                # 会话：跨线程持久对话历史
-                "/sessions/": FilesystemBackend(root / user_id / session_id,virtual_mode=True),
-                # 实体：产品、联系人、订单等结构化数据
-                "/entities/": FilesystemBackend(root / user_id / session_id,virtual_mode=True),
+                "/compressed_messages/": FilesystemBackend(root / user_id / session_id,virtual_mode=True),
                 # 全局：系统配置、模板
                 "/shared/": FilesystemBackend(root / user_id,virtual_mode=True),
             },
@@ -81,7 +76,7 @@ class DeepAgentBuilder:
             "backend": self.make_backend,
             # "memory": self.memory_paths,
             "middleware": [
-                ContextEngineeringMiddleware(extractor_model=self.llm),
+                ContextEngineeringMiddleware(extractor_model=self.llm,backend=self.make_backend),
                 DebugLLMContextMiddleware(),
                 MultimodalBase64Middleware()
             ],
