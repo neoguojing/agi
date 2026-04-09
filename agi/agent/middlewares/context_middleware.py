@@ -96,7 +96,7 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         await backend.awrite(file_path, content_text)
 
         # 4. 原地替换内容
-        msg.content = f"消息内容过长已压缩，文件路径: {file_path}"
+        msg.content = f"{content_text[:20]}...({file_path})"  # 可选：保留部分原内容作为提示
 
     async def awrap_model_call(
         self,
