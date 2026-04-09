@@ -17,9 +17,7 @@ class ContextEngineeringMiddleware(AgentMiddleware):
     """
     def __init__(
         self, 
-        extractor_model, 
-        retriever=None, 
-        timeout: float = 2.0
+        extractor_model
     ):
         
         # 显式持有 updater，消除 runtime.extra 依赖
