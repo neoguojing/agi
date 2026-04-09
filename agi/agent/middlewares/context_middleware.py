@@ -5,7 +5,7 @@ from venv import logger
 from langchain_core.messages import SystemMessage, BaseMessage
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 
-from agi.agent.context import create_default_context_manager,UnifiedContextUpdater
+from agi.agent.context import UnifiedContextManager
 from agi.utils.common import append_to_system_message
 class ContextEngineeringMiddleware(AgentMiddleware):
     """
@@ -18,15 +18,12 @@ class ContextEngineeringMiddleware(AgentMiddleware):
     def __init__(
         self, 
         extractor_model, 
-        backend,
         retriever=None, 
         timeout: float = 2.0
     ):
-        # --- 内部直接构建，减少外部参数 ---
-        self.builder = create_default_context_manager(retriever=retriever,backend=backend)
         
         # 显式持有 updater，消除 runtime.extra 依赖
-        self.updater = UnifiedContextUpdater(model=extractor_model,backend=backend)
+        self.manager = UnifiedContextManager(llm_model=extractor_model)
         self.last_message_count = 0
 
     async def awrap_model_call(
@@ -34,10 +31,10 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         request: ModelRequest,
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]], 
     ) -> ModelResponse:
-        
+
         # 1. 异步并行构建上下文 (RAG + Profile)
-        injected_context_str = await self.builder.get_context_str(request.runtime,request.state)
-        
+        injected_context = await self.manager.get_context(request.runtime)
+        injected_context_str = json.dumps(injected_context, ensure_ascii=False, indent=2)
         # 3. 智能合并消息 (确保注入内容位于首个 SystemMessage 之后)
         request = request.override(system_message=append_to_system_message(request.system_message, injected_context_str))
 
@@ -47,10 +44,9 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         if len(request.messages) - self.last_message_count > 10:
             async def update_profile_task():
                 try:
-                    await self.updater.update(
+                    await self.manager.update(
                         runtime=request.runtime, 
-                        messages=request.messages, 
-                        ai_response=response.result
+                        messages=request.messages
                     )
                 except Exception as e:
                     logger.error(f"Failed to update user profile: {e}")

@@ -26,7 +26,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.store.sqlite.aio import AsyncSqliteStore
 from deepagents.backends import CompositeBackend
 from deepagents import create_deep_agent
-from deepagents.backends import LocalShellBackend,StoreBackend,FilesystemBackend
+from deepagents.backends import LocalShellBackend,StoreBackend,FilesystemBackend,StateBackend
 
 # --- Constants & Config ---
 DB_PATH_CHECKPOINT = "agent_checkpoint.db"
@@ -56,9 +56,8 @@ class DeepAgentBuilder:
         root = Path(CACHE_DIR).resolve()
         user_id = runtime.context.user_id
         session_id = runtime.context.conversation_id
-        
         return CompositeBackend(
-            default=FilesystemBackend(root / user_id,virtual_mode=True),
+            default=StateBackend(runtime),
             routes={
                 # 用户画像：偏好、历史行为、个性化配置
                 "/profiles/": FilesystemBackend(root / user_id,virtual_mode=True),
@@ -82,7 +81,7 @@ class DeepAgentBuilder:
             "backend": self.make_backend,
             # "memory": self.memory_paths,
             "middleware": [
-                ContextEngineeringMiddleware(extractor_model=self.llm,backend=self.backend),
+                ContextEngineeringMiddleware(extractor_model=self.llm),
                 DebugLLMContextMiddleware(),
                 MultimodalBase64Middleware()
             ],
