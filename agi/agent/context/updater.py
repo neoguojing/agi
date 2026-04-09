@@ -1,7 +1,11 @@
 import asyncio
 import json
 import logging
+import os
+import platform
+import sys
 import traceback
+from datetime import datetime, timezone
 from typing import List, Dict, Optional, Any
 
 from pydantic import BaseModel, Field
@@ -167,6 +171,7 @@ class UnifiedContextManager:
     def _build_unified_prompt(self, history, curr_profile, curr_session, curr_entities):
         # 动态注入 Schema，确保输出格式正确
         schema_json = json.dumps(UnifiedUpdateResult.model_json_schema(), ensure_ascii=False, indent=2)
+        env_context = json.dumps(self._build_environment_context(), ensure_ascii=False, indent=2)
         
         return f"""
 ### ROLE
@@ -185,6 +190,11 @@ STRICT RULES:
 - **Session**: {curr_session}
 - **Entities**: {curr_entities}
 
+### RUNTIME ENVIRONMENT CONTEXT (Reference only)
+```json
+{env_context}
+```
+
 ### OUTPUT SCHEMA
 ```json
 {schema_json}
@@ -194,6 +204,22 @@ Analyze: Extract info from History.
 Merge: Keep existing Profile fields unless contradicted.
 Output: Return ONLY the JSON object.
 """
+
+    def _build_environment_context(self) -> Dict[str, Any]:
+        now_utc = datetime.now(timezone.utc)
+        return {
+            "current_time_utc": now_utc.isoformat(),
+            "weekday_utc": now_utc.strftime("%A"),
+            "timestamp": int(now_utc.timestamp()),
+            "environment": {
+                "os": platform.system(),
+                "os_release": platform.release(),
+                "python_version": sys.version.split()[0],
+                "platform": platform.platform(),
+                "hostname": platform.node(),
+                "process_id": os.getpid(),
+            },
+        }
     async def _merge_entities(self, runtime, existing_list, new_list):
         user_id = runtime.context.user_id
         session_id = runtime.context.conversation_id
