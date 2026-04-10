@@ -24,7 +24,7 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         self, 
         extractor_model,
         backend = None,
-        compression_threshold: int = 100, # 单条消息字符数阈值 N
+        compression_threshold: int = 300, # 单条消息字符数阈值 N
         compression_dir: str = "/compressed_messages"
     ):
         self.backend = backend
@@ -87,16 +87,19 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         content_text = extract_messages_content(msg)
 
         # 2. 生成文件名 (.txt)
-        timestamp = int(time.time() * 1000) 
-        file_name = f"{msg.type}_{msg.id}_{timestamp}.txt"
+        file_name = f"{msg.type}_{msg.id}.txt"
         file_path = os.path.join(self.compression_dir, file_name)
 
         # 3. 异步写入文件 (直接写入纯文本)
         backend = self._get_backend(runtime)
         await backend.awrite(file_path, content_text)
 
-        # 4. 原地替换内容
-        msg.content = f"{content_text[:20]}...({file_path})"  # 可选：保留部分原内容作为提示
+        summary = content_text[:50].replace("\n", " ")
+
+        # 👉 新格式
+        msg.content = (
+            f"[COMPRESSED]{summary},path: {file_path},hint: read file if needed"
+        )
 
     async def awrap_model_call(
         self,
@@ -106,7 +109,6 @@ class ContextEngineeringMiddleware(AgentMiddleware):
 
         # 1. 获取上下文信息
         injected_context = await self.manager.get_context(request.runtime)
-        injected_context_str = json.dumps(injected_context, ensure_ascii=False, indent=2)
         
         # 2. 执行消息压缩
         compressed_messages = await self._compress_messages(request.messages, request.runtime)
@@ -114,11 +116,11 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         # 3. 注入系统 Prompt
         request = request.override(
             messages=compressed_messages,
-            system_message=append_to_system_message(request.system_message, injected_context_str)
+            system_message=append_to_system_message(request.system_message, injected_context)
         )
 
         # 4. 执行模型调用
-        self._log_debug_info(injected_context_str, len(request.messages))
+        self._log_debug_info(injected_context, len(request.messages))
         response = await handler(request)
         
         # 5. 异步更新画像
