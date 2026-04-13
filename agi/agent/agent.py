@@ -138,6 +138,7 @@ class DeepAgentManager:
                 store=store
             )
             
+            self._async_agent.get_graph().draw_png("agent.png")
             # ⚠️ 重要：你需要在程序退出时关闭这两个连接
             # 可以在 __del__ 或专门的 shutdown 方法中处理
             # self._connections_to_close = [conn_saver, conn_store]
