@@ -1,7 +1,8 @@
-from dataclasses import dataclass
+
 from pydantic import BaseModel, Field
 from typing import List, Dict, Optional, Any
-
+from dataclasses import dataclass, field
+from langchain_core.messages import AnyMessage
 USER_PROFILE_CONTEXT = "user_profile"
 
 def get_session_context_id(session_id):
@@ -14,6 +15,7 @@ def get_session_entity_id(session_id):
 class Context:
     user_id: str
     conversation_id: str
+    messages: Optional[List[AnyMessage]] = field(default_factory=list)
 
 class UserPersona(BaseModel):
     full_name: Optional[str] = None

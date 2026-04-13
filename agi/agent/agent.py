@@ -41,7 +41,7 @@ class DeepAgentBuilder:
         self.system_prompt = ""
         self.tools = list(buildin_tools)
         self.subagents = list(buildin_agents)
-        self.memory_paths = ["/memories/AGENT.md"]
+        # self.memory_paths = ["/memories/AGENT.md"]
         self.backend = self.make_backend
         
     def with_model(self, provider: str, name: str):

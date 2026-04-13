@@ -1,7 +1,5 @@
 # tools/__init__.py
 from typing import List
-from langchain_core.tools import BaseTool
-
 # 导入具体的工具实现
 from .general import *
 
@@ -14,9 +12,10 @@ buildin_agents = [
     stt_subagent,
     browser_subagent,
     web_search_subagent,
-    ffmpeg_subagent
+    ffmpeg_subagent,
+    memory_construct_subagent
 ]
-
+        
 
 # 导出清单，方便其他模块调用
 __all__ = ["buildin_agents"]

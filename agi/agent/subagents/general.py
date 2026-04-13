@@ -5,6 +5,11 @@ from agi.agent.middlewares import BrowserMiddleware,FfmpegMiddleware
 from agi.agent.models import ModelProvider
 from agi.agent.sandbox.docker import DockerSandbox
 from agi.agent.prompt import get_subagent_prompt
+from agi.agent.middlewares.memory_middleware import MemoryMiddleware
+from pathlib import Path
+from deepagents.backends import CompositeBackend,StateBackend,FilesystemBackend
+from agi.config import CACHE_DIR
+
 image_gen_tool = RemoteImageGenTool()
 image_edit_tool = RemoteImageEditTool()
 visual_subagent = {
@@ -86,6 +91,74 @@ ffmpeg_subagent = {
             backend=DockerSandbox()
         ),
         DebugLLMContextMiddleware(name="ffmpeg_subagent")
+    ]
+}
+
+
+description_of_memory_construct_subagent = '''
+## Memory Management Protocol
+You are supported by a specialized `memory-construct-expert`. Your primary responsibility is to detect information that should be stored permanently.
+
+### 1. Trigger Identification
+You must call the subagent when:
+- **Explicit Instructions:** User says "remember X" or "save this preference."
+- **Role/Behavior Definitions:** User describes your role or how you should behave (e.g., "you are a web researcher").
+- **Feedback Loops:** User provides feedback on your work—capture what was wrong and how to improve.
+- **Tool Context:** User provides information required for tool use (e.g., IDs, email addresses).
+- **Patterns:** You discover new user preferences in coding styles, conventions, or workflows.
+
+### 2. The "First Action" Mandate
+Updating memory must be your **FIRST, IMMEDIATE action**—before responding to the user or calling other tools.
+
+### 3. Handoff Strategy
+When memory-worthy information is detected, immediately call `memory-construct-expert`. Provide the subagent with the specific interaction context so it can extract the underlying principle.
+    '''
+    
+system_prompt_for_memory_construct_subagent ='''
+ ## Role: Memory Construction Expert
+
+You are a specialized subagent responsible for managing and evolving the `agent_memory` filesystem. Your goal is to ensure the agent learns permanently from every interaction.
+
+### Operational Mandates:
+1. **Pattern Extraction:** Do not just record raw data. Identify the underlying principle. (e.g., If a user corrects a specific code block, record it as a "Coding Style Preference").
+2. **Structural Integrity:** Maintain a clean, categorized structure in the memory files (e.g., [User_Profiles], [Workflow_Rules], [Technical_Preferences]).
+3. **Conflict Resolution:** If new information contradicts existing memory, update the record to reflect the most recent user preference.
+4. **Strict Security:** **NEVER** save API keys, passwords, or credentials. If provided, discard them and notify the Main Agent of the security policy violation.
+
+### Tool Usage:
+Your primary tool is `edit_file`. When the Main Agent provides context:
+- Analyze if it's a new entry, an update to an existing preference, or a correction.
+- Formulate a concise, declarative memory statement (e.g., "User prefers concise explanations with LaTeX for math.")
+- Execute `edit_file` immediately.
+
+### Non-Memory Criteria:
+Ignore transient data:
+- Current mood/temporary status ("I'm tired," "I'm on a bus").
+- One-time task specifics ("What's the weather today?").
+- Small talk or acknowledgments.   
+    '''
+    
+def make_backend(runtime):
+    root = Path(CACHE_DIR).resolve()
+    user_id = runtime.context.user_id
+    session_id = runtime.context.conversation_id
+    return CompositeBackend(
+        default=StateBackend(runtime),
+        routes={
+            "/memories/": FilesystemBackend(root / user_id,virtual_mode=True),
+            "/compressed_messages/": FilesystemBackend(root / user_id / session_id,virtual_mode=True),
+            # 全局：系统配置、模板
+            "/shared/": FilesystemBackend(root / user_id,virtual_mode=True),
+        },
+    )
+    
+memory_construct_subagent = {
+    "name": "memory-construct-expert",
+    "description": description_of_memory_construct_subagent,
+    "system_prompt": system_prompt_for_memory_construct_subagent,
+    "middleware": [
+        MemoryMiddleware(backend=make_backend),
+        DebugLLMContextMiddleware(name="memory_construct_subagent")
     ]
 }
 

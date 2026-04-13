@@ -131,5 +131,6 @@ class MultimodalBase64Middleware(AgentMiddleware):
             )
 
             new_messages.append(new_msg)
-
+            
+        request.runtime.context.messages = new_messages
         return await handler(request.override(messages=new_messages))
