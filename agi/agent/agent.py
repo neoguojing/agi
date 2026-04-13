@@ -41,7 +41,7 @@ class DeepAgentBuilder:
         self.system_prompt = ""
         self.tools = list(buildin_tools)
         self.subagents = list(buildin_agents)
-        self.memory_paths = ["./memories/AGENT.md"]
+        self.memory_paths = ["/memories/AGENT.md"]
         self.backend = self.make_backend
         
     def with_model(self, provider: str, name: str):
@@ -59,9 +59,10 @@ class DeepAgentBuilder:
         return CompositeBackend(
             default=StateBackend(runtime),
             routes={
-                "/profile/": FilesystemBackend(root / user_id,virtual_mode=True),
-                "/sessions/": FilesystemBackend(root / user_id / session_id,virtual_mode=True),
-                "/entities/": FilesystemBackend(root / user_id / session_id,virtual_mode=True),
+                "/memories/": FilesystemBackend(root / user_id,virtual_mode=True),
+                # "/profile/": FilesystemBackend(root / user_id,virtual_mode=True),
+                # "/sessions/": FilesystemBackend(root / user_id / session_id,virtual_mode=True),
+                # "/entities/": FilesystemBackend(root / user_id / session_id,virtual_mode=True),
                 "/compressed_messages/": FilesystemBackend(root / user_id / session_id,virtual_mode=True),
                 # 全局：系统配置、模板
                 "/shared/": FilesystemBackend(root / user_id,virtual_mode=True),
@@ -77,9 +78,9 @@ class DeepAgentBuilder:
             "system_prompt": self.system_prompt,
             "subagents": self.subagents,
             "backend": self.make_backend,
-            # "memory": self.memory_paths,
+            "memory": self.memory_paths,
             "middleware": [
-                ContextEngineeringMiddleware(extractor_model=self.llm,backend=self.make_backend),
+                # ContextEngineeringMiddleware(extractor_model=self.llm,backend=self.make_backend),
                 DebugLLMContextMiddleware(),
                 MultimodalBase64Middleware()
             ],

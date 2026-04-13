@@ -64,13 +64,13 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         cursor_obj = await request.runtime.store.aget(user_id, "context_status")
         last_cursor = 0
         if cursor_obj:
+            print(f"********************{cursor_obj}")
             last_cursor = cursor_obj.value.get("last_sync_cursor") or 0
 
         # =========================
         # 2. 保留原始消息（关键修复）
         # =========================
         original_messages = request.messages
-        print("********************",request.state.get("messages"))
         # =========================
         # 3. context injection
         # =========================
