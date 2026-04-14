@@ -18,26 +18,23 @@ RESTART_DEBOUNCE_SECONDS = 1.5
 TARGET_MODULE = "agi.console"
 
 def reset_terminal():
-    """
-    强制重置终端状态，解决子进程崩溃后导致的 bash 换行/显示混乱问题。
-    发送 ANSI 重置序列并刷新 stdout。
-    """
     try:
-        # 1. 发送 "Reset Device" (RIS) 序列
-        sys.stdout.write("\033c")
-        # 2. 确保光标可见 (DECTCEM)
-        sys.stdout.write("\033[?25h")
-        # 3. 禁用鼠标跟踪 (如果之前开启了)
-        sys.stdout.write("\033[?1000l\033[?1002l\033[?1003l")
-        # 4. 退出备用屏幕缓冲区 (如果使用了)
-        sys.stdout.write("\033[?1049l")
-        # 5. 换行并刷新，确保提示符在新的一行
-        sys.stdout.write("\n")
+        # 1. 基础 ANSI 重置
+        sys.stdout.write("\033c\033[?25h\n")
         sys.stdout.flush()
         
-        # 6. (可选) 尝试调用 tput reset，这更彻底但稍慢
-        # os.system("tput reset > /dev/tty 2>&1") 
-    except Exception:
+        # 2. 【核心修复】强制恢复 TTY 的 cooked 模式
+        # 这等同于在 shell 执行 'stty sane'
+        fd = sys.stdin.fileno()
+        attrs = termios.tcgetattr(fd)
+        # 恢复回车换行映射 (ICRNL | ONLCR)
+        attrs[0] |= termios.ICRNL  # 输入: 将回车映射为换行
+        attrs[1] |= termios.ONLCR  # 输出: 将换行映射为回车换行
+        attrs[3] |= (termios.ECHO | termios.ICANON | termios.ISIG) # 恢复回显和缓冲
+        termios.tcsetattr(fd, termios.TCSANOW, attrs)
+        
+    except Exception as e:
+        # 如果不是在交互式终端运行，tcgetattr 会报错，直接跳过即可
         pass
 
 class ReloadHandler(FileSystemEventHandler):
@@ -126,16 +123,19 @@ class ReloadHandler(FileSystemEventHandler):
             self.start_agent()
 
     def check_process_status(self):
-        """检查子进程是否意外退出"""
+        """检查子进程是否意外或正常退出"""
         if self.process and self.process.poll() is not None:
             code = self.process.returncode
-            print(f"\nℹ️  子进程意外退出 (代码: {code})")
+            # 如果 code 是 0，通常代表用户在子进程里输入了 exit 正常退出
+            if code == 0:
+                print(f"\n👋 子进程已正常退出。")
+            else:
+                print(f"\nℹ️ 子进程意外退出 (代码: {code})")
             
-            # 【关键修复】如果子进程自己崩了（比如报错退出），它可能没来得及恢复终端
-            # 父进程检测到后，必须立即接管并重置终端
             reset_terminal()
-            
             self.active = False
+            return True # 返回 True 表示已经结束
+        return False
 
 if __name__ == "__main__":
     current_file_dir = os.path.dirname(os.path.abspath(__file__))
@@ -168,13 +168,17 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, signal_handler)
 
     try:
-        while handler.active:
-            time.sleep(1)
-            handler.check_process_status()
+        while True:
+            # 检查状态，如果返回 True 且 handler.active 为 False，说明子进程退出了
+            if handler.check_process_status() or not handler.active:
+                break
+            time.sleep(0.5) # 稍微缩短检查频率，提升响应感
     except KeyboardInterrupt:
         pass
     finally:
+        # 确保清理
+        handler.active = False
+        handler._kill_process()
         observer.stop()
         observer.join()
-        handler._kill_process()
         reset_terminal()

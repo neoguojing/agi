@@ -2,6 +2,7 @@
 import asyncio
 import uuid
 import os
+import io
 import sys
 import time
 import json
@@ -26,7 +27,7 @@ from langgraph.graph.message import add_messages
 # --- 配置 ---
 STATE_CACHE = ".cli_session.json"
 
-
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 console = Console()
 
@@ -76,7 +77,7 @@ class DeepAgentCLI:
         context = Context(user_id=self.user_id, conversation_id=self.conversation_id)
         
         last_update_time = 0
-        update_interval = 0.05 
+        update_interval = 0.08  # 稍微降低频率，给终端滚屏留出余地
 
         async for part in stream_agent_async(self.state, config=config, context=context, stream_mode=["messages"]):
             if isinstance(part, dict) and part.get("type") == "messages":
@@ -87,11 +88,20 @@ class DeepAgentCLI:
                     
                     now = time.time()
                     if now - last_update_time > update_interval:
-                        live.update(Panel(Markdown(full_response), title="Agent Response", border_style="blue"))
+                        # 【核心】更新 live 对象，使用 Markdown 渲染
+                        # 不使用 vertical_overflow，让 Rich 自动处理
+                        live.update(
+                            Panel(
+                                Markdown(full_response), 
+                                title="Agent Response", 
+                                border_style="blue",
+                                padding=(0, 1)
+                            )
+                        )
                         last_update_time = now
         
-        if full_response:
-            live.update(Panel(Markdown(full_response), title="Agent Response", border_style="blue"))
+        # 最终更新一次，确保完整
+        live.update(Panel(Markdown(full_response), title="Agent Response", border_style="blue"))
         return full_response
 
     def _smart_parse(self, text: str):
@@ -163,10 +173,15 @@ class DeepAgentCLI:
                 human_message = process_multimodal_content(self._smart_parse(user_input))
                 self.state["messages"] = add_messages(self.state["messages"], [human_message])
 
-                with Live(Spinner("dots", text="思考中..."), console=console, refresh_per_second=10) as live:
-                    ans = await self.handle_stream(live)
+                console.print(f"[bold blue]Agent:[/bold blue] ", end="")
 
-                # self.state["messages"] = add_messages(self.state["messages"], [{"role": "assistant", "content": ans}])
+                with Live(
+                    Panel(Spinner("dots", text="思考中..."), title="Agent Response", border_style="blue"),
+                    console=console, 
+                    refresh_per_second=10,
+                    transient=False 
+                ) as live:
+                    ans = await self.handle_stream(live)
                 self._save_session()
                 
             except (EOFError, KeyboardInterrupt): 
