@@ -96,7 +96,7 @@ ffmpeg_subagent = {
 
 
 description_of_memory_construct_subagent = '''
-The above <agent_memory> was loaded in from files in your filesystem. As you learn from your interactions with the user, you can save new knowledge by calling the `memory-construct-expert` sub-agent.
+The below <agent_memory> was loaded in from files in your filesystem. As you learn from your interactions with the user, you can save new knowledge by calling the `memory-construct-expert` sub-agent.
 
     **Learning from feedback:**
     - One of your MAIN PRIORITIES is to learn from your interactions with the user. These learnings can be implicit or explicit. This means that in the future, you will remember this important information.

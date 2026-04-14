@@ -68,12 +68,12 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         # 1. 获取上下文信息
         injected_context_str = self._format_agent_memory(request.runtime)
         # 2. 执行消息压缩
-        backend = self._get_backend(request.runtime)
-        compressed_messages = await self.compressor.compress(request.messages, backend)
+        # backend = self._get_backend(request.runtime)
+        # compressed_messages = await self.compressor.compress(request.messages, backend)
         
         # 3. 注入系统 Prompt
         request = request.override(
-            messages=compressed_messages,
+            # messages=compressed_messages,
             system_message=append_to_system_message(request.system_message, injected_context_str)
         )
 
