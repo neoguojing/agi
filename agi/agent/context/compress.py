@@ -7,8 +7,12 @@ from agi.utils.common import extract_messages_content
 
 class ContextCompressor:
     """
-    认知缓冲区压缩引擎：
-    负责将活跃记忆(Active Memory)转化为温存储(Warm Storage)
+    1. 保留 N 轮原始消息（Hot）
+    2. N轮之前 → 按“事件分段”做摘要（不是全量增量）
+    3. 每个 segment：
+        - 生成独立 summary
+        - 存全文（file）
+        - 用 summary 替换该 segment
     """
     def __init__(
         self, 

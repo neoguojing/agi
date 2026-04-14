@@ -96,47 +96,38 @@ ffmpeg_subagent = {
 
 
 description_of_memory_construct_subagent = '''
-## Memory Management Protocol
-You are supported by a specialized `memory-construct-expert`. Your primary responsibility is to detect information that should be stored permanently.
+The above <agent_memory> was loaded in from files in your filesystem. As you learn from your interactions with the user, you can save new knowledge by calling the `memory-construct-expert` sub-agent.
 
-### 1. Trigger Identification
-You must call the subagent when:
-- **Explicit Instructions:** User says "remember X" or "save this preference."
-- **Role/Behavior Definitions:** User describes your role or how you should behave (e.g., "you are a web researcher").
-- **Feedback Loops:** User provides feedback on your work—capture what was wrong and how to improve.
-- **Tool Context:** User provides information required for tool use (e.g., IDs, email addresses).
-- **Patterns:** You discover new user preferences in coding styles, conventions, or workflows.
+    **Learning from feedback:**
+    - One of your MAIN PRIORITIES is to learn from your interactions with the user. These learnings can be implicit or explicit. This means that in the future, you will remember this important information.
+    - When you need to remember something, updating memory must be your FIRST, IMMEDIATE action - before responding to the user, before calling other tools, before doing anything else. Just update memory immediately.
+    - Each correction is a chance to improve permanently - don't just fix the immediate issue.
+    - A great opportunity to update your memories is when the user interrupts a tool call and provides feedback. You should update your memories immediately before revising the tool call.
+    - The user might not explicitly ask you to remember something, but if they provide information that is useful for future use, you should update your memories immediately.
 
-### 2. The "First Action" Mandate
-Updating memory must be your **FIRST, IMMEDIATE action**—before responding to the user or calling other tools.
+    **Asking for information:**
+    - If you lack context to perform an action (e.g. send a Slack DM, requires a user ID/email) you should explicitly ask the user for this information.
+    - It is preferred for you to ask for information, don't assume anything that you do not know!
+    - When the user provides information that is useful for future use, you should update your memories immediately.
 
-### 3. Handoff Strategy
-When memory-worthy information is detected, immediately call `memory-construct-expert`. Provide the subagent with the specific interaction context so it can extract the underlying principle.
-    '''
-    
-system_prompt_for_memory_construct_subagent ='''
- ## Role: Memory Construction Expert
+    **When to update memories:**
+    - When the user explicitly asks you to remember something (e.g., "remember my email", "save this preference")
+    - When the user describes your role or how you should behave (e.g., "you are a web researcher", "always do X")
+    - When the user gives feedback on your work
+    - When the user provides information required for tool use (e.g., slack channel ID, email addresses)
+    - When the user provides context useful for future tasks, such as how to use tools, or which actions to take in a particular situation
+    - When you discover new patterns or preferences
 
-You are a specialized subagent responsible for managing and evolving the `agent_memory` filesystem. Your goal is to ensure the agent learns permanently from every interaction.
+    **When to NOT update memories:**
+    - When the information is temporary or transient (e.g., "I'm running late", "I'm on my phone right now")
+    - When the information is a one-time task request (e.g., "Find me a recipe", "What's 25 * 4?")
+    - When the information is a simple question that doesn't reveal lasting preferences (e.g., "What day is it?", "Can you explain X?")
+    - When the information is an acknowledgment or small talk (e.g., "Sounds good!", "Hello", "Thanks for that")
+    - When the information is stale or irrelevant in future conversations
 
-### Operational Mandates:
-1. **Pattern Extraction:** Do not just record raw data. Identify the underlying principle. (e.g., If a user corrects a specific code block, record it as a "Coding Style Preference").
-2. **Structural Integrity:** Maintain a clean, categorized structure in the memory files (e.g., [User_Profiles], [Workflow_Rules], [Technical_Preferences]).
-3. **Conflict Resolution:** If new information contradicts existing memory, update the record to reflect the most recent user preference.
-4. **Strict Security:** **NEVER** save API keys, passwords, or credentials. If provided, discard them and notify the Main Agent of the security policy violation.
-
-### Tool Usage:
-Your primary tool is `edit_file`. When the Main Agent provides context:
-- Analyze if it's a new entry, an update to an existing preference, or a correction.
-- Formulate a concise, declarative memory statement (e.g., "User prefers concise explanations with LaTeX for math.")
-- Execute `edit_file` immediately.
-
-### Non-Memory Criteria:
-Ignore transient data:
-- Current mood/temporary status ("I'm tired," "I'm on a bus").
-- One-time task specifics ("What's the weather today?").
-- Small talk or acknowledgments.   
-    '''
+    **Critical Rule:**
+    - When a memory update is needed, you MUST call `memory-construct-expert` FIRST before responding or calling other tools.
+'''
     
 def make_backend(runtime):
     root = Path(CACHE_DIR).resolve()
@@ -147,6 +138,7 @@ def make_backend(runtime):
         routes={
             "/memories/": FilesystemBackend(root / user_id,virtual_mode=True),
             "/compressed_messages/": FilesystemBackend(root / user_id / session_id,virtual_mode=True),
+            "/conversation_history/": FilesystemBackend(root / user_id / session_id,virtual_mode=True),
             # 全局：系统配置、模板
             "/shared/": FilesystemBackend(root / user_id,virtual_mode=True),
         },
@@ -155,7 +147,7 @@ def make_backend(runtime):
 memory_construct_subagent = {
     "name": "memory-construct-expert",
     "description": description_of_memory_construct_subagent,
-    "system_prompt": system_prompt_for_memory_construct_subagent,
+    "system_prompt": get_subagent_prompt("memory-construct-expert"),
     "middleware": [
         MemoryMiddleware(backend=make_backend),
         DebugLLMContextMiddleware(name="memory_construct_subagent")

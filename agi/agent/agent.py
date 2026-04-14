@@ -12,7 +12,7 @@ from agi.rag.retriever import MultiCollectionRAGManager
 from agi.agent.models import ModelProvider
 from agi.agent.middlewares import DebugLLMContextMiddleware, ContextEngineeringMiddleware,BrowserMiddleware,MultimodalBase64Middleware
 from agi.agent.tools import buildin_tools
-from agi.agent.subagents import buildin_agents
+from agi.agent.subagents import buildin_agents,make_backend
 from agi.agent.context import Context
 from deepagents.backends.protocol import BACKEND_TYPES as BACKEND_TYPES
 
@@ -42,7 +42,7 @@ class DeepAgentBuilder:
         self.tools = list(buildin_tools)
         self.subagents = list(buildin_agents)
         # self.memory_paths = ["/memories/AGENT.md"]
-        self.backend = self.make_backend
+        self.backend = make_backend
         
     def with_model(self, provider: str, name: str):
         self.llm = ModelProvider.get_chat_model(provider, name)
@@ -52,23 +52,6 @@ class DeepAgentBuilder:
         self.system_prompt = prompt
         return self
 
-    def make_backend(self, runtime):
-        root = Path(CACHE_DIR).resolve()
-        user_id = runtime.context.user_id
-        session_id = runtime.context.conversation_id
-        return CompositeBackend(
-            default=StateBackend(runtime),
-            routes={
-                "/memories/": FilesystemBackend(root / user_id,virtual_mode=True),
-                # "/profile/": FilesystemBackend(root / user_id,virtual_mode=True),
-                # "/sessions/": FilesystemBackend(root / user_id / session_id,virtual_mode=True),
-                # "/entities/": FilesystemBackend(root / user_id / session_id,virtual_mode=True),
-                "/compressed_messages/": FilesystemBackend(root / user_id / session_id,virtual_mode=True),
-                # 全局：系统配置、模板
-                "/shared/": FilesystemBackend(root / user_id,virtual_mode=True),
-            },
-        )
-
     def build_options(self) -> Dict[str, Any]:
         """Returns the dictionary of parameters required for create_deep_agent"""
         return {
@@ -77,10 +60,10 @@ class DeepAgentBuilder:
             "tools": self.tools,
             "system_prompt": self.system_prompt,
             "subagents": self.subagents,
-            "backend": self.make_backend,
-            "memory": self.memory_paths,
+            "backend": self.backend,
+            # "memory": self.memory_paths,
             "middleware": [
-                # ContextEngineeringMiddleware(extractor_model=self.llm,backend=self.make_backend),
+                ContextEngineeringMiddleware(extractor_model=self.llm,backend=make_backend),
                 DebugLLMContextMiddleware(),
                 MultimodalBase64Middleware()
             ],
@@ -138,7 +121,7 @@ class DeepAgentManager:
                 store=store
             )
             
-            self._async_agent.get_graph().draw_png("agent.png")
+            # self._async_agent.get_graph().draw_png("agent.png")
             # ⚠️ 重要：你需要在程序退出时关闭这两个连接
             # 可以在 __del__ 或专门的 shutdown 方法中处理
             # self._connections_to_close = [conn_saver, conn_store]

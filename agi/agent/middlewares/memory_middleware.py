@@ -3,11 +3,14 @@ import os
 import time
 import json
 from typing import Callable, List, Awaitable
-from venv import logger
+import logging
 from langchain_core.messages import SystemMessage, BaseMessage
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from deepagents.backends.protocol import BackendProtocol
 from agi.utils.common import append_to_system_message, extract_messages_content
+
+logger = logging.getLogger(__name__)
+
 
 MEMORY_SYSTEM_PROMPT = """<agent_memory>
 {agent_memory}
@@ -76,15 +79,20 @@ class MemoryMiddleware(AgentMiddleware):
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]], 
     ) -> ModelResponse:
         messages = request.runtime.context.messages
-        formatted_messages = self._format_messages(messages)
-        agent_memory = self._format_agent_memory(request.runtime)
-        target_memory_prompt = MEMORY_SYSTEM_PROMPT.format(agent_memory=agent_memory, formatted_messages=formatted_messages)
-        # 3. 注入系统 Prompt
-        request = request.override(
-            system_message=append_to_system_message(request.system_message, target_memory_prompt)
-        )
+        try:
+            formatted_messages = self._format_messages(messages)
+            agent_memory = self._format_agent_memory(request.runtime)
+            target_memory_prompt = MEMORY_SYSTEM_PROMPT.format(agent_memory=agent_memory, formatted_messages=formatted_messages)
+            # 3. 注入系统 Prompt
+            request = request.override(
+                system_message=append_to_system_message(request.system_message, target_memory_prompt)
+            )
 
-        response = await handler(request)
+            response = await handler(request)
+            request.runtime.context.advance_cursor(len(request.messages))
+
+        except Exception as e:
+            logger.error(e)
         
         return response
     
