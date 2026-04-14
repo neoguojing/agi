@@ -192,9 +192,36 @@ Rules:
 - Return concise status with output path(s) and next-step hint when needed.
 """
 
+CONTEXT_SYSTEM_PROMPT: Final[str] = """You have access to a tool called `compact_conversation` that compresses the conversation by summarizing older messages and freeing up context space.
+
+Your goal is to maintain high-quality reasoning while keeping the context concise and relevant.
+
+You should proactively call `compact_conversation` when ANY of the following conditions are met:
+
+1. The conversation has clearly shifted to a new topic, and the previous topic is no longer needed for the current task.
+2. You have finished solving a task or answering a question, and the prior reasoning steps are no longer required.
+3. The conversation has become long or contains many messages that are not directly relevant to the current user request.
+4. You notice repeated or redundant discussion that can be safely summarized.
+
+Important guidelines:
+- Only call `compact_conversation` when you are confident that older messages are no longer critical.
+- Do NOT call it if important context from earlier messages is still needed for reasoning.
+- Prefer to wait until a topic is clearly completed or abandoned before compacting.
+- Avoid calling the tool too frequently; use it strategically.
+
+When you decide to call the tool, call `compact_conversation` directly without asking the user for permission.
+
+Do not explain the tool call. Just call it when appropriate.
+
+<agent_memory>
+{agent_memory}
+</agent_memory>
+"""
+
 MIDDLEWARE_PROMPTS: Final[dict[str, str]] = {
     "browser": BROWSER_SYSTEM_PROMPT_OPTIMIZED,
     "ffmpeg": FFMPEG_SYSTEM_PROMPT_OPTIMIZED,
+    "context": CONTEXT_SYSTEM_PROMPT
 }
 
 

@@ -27,6 +27,10 @@ from langgraph.store.sqlite.aio import AsyncSqliteStore
 from deepagents.backends import CompositeBackend
 from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend,StoreBackend,FilesystemBackend,StateBackend
+from deepagents.middleware.summarization import (
+        SummarizationMiddleware,
+        SummarizationToolMiddleware,
+    )
 
 # --- Constants & Config ---
 DB_PATH_CHECKPOINT = "agent_checkpoint.db"
@@ -54,6 +58,18 @@ class DeepAgentBuilder:
 
     def build_options(self) -> Dict[str, Any]:
         """Returns the dictionary of parameters required for create_deep_agent"""
+
+        summ = SummarizationMiddleware(model=self.llm, 
+                                       backend=make_backend,
+                                       trigger=("messages", 60),
+                                       keep=("messages", 16),
+                                       trim_tokens_to_summarize= {
+                                            "trigger": ("messages", 30),
+                                            "keep": ("messages", 16),
+                                            "max_length": 2000,
+                                            "truncation_text": "...(truncated)",
+                                        })
+
         return {
             "name": self.name,
             "model": self.llm,
@@ -63,6 +79,7 @@ class DeepAgentBuilder:
             "backend": self.backend,
             # "memory": self.memory_paths,
             "middleware": [
+                SummarizationToolMiddleware(summ),
                 ContextEngineeringMiddleware(extractor_model=self.llm,backend=make_backend),
                 DebugLLMContextMiddleware(),
                 MultimodalBase64Middleware()

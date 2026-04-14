@@ -5,12 +5,9 @@ from langchain_core.messages import SystemMessage, BaseMessage
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from deepagents.backends.protocol import BackendProtocol
 from agi.agent.context import UnifiedContextManager,ContextCompressor
+from agi.agent.prompt import get_middleware_prompt
 from agi.utils.common import append_to_system_message
 
-MEMORY_SYSTEM_PROMPT = """<agent_memory>
-{agent_memory}
-</agent_memory>
-"""
 class ContextEngineeringMiddleware(AgentMiddleware):
     """
     上下文工程中间件：
@@ -39,7 +36,7 @@ class ContextEngineeringMiddleware(AgentMiddleware):
     
     def _format_agent_memory(self,runtime) -> str:
         if not self.memory_paths:
-            return MEMORY_SYSTEM_PROMPT.format(agent_memory="(No memory loaded)")
+            return get_middleware_prompt("context").format(agent_memory="(No memory loaded)")
         
         backend = self._get_backend(runtime)  # 这里传 None，因为我们只需要读取文件内容
         contents = {}
@@ -53,10 +50,10 @@ class ContextEngineeringMiddleware(AgentMiddleware):
 
         sections = [f"{path}\n{contents[path]}" for path in self.memory_paths if contents.get(path)]
         if not sections:
-            return MEMORY_SYSTEM_PROMPT.format(agent_memory="(No memory loaded)")
+            return get_middleware_prompt("context").format(agent_memory="(No memory loaded)")
 
         memory_body = "\n\n".join(sections)
-        return MEMORY_SYSTEM_PROMPT.format(agent_memory=memory_body)
+        return get_middleware_prompt("context").format(agent_memory=memory_body)
     
     async def awrap_model_call(
         self,
