@@ -76,32 +76,85 @@ class DeepAgentCLI:
         config = {"configurable": {"thread_id": self.thread_id}}
         context = Context(user_id=self.user_id, conversation_id=self.conversation_id)
         
+        # --- 计时与状态初始化 ---
+        start_time = time.time()  # 记录流开始的绝对时间
         last_update_time = 0
-        update_interval = 0.08  # 稍微降低频率，给终端滚屏留出余地
+        update_interval = 0.05
+        
+        stats_info = {"model": "N/A", "tokens": "In: 0 | Out: 0", "node": "N/A", "tps": 0.0}
 
-        async for part in stream_agent_async(self.state, config=config, context=context, stream_mode=["messages"]):
+        async for part in stream_agent_async(self.state, config=config, context=context, stream_mode=["messages", "updates"]):
+            # 实时计算已经过去的时间
+            current_elapsed = time.time() - start_time
+            
+            # --- 1. 处理消息内容与元数据 ---
             if isinstance(part, dict) and part.get("type") == "messages":
                 data = part.get("data")
                 if data and len(data) > 0:
-                    content = getattr(data[0], "content", "")
-                    full_response += str(content)
+                    chunk = data[0]
                     
-                    now = time.time()
-                    if now - last_update_time > update_interval:
-                        # 【核心】更新 live 对象，使用 Markdown 渲染
-                        # 不使用 vertical_overflow，让 Rich 自动处理
-                        live.update(
-                            Panel(
-                                Markdown(full_response), 
-                                title="Agent Response", 
-                                border_style="blue",
-                                padding=(0, 1)
-                            )
-                        )
-                        last_update_time = now
+                    # 提取正文并处理特殊符号兼容性
+                    content = getattr(chunk, "content", "")
+                    full_response += str(content).replace("→", "->")
+                    
+                    # 提取模型名称
+                    metadata = getattr(chunk, "response_metadata", {})
+                    if metadata.get("model_name"):
+                        stats_info["model"] = metadata.get("model_name")
+                    
+                    # 提取 Token 统计并计算 TPS (每秒生成 Token 数)
+                    usage = getattr(chunk, "usage_metadata", {})
+                    if usage:
+                        in_t = usage.get("input_tokens", 0)
+                        out_t = usage.get("output_tokens", 0)
+                        stats_info["tokens"] = f"In: {in_t} | Out: {out_t}"
+                        if out_t > 0 and current_elapsed > 0:
+                            stats_info["tps"] = out_t / current_elapsed
+
+            # --- 2. 处理节点更新 (Graph Node) ---
+            elif isinstance(part, dict) and "langgraph_node" in str(part):
+                # 获取当前工作的 LangGraph 节点名
+                nodes = [k for k in part.keys() if k not in ("__pregel_pull", "__pregel_push")]
+                if nodes:
+                    stats_info["node"] = nodes[0]
+
+            # --- 3. 实时刷新 UI 界面 ---
+            now = time.time()
+            if now - last_update_time > update_interval:
+                # 格式化副标题：[时长] 模型 | 节点 | Token统计 | 速度
+                time_display = f"[bold cyan]{current_elapsed:.1f}s[/bold cyan]"
+                speed_display = f"[magenta]{stats_info['tps']:.1f} t/s[/magenta]"
+                
+                subtitle = (
+                    f"{time_display} | {stats_info['model']} | "
+                    f"Node: [yellow]{stats_info['node']}[/yellow] | "
+                    f"{stats_info['tokens']} | {speed_display}"
+                )
+                
+                live.update(
+                    Panel(
+                        Markdown(full_response), 
+                        title="[bold blue]Agent Response[/bold blue]",
+                        subtitle=subtitle,
+                        subtitle_align="right",
+                        border_style="blue",
+                        padding=(0, 1)
+                    )
+                )
+                last_update_time = now
+
+        # --- 4. 结束后的最终渲染 (锁定绿色状态) ---
+        final_duration = time.time() - start_time
+        live.update(
+            Panel(
+                Markdown(full_response), 
+                title="[bold green]Response Finished[/bold green]",
+                subtitle=f"[bold white]Total: {final_duration:.2f}s[/bold white] | {stats_info['tokens']} | Avg: {stats_info['tps']:.1f} t/s",
+                subtitle_align="right",
+                border_style="green"
+            )
+        )
         
-        # 最终更新一次，确保完整
-        live.update(Panel(Markdown(full_response), title="Agent Response", border_style="blue"))
         return full_response
 
     def _smart_parse(self, text: str):
