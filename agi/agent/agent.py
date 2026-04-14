@@ -61,11 +61,12 @@ class DeepAgentBuilder:
 
         summ = SummarizationMiddleware(model=self.llm, 
                                        backend=make_backend,
-                                       trigger=("messages", 60),
-                                       keep=("messages", 16),
+                                       trigger=("messages", 20),
+                                       keep=("messages", 10),
                                        trim_tokens_to_summarize= {
-                                            "trigger": ("messages", 30),
-                                            "keep": ("messages", 16),
+                                            # "trigger": ("messages", 20),
+                                            "trigger": ("tokens", 30000),
+                                            "keep": ("messages", 10),
                                             "max_length": 2000,
                                             "truncation_text": "...(truncated)",
                                         })
