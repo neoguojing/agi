@@ -61,7 +61,7 @@ class DeepAgentBuilder:
 
         summ = SummarizationMiddleware(model=self.llm, 
                                        backend=make_backend,
-                                       trigger=("messages", 20),
+                                       trigger=("tokens", 30000),
                                        keep=("messages", 10),
                                        trim_tokens_to_summarize= {
                                             # "trigger": ("messages", 20),
@@ -80,8 +80,8 @@ class DeepAgentBuilder:
             "backend": self.backend,
             # "memory": self.memory_paths,
             "middleware": [
-                SummarizationToolMiddleware(summ),
                 ContextEngineeringMiddleware(extractor_model=self.llm,backend=make_backend),
+                SummarizationToolMiddleware(summ),
                 DebugLLMContextMiddleware(),
                 MultimodalBase64Middleware()
             ],
