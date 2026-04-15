@@ -4,6 +4,8 @@ from pathlib import Path
 import sqlite3
 import aiosqlite
 import asyncio
+import logging
+import traceback
 from typing import List, Optional, Dict, Any, AsyncGenerator, Union
 from contextlib import asynccontextmanager
 from langchain.tools import ToolRuntime
@@ -39,6 +41,7 @@ from deepagents.middleware.summarization import (
         SummarizationToolMiddleware,
     )
 
+logger = logging.getLogger(__name__)
 # --- Constants & Config ---
 DB_PATH_CHECKPOINT = "agent_checkpoint.db"
 DB_PATH_STRORE = "agent_store.db"
@@ -57,7 +60,17 @@ class DeepAgentBuilder:
         self.middlewares = []
         # self.memory_paths = ["/memories/AGENT.md"]
         self.backend = make_backend
-        
+    
+    def clone(self):
+        new = DeepAgentBuilder(self.name)
+        new.llm = self.llm
+        new.fallback_llm = self.fallback_llm
+        new.system_prompt = self.system_prompt
+        new.tools = list(self.tools)
+        new.subagents = list(self.subagents)
+        new.middlewares = list(self.middlewares)
+        return new
+
     def with_model(self, provider: str, name: str):
         self.llm = ModelProvider.get_chat_model(provider, name)
         return self
@@ -110,9 +123,9 @@ class DeepAgentBuilder:
             "model": self.fallback_llm,
             "backend": self.backend,
             "middleware": [
-                MemoryMiddleware(backend=make_backend),
                 SummarizationToolMiddleware(summ),
-                DebugLLMContextMiddleware()
+                DebugLLMContextMiddleware(),
+                *self.middlewares
             ],
             "context_schema": Context
         }
@@ -173,28 +186,39 @@ class DeepAgentManager:
             # ⚠️ 重要：你需要在程序退出时关闭这两个连接
             # 可以在 __del__ 或专门的 shutdown 方法中处理
             # self._connections_to_close = [conn_saver, conn_store]       
-        self.get_backgroud_agent(saver,store)
 
         return self._async_agent
     # 后台agent
     # 1.负责根据最新消息判断是否需要触发远期记忆提取
     # 2.负责根据最新消息判断是否需要触发消息压缩
     # 3.定期自检，判断上面任务是否执行，未执行则触发手动压缩
-    async def get_backgroud_agent(self, checkpointer, store, interval: int = 30):
+    async def get_backgroud_agent(self, config, interval: int = 30):
+        if self._async_backgroud_agent is not None:
+            return self._async_backgroud_agent   # ✅ 防重复创建
+
+        if not self._async_agent:
+            await self.get_async_agent()  # 确保主 agent 已初始化
+        
+        builder = self.builder.clone()
         agent_configs = (
-            self.builder
+            builder
             .with_system_prompt(BACKGROUD_SYSTEM_PROMPT)
+            .with_middleware(MemoryMiddleware(backend=make_backend,
+                                              checkpointer=self._async_agent.checkpointer,
+                                              channels=self._async_agent.channels,
+                                              config=config))
             .build_options_for_backgroud()
         )
 
         self._async_backgroud_agent = create_deep_agent(
             **agent_configs,
-            checkpointer=checkpointer,
-            store=store
+            checkpointer=self._async_agent.checkpointer,
+            store=self._async_agent.store
         )
 
         self._bg_running = True
-
+        logger.info("[BG] Background agent initialized. Starting loop...")
+        bg_config = config or {"configurable": {"thread_id": uuid.uuid4().hex}}
         async def loop():
             while self._bg_running:
                 try:
@@ -209,10 +233,12 @@ class DeepAgentManager:
                     }
 
                     # 👉 关键：让 agent 自己决定做什么
-                    await self._async_backgroud_agent.ainvoke(trigger_input)
+                    result = await self._async_backgroud_agent.ainvoke(trigger_input,config=bg_config)
+                    logger.info(f"[BG] Tick result: {result['messages'][-1].content}")
 
                 except Exception as e:
-                    print("[BG] error:", e)
+                    traceback.print_exc()
+                    logger.error(f"[BG] error: {e}")
 
                 await asyncio.sleep(interval)
 
@@ -246,7 +272,7 @@ async def invoke_agent_async(state: Dict, config: Dict = None, context: Context 
 
 async def stream_agent_async(state: Dict, config: Dict = None, context: Context = None, **kwargs) -> AsyncGenerator:
     agent = await agent_manager.get_async_agent()
-    import pdb; pdb.set_trace()
+    await agent_manager.get_backgroud_agent(config)
     async for part in agent.astream(
         state,
         config=_prepare_config(config, state),

@@ -13,7 +13,7 @@ buildin_agents = [
     browser_subagent,
     web_search_subagent,
     ffmpeg_subagent,
-    memory_construct_subagent
+    # memory_construct_subagent
 ]
         
 
