@@ -21,7 +21,7 @@ from agi.agent.tools import buildin_tools
 from agi.agent.subagents import buildin_agents,make_backend
 from agi.agent.context import Context
 from deepagents.backends.protocol import BACKEND_TYPES as BACKEND_TYPES
-
+from agi.agent.prompt import  BACKGROUD_SYSTEM_PROMPT
 from agi.config import OLLAMA_DEFAULT_MODE,CACHE_DIR
 
 from langgraph.checkpoint.sqlite import SqliteSaver
@@ -47,6 +47,8 @@ class DeepAgentBuilder:
     def __init__(self, name: str = "main"):
         self.name = name
         self.llm = ModelProvider.get_chat_model(provider="ollama", model_name=OLLAMA_DEFAULT_MODE)
+        self.fallback_llm = ModelProvider.get_chat_model(provider="ollama", model_name="qwen3.5:9b")
+
         self.embd = ModelProvider.get_embeddings(provider="ollama", model_name="embeddinggemma:latest")
         self.system_prompt = ""
         self.tools = list(buildin_tools)
@@ -65,6 +67,25 @@ class DeepAgentBuilder:
     def build_options(self) -> Dict[str, Any]:
         """Returns the dictionary of parameters required for create_deep_agent"""
 
+        return {
+            "name": self.name,
+            "model": self.llm,
+            "tools": self.tools,
+            "system_prompt": self.system_prompt,
+            "subagents": self.subagents,
+            "backend": self.backend,
+            # "memory": self.memory_paths,
+            "middleware": [
+                ModelFallbackMiddleware(self.llm,self.fallback_llm),
+                DebugLLMContextMiddleware(),
+                MultimodalBase64Middleware()
+            ],
+            "context_schema": Context
+        }
+    
+    def build_options_for_backgroud(self) -> Dict[str, Any]:
+        """Returns the dictionary of parameters required for create_deep_agent"""
+
         summ = SummarizationMiddleware(model=self.llm, 
                                        backend=make_backend,
                                        trigger=("tokens", 30000),
@@ -78,19 +99,13 @@ class DeepAgentBuilder:
                                         })
 
         return {
-            "name": self.name,
-            "model": self.llm,
-            "tools": self.tools,
-            "system_prompt": self.system_prompt,
-            "subagents": self.subagents,
+            "name": "backgroud",
+            "model": self.fallback_llm,
             "backend": self.backend,
-            # "memory": self.memory_paths,
             "middleware": [
-                ModelFallbackMiddleware(self.llm),
                 ContextEngineeringMiddleware(extractor_model=self.llm,backend=make_backend),
                 SummarizationToolMiddleware(summ),
-                DebugLLMContextMiddleware(),
-                MultimodalBase64Middleware()
+                DebugLLMContextMiddleware()
             ],
             "context_schema": Context
         }
@@ -101,6 +116,7 @@ class DeepAgentManager:
         self.builder = builder
         self._sync_agent = None
         self._async_agent = None
+        self._async_backgroud_agent = None
         self._async_conn: Optional[aiosqlite.Connection] = None
 
     # --- Synchronous Logic ---
@@ -150,14 +166,23 @@ class DeepAgentManager:
             # ⚠️ 重要：你需要在程序退出时关闭这两个连接
             # 可以在 __del__ 或专门的 shutdown 方法中处理
             # self._connections_to_close = [conn_saver, conn_store]       
+        asyncio.create_task(self.get_backgroud_agent(saver,store))
 
         return self._async_agent
     # 后台agent
     # 1.负责根据最新消息判断是否需要触发远期记忆提取
     # 2.负责根据最新消息判断是否需要触发消息压缩
     # 3.定期自检，判断上面任务是否执行，未执行则触发手动压缩
-    async def get_backgroud_agent(self):
+    async def get_backgroud_agent(self,checkpointer,store):
+        agent_configs = self.builder.with_system_prompt(BACKGROUD_SYSTEM_PROMPT).build_options_for_backgroud()
+        self._async_backgroud_agent = create_deep_agent(
+                **agent_configs,
+                checkpointer=checkpointer,
+                store=store
+            )
+        
         from agi.agent.context.checkpoint import checkpoint_to_state
+        self._async_agent.get_state
         cp = await self._async_agent.checkpointer.aget(self._async_agent.config)
         checkpoint_to_state(cp,self._async_agent.channels)
 
