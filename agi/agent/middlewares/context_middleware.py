@@ -60,7 +60,8 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         request: ModelRequest,
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]], 
     ) -> ModelResponse:
-        
+        import pdb; pdb.set_trace()
+
         request.runtime.context.set_incremental_messages(request.messages)
         # 1. 获取上下文信息
         injected_context_str = self._format_agent_memory(request.runtime)

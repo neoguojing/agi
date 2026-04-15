@@ -149,9 +149,17 @@ class DeepAgentManager:
             # self._async_agent.get_graph().draw_png("agent.png")
             # ⚠️ 重要：你需要在程序退出时关闭这两个连接
             # 可以在 __del__ 或专门的 shutdown 方法中处理
-            # self._connections_to_close = [conn_saver, conn_store]
+            # self._connections_to_close = [conn_saver, conn_store]       
 
         return self._async_agent
+    # 后台agent
+    # 1.负责根据最新消息判断是否需要触发远期记忆提取
+    # 2.负责根据最新消息判断是否需要触发消息压缩
+    # 3.定期自检，判断上面任务是否执行，未执行则触发手动压缩
+    async def get_backgroud_agent(self):
+        from agi.agent.context.checkpoint import checkpoint_to_state
+        cp = await self._async_agent.checkpointer.aget(self._async_agent.config)
+        checkpoint_to_state(cp,self._async_agent.channels)
 
     async def close(self):
         if self._async_agent:
@@ -181,6 +189,7 @@ async def invoke_agent_async(state: Dict, config: Dict = None, context: Context 
 
 async def stream_agent_async(state: Dict, config: Dict = None, context: Context = None, **kwargs) -> AsyncGenerator:
     agent = await agent_manager.get_async_agent()
+    import pdb; pdb.set_trace()
     async for part in agent.astream(
         state,
         config=_prepare_config(config, state),
