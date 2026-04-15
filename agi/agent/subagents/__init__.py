@@ -18,4 +18,4 @@ buildin_agents = [
         
 
 # 导出清单，方便其他模块调用
-__all__ = ["buildin_agents"]
+__all__ = ["buildin_agents","make_backend"]

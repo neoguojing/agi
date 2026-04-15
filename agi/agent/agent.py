@@ -10,7 +10,13 @@ from langchain.tools import ToolRuntime
 
 from agi.rag.retriever import MultiCollectionRAGManager
 from agi.agent.models import ModelProvider
-from agi.agent.middlewares import DebugLLMContextMiddleware, ContextEngineeringMiddleware,BrowserMiddleware,MultimodalBase64Middleware
+from agi.agent.middlewares import (DebugLLMContextMiddleware, 
+                                   ContextEngineeringMiddleware,
+                                   BrowserMiddleware,
+                                   MultimodalBase64Middleware)
+from langchain.agents.middleware import (
+    ModelFallbackMiddleware
+)
 from agi.agent.tools import buildin_tools
 from agi.agent.subagents import buildin_agents,make_backend
 from agi.agent.context import Context
@@ -80,6 +86,7 @@ class DeepAgentBuilder:
             "backend": self.backend,
             # "memory": self.memory_paths,
             "middleware": [
+                ModelFallbackMiddleware(self.llm),
                 ContextEngineeringMiddleware(extractor_model=self.llm,backend=make_backend),
                 SummarizationToolMiddleware(summ),
                 DebugLLMContextMiddleware(),
