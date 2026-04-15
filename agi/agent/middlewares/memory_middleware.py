@@ -8,6 +8,7 @@ from langchain_core.messages import SystemMessage, BaseMessage
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from deepagents.backends.protocol import BackendProtocol
 from agi.utils.common import append_to_system_message, extract_messages_content
+from agi.agent.context.checkpoint import checkpoint_to_state
 
 logger = logging.getLogger(__name__)
 
@@ -15,10 +16,6 @@ logger = logging.getLogger(__name__)
 MEMORY_SYSTEM_PROMPT = """<agent_memory>
 {agent_memory}
 </agent_memory>
-
-<conversation_context>
-{formatted_messages}
-</conversation_context>
 """
 
 class MemoryMiddleware(AgentMiddleware):
@@ -34,15 +31,26 @@ class MemoryMiddleware(AgentMiddleware):
     def __init__(
         self, 
         backend = None,
+        checkpointer = None,
+        channels = None,
+        config = None,
         memory_paths: List[str] = ["/memories/AGENT.md"]
     ):
         self.backend = backend
+        self.checkpointer = checkpointer
+        self.channels = channels
+        self.config = config
         self.memory_paths = memory_paths
 
     def _get_backend(self, runtime) -> BackendProtocol:
         if callable(self.backend):
             return self.backend(runtime)
         return self.backend
+
+    async def load_state(self):
+        cp = await self.checkpointer.aget(self.config)
+        return checkpoint_to_state(cp, self.channels)
+
 
     def _format_agent_memory(self,runtime) -> str:
         if not self.memory_paths:
@@ -78,18 +86,19 @@ class MemoryMiddleware(AgentMiddleware):
         request: ModelRequest,
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]], 
     ) -> ModelResponse:
-        messages = request.runtime.context.messages
         try:
-            formatted_messages = self._format_messages(messages)
+            state = self.load_state()
+            messages = state["messages"]
+            # formatted_messages = self._format_messages(messages)
             agent_memory = self._format_agent_memory(request.runtime)
-            target_memory_prompt = MEMORY_SYSTEM_PROMPT.format(agent_memory=agent_memory, formatted_messages=formatted_messages)
+            target_memory_prompt = MEMORY_SYSTEM_PROMPT.format(agent_memory=agent_memory)
             # 3. 注入系统 Prompt
             request = request.override(
+                messages=messages,
                 system_message=append_to_system_message(request.system_message, target_memory_prompt)
             )
 
             response = await handler(request)
-            request.runtime.context.advance_cursor(len(request.messages))
 
         except Exception as e:
             logger.error(e)

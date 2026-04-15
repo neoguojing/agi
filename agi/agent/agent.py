@@ -13,7 +13,8 @@ from agi.agent.models import ModelProvider
 from agi.agent.middlewares import (DebugLLMContextMiddleware, 
                                    ContextEngineeringMiddleware,
                                    BrowserMiddleware,
-                                   MultimodalBase64Middleware)
+                                   MultimodalBase64Middleware,
+                                   MemoryMiddleware)
 from langchain.agents.middleware import (
     ModelFallbackMiddleware
 )
@@ -53,6 +54,7 @@ class DeepAgentBuilder:
         self.system_prompt = ""
         self.tools = list(buildin_tools)
         self.subagents = list(buildin_agents)
+        self.middlewares = []
         # self.memory_paths = ["/memories/AGENT.md"]
         self.backend = make_backend
         
@@ -62,6 +64,10 @@ class DeepAgentBuilder:
 
     def with_system_prompt(self, prompt: str):
         self.system_prompt = prompt
+        return self
+    
+    def with_middleware(self, middleware):
+        self.middlewares.append(middleware)
         return self
 
     def build_options(self) -> Dict[str, Any]:
@@ -76,6 +82,7 @@ class DeepAgentBuilder:
             "backend": self.backend,
             # "memory": self.memory_paths,
             "middleware": [
+                ContextEngineeringMiddleware(backend=make_backend),
                 ModelFallbackMiddleware(self.llm,self.fallback_llm),
                 DebugLLMContextMiddleware(),
                 MultimodalBase64Middleware()
@@ -103,7 +110,7 @@ class DeepAgentBuilder:
             "model": self.fallback_llm,
             "backend": self.backend,
             "middleware": [
-                ContextEngineeringMiddleware(extractor_model=self.llm,backend=make_backend),
+                MemoryMiddleware(backend=make_backend),
                 SummarizationToolMiddleware(summ),
                 DebugLLMContextMiddleware()
             ],
@@ -166,25 +173,50 @@ class DeepAgentManager:
             # ⚠️ 重要：你需要在程序退出时关闭这两个连接
             # 可以在 __del__ 或专门的 shutdown 方法中处理
             # self._connections_to_close = [conn_saver, conn_store]       
-        asyncio.create_task(self.get_backgroud_agent(saver,store))
+        self.get_backgroud_agent(saver,store)
 
         return self._async_agent
     # 后台agent
     # 1.负责根据最新消息判断是否需要触发远期记忆提取
     # 2.负责根据最新消息判断是否需要触发消息压缩
     # 3.定期自检，判断上面任务是否执行，未执行则触发手动压缩
-    async def get_backgroud_agent(self,checkpointer,store):
-        agent_configs = self.builder.with_system_prompt(BACKGROUD_SYSTEM_PROMPT).build_options_for_backgroud()
+    async def get_backgroud_agent(self, checkpointer, store, interval: int = 30):
+        agent_configs = (
+            self.builder
+            .with_system_prompt(BACKGROUD_SYSTEM_PROMPT)
+            .build_options_for_backgroud()
+        )
+
         self._async_backgroud_agent = create_deep_agent(
-                **agent_configs,
-                checkpointer=checkpointer,
-                store=store
-            )
-        
-        from agi.agent.context.checkpoint import checkpoint_to_state
-        self._async_agent.get_state
-        cp = await self._async_agent.checkpointer.aget(self._async_agent.config)
-        checkpoint_to_state(cp,self._async_agent.channels)
+            **agent_configs,
+            checkpointer=checkpointer,
+            store=store
+        )
+
+        self._bg_running = True
+
+        async def loop():
+            while self._bg_running:
+                try:
+                    # 👉 关键：构造触发消息
+                    trigger_input = {
+                        "messages": [
+                            {
+                                "type": "human",
+                                "content": "Background maintenance tick: analyze memory and compression needs."
+                            }
+                        ]
+                    }
+
+                    # 👉 关键：让 agent 自己决定做什么
+                    await self._async_backgroud_agent.ainvoke(trigger_input)
+
+                except Exception as e:
+                    print("[BG] error:", e)
+
+                await asyncio.sleep(interval)
+
+        self._bg_task = asyncio.create_task(loop())
 
     async def close(self):
         if self._async_agent:

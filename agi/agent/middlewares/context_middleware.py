@@ -4,7 +4,6 @@ from venv import logger
 from langchain_core.messages import SystemMessage, BaseMessage
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from deepagents.backends.protocol import BackendProtocol
-from agi.agent.context import UnifiedContextManager,ContextCompressor
 from agi.agent.prompt import get_middleware_prompt
 from agi.utils.common import append_to_system_message
 
@@ -20,14 +19,12 @@ class ContextEngineeringMiddleware(AgentMiddleware):
     """
     def __init__(
         self, 
-        extractor_model,
         backend = None,
         memory_paths: List[str] = ["/memories/AGENT.md"]
 
     ):
         self.backend = backend
         self.memory_paths = memory_paths
-        self.compressor = ContextCompressor()
 
     def _get_backend(self, runtime) -> BackendProtocol:
         if callable(self.backend):
@@ -60,18 +57,11 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         request: ModelRequest,
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]], 
     ) -> ModelResponse:
-        import pdb; pdb.set_trace()
-
-        request.runtime.context.set_incremental_messages(request.messages)
+        
         # 1. 获取上下文信息
         injected_context_str = self._format_agent_memory(request.runtime)
-        # 2. 执行消息压缩
-        # backend = self._get_backend(request.runtime)
-        # compressed_messages = await self.compressor.compress(request.messages, backend)
-        
         # 3. 注入系统 Prompt
         request = request.override(
-            # messages=compressed_messages,
             system_message=append_to_system_message(request.system_message, injected_context_str)
         )
 
