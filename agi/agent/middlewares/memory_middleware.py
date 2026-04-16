@@ -87,7 +87,7 @@ class MemoryMiddleware(AgentMiddleware):
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]], 
     ) -> ModelResponse:
         try:
-            state = self.load_state()
+            state = await self.load_state()
             messages = state["messages"]
             # formatted_messages = self._format_messages(messages)
             agent_memory = self._format_agent_memory(request.runtime)
@@ -99,9 +99,9 @@ class MemoryMiddleware(AgentMiddleware):
             )
 
             response = await handler(request)
-
+            return response
         except Exception as e:
             logger.error(e)
         
-        return response
+        
     

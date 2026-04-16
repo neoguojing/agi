@@ -6,6 +6,7 @@ import uuid
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Dict, Optional
+from pathlib import Path
 
 import aiosqlite
 from agi.agent.context import Context
@@ -19,10 +20,12 @@ from agi.agent.models import ModelProvider
 from agi.agent.prompt import BACKGROUD_SYSTEM_PROMPT
 from agi.agent.subagents import buildin_agents, make_backend
 from agi.agent.tools import buildin_tools
-from agi.config import OLLAMA_DEFAULT_MODE
+from agi.config import OLLAMA_DEFAULT_MODE,CACHE_DIR
 from deepagents import create_deep_agent
+from deepagents.middleware import FilesystemMiddleware
 from deepagents.middleware.summarization import SummarizationMiddleware, SummarizationToolMiddleware
 from langchain.agents.middleware import ModelFallbackMiddleware
+from langchain.agents import create_agent
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.store.memory import InMemoryStore
@@ -30,8 +33,8 @@ from langgraph.store.sqlite import SqliteStore
 
 logger = logging.getLogger(__name__)
 
-DB_PATH_CHECKPOINT = "agent_checkpoint.db"
-DB_PATH_STRORE = "agent_store.db"
+DB_PATH_CHECKPOINT = Path(CACHE_DIR) / "agent_checkpoint.db"
+DB_PATH_STRORE = Path(CACHE_DIR) / "agent_store.db"
 
 
 @dataclass
@@ -106,8 +109,9 @@ class AgentMiddlewareFactory:
             trim_tokens_to_summarize=deepcopy(cls.SUMMARY_TRIM_CONFIG),
         )
         return [
+            FilesystemMiddleware(backend=make_backend),
             SummarizationToolMiddleware(summary),
-            DebugLLMContextMiddleware(),
+            DebugLLMContextMiddleware(name="backgroud"),
             *extra_middlewares,
         ]
 
@@ -154,7 +158,6 @@ class DeepAgentBuilder:
     def _build_base_options(self) -> Dict[str, Any]:
         return {
             "name": self.name,
-            "backend": self.backend,
             "context_schema": Context,
         }
 
@@ -163,6 +166,7 @@ class DeepAgentBuilder:
             return {
                 **self._build_base_options(),
                 "model": self.llm,
+                "backend": self.backend,
                 "tools": self.tools,
                 "system_prompt": self.system_prompt,
                 "subagents": self.subagents,
@@ -178,6 +182,7 @@ class DeepAgentBuilder:
                 **self._build_base_options(),
                 "name": "backgroud",
                 "model": self.fallback_llm,
+                "system_prompt": self.system_prompt,
                 "middleware": AgentMiddlewareFactory.build_background(
                     llm=self.llm,
                     extra_middlewares=self.middlewares,
@@ -191,10 +196,6 @@ class DeepAgentBuilder:
 
     def build_options_for_background(self) -> Dict[str, Any]:
         return self._build_options("background")
-
-    # backward compatibility with previous typo
-    def build_options_for_backgroud(self) -> Dict[str, Any]:
-        return self.build_options_for_background()
 
 
 class DeepAgentManager:
@@ -236,7 +237,7 @@ class DeepAgentManager:
             await self._init_async_agent()
         return self._async_agent
 
-    async def get_background_agent(self, config: Optional[Dict], interval: int = 30):
+    async def get_background_agent(self, config: Optional[Dict],context, interval: int = 30):
         if self._async_backgroud_agent is not None:
             return self._async_backgroud_agent
 
@@ -254,7 +255,7 @@ class DeepAgentManager:
             )
         )
 
-        self._async_backgroud_agent = create_deep_agent(
+        self._async_backgroud_agent = create_agent(
             **bg_builder.build_options_for_background(),
             checkpointer=main_agent.checkpointer,
             store=main_agent.store,
@@ -263,14 +264,10 @@ class DeepAgentManager:
         self._bg_running = True
         bg_config = config or {"configurable": {"thread_id": uuid.uuid4().hex}}
         logger.info("[BG] Background agent initialized. Starting loop...")
-        self._bg_task = asyncio.create_task(self._run_background_loop(bg_config, interval))
+        self._bg_task = asyncio.create_task(self._run_background_loop(bg_config,context, interval))
         return self._async_backgroud_agent
 
-    # backward compatibility with existing misspelled method name
-    async def get_backgroud_agent(self, config, interval: int = 30):
-        return await self.get_background_agent(config, interval)
-
-    async def _run_background_loop(self, bg_config: Dict[str, Any], interval: int):
+    async def _run_background_loop(self, bg_config: Dict[str, Any],context, interval: int):
         while self._bg_running:
             try:
                 trigger_input = {
@@ -281,8 +278,8 @@ class DeepAgentManager:
                         }
                     ]
                 }
-                result = await self._async_backgroud_agent.ainvoke(trigger_input, config=bg_config)
-                logger.info(f"[BG] Tick result: {result['messages'][-1].content}")
+                result = await self._async_backgroud_agent.ainvoke(trigger_input, config=bg_config,context=context)
+                # logger.info(f"[BG] Tick result: {result}")
             except Exception as exc:  # noqa: BLE001
                 traceback.print_exc()
                 logger.error(f"[BG] error: {exc}")
@@ -328,7 +325,7 @@ async def invoke_agent_async(state: Dict, config: Dict = None, context: Context 
 
 async def stream_agent_async(state: Dict, config: Dict = None, context: Context = None, **kwargs) -> AsyncGenerator:
     agent = await agent_manager.get_async_agent()
-    await agent_manager.get_backgroud_agent(config)
+    await agent_manager.get_background_agent(config,context)
     async for part in agent.astream(
         state,
         config=_prepare_config(config, state),
