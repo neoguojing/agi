@@ -89,14 +89,17 @@ class MemoryMiddleware(AgentMiddleware):
         try:
             state = await self.load_state()
             messages = state["messages"]
+            
             # formatted_messages = self._format_messages(messages)
             agent_memory = self._format_agent_memory(request.runtime)
             target_memory_prompt = MEMORY_SYSTEM_PROMPT.format(agent_memory=agent_memory)
+            
             # 3. 注入系统 Prompt
             request = request.override(
-                messages=messages,
                 system_message=append_to_system_message(request.system_message, target_memory_prompt)
             )
+
+            request.messages = messages
 
             response = await handler(request)
             return response

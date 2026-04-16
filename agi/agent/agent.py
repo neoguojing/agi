@@ -27,6 +27,7 @@ from deepagents.middleware.summarization import SummarizationMiddleware, Summari
 from langchain.agents.middleware import ModelFallbackMiddleware
 from langchain.agents import create_agent
 from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.store.memory import InMemoryStore
 from langgraph.store.sqlite import SqliteStore
@@ -257,8 +258,8 @@ class DeepAgentManager:
 
         self._async_backgroud_agent = create_agent(
             **bg_builder.build_options_for_background(),
-            checkpointer=main_agent.checkpointer,
-            store=main_agent.store,
+            checkpointer=InMemorySaver(),
+            store=InMemoryStore(),
         )
 
         self._bg_running = True
