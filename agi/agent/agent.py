@@ -1,274 +1,330 @@
-import os
-import uuid
-from pathlib import Path
-import sqlite3
-import aiosqlite
 import asyncio
 import logging
+import sqlite3
 import traceback
-from typing import List, Optional, Dict, Any, AsyncGenerator, Union
-from contextlib import asynccontextmanager
-from langchain.tools import ToolRuntime
+import uuid
+from copy import deepcopy
+from dataclasses import dataclass
+from typing import Any, AsyncGenerator, Dict, Optional
 
-from agi.rag.retriever import MultiCollectionRAGManager
-from agi.agent.models import ModelProvider
-from agi.agent.middlewares import (DebugLLMContextMiddleware, 
-                                   ContextEngineeringMiddleware,
-                                   BrowserMiddleware,
-                                   MultimodalBase64Middleware,
-                                   MemoryMiddleware)
-from langchain.agents.middleware import (
-    ModelFallbackMiddleware
-)
-from agi.agent.tools import buildin_tools
-from agi.agent.subagents import buildin_agents,make_backend
+import aiosqlite
 from agi.agent.context import Context
-from deepagents.backends.protocol import BACKEND_TYPES as BACKEND_TYPES
-from agi.agent.prompt import  BACKGROUD_SYSTEM_PROMPT
-from agi.config import OLLAMA_DEFAULT_MODE,CACHE_DIR
-
-from langgraph.checkpoint.sqlite import SqliteSaver
-from langgraph.store.sqlite import SqliteStore
-from langgraph.store.memory import InMemoryStore
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-from langgraph.store.sqlite.aio import AsyncSqliteStore
-from deepagents.backends import CompositeBackend
+from agi.agent.middlewares import (
+    ContextEngineeringMiddleware,
+    DebugLLMContextMiddleware,
+    MemoryMiddleware,
+    MultimodalBase64Middleware,
+)
+from agi.agent.models import ModelProvider
+from agi.agent.prompt import BACKGROUD_SYSTEM_PROMPT
+from agi.agent.subagents import buildin_agents, make_backend
+from agi.agent.tools import buildin_tools
+from agi.config import OLLAMA_DEFAULT_MODE
 from deepagents import create_deep_agent
-from deepagents.backends import LocalShellBackend,StoreBackend,FilesystemBackend,StateBackend
-from deepagents.middleware.summarization import (
-        SummarizationMiddleware,
-        SummarizationToolMiddleware,
-    )
+from deepagents.middleware.summarization import SummarizationMiddleware, SummarizationToolMiddleware
+from langchain.agents.middleware import ModelFallbackMiddleware
+from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.store.memory import InMemoryStore
+from langgraph.store.sqlite import SqliteStore
 
 logger = logging.getLogger(__name__)
-# --- Constants & Config ---
+
 DB_PATH_CHECKPOINT = "agent_checkpoint.db"
 DB_PATH_STRORE = "agent_store.db"
 
+
+@dataclass
+class AgentRuntimeResources:
+    """Container for runtime resources used by `create_deep_agent`."""
+
+    checkpointer: Any
+    store: Any
+    connections: list[aiosqlite.Connection]
+
+
+class AgentPersistenceFactory:
+    """Responsible for checkpoint/store resource creation and cleanup only."""
+
+    def __init__(self, checkpoint_db_path: str = DB_PATH_CHECKPOINT):
+        self.checkpoint_db_path = checkpoint_db_path
+
+    def create_sync_resources(self) -> AgentRuntimeResources:
+        conn = sqlite3.connect(self.checkpoint_db_path, check_same_thread=False)
+        return AgentRuntimeResources(
+            checkpointer=SqliteSaver(conn),
+            store=SqliteStore(conn=conn),
+            connections=[],
+        )
+
+    async def create_async_resources(self) -> AgentRuntimeResources:
+        conn_saver = await aiosqlite.connect(self.checkpoint_db_path)
+        await conn_saver.execute("PRAGMA journal_mode=WAL")
+        await conn_saver.execute("PRAGMA synchronous=NORMAL")
+
+        saver = AsyncSqliteSaver(conn=conn_saver)
+        await saver.setup()
+
+        return AgentRuntimeResources(
+            checkpointer=saver,
+            store=InMemoryStore(),
+            connections=[conn_saver],
+        )
+
+    async def close_async_connections(self, connections: list[aiosqlite.Connection]) -> None:
+        for conn in connections:
+            await conn.close()
+
+
+class AgentMiddlewareFactory:
+    """Responsible for middleware assembly only."""
+
+    SUMMARY_TRIM_CONFIG = {
+        "trigger": ("tokens", 30000),
+        "keep": ("messages", 10),
+        "max_length": 2000,
+        "truncation_text": "...(truncated)",
+    }
+
+    @staticmethod
+    def build_main(llm: Any, fallback_llm: Any, extra_middlewares: list[Any]) -> list[Any]:
+        return [
+            ContextEngineeringMiddleware(backend=make_backend),
+            ModelFallbackMiddleware(llm, fallback_llm),
+            DebugLLMContextMiddleware(),
+            MultimodalBase64Middleware(),
+            *extra_middlewares,
+        ]
+
+    @classmethod
+    def build_background(cls, llm: Any, extra_middlewares: list[Any]) -> list[Any]:
+        summary = SummarizationMiddleware(
+            model=llm,
+            backend=make_backend,
+            trigger=("tokens", 30000),
+            keep=("messages", 10),
+            trim_tokens_to_summarize=deepcopy(cls.SUMMARY_TRIM_CONFIG),
+        )
+        return [
+            SummarizationToolMiddleware(summary),
+            DebugLLMContextMiddleware(),
+            *extra_middlewares,
+        ]
+
+
 class DeepAgentBuilder:
-    """Fluent Builder for Agent Configuration"""
+    """Responsible for agent-level configuration only (no runtime resources)."""
+
     def __init__(self, name: str = "main"):
         self.name = name
         self.llm = ModelProvider.get_chat_model(provider="ollama", model_name=OLLAMA_DEFAULT_MODE)
         self.fallback_llm = ModelProvider.get_chat_model(provider="ollama", model_name="qwen3.5:9b")
-
         self.embd = ModelProvider.get_embeddings(provider="ollama", model_name="embeddinggemma:latest")
+
         self.system_prompt = ""
         self.tools = list(buildin_tools)
         self.subagents = list(buildin_agents)
-        self.middlewares = []
-        # self.memory_paths = ["/memories/AGENT.md"]
+        self.middlewares: list[Any] = []
         self.backend = make_backend
-    
-    def clone(self):
+
+    def clone(self) -> "DeepAgentBuilder":
         new = DeepAgentBuilder(self.name)
         new.llm = self.llm
         new.fallback_llm = self.fallback_llm
+        new.embd = self.embd
         new.system_prompt = self.system_prompt
         new.tools = list(self.tools)
         new.subagents = list(self.subagents)
         new.middlewares = list(self.middlewares)
+        new.backend = self.backend
         return new
 
-    def with_model(self, provider: str, name: str):
+    def with_model(self, provider: str, name: str) -> "DeepAgentBuilder":
         self.llm = ModelProvider.get_chat_model(provider, name)
         return self
 
-    def with_system_prompt(self, prompt: str):
+    def with_system_prompt(self, prompt: str) -> "DeepAgentBuilder":
         self.system_prompt = prompt
         return self
-    
-    def with_middleware(self, middleware):
+
+    def with_middleware(self, middleware: Any) -> "DeepAgentBuilder":
         self.middlewares.append(middleware)
         return self
 
-    def build_options(self) -> Dict[str, Any]:
-        """Returns the dictionary of parameters required for create_deep_agent"""
-
+    def _build_base_options(self) -> Dict[str, Any]:
         return {
             "name": self.name,
-            "model": self.llm,
-            "tools": self.tools,
-            "system_prompt": self.system_prompt,
-            "subagents": self.subagents,
             "backend": self.backend,
-            # "memory": self.memory_paths,
-            "middleware": [
-                ContextEngineeringMiddleware(backend=make_backend),
-                ModelFallbackMiddleware(self.llm,self.fallback_llm),
-                DebugLLMContextMiddleware(),
-                MultimodalBase64Middleware()
-            ],
-            "context_schema": Context
+            "context_schema": Context,
         }
-    
+
+    def _build_options(self, profile: str = "main") -> Dict[str, Any]:
+        if profile == "main":
+            return {
+                **self._build_base_options(),
+                "model": self.llm,
+                "tools": self.tools,
+                "system_prompt": self.system_prompt,
+                "subagents": self.subagents,
+                "middleware": AgentMiddlewareFactory.build_main(
+                    llm=self.llm,
+                    fallback_llm=self.fallback_llm,
+                    extra_middlewares=self.middlewares,
+                ),
+            }
+
+        if profile == "background":
+            return {
+                **self._build_base_options(),
+                "name": "backgroud",
+                "model": self.fallback_llm,
+                "middleware": AgentMiddlewareFactory.build_background(
+                    llm=self.llm,
+                    extra_middlewares=self.middlewares,
+                ),
+            }
+
+        raise ValueError(f"Unsupported profile: {profile}")
+
+    def build_options(self) -> Dict[str, Any]:
+        return self._build_options("main")
+
+    def build_options_for_background(self) -> Dict[str, Any]:
+        return self._build_options("background")
+
+    # backward compatibility with previous typo
     def build_options_for_backgroud(self) -> Dict[str, Any]:
-        """Returns the dictionary of parameters required for create_deep_agent"""
+        return self.build_options_for_background()
 
-        summ = SummarizationMiddleware(model=self.llm, 
-                                       backend=make_backend,
-                                       trigger=("tokens", 30000),
-                                       keep=("messages", 10),
-                                       trim_tokens_to_summarize= {
-                                            # "trigger": ("messages", 20),
-                                            "trigger": ("tokens", 30000),
-                                            "keep": ("messages", 10),
-                                            "max_length": 2000,
-                                            "truncation_text": "...(truncated)",
-                                        })
-
-        return {
-            "name": "backgroud",
-            "model": self.fallback_llm,
-            "backend": self.backend,
-            "middleware": [
-                SummarizationToolMiddleware(summ),
-                DebugLLMContextMiddleware(),
-                *self.middlewares
-            ],
-            "context_schema": Context
-        }
 
 class DeepAgentManager:
-    """Manager to handle Sync and Async Agent instances and persistence"""
-    def __init__(self, builder: DeepAgentBuilder):
+    """Responsible for agent runtime lifecycle and orchestration only."""
+
+    def __init__(self, builder: DeepAgentBuilder, persistence_factory: Optional[AgentPersistenceFactory] = None):
         self.builder = builder
+        self.persistence_factory = persistence_factory or AgentPersistenceFactory()
+
         self._sync_agent = None
         self._async_agent = None
         self._async_backgroud_agent = None
-        self._async_conn: Optional[aiosqlite.Connection] = None
 
-    # --- Synchronous Logic ---
+        self._async_connections: list[aiosqlite.Connection] = []
+        self._bg_task: Optional[asyncio.Task] = None
+        self._bg_running = False
+
     def get_sync_agent(self):
         if self._sync_agent is None:
-            conn = sqlite3.connect(DB_PATH_CHECKPOINT, check_same_thread=False)
-            # Standard LangGraph SqliteSaver
-            checkpointer = SqliteSaver(conn)
-            store = SqliteStore(conn=conn)
-            # Note: AsyncSqliteStore usually requires an async connection, 
-            # for pure sync, you might omit 'store' or use a compatible sync store.
+            resources = self.persistence_factory.create_sync_resources()
             self._sync_agent = create_deep_agent(
                 **self.builder.build_options(),
-                checkpointer=checkpointer,
-                store=store
+                checkpointer=resources.checkpointer,
+                store=resources.store,
             )
         return self._sync_agent
 
-    # --- Asynchronous Logic ---
+    async def _init_async_agent(self):
+        resources = await self.persistence_factory.create_async_resources()
+        self._async_connections = resources.connections
+        self._async_agent = create_deep_agent(
+            **self.builder.build_options(),
+            checkpointer=resources.checkpointer,
+            store=resources.store,
+        )
+
     async def get_async_agent(self):
         if self._async_agent is None:
-            # 1. 初始化主连接用于 Saver (检查点通常更关键)
-            conn_saver = await aiosqlite.connect(DB_PATH_CHECKPOINT)
-            await conn_saver.execute("PRAGMA journal_mode=WAL")
-            await conn_saver.execute("PRAGMA synchronous=NORMAL")
-            
-            # 2. 初始化独立连接用于 Store (向量/记忆存储)
-            # 指向同一个文件没问题，WAL 模式下并发安全
-            # conn_store = await aiosqlite.connect(DB_PATH_STRORE)
-            # await conn_store.execute("PRAGMA journal_mode=WAL")
-            # await conn_store.execute("PRAGMA synchronous=NORMAL")
-
-            saver = AsyncSqliteSaver(conn=conn_saver)
-            # store = AsyncSqliteStore(conn=conn_store)
-            # saver = MemorySaver()
-            store = InMemoryStore()
-            await saver.setup()  # 确保表结构已创建
-            # await store.setup()  # 确保表结构已创建
-            
-            self._async_agent = create_deep_agent(
-                **self.builder.build_options(),
-                checkpointer=saver,
-                store=store
-            )
-            
-            # self._async_agent.get_graph().draw_png("agent.png")
-            # ⚠️ 重要：你需要在程序退出时关闭这两个连接
-            # 可以在 __del__ 或专门的 shutdown 方法中处理
-            # self._connections_to_close = [conn_saver, conn_store]       
-
+            await self._init_async_agent()
         return self._async_agent
-    # 后台agent
-    # 1.负责根据最新消息判断是否需要触发远期记忆提取
-    # 2.负责根据最新消息判断是否需要触发消息压缩
-    # 3.定期自检，判断上面任务是否执行，未执行则触发手动压缩
-    async def get_backgroud_agent(self, config, interval: int = 30):
-        if self._async_backgroud_agent is not None:
-            return self._async_backgroud_agent   # ✅ 防重复创建
 
-        if not self._async_agent:
-            await self.get_async_agent()  # 确保主 agent 已初始化
-        
-        builder = self.builder.clone()
-        agent_configs = (
-            builder
+    async def get_background_agent(self, config: Optional[Dict], interval: int = 30):
+        if self._async_backgroud_agent is not None:
+            return self._async_backgroud_agent
+
+        main_agent = await self.get_async_agent()
+        bg_builder = (
+            self.builder.clone()
             .with_system_prompt(BACKGROUD_SYSTEM_PROMPT)
-            .with_middleware(MemoryMiddleware(backend=make_backend,
-                                              checkpointer=self._async_agent.checkpointer,
-                                              channels=self._async_agent.channels,
-                                              config=config))
-            .build_options_for_backgroud()
+            .with_middleware(
+                MemoryMiddleware(
+                    backend=make_backend,
+                    checkpointer=main_agent.checkpointer,
+                    channels=main_agent.channels,
+                    config=config,
+                )
+            )
         )
 
         self._async_backgroud_agent = create_deep_agent(
-            **agent_configs,
-            checkpointer=self._async_agent.checkpointer,
-            store=self._async_agent.store
+            **bg_builder.build_options_for_background(),
+            checkpointer=main_agent.checkpointer,
+            store=main_agent.store,
         )
 
         self._bg_running = True
-        logger.info("[BG] Background agent initialized. Starting loop...")
         bg_config = config or {"configurable": {"thread_id": uuid.uuid4().hex}}
-        async def loop():
-            while self._bg_running:
-                try:
-                    # 👉 关键：构造触发消息
-                    trigger_input = {
-                        "messages": [
-                            {
-                                "type": "human",
-                                "content": "Background maintenance tick: analyze memory and compression needs."
-                            }
-                        ]
-                    }
+        logger.info("[BG] Background agent initialized. Starting loop...")
+        self._bg_task = asyncio.create_task(self._run_background_loop(bg_config, interval))
+        return self._async_backgroud_agent
 
-                    # 👉 关键：让 agent 自己决定做什么
-                    result = await self._async_backgroud_agent.ainvoke(trigger_input,config=bg_config)
-                    logger.info(f"[BG] Tick result: {result['messages'][-1].content}")
+    # backward compatibility with existing misspelled method name
+    async def get_backgroud_agent(self, config, interval: int = 30):
+        return await self.get_background_agent(config, interval)
 
-                except Exception as e:
-                    traceback.print_exc()
-                    logger.error(f"[BG] error: {e}")
+    async def _run_background_loop(self, bg_config: Dict[str, Any], interval: int):
+        while self._bg_running:
+            try:
+                trigger_input = {
+                    "messages": [
+                        {
+                            "type": "human",
+                            "content": "Background maintenance tick: analyze memory and compression needs.",
+                        }
+                    ]
+                }
+                result = await self._async_backgroud_agent.ainvoke(trigger_input, config=bg_config)
+                logger.info(f"[BG] Tick result: {result['messages'][-1].content}")
+            except Exception as exc:  # noqa: BLE001
+                traceback.print_exc()
+                logger.error(f"[BG] error: {exc}")
 
-                await asyncio.sleep(interval)
-
-        self._bg_task = asyncio.create_task(loop())
+            await asyncio.sleep(interval)
 
     async def close(self):
-        if self._async_agent:
-            for conn in getattr(self, "_connections_to_close", []):
-                await conn.close()
-            self._async_agent = None
+        self._bg_running = False
+        if self._bg_task is not None:
+            self._bg_task.cancel()
+            try:
+                await self._bg_task
+            except asyncio.CancelledError:
+                pass
+            self._bg_task = None
 
-# --- Global Manager Instance ---
+        await self.persistence_factory.close_async_connections(self._async_connections)
+        self._async_connections = []
+        self._async_agent = None
+        self._async_backgroud_agent = None
+
+
 agent_manager = DeepAgentManager(DeepAgentBuilder())
 
-# --- Unified Interface Functions ---
 
 def _prepare_config(config: Optional[Dict], state: Dict) -> Dict:
     return config or {"configurable": {"thread_id": state.get("thread_id", str(uuid.uuid4()))}}
 
+
 def _prepare_context(context: Optional[Context], state: Dict) -> Context:
     return context or Context(user_id=state.get("user_id"), conversation_id=state.get("conversation_id"))
+
 
 async def invoke_agent_async(state: Dict, config: Dict = None, context: Context = None, **kwargs):
     agent = await agent_manager.get_async_agent()
     return await agent.invoke(
-        state, 
-        config=_prepare_config(config, state), 
-        context=_prepare_context(context, state), 
-        **kwargs
+        state,
+        config=_prepare_config(config, state),
+        context=_prepare_context(context, state),
+        **kwargs,
     )
+
 
 async def stream_agent_async(state: Dict, config: Dict = None, context: Context = None, **kwargs) -> AsyncGenerator:
     agent = await agent_manager.get_async_agent()
@@ -279,9 +335,10 @@ async def stream_agent_async(state: Dict, config: Dict = None, context: Context 
         context=_prepare_context(context, state),
         stream_mode=kwargs.pop("stream_mode", ["messages", "updates"]),
         version="v2",
-        **kwargs
+        **kwargs,
     ):
         yield part
+
 
 def invoke_agent_sync(state: Dict, config: Dict = None, context: Context = None, **kwargs):
     agent = agent_manager.get_sync_agent()
@@ -289,18 +346,15 @@ def invoke_agent_sync(state: Dict, config: Dict = None, context: Context = None,
         state,
         config=_prepare_config(config, state),
         context=_prepare_context(context, state),
-        **kwargs
+        **kwargs,
     )
 
-# --- Execution Entry ---
 
-if __name__ == '__main__':
-    # Example Sync Call
+if __name__ == "__main__":
     print("--- Running Sync ---")
     sync_res = invoke_agent_sync({"messages": [{"role": "user", "content": "ls"}]})
     print(f"Result: {sync_res['messages'][-1].content}")
 
-    # Example Async Call
     async def main():
         print("\n--- Running Async ---")
         async for chunk in stream_agent_async({"messages": [{"role": "user", "content": "whoami"}]}):
