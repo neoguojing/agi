@@ -1,4 +1,7 @@
 import json
+import platform
+import datetime
+import os
 from typing import Callable, List, Awaitable
 from venv import logger
 from langchain_core.messages import SystemMessage, BaseMessage
@@ -31,6 +34,38 @@ class ContextEngineeringMiddleware(AgentMiddleware):
             return self.backend(runtime)
         return self.backend
     
+
+    def _format_environment_context(self, runtime) -> str:
+        try:
+            now = datetime.datetime.utcnow().isoformat()
+
+            env_info = {
+                "current_time_utc": now,
+                "timezone": "UTC",
+                "os": platform.system(),
+                "os_version": platform.version(),
+                "python_version": platform.python_version()            
+            }
+
+            # runtime 可选扩展
+            if runtime:
+                env_info.update({
+                    "user_id": getattr(runtime.context, "user_id", None),
+                    "conversation_id": getattr(runtime.context, "conversation_id", None),
+                })
+
+            env_str = json.dumps(env_info, indent=2, ensure_ascii=False)
+
+            return f"""
+    <environment>
+    {env_str}
+    </environment>
+    """.strip()
+
+        except Exception as e:
+            logger.error(f"Failed to build environment context: {e}")
+            return "<environment>(failed to load)</environment>"
+        
     def _format_agent_memory(self,runtime) -> str:
         if not self.memory_paths:
             return get_middleware_prompt("context").format(agent_memory="(No memory loaded)")
@@ -57,9 +92,17 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         request: ModelRequest,
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]], 
     ) -> ModelResponse:
-        
+    
+        env_context_str = self._format_environment_context(request.runtime)
         # 1. 获取上下文信息
-        injected_context_str = self._format_agent_memory(request.runtime)
+        memory_context_str = self._format_agent_memory(request.runtime)
+
+        injected_context_str = f"""
+        {env_context_str}
+
+        {memory_context_str}
+        """.strip()
+
         # 3. 注入系统 Prompt
         request = request.override(
             system_message=append_to_system_message(request.system_message, injected_context_str)

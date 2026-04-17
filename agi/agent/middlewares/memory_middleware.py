@@ -47,7 +47,7 @@ class MemoryMiddleware(AgentMiddleware):
             return self.backend(runtime)
         return self.backend
 
-    async def load_state(self):
+    async def load_state_from_outside(self):
         cp = await self.checkpointer.aget(self.config)
         return checkpoint_to_state(cp, self.channels)
 
@@ -87,11 +87,11 @@ class MemoryMiddleware(AgentMiddleware):
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]], 
     ) -> ModelResponse:
         try:
-            state = await self.load_state()
+            state = await self.load_state_from_outside()
             messages = state["messages"]
-            
             # formatted_messages = self._format_messages(messages)
             agent_memory = self._format_agent_memory(request.runtime)
+
             target_memory_prompt = MEMORY_SYSTEM_PROMPT.format(agent_memory=agent_memory)
             
             # 3. 注入系统 Prompt
@@ -102,6 +102,7 @@ class MemoryMiddleware(AgentMiddleware):
             request.messages = messages
 
             response = await handler(request)
+
             return response
         except Exception as e:
             logger.error(e)

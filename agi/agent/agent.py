@@ -95,7 +95,7 @@ class AgentMiddlewareFactory:
         return [
             ContextEngineeringMiddleware(backend=make_backend),
             ModelFallbackMiddleware(llm, fallback_llm),
-            DebugLLMContextMiddleware(),
+            # DebugLLMContextMiddleware(),
             MultimodalBase64Middleware(),
             *extra_middlewares,
         ]
@@ -112,7 +112,6 @@ class AgentMiddlewareFactory:
         return [
             FilesystemMiddleware(backend=make_backend),
             SummarizationToolMiddleware(summary),
-            DebugLLMContextMiddleware(name="backgroud"),
             *extra_middlewares,
         ]
 
@@ -152,8 +151,8 @@ class DeepAgentBuilder:
         self.system_prompt = prompt
         return self
 
-    def with_middleware(self, middleware: Any) -> "DeepAgentBuilder":
-        self.middlewares.append(middleware)
+    def with_middleware(self, middlewares: list[Any]) -> "DeepAgentBuilder":
+        self.middlewares.extend(middlewares)
         return self
 
     def _build_base_options(self) -> Dict[str, Any]:
@@ -246,14 +245,15 @@ class DeepAgentManager:
         bg_builder = (
             self.builder.clone()
             .with_system_prompt(BACKGROUD_SYSTEM_PROMPT)
-            .with_middleware(
+            .with_middleware([
                 MemoryMiddleware(
                     backend=make_backend,
                     checkpointer=main_agent.checkpointer,
                     channels=main_agent.channels,
                     config=config,
-                )
-            )
+                ),
+                DebugLLMContextMiddleware("backgroud")
+            ])
         )
 
         self._async_backgroud_agent = create_agent(

@@ -137,7 +137,6 @@ def make_backend(runtime):
         default=StateBackend(runtime),
         routes={
             "/memories/": FilesystemBackend(root / user_id,virtual_mode=True),
-            "/compressed_messages/": FilesystemBackend(root / user_id / session_id,virtual_mode=True),
             "/conversation_history/": FilesystemBackend(root / user_id / session_id,virtual_mode=True),
             # 全局：系统配置、模板
             "/shared/": FilesystemBackend(root / user_id,virtual_mode=True),
