@@ -21,7 +21,7 @@ from agi.agent.prompt import BACKGROUD_SYSTEM_PROMPT
 from agi.agent.subagents import buildin_agents, make_backend
 from agi.agent.tools import buildin_tools
 from agi.config import OLLAMA_DEFAULT_MODE,CACHE_DIR
-from deepagents import create_deep_agent
+from .deep_agent import create_deep_agent
 from deepagents.middleware import FilesystemMiddleware
 from deepagents.middleware.summarization import SummarizationMiddleware, SummarizationToolMiddleware
 from langchain.agents.middleware import ModelFallbackMiddleware
