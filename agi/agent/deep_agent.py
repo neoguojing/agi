@@ -30,7 +30,7 @@ from deepagents.middleware.subagents import (
     SubAgent,
     SubAgentMiddleware,
 )
-from deepagents.middleware.summarization import create_summarization_middleware
+from agi.agent.middlewares import create_summarization_middleware
 
 BASE_AGENT_PROMPT = """You are a Deep Agent, an AI assistant that helps users accomplish tasks using tools. You respond with text and tool calls. The user can see your responses and tool outputs in real time.
 
@@ -106,6 +106,7 @@ def resolve_model(model: str | BaseChatModel) -> BaseChatModel:
 
 def create_deep_agent(  # noqa: C901, PLR0912  # Complex graph assembly logic with many conditional branches
     model: str | BaseChatModel | None = None,
+    fallback_model: str | BaseChatModel | None = None,
     tools: Sequence[BaseTool | Callable | dict[str, Any]] | None = None,
     *,
     system_prompt: str | SystemMessage | None = None,
@@ -215,7 +216,7 @@ def create_deep_agent(  # noqa: C901, PLR0912  # Complex graph assembly logic wi
     gp_middleware: list[AgentMiddleware[Any, Any, Any]] = [
         TodoListMiddleware(),
         FilesystemMiddleware(backend=backend),
-        create_summarization_middleware(model, backend),
+        create_summarization_middleware(fallback_model, backend),
         AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
         PatchToolCallsMiddleware(),
     ]
@@ -281,7 +282,7 @@ def create_deep_agent(  # noqa: C901, PLR0912  # Complex graph assembly logic wi
                 backend=backend,
                 subagents=all_subagents,
             ),
-            create_summarization_middleware(model, backend),
+            create_summarization_middleware(fallback_model, backend),
             AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
             PatchToolCallsMiddleware(),
         ]

@@ -95,7 +95,7 @@ class AgentMiddlewareFactory:
         return [
             ContextEngineeringMiddleware(backend=make_backend),
             ModelFallbackMiddleware(llm, fallback_llm),
-            # DebugLLMContextMiddleware(),
+            DebugLLMContextMiddleware(),
             MultimodalBase64Middleware(),
             *extra_middlewares,
         ]
@@ -166,6 +166,7 @@ class DeepAgentBuilder:
             return {
                 **self._build_base_options(),
                 "model": self.llm,
+                "fallback_model": self.fallback_llm,
                 "backend": self.backend,
                 "tools": self.tools,
                 "system_prompt": self.system_prompt,
@@ -181,7 +182,8 @@ class DeepAgentBuilder:
             return {
                 **self._build_base_options(),
                 "name": "backgroud",
-                "model": self.fallback_llm,
+                "model": self.llm,
+                "fallback_model": self.fallback_llm,
                 "system_prompt": self.system_prompt,
                 "middleware": AgentMiddlewareFactory.build_background(
                     llm=self.llm,
@@ -252,7 +254,7 @@ class DeepAgentManager:
                     channels=main_agent.channels,
                     config=config,
                 ),
-                DebugLLMContextMiddleware("backgroud")
+                # DebugLLMContextMiddleware("backgroud")
             ])
         )
 
