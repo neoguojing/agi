@@ -45,10 +45,9 @@ def checkpoint_to_state(
         channel_specs,
         checkpoint
     )
-
     # 2. Extract messages channel (core logic)
     messages = None
-
+    _summarization_event = None
     if "messages" in channels:
         ch = channels["messages"]
 
@@ -59,9 +58,20 @@ def checkpoint_to_state(
             except Exception:
                 messages = []
 
+    if "_summarization_event" in channels:
+        ch = channels["_summarization_event"]
+
+        # safe access
+        if hasattr(ch, "get"):
+            try:
+                _summarization_event = ch.get()
+            except Exception:
+                _summarization_event = None
+
     # 3. Build state object
     state = {
         "messages": messages or [],
+        "_summarization_event": _summarization_event,
     }
 
     return state

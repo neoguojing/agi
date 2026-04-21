@@ -102,16 +102,8 @@ class AgentMiddlewareFactory:
 
     @classmethod
     def build_background(cls, llm: Any, extra_middlewares: list[Any]) -> list[Any]:
-        summary = SummarizationMiddleware(
-            model=llm,
-            backend=make_backend,
-            trigger=("tokens", 30000),
-            keep=("messages", 10),
-            trim_tokens_to_summarize=deepcopy(cls.SUMMARY_TRIM_CONFIG),
-        )
         return [
             FilesystemMiddleware(backend=make_backend),
-            SummarizationToolMiddleware(summary),
             *extra_middlewares,
         ]
 
@@ -182,8 +174,7 @@ class DeepAgentBuilder:
             return {
                 **self._build_base_options(),
                 "name": "backgroud",
-                "model": self.llm,
-                "fallback_model": self.fallback_llm,
+                "model": self.fallback_llm,
                 "system_prompt": self.system_prompt,
                 "middleware": AgentMiddlewareFactory.build_background(
                     llm=self.llm,
@@ -254,7 +245,7 @@ class DeepAgentManager:
                     channels=main_agent.channels,
                     config=config,
                 ),
-                # DebugLLMContextMiddleware("backgroud")
+                DebugLLMContextMiddleware("backgroud")
             ])
         )
 

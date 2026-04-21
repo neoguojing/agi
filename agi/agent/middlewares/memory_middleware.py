@@ -4,7 +4,7 @@ import time
 import json
 from typing import Callable, List, Awaitable
 import logging
-from langchain_core.messages import SystemMessage, BaseMessage
+from langchain_core.messages import SystemMessage, BaseMessage,AnyMessage
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from deepagents.backends.protocol import BackendProtocol
 from agi.utils.common import append_to_system_message, extract_messages_content
@@ -51,6 +51,44 @@ class MemoryMiddleware(AgentMiddleware):
         cp = await self.checkpointer.aget(self.config)
         return checkpoint_to_state(cp, self.channels)
 
+    def _apply_event_to_messages(
+        self,
+        messages: list[AnyMessage],
+        event: dict | None,
+    ) -> list[AnyMessage]:
+        """Reconstruct effective messages from raw state messages and a summarization event.
+
+        When a prior summarization event exists, the effective conversation is
+        the summary message followed by all messages from `cutoff_index` onward.
+
+        Args:
+            messages: Full message list from state.
+            event: The `_summarization_event` dict, or `None`.
+
+        Returns:
+            The effective message list the model would see.
+        """
+        if event is None:
+            return list(messages)
+
+        try:
+            summary_msg = event["summary_message"]
+            cutoff_idx = event["cutoff_index"]
+        except (KeyError, TypeError) as exc:
+            logger.warning("Malformed _summarization_event (missing keys): %s", exc)
+            return list(messages)
+
+        if cutoff_idx > len(messages):
+            logger.warning(
+                "Summarization cutoff_index %d exceeds message count %d; remaining slice will be empty",
+                cutoff_idx,
+                len(messages),
+            )
+            return [summary_msg]
+
+        result: list[AnyMessage] = [summary_msg]
+        result.extend(messages[cutoff_idx:])
+        return result
 
     def _format_agent_memory(self,runtime) -> str:
         if not self.memory_paths:
@@ -89,6 +127,9 @@ class MemoryMiddleware(AgentMiddleware):
         try:
             state = await self.load_state_from_outside()
             messages = state["messages"]
+            summay_event = state["_summarization_event"]
+            if summay_event is not None:
+                messages = self._apply_event_to_messages(messages,summay_event)
             # formatted_messages = self._format_messages(messages)
             agent_memory = self._format_agent_memory(request.runtime)
 
@@ -99,12 +140,15 @@ class MemoryMiddleware(AgentMiddleware):
                 system_message=append_to_system_message(request.system_message, target_memory_prompt)
             )
 
-            request.messages = messages
+            last_message = request.messages[-1]
+            request.messages = messages+last_message
 
             response = await handler(request)
 
             return response
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             logger.error(e)
         
         

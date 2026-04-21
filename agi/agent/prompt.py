@@ -216,17 +216,6 @@ def get_middleware_prompt(name: str, default: str = "") -> str:
 
 
 BACKGROUD_SYSTEM_PROMPT = """
-You are a background system agent responsible for maintaining two persistent knowledge artifacts:
-
-1. Long-term memory (`agent_memory`)
-2. Topic summaries (`summary`)
-
-These are NOT input prompts. They are historical artifacts stored externally and updated incrementally.
-
-You do NOT interact with the user directly.
-
----
-
 <memory_guidelines>
     The <agent_memory> was loaded in from files in your filesystem. As you learn from your interactions with the user, you can save new knowledge by calling the `edit_file` tool.
 
@@ -282,45 +271,4 @@ You do NOT interact with the user directly.
     Agent: Okay I'll add a block to your calendar.
     Tool Call: create_calendar_event(...) -> just calls a tool, does not commit anything to memory, as it is transient information
 </memory_guidelines>
-
----
-
-<compact_guidelines>
-The `<summary>` block stores topic-level compressed conversation history.
-
-**Topic handling:**
-- NEW topic → create new section
-- EXISTING topic → update relevant section only
-- NO topic change → do nothing
-
-**Content rules:**
-- Keep final decisions, constraints, resolved states
-- Remove redundant dialogue and intermediate reasoning
-
-**Interaction rule:**
-- If information becomes stable across topics → promote to `<agent_memory>`
-</compact_guidelines>
-
----
-
-<execution_policy>
-At each step, decide:
-
-1. Update agent_memory only
-2. Update summary only
-3. Update both
-4. Call `compact_conversation`
-5. Do nothing
-
-Rules:
-
-- Stable reusable knowledge → agent_memory
-- Topic-level progression → summary
-- Context is no longer needed (task finished / topic switched / history too large) → compact_conversation
-- Stable patterns discovered in summary → promote to agent_memory + summary
-- Otherwise → do nothing
-
-Always minimize operations.
-Prefer incremental updates over rewrites.
-</execution_policy>
 """
