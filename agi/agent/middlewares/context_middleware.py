@@ -23,11 +23,12 @@ class ContextEngineeringMiddleware(AgentMiddleware):
     def __init__(
         self, 
         backend = None,
-        memory_paths: List[str] = ["/memories/AGENT.md"]
+        memory_paths: List[str] = ["/memories/facts.md","/memories/preferences.md","/memories/lessons.md"]
 
     ):
         self.backend = backend
         self.memory_paths = memory_paths
+        self.is_file_inited = False
 
     def _get_backend(self, runtime) -> BackendProtocol:
         if callable(self.backend):
@@ -65,12 +66,24 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         except Exception as e:
             logger.error(f"Failed to build environment context: {e}")
             return "<environment>(failed to load)</environment>"
+    
+    def create_files(self,backend):
+        for path in self.memory_paths:
+            file_info = backend.ls_info(path)
+            if not file_info:
+                backend.upload_files([(path,b"")])
         
+        self.is_file_inited = True
+
+
     def _format_agent_memory(self,runtime) -> str:
         if not self.memory_paths:
             return get_middleware_prompt("context").format(agent_memory="(No memory loaded)")
         
         backend = self._get_backend(runtime)  # 这里传 None，因为我们只需要读取文件内容
+        if not self.is_file_inited:
+            self.create_files(backend)
+
         contents = {}
         for path in self.memory_paths:
             try:
@@ -92,7 +105,7 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         request: ModelRequest,
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]], 
     ) -> ModelResponse:
-    
+        
         env_context_str = self._format_environment_context(request.runtime)
         # 1. 获取上下文信息
         memory_context_str = self._format_agent_memory(request.runtime)

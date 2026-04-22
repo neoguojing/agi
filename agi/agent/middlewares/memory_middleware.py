@@ -34,7 +34,7 @@ class MemoryMiddleware(AgentMiddleware):
         checkpointer = None,
         channels = None,
         config = None,
-        memory_paths: List[str] = ["/memories/AGENT.md"]
+        memory_paths: List[str] =  ["/memories/facts.md","/memories/preferences.md","/memories/lessons.md"]
     ):
         self.backend = backend
         self.checkpointer = checkpointer
@@ -143,6 +143,7 @@ class MemoryMiddleware(AgentMiddleware):
             last_message = request.messages[-1]
             messages.append(last_message)
             request.messages = messages
+            print(f"*******************{request.messages[-1]}")
             response = await handler(request)
 
             return response
