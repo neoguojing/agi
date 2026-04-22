@@ -126,7 +126,7 @@ class MemoryMiddleware(AgentMiddleware):
     ) -> ModelResponse:
         try:
             state = await self.load_state_from_outside()
-            messages = state["messages"]
+            messages = state.get("messages") or []
             summay_event = state["_summarization_event"]
             if summay_event is not None:
                 messages = self._apply_event_to_messages(messages,summay_event)
@@ -141,8 +141,8 @@ class MemoryMiddleware(AgentMiddleware):
             )
 
             last_message = request.messages[-1]
-            request.messages = messages+last_message
-
+            messages.append(last_message)
+            request.messages = messages
             response = await handler(request)
 
             return response

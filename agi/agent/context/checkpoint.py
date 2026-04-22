@@ -11,6 +11,9 @@ def channels_from_checkpoint(
     checkpoint: Checkpoint,
 ) -> tuple[Mapping[str, BaseChannel], ManagedValueMapping]:
     """Get channels from a checkpoint."""
+    if checkpoint is None:
+        return ()
+    
     channel_specs: dict[str, BaseChannel] = {}
     managed_specs: dict[str, ManagedValueSpec] = {}
     for k, v in specs.items():
