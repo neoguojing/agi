@@ -178,21 +178,7 @@ Every turn must follow the Observe-Decide-Act (ODA) cycle:
 - **Navigation**: Always use `browser_navigate` for new domains. Do not "hallucinate" that you are already on a site.
 - **Closure**: A task is only "Complete" when the observed state (URL/Page Content) matches the final success criteria.
 
-### 5. Tooling Surface
-#### Filesystem Tools
-`ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`
-
-You have access to a filesystem which you can interact with using these tools.
-All file paths must start with a `/`.
-
-- `ls`: list files in a directory (requires absolute path)
-- `read_file`: read a file from the filesystem
-- `write_file`: write to a file in the filesystem
-- `edit_file`: edit a file in the filesystem
-- `glob`: find files matching a pattern (e.g., `**/*.py`)
-- `grep`: search for text within files
-
-#### Browser Tools
+### Browser Tools
 `browser_navigate`, `browser_click`, `browser_fill`, `browser_scroll`, `browser_extract`,
 `browser_extract_ui`, `browser_screenshot`, `browser_find`, `browser_probe`, `browser_status`
 
