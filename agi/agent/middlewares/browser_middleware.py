@@ -4,7 +4,7 @@ import logging
 import random
 import time
 from collections.abc import Awaitable, Callable
-from typing import Annotated, Any
+from typing import Annotated, Any, NotRequired
 
 from langchain.agents.middleware.types import (
     AgentMiddleware,
@@ -15,7 +15,7 @@ from langchain.agents.middleware.types import (
     ResponseT,
 )
 from langchain.tools import ToolRuntime
-from langchain_core.messages import ToolMessage,HumanMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.messages.content import create_image_block
 from langchain_core.tools import BaseTool, StructuredTool
 from langchain.tools.tool_node import ToolCallRequest
@@ -29,6 +29,15 @@ from agi.web.browser_types import BrowserSessionSnapshot, PageInfo, normalize_br
 from agi.agent.prompt import get_middleware_prompt
 
 logger = logging.getLogger(__name__)
+
+
+def _browser_session_state_reducer(
+    left: BrowserSessionSnapshot | None,
+    right: BrowserSessionSnapshot | None,
+) -> BrowserSessionSnapshot | None:
+    """Keep the latest browser session snapshot from middleware updates."""
+    return right
+
 
 BROWSER_NAVIGATE_TOOL_DESCRIPTION = """
 Navigates the browser to a specific URL.
@@ -170,11 +179,16 @@ class MiddlewareBrowserState(AgentState):
     - browser_session_state: compact snapshot from agi.web.browser_types.BrowserSessionSnapshot
     """
 
-    browser_session_state: BrowserSessionSnapshot | None
+    browser_session_state: Annotated[
+        NotRequired[BrowserSessionSnapshot | None],
+        _browser_session_state_reducer,
+    ]
 
 
 class BrowserMiddleware(AgentMiddleware):
     """Stateful browser middleware with filesystem-style tool wrappers."""
+
+    state_schema = MiddlewareBrowserState
 
     # 这里不直接管理 Playwright 细节，而是通过 BrowserBackendPool 获取"某个用户的当前浏览器会话"。
 

@@ -19,10 +19,6 @@ from agi.agent.sandbox.docker import DockerSandbox
 from agi.agent.prompt import get_middleware_prompt
 
 
-# =========================
-# State 定义
-# =========================
-
 class FileData(TypedDict, total=False):
     content: list[str]
     created_at: str
@@ -33,9 +29,32 @@ class FileData(TypedDict, total=False):
     local_path: str
 
 
+def _file_data_reducer(
+    left: dict[str, FileData] | None,
+    right: dict[str, FileData | None],
+) -> dict[str, FileData]:
+    """Merge file updates and support deletions via None markers."""
+    if left is None:
+        return {key: value for key, value in right.items() if value is not None}
+
+    result = {**left}
+    for key, value in right.items():
+        if value is None:
+            result.pop(key, None)
+        else:
+            result[key] = value
+    return result
+
+
+def _last_operation_reducer(left: dict[str, Any] | None, right: dict[str, Any]) -> dict[str, Any]:
+    """Keep the latest operation payload."""
+    _ = left
+    return right
+
+
 class FfmpegState(AgentState):
-    files: Annotated[NotRequired[dict[str, FileData]], "_file_data_reducer"]
-    last_operation: NotRequired[dict[str, Any]]
+    files: Annotated[NotRequired[dict[str, FileData]], _file_data_reducer]
+    last_operation: Annotated[NotRequired[dict[str, Any]], _last_operation_reducer]
 
 
 # =========================
