@@ -4,7 +4,7 @@ import time
 import json
 from typing import Callable, List, Awaitable
 import logging
-from langchain_core.messages import SystemMessage, BaseMessage,AnyMessage
+from langchain_core.messages import SystemMessage, BaseMessage,AnyMessage,HumanMessage
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from deepagents.backends.protocol import BackendProtocol
 from agi.utils.common import append_to_system_message, extract_messages_content
@@ -142,8 +142,10 @@ class MemoryMiddleware(AgentMiddleware):
 
             last_message = request.messages[-1]
             messages.append(last_message)
+            if request.messages[-1].type != "human":
+                messages.append(HumanMessage(content="Background maintenance tick: analyze memory needs."))
             request.messages = messages
-            print(f"*******************{request.messages[-1]}")
+
             response = await handler(request)
 
             return response

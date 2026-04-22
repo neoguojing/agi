@@ -230,7 +230,7 @@ class DeepAgentManager:
             await self._init_async_agent()
         return self._async_agent
 
-    async def get_background_agent(self, config: Optional[Dict],context, interval: int = 30):
+    async def get_background_agent(self, config: Optional[Dict],context, interval: int = 60):
         if self._async_backgroud_agent is not None:
             return self._async_backgroud_agent
 
@@ -268,7 +268,7 @@ class DeepAgentManager:
                     "messages": [
                         {
                             "type": "human",
-                            "content": "Background maintenance tick: analyze memory and compression needs.",
+                            "content": "Background maintenance tick: analyze memory needs.",
                         }
                     ]
                 }

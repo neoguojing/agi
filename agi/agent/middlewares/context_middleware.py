@@ -81,8 +81,8 @@ class ContextEngineeringMiddleware(AgentMiddleware):
             return get_middleware_prompt("context").format(agent_memory="(No memory loaded)")
         
         backend = self._get_backend(runtime)  # 这里传 None，因为我们只需要读取文件内容
-        if not self.is_file_inited:
-            self.create_files(backend)
+        # if not self.is_file_inited:
+        #     self.create_files(backend)
 
         contents = {}
         for path in self.memory_paths:
