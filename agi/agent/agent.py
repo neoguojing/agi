@@ -95,7 +95,7 @@ class AgentMiddlewareFactory:
         return [
             ContextEngineeringMiddleware(backend=make_backend),
             ModelFallbackMiddleware(llm, fallback_llm),
-            # DebugLLMContextMiddleware(),
+            DebugLLMContextMiddleware(),
             MultimodalBase64Middleware(),
             *extra_middlewares,
         ]
@@ -245,7 +245,7 @@ class DeepAgentManager:
                     channels=main_agent.channels,
                     config=config,
                 ),
-                DebugLLMContextMiddleware("backgroud")
+                # DebugLLMContextMiddleware("backgroud")
             ])
         )
 
