@@ -187,16 +187,26 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             if self._context is not None:
                 await self._persister.persist_playwright_storage_state(self._context)
             
-            return await self._capture_page_info(
-                page,
-                url,
-                response,
-                action="navigate",
-                previous_url=previous_url,
+            # Directly build PageInfo without _capture_page_info
+            page_info = PageInfo(
+                url=page.url,
+                title=await page.title(),
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="success",
+                error_message=None,
             )
+            return page_info
         except PlaywrightTimeoutError as exc:
             logger.warning("navigate timed out: %s", exc)
-            return self._build_error_page_info(page.url, str(exc), action="navigate")
+            return PageInfo(
+                url=page.url,
+                title=None,
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="timeout",
+                error_message=str(exc),
+            )
         except Exception as exc:
             can_retry = self._is_recoverable_browser_error(exc)
             if can_retry:
@@ -204,7 +214,14 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 page = await self._recover_browser_session("navigate")
                 return await self.navigate(url, wait_until)
             logger.exception("navigate failed", exc_info=True)
-            return self._build_error_page_info(page.url, str(exc), action="navigate")
+            return PageInfo(
+                url=page.url,
+                title=None,
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="fail",
+                error_message=str(exc),
+            )
 
     async def click(self, selector: str) -> PageInfo:
         """Click an element identified by CSS selector."""
@@ -224,16 +241,26 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             if self._context is not None:
                 await self._persister.persist_playwright_storage_state(self._context)
             
-            return await self._capture_page_info(
-                page,
-                page.url,
-                None,
-                action="click",
-                previous_url=previous_url,
+            # Directly build PageInfo without _capture_page_info
+            page_info = PageInfo(
+                url=page.url,
+                title=await page.title(),
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="success",
+                error_message=None,
             )
+            return page_info
         except PlaywrightTimeoutError as exc:
             logger.warning("click timed out: %s", exc)
-            return self._build_error_page_info(page.url, str(exc), action="click")
+            return PageInfo(
+                url=page.url,
+                title=None,
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="timeout",
+                error_message=str(exc),
+            )
         except Exception as exc:
             can_retry = self._is_recoverable_browser_error(exc)
             if can_retry:
@@ -241,7 +268,14 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 page = await self._recover_browser_session("click")
                 return await self.click(selector)
             logger.exception("click failed", exc_info=True)
-            return self._build_error_page_info(page.url, str(exc), action="click")
+            return PageInfo(
+                url=page.url,
+                title=None,
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="fail",
+                error_message=str(exc),
+            )
 
     async def fill(self, selector: str, value: str) -> PageInfo:
         """Unified fill action (covers direct fill and human-like interaction intent)."""
@@ -260,16 +294,26 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             if self._context is not None:
                 await self._persister.persist_playwright_storage_state(self._context)
             
-            return await self._capture_page_info(
-                page,
-                page.url,
-                None,
-                action="fill",
-                previous_url=previous_url,
+            # Directly build PageInfo without _capture_page_info
+            page_info = PageInfo(
+                url=page.url,
+                title=await page.title(),
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="success",
+                error_message=None,
             )
+            return page_info
         except PlaywrightTimeoutError as exc:
             logger.warning("fill timed out: %s", exc)
-            return self._build_error_page_info(page.url, str(exc), action="fill")
+            return PageInfo(
+                url=page.url,
+                title=None,
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="timeout",
+                error_message=str(exc),
+            )
         except Exception as exc:
             can_retry = self._is_recoverable_browser_error(exc)
             if can_retry:
@@ -277,7 +321,14 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 page = await self._recover_browser_session("fill")
                 return await self.fill(selector, value)
             logger.exception("fill failed", exc_info=True)
-            return self._build_error_page_info(page.url, str(exc), action="fill")
+            return PageInfo(
+                url=page.url,
+                title=None,
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="fail",
+                error_message=str(exc),
+            )
 
     async def scroll(self, direction: str = "down", distance: int = 800) -> PageInfo:
         """Scroll viewport to reveal off-screen content and trigger lazy-loading."""
@@ -304,16 +355,26 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             if self._context is not None:
                 await self._persister.persist_playwright_storage_state(self._context)
             
-            return await self._capture_page_info(
-                page,
-                page.url,
-                None,
-                action="scroll",
-                previous_url=previous_url,
+            # Directly build PageInfo without _capture_page_info
+            page_info = PageInfo(
+                url=page.url,
+                title=await page.title(),
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="success",
+                error_message=None,
             )
+            return page_info
         except PlaywrightTimeoutError as exc:
             logger.warning("scroll timed out: %s", exc)
-            return self._build_error_page_info(page.url, str(exc), action="scroll")
+            return PageInfo(
+                url=page.url,
+                title=None,
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="timeout",
+                error_message=str(exc),
+            )
         except Exception as exc:
             can_retry = self._is_recoverable_browser_error(exc)
             if can_retry:
@@ -321,7 +382,14 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 page = await self._recover_browser_session("scroll")
                 return await self.scroll(direction, distance)
             logger.exception("scroll failed", exc_info=True)
-            return self._build_error_page_info(page.url, str(exc), action="scroll")
+            return PageInfo(
+                url=page.url,
+                title=None,
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="fail",
+                error_message=str(exc),
+            )
 
     async def find_elements(self, selector: str) -> List[QueryMatch]:
         """Return text and attributes for elements matching a CSS selector."""
@@ -445,45 +513,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         return normalize_browser_session_snapshot(snapshot)
 
     # --- Internal Action Implementations ---
-
-    async def _capture_page_info(
-        self,
-        page: Page,
-        url: str,
-        response: Response | None,
-        action: str | None = None,
-        previous_url: str | None = None,
-    ) -> PageInfo:
-        """Capture normalized page metadata after an action completes."""
-        try:
-            # 语义感知：输出精简后的可操作元素，而不是完整 DOM。
-            html_repr = await self._extract_ui_from_page(page, limit=8)
-            
-            page_text = await page.inner_text("body")
-            page_title = await page.title()
-            normalized_text = page_text.strip()
-
-            # 视觉捕获：移除自动截图，改为由 LLM 通过 browser_screenshot 工具按需调用。
-            screenshot_path = None
-
-            # 闭环反馈：每次动作后都附带 network_idle/url_changed。
-            network_idle, url_changed = await self._capture_environment_feedback(page, previous_url=previous_url)
-
-            page_info = PageInfo(
-                url=page.url,
-                title=page_title,
-                viewport=DEFAULT_VIEWPORT,
-                is_loading=False,
-                last_action_status="success" if action else "unknown",
-                error_message=None,
-            )
-
-            logger.info("Captured page info: url=%s title=%s", page_info.url, page_info.title)
-
-            return page_info
-        except Exception as exc:
-            logger.exception("Failed to capture page info for %s", url)
-            return self._build_error_page_info(url, str(exc), action=action)
 
     async def _extract_ui_from_page(self, page: Page, *, limit: int = 12) -> dict[str, Any]:
         """Extract navigation-oriented actionable UI elements from a concrete page."""
