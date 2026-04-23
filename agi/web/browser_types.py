@@ -1,5 +1,15 @@
 from typing import TypedDict, List, Dict, Any, Optional, Literal
 
+# --- 常量 ---
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/120.0.0.0 Safari/537.36"
+)
+DEFAULT_VIEWPORT = {"width": 1280, "height": 720}
+DEFAULT_WAIT_UNTIL = "domcontentloaded"
+MAX_FIND_RESULTS = 5
+
 WaitUntilState = Literal["load", "domcontentloaded", "networkidle", "commit"]
 
 class Rect(TypedDict):
