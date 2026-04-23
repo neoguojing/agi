@@ -19,10 +19,6 @@ from agi.agent.sandbox.docker import DockerSandbox
 from agi.agent.prompt import get_middleware_prompt
 
 
-# =========================
-# State 定义
-# =========================
-
 class FileData(TypedDict, total=False):
     content: list[str]
     created_at: str
@@ -33,9 +29,32 @@ class FileData(TypedDict, total=False):
     local_path: str
 
 
+def _file_data_reducer(
+    left: dict[str, FileData] | None,
+    right: dict[str, FileData | None],
+) -> dict[str, FileData]:
+    """Merge file updates and support deletions via None markers."""
+    if left is None:
+        return {key: value for key, value in right.items() if value is not None}
+
+    result = {**left}
+    for key, value in right.items():
+        if value is None:
+            result.pop(key, None)
+        else:
+            result[key] = value
+    return result
+
+
+def _last_operation_reducer(left: dict[str, Any] | None, right: dict[str, Any]) -> dict[str, Any]:
+    """Keep the latest operation payload."""
+    _ = left
+    return right
+
+
 class FfmpegState(AgentState):
-    files: Annotated[NotRequired[dict[str, FileData]], "_file_data_reducer"]
-    last_operation: NotRequired[dict[str, Any]]
+    files: Annotated[NotRequired[dict[str, FileData]], _file_data_reducer]
+    last_operation: Annotated[NotRequired[dict[str, Any]], _last_operation_reducer]
 
 
 # =========================
@@ -92,10 +111,25 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
         }
         if extra:
             payload.update(extra)
+        return self._build_state_command(
+            runtime,
+            message=message,
+            files_update=self._build_file_state(output_path, status="processed"),
+            last_operation=payload,
+        )
+
+    def _build_state_command(
+        self,
+        runtime: ToolRuntime[None, FfmpegState],
+        *,
+        message: str,
+        files_update: dict[str, FileData],
+        last_operation: dict[str, Any],
+    ) -> Command:
         return Command(
             update={
-                "files": self._build_file_state(output_path, status="processed"),
-                "last_operation": payload,
+                "files": files_update,
+                "last_operation": last_operation,
                 "messages": [ToolMessage(content=message, tool_call_id=runtime.tool_call_id)],
             }
         )
@@ -181,26 +215,22 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             if upload_res and upload_res[0].error:
                 return f"❌ upload failed: {upload_res[0].error}"
             target_container_path = upload_res[0].path
-            return Command(update={
-                "files": self._build_file_state(
+            return self._build_state_command(
+                runtime,
+                message=f"✅ uploaded: {source_path} -> {target_container_path}",
+                files_update=self._build_file_state(
                     target_container_path,
                     status="uploaded",
                     local_path=str(source_path),
                 ),
-                "last_operation": {
+                last_operation={
                     "action": "video_upload",
                     "status": "success",
                     "local_path": str(source_path),
                     "container_path": target_container_path,
                     "next_step": "Run FFmpeg tool with this container_path as input.",
                 },
-                "messages": [
-                    ToolMessage(
-                        content=f"✅ uploaded: {source_path} -> {target_container_path}",
-                        tool_call_id=runtime.tool_call_id,
-                    )
-                ],
-            })
+            )
 
         return StructuredTool.from_function(
             name="video_upload",
@@ -223,25 +253,21 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             if first.error:
                 return f"❌ download failed: {first.error}"
             local_path = first.path
-            return Command(update={
-                "files": self._build_file_state(
+            return self._build_state_command(
+                runtime,
+                message=f"✅ downloaded: {container_path} -> {local_path}",
+                files_update=self._build_file_state(
                     container_path,
                     status="downloaded",
                     local_path=local_path,
                 ),
-                "last_operation": {
+                last_operation={
                     "action": "video_download",
                     "status": "success",
                     "container_path": container_path,
                     "local_path": local_path,
                 },
-                "messages": [
-                    ToolMessage(
-                        content=f"✅ downloaded: {container_path} -> {local_path}",
-                        tool_call_id=runtime.tool_call_id,
-                    )
-                ]
-            })
+            )
 
         return StructuredTool.from_function(
             name="video_download",
@@ -329,25 +355,17 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             if result.exit_code != 0:
                 return f"❌ ffmpeg error:\n{result.output}"
 
-            files_update = self._build_file_state(output_path, type_="snapshot")
-
-            return Command(
-                update={
-                    "files": files_update,
-                    "last_operation": {
-                        "action": "video_snapshot",
-                        "status": "success",
-                        "input_path": input_path,
-                        "output_path": output_path,
-                        "next_step": f"Call video_download with container_path={output_path}",
-                    },
-                    "messages": [
-                        ToolMessage(
-                            content=f"✅ snapshot created at {time_sec}s → {output_path}",
-                            tool_call_id=runtime.tool_call_id,
-                        )
-                    ],
-                }
+            return self._build_state_command(
+                runtime,
+                message=f"✅ snapshot created at {time_sec}s → {output_path}",
+                files_update=self._build_file_state(output_path, type_="snapshot"),
+                last_operation={
+                    "action": "video_snapshot",
+                    "status": "success",
+                    "input_path": input_path,
+                    "output_path": output_path,
+                    "next_step": f"Call video_download with container_path={output_path}",
+                },
             )
 
         def sync_snapshot(*args, **kwargs):

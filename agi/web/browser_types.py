@@ -77,6 +77,12 @@ BROWSER_OBSERVER_SCRIPT = """(() => {
 WaitUntilState = Literal["commit", "domcontentloaded", "load", "networkidle"]
 
 
+def build_browser_runtime_key(user_id: str, conversation_id: str | None = None) -> str:
+    """Build a stable runtime key for browser session routing."""
+    session_id = (conversation_id or "default").strip() or "default"
+    return f"{user_id}:{session_id}"
+
+
 # --- Action result payloads ---
 @dataclass(slots=True)
 class PageInfo:
