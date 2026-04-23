@@ -17,6 +17,7 @@ from .browser_types import (
     STATE_SNAPSHOT_FILENAME, PLAYWRIGHT_STORAGE_STATE_FILENAME,
     BrowserHistoryEntry,
     BrowserSessionSnapshot,
+    BrowserToolResult,
     PageInfo, QueryMatch, WaitUntilState, MAX_FIND_RESULTS, DEFAULT_CLICK_TIMEOUT_MS,
     normalize_browser_session_snapshot,
     DEFAULT_SCROLL_TIMEOUT_MS, DEFAULT_SMART_WAIT_TIMEOUT_MS, DEFAULT_CAPTURE_DELAY_MS,

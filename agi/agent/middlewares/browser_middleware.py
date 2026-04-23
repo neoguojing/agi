@@ -237,13 +237,12 @@ class BrowserMiddleware(AgentMiddleware):
             self._create_status_tool(),
         ]
 
-    # 同步模型调用入口：在真正调用模型前，把当前浏览器状态摘要拼到 system prompt。
     def wrap_model_call(
         self,
         request: ModelRequest[ContextT],
         handler: Callable[[ModelRequest[ContextT]], ModelResponse[ResponseT]],
     ) -> ModelResponse[ResponseT]:
-        # Sync hook cannot await live browser state safely; use static guidance.
+        # 同步模型调用入口
         system_prompt = self._custom_system_prompt or get_middleware_prompt("browser")
         if system_prompt:
             request = request.override(system_message=append_to_system_message(request.system_message, system_prompt))
@@ -255,7 +254,7 @@ class BrowserMiddleware(AgentMiddleware):
         request: ModelRequest[ContextT],
         handler: Callable[[ModelRequest[ContextT]], Awaitable[ModelResponse[ResponseT]]],
     ) -> ModelResponse[ResponseT]:
-        system_prompt = await self._build_model_system_prompt(request)
+        system_prompt = self._custom_system_prompt or get_middleware_prompt("browser")
         if system_prompt:
             request = request.override(system_message=append_to_system_message(request.system_message, system_prompt))
         return await handler(request)
@@ -569,17 +568,8 @@ class BrowserMiddleware(AgentMiddleware):
 
     async def _tool_extract(self, runtime: ToolRuntime[None, MiddlewareBrowserState]) -> dict[str, Any]:
         """Extract page content from the last successfully loaded page, prioritizing OCR."""
-        _, runtime_key = self._backend_for_runtime(runtime)
-        session_state = await self._get_canonical_session_state(runtime_key)
-        last_result = session_state.get("current_page") if session_state else None
 
-        if not last_result:
-            return await self._artifact_with_state(
-                self._error_artifact("No page loaded. Please navigate first."),
-                runtime_key,
-            )
-
-        backend, _ = self._backend_for_runtime(runtime)
+        backend, runtime_key = self._backend_for_runtime(runtime)
         page = await backend.ensure_page()
 
         # Re-capture PageInfo to ensure we have the full content
@@ -830,72 +820,7 @@ class BrowserMiddleware(AgentMiddleware):
                 return str(configurable["user_id"])
         return "default"
 
-    async def _build_model_system_prompt(self, request: ModelRequest[ContextT]) -> str:
-        # system prompt = 浏览器工具说明 + 当前 live browser state 摘要。
-        system_prompt = self._custom_system_prompt or get_middleware_prompt("browser")
-        session_state = await self._resolve_session_state_for_request(request)
-        if not session_state:
-            return system_prompt
-        return f"{system_prompt}\n\n{self._format_browser_state_for_prompt(session_state)}"
-
-    async def _resolve_session_state_for_request(self, request: ModelRequest[ContextT]) -> BrowserSessionSnapshot | None:
-        """Resolve browser state for LLM context directly from graph state."""
-        state = getattr(request, "state", None) or {}
-        if isinstance(state, dict):
-            session_state = state.get("browser_session_state")
-            if isinstance(session_state, dict):
-                return self._normalize_llm_state(session_state)
-        return None
-
-    async def _get_canonical_session_state(self, runtime_key: str | None) -> BrowserSessionSnapshot | None:
-        """Single source of truth for middleware/browser state normalization."""
-        if not runtime_key:
-            return None
-        backend = self._session_backends.get(runtime_key)
-        runtime_record = self._session_runtime.get(runtime_key)
-        if backend is None or runtime_record is None:
-            return None
-        snapshot = backend.get_state_snapshot(
-            last_result=runtime_record.get("last_result"),
-            previous_result=runtime_record.get("previous_result"),
-        )
-        return self._normalize_llm_state(snapshot)
-
-    def _format_browser_state_for_prompt(self, session_state: BrowserSessionSnapshot) -> str:
-        """Generate compact, task-relevant LLM-facing browser state."""
-        browser = session_state.get("browser", {}) or {}
-        current_page = session_state.get("current_page", {}) or {}
-        previous_page = session_state.get("previous_page") if isinstance(session_state.get("previous_page"), dict) else {}
-
-        def _compact_page(page: dict[str, Any]) -> dict[str, Any]:
-            return {
-                "url": page.get("url"),
-                "title": page.get("title"),
-                "screenshot_path": page.get("screenshot_path"),
-            }
-
-        current_page_compact = _compact_page(current_page) if isinstance(current_page, dict) else {}
-        previous_page_compact = _compact_page(previous_page) if isinstance(previous_page, dict) else None
-        return "\n".join(
-            [
-                "## Current Browser Session State",
-                f"browser: is_open={browser.get('is_open')} is_closed={browser.get('is_closed')}",
-                f"current_page: {current_page_compact}",
-                f"previous_page: {previous_page_compact or '<none>'}",
-                f"last_action: {current_page.get('last_action')}",
-                "Decide next action only from this summary: status, navigate, find, click, fill, extract, screenshot.",
-            ]
-        )
-
-    def _normalize_llm_state(self, state: dict[str, Any] | None) -> BrowserSessionSnapshot:
-        """Normalize arbitrary/raw state using shared browser_types schema helper."""
-        normalized = normalize_browser_session_snapshot(state)
-        logger.debug(
-            "Normalizing browser state via shared helper: current_page_keys=%s previous_page_type=%s",
-            list(normalized.get("current_page", {}).keys()),
-            type(normalized.get("previous_page")).__name__,
-        )
-        return normalized
+    # --- Removed functions for state-to-prompt splicing ---
 
     async def _artifact_with_state(self, artifact: dict[str, Any], runtime_key: str) -> dict[str, Any]:
         normalized_state = await self._get_canonical_session_state(runtime_key)
@@ -916,10 +841,6 @@ class BrowserMiddleware(AgentMiddleware):
             artifact.pop(legacy_key, None)
         logger.debug("Attached browser state/current_page to artifact for runtime_key=%s", runtime_key)
         return artifact
-
-    def _extract_state_from_result(self, result: PageInfo) -> BrowserSessionSnapshot | None:
-        state = result.metadata.get("browser_session_state")
-        return self._normalize_llm_state(state) if isinstance(state, dict) else None
 
     def _extract_state_from_artifact(self, artifact: dict[str, Any]) -> BrowserSessionSnapshot | None:
         metadata = artifact.get("metadata", {})
