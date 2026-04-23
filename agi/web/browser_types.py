@@ -33,54 +33,13 @@ USER_EVENT_TYPES = {
     "page_hashchange", "page_popstate", "page_focusin"
 }
 
-BROWSER_OBSERVER_SCRIPT = """(() => {
-    if (window.__agiBrowserObserverInstalled) return;
-    window.__agiBrowserObserverInstalled = true;
-
-    const buildTarget = (target) => {
-        if (!(target instanceof Element)) {
-            return { tag: null, id: null, classes: [], text: "" };
-        }
-        return {
-            tag: target.tagName ? target.tagName.toLowerCase() : null,
-            id: target.id || null,
-            name: target.getAttribute?.("name") || null,
-            type: target.getAttribute?.("type") || null,
-            classes: Array.from(target.classList || []),
-            text: (target.innerText || target.textContent || "").trim().slice(0, 120),
-            value: ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) ? String(target.value || "").slice(0, 120) : null,
-        };
-    };
-
-    const emit = (type, extra = {}) => {
-        const payload = {
-            type,
-            url: window.location.href,
-            title: document.title,
-            timestamp: new Date().toISOString(),
-            ...extra,
-        };
-        if (window.__agiRecordBrowserEvent) {
-            window.__agiRecordBrowserEvent(payload).catch(() => undefined);
-        }
-    };
-
-    document.addEventListener("click", (event) => emit("dom_click", { target: buildTarget(event.target) }), true);
-    document.addEventListener("input", (event) => emit("dom_input", { target: buildTarget(event.target) }), true);
-    document.addEventListener("change", (event) => emit("dom_change", { target: buildTarget(event.target) }), true);
-    document.addEventListener("submit", (event) => emit("dom_submit", { target: buildTarget(event.target) }), true);
-    document.addEventListener("focusin", (event) => emit("page_focusin", { target: buildTarget(event.target) }), true);
-    window.addEventListener("hashchange", () => emit("page_hashchange"), true);
-    window.addEventListener("popstate", () => emit("page_popstate"), true);
-})();"""
-
 WaitUntilState = Literal["commit", "domcontentloaded", "load", "networkidle"]
 
 
 def build_browser_runtime_key(user_id: str, conversation_id: str | None = None) -> str:
     """Build a stable runtime key for browser session routing."""
-    session_id = (conversation_id or "default").strip() or "default"
-    return f"{user_id}:{session_id}"
+    # session_id = (conversation_id or "default").strip() or "default"
+    return user_id
 
 
 # --- Action result payloads ---

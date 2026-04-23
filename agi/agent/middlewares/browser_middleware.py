@@ -213,17 +213,12 @@ class BrowserMiddleware(AgentMiddleware):
         content_token_limit: int = 15_000,
         eviction_handler: Callable[[str], str] | None = None,
         system_prompt: str | None = None,
-        session_ttl: int = 1800,  # 30分钟，与 BrowserSessionManager 保持一致
-        cleanup_interval: int = 60,  # 清理间隔，与 BrowserSessionManager 保持一致
     ):
         super().__init__()
         self._storage_root = Path(storage_dir).resolve()
         self._storage_root.mkdir(parents=True, exist_ok=True)
         self._session_backends: dict[str, StatefulBrowserBackend] = {}
         self._session_runtime: dict[str, SessionRuntime] = {}
-        # Keep constructor params for compatibility.
-        # Retries are handled in StatefulBrowserBackend._run_page_action.
-        _ = max_retries, session_ttl, cleanup_interval
         self.ocr = ocr_engine
         self.enable_ocr = enable_ocr_fallback
         self.content_limit = content_token_limit
