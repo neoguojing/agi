@@ -770,22 +770,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         page = await self.ensure_page()
         await page.wait_for_timeout(random.randint(min_ms, max_ms))
 
-    def _build_error_page_info(self, url: str, error: str, **metadata: Any) -> PageInfo:
-        """Build an error PageInfo object."""
-        return PageInfo(
-            url=url,
-            title=None,
-            viewport=DEFAULT_VIEWPORT,
-            is_loading=False,
-            last_action_status="fail",
-            error_message=error,
-        )
-
-    async def _capture_environment_feedback(self, page: Page, *, previous_url: str | None) -> tuple[bool, bool]:
-        # 统一动作反馈结构：供 middleware 直接透出给 LLM。
-        network_idle = await self._wait_for_network_idle(page, timeout_ms=DEFAULT_NETWORK_IDLE_TIMEOUT_MS)
-        return network_idle, bool(previous_url) and previous_url != page.url
-
     def _attach_page_audit_hooks(self, page: Page) -> None:
         """Attach console/network listeners once per page for异常审计."""
         # 异常审计为"被动监控",在动作无响应时给 LLM 提供排障线索。
