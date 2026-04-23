@@ -53,10 +53,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         self.storage_dir = Path(storage_dir).resolve()
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
-        # 初始化子模块
+        # Initialize sub-modules
         restored_snapshot = self._load_persisted_state_snapshot()
-        self._history: list[BrowserHistoryEntry] = []
-        self._page_runtime_state: dict[str, PageInfo] = {}
         self._persister = BrowserStatePersister(self.storage_dir, restored_snapshot)
         self._recent_console_errors: list[dict[str, Any]] = []
         self._recent_request_failures: list[dict[str, Any]] = []
@@ -67,36 +65,13 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         self._context: BrowserContext | None = None
         self._page: Page | None = None
 
-    def _page_id(self, page: Page | None) -> str:
-        if page is None:
-            return "page:none"
-        return f"page:{id(page)}"
-
     def _page_is_closed(self, page: Page | None) -> bool:
         if page is None:
             return True
-        is_closed = getattr(page, "is_closed", lambda: True)
-        if callable(is_closed):
-            try:
-                return bool(is_closed())
-            except Exception:
-                return False
-        return False
-
-    def _update_page_runtime_state(self, page: Page, *, load_state: str | None = None) -> None:
-        page_id = self._page_id(page)
-        previous = self._page_runtime_state.get(page_id)
-        metadata = dict(previous.metadata) if previous else {}
-        metadata["load_state"] = load_state or metadata.get("load_state", "unknown")
-        self._page_runtime_state[page_id] = PageInfo(
-            url=page.url,
-            title=previous.title if previous else None,
-            dom_snapshot=previous.dom_snapshot if previous else None,
-            page_text=previous.page_text if previous else None,
-            screenshot_path=previous.screenshot_path if previous else None,
-            metadata=metadata,
-        )
-        logger.debug("Updated runtime state for %s: url=%s load_state=%s", page_id, page.url, metadata["load_state"])
+        try:
+            return bool(page.is_closed())
+        except Exception:
+            return False
 
     def _load_persisted_state_snapshot(self) -> dict[str, Any] | None:
         snapshot_path = self.storage_dir / STATE_SNAPSHOT_FILENAME
@@ -109,11 +84,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             logger.debug("Failed to load persisted browser state snapshot", exc_info=True)
             return None
 
-    def get_running_loop(self):
-        import asyncio
-
-        return asyncio.get_running_loop()
-    
     async def initialize(self) -> None:
         """Initialize the shared browser session lazily."""
         async with self._init_lock:
@@ -141,11 +111,10 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             context_kwargs["storage_state"] = str(snapshot_paths[1])
 
         self._context = await self._browser.new_context(**context_kwargs)
-        
+
         self._page = await self._context.new_page()
         self._attach_page_audit_hooks(self._page)
-        self._update_page_runtime_state(self._page, load_state="ready")
-        
+
         logger.info("Browser backend ready")
 
     async def close(self) -> None:
@@ -166,8 +135,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             self._context = None
             self._browser = None
             self._playwright = None
-            self._page_runtime_state.clear()
-            self._history.clear()
             logger.info("Browser backend closed")
 
     @property
@@ -189,7 +156,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 if live_pages:
                     self._page = live_pages[-1]
                     self._attach_page_audit_hooks(self._page)
-                    self._update_page_runtime_state(self._page, load_state="ready")
 
             if self._page is None:
                 msg = "Browser page is not available after initialization"
@@ -237,7 +203,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "params": {k: v for k, v in history_entry.items() if k != "action"},
                     }
-                    self._history.append(structured_entry)
                     logger.info("Recorded browser history entry: %s", structured_entry)
                 if self._context is not None:
                     await self._persister.persist_playwright_storage_state(self._context)
@@ -324,9 +289,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
     async def find_elements(self, selector: str) -> List[QueryMatch]:
         """Return text and attributes for elements matching a CSS selector."""
-        page = await self.ensure_page()
-        self._update_page_runtime_state(page, load_state="ready")
-        
+        page = await self.ensure_page()        
         try:
             elements = await page.query_selector_all(selector)
             results: List[QueryMatch] = []
@@ -377,9 +340,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         )
         return {"ok": True, "selector": selector, "property": property_name, "value": value}
 
-    def _page_summary(self, result: PageInfo | None, fallback_state: PageInfo | None = None) -> dict[str, Any]:
-        source = result or fallback_state
-        if source is None:
+    def _page_summary(self, result: PageInfo | None) -> dict[str, Any]:
+        if result is None:
             return {
                 "url": "",
                 "title": None,
@@ -388,7 +350,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 "screenshot_path": None,
                 "metadata": {"load_state": "unknown"},
             }
-        metadata = dict(source.metadata)
+        metadata = dict(result.metadata)
         compact_metadata = {
             "load_state": metadata.get("load_state"),
             "history_length": metadata.get("history_length"),
@@ -396,20 +358,20 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             "empty_page": metadata.get("empty_page", False),
             "text_length": metadata.get("text_length", 0),
             "html_length": metadata.get("html_length", 0),
-            "has_screenshot": bool(source.screenshot_path),
+            "has_screenshot": bool(result.screenshot_path),
         }
         return {
-            "url": source.url,
-            "title": source.title,
+            "url": result.url,
+            "title": result.title,
             # Snapshot for middleware should stay compact; keep raw page content in last_result only.
             "dom_snapshot": None,
             "page_text": None,
-            "screenshot_path": source.screenshot_path,
-            "response_status": source.response_status,
-            "last_action": source.last_action,
-            "actionable_elements": list(source.actionable_elements),
-            "network_idle": source.network_idle,
-            "url_changed": source.url_changed,
+            "screenshot_path": result.screenshot_path,
+            "response_status": result.response_status,
+            "last_action": result.last_action,
+            "actionable_elements": list(result.actionable_elements),
+            "network_idle": result.network_idle,
+            "url_changed": result.url_changed,
             "metadata": compact_metadata,
         }
 
@@ -426,14 +388,13 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         - current_page: latest known page summary.
         - previous_page: immediate previous page summary (if any).
         """
-        current_page_state = self._page_runtime_state.get(self._page_id(self._page)) if self._page else None
         browser_state: BrowserRuntimeState = {
             "is_open": not self.is_closed,
             "is_closed": self.is_closed,
         }
         snapshot: BrowserSessionSnapshot = {
             "browser": browser_state,
-            "current_page": self._page_summary(last_result, current_page_state),
+            "current_page": self._page_summary(last_result),
             "previous_page": self._page_summary(previous_result) if previous_result else None,
         }
         snapshot = normalize_browser_session_snapshot(snapshot)
@@ -462,7 +423,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             actionable_elements = self._normalize_actionable_elements(
                 html_repr.get("elements", []) if isinstance(html_repr, dict) else []
             )
-            
+
             page_text = await page.inner_text("body")
             page_title = await page.title()
             normalized_text = page_text.strip()
@@ -470,8 +431,9 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             text_is_empty = len(normalized_text) == 0
             html_is_empty = len(normalized_html.strip()) == 0
 
-            # 视觉捕获：动作结束后优先记录截图路径，供多模态对齐/回放。
-            screenshot_path = str(await self._take_screenshot(page, prefix="page", full_page=True)) if capture_content else None
+            # 视觉捕获：移除自动截图，改为由 LLM 通过 browser_screenshot 工具按需调用。
+            screenshot_path = None
+
             # 闭环反馈：每次动作后都附带 network_idle/url_changed。
             network_idle, url_changed = await self._capture_environment_feedback(page, previous_url=previous_url)
 
@@ -494,13 +456,12 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     "html_length": len(normalized_html),
                     "text_length": len(normalized_text),
                     "has_screenshot": screenshot_path is not None,
-                    "history_length": len(self._history),
                     "empty_page": text_is_empty and html_is_empty,
                     "text_truncated": len(normalized_text) > self.max_content_length,
                     "html_truncated": len(normalized_html) > self.max_content_length,
                 }
             )
-            self._page_runtime_state[self._page_id(page)] = page_info
+
             logger.info("Captured page info: url=%s title=%s", page_info.url, page_info.title)
 
             return page_info

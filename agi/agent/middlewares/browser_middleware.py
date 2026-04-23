@@ -202,8 +202,6 @@ class BrowserMiddleware(AgentMiddleware):
 
     state_schema = MiddlewareBrowserState
 
-    # 这里不直接管理 Playwright 细节，而是通过 BrowserBackendPool 获取"某个用户的当前浏览器会话"。
-
     def __init__(
         self,
         storage_dir: str = BROWSER_STORAGE_PATH,
@@ -218,7 +216,6 @@ class BrowserMiddleware(AgentMiddleware):
         self._storage_root = Path(storage_dir).resolve()
         self._storage_root.mkdir(parents=True, exist_ok=True)
         self._session_backends: dict[str, StatefulBrowserBackend] = {}
-        self._session_runtime: dict[str, SessionRuntime] = {}
         self.ocr = ocr_engine
         self.enable_ocr = enable_ocr_fallback
         self.content_limit = content_token_limit
@@ -332,7 +329,6 @@ class BrowserMiddleware(AgentMiddleware):
         session_root.mkdir(parents=True, exist_ok=True)
         backend = StatefulBrowserBackend(storage_dir=str(session_root))
         self._session_backends[runtime_key] = backend
-        self._ensure_runtime_record(runtime_key)
         return backend, runtime_key
 
     def _record_page_result(self, runtime_key: str, result: PageInfo) -> None:
@@ -341,10 +337,8 @@ class BrowserMiddleware(AgentMiddleware):
         runtime_record["last_result"] = result
 
     def _get_last_result(self, runtime_key: str) -> PageInfo | None:
-        runtime_record = self._session_runtime.get(runtime_key)
-        if runtime_record is None:
-            return None
-        return runtime_record.get("last_result")
+        # Removed local cache access
+        return None
 
     
     def _create_navigate_tool(self) -> BaseTool:
@@ -352,12 +346,17 @@ class BrowserMiddleware(AgentMiddleware):
             url: Annotated[str, "URL to open in the current browser session."],
             runtime: ToolRuntime[None, MiddlewareBrowserState],
         ) -> Command:
-            result = await self._execute_with_retry(runtime, "navigate", url=url)
+            backend, runtime_key = self._backend_for_runtime(runtime)
+            result = await backend.navigate(url)
+
+            # Update session state using backend's canonical snapshot
+            session_state = backend.get_state_snapshot(last_result=result)
+
             return self._command_for_result(
                 "browser_navigate",
                 runtime.tool_call_id,
                 self._format_page_result(result),
-                session_state=self._extract_state_from_result(result),
+                session_state=session_state,
             )
 
         return StructuredTool.from_function(
@@ -371,12 +370,17 @@ class BrowserMiddleware(AgentMiddleware):
             selector: Annotated[str, "CSS selector to click on the current page."],
             runtime: ToolRuntime[None, MiddlewareBrowserState],
         ) -> Command:
-            result = await self._execute_with_retry(runtime, "click", selector=selector)
+            backend, runtime_key = self._backend_for_runtime(runtime)
+            result = await backend.click(selector)
+
+            # Update session state using backend's canonical snapshot
+            session_state = backend.get_state_snapshot(last_result=result)
+
             return self._command_for_result(
                 "browser_click",
                 runtime.tool_call_id,
                 self._format_page_result(result),
-                session_state=self._extract_state_from_result(result),
+                session_state=session_state,
             )
 
         return StructuredTool.from_function(
@@ -391,12 +395,17 @@ class BrowserMiddleware(AgentMiddleware):
             text: Annotated[str, "Text to enter into the selected field."],
             runtime: ToolRuntime[None, MiddlewareBrowserState],
         ) -> Command:
-            result = await self._execute_with_retry(runtime, "fill", selector=selector, text=text)
+            backend, runtime_key = self._backend_for_runtime(runtime)
+            result = await backend.fill(selector, text)
+
+            # Update session state using backend's canonical snapshot
+            session_state = backend.get_state_snapshot(last_result=result)
+
             return self._command_for_result(
                 "browser_fill",
                 runtime.tool_call_id,
                 self._format_page_result(result),
-                session_state=self._extract_state_from_result(result),
+                session_state=session_state,
             )
 
         return StructuredTool.from_function(
@@ -422,18 +431,22 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_scroll_tool(self) -> BaseTool:
-        # 视口操纵原子：用于触发懒加载并暴露屏外元素。
         async def async_scroll(
             direction: Annotated[str, "Scroll direction: up/down."],
             distance: Annotated[int, "Scroll distance in px."],
             runtime: ToolRuntime[None, MiddlewareBrowserState],
         ) -> Command:
-            result = await self._execute_with_retry(runtime, "scroll", direction=direction, distance=distance)
+            backend, runtime_key = self._backend_for_runtime(runtime)
+            result = await backend.scroll(direction, distance)
+
+            # Update session state using backend's canonical snapshot
+            session_state = backend.get_state_snapshot(last_result=result)
+
             return self._command_for_result(
                 "browser_scroll",
                 runtime.tool_call_id,
                 self._format_page_result(result),
-                session_state=self._extract_state_from_result(result),
+                session_state=session_state,
             )
 
         return StructuredTool.from_function(
@@ -760,51 +773,7 @@ class BrowserMiddleware(AgentMiddleware):
             }
         )
 
-    async def _execute_with_retry(
-        self,
-        runtime: ToolRuntime[None, MiddlewareBrowserState],
-        action: str,
-        **kwargs: Any
-    ) -> PageInfo:
-        backend, runtime_key = self._backend_for_runtime(runtime)
-        started_at = time.perf_counter()
-        try:
-            if action == "navigate":
-                result = await backend.navigate(kwargs["url"])
-            elif action == "click":
-                result = await backend.click(kwargs["selector"])
-            elif action == "fill":
-                result = await backend.fill(kwargs["selector"], kwargs["text"])
-            elif action == "scroll":
-                result = await backend.scroll(kwargs["direction"], kwargs["distance"])
-            else:
-                msg = f"Unknown action: {action}"
-                raise ValueError(msg)
-            self._record_page_result(runtime_key, result)
-            logger.info(
-                "Browser action '%s' for session=%s completed in %.2fs",
-                action,
-                runtime_key,
-                time.perf_counter() - started_at,
-            )
-            canonical_state = await self._get_canonical_session_state(runtime_key)
-            result.metadata = {
-                **result.metadata,
-                "browser_session_state": canonical_state or {"browser": {"is_open": False, "is_closed": True}, "current_page": {}, "previous_page": None},
-            }
-            return result
-        except Exception as exc:
-            logger.warning("Browser action '%s' failed: %s", action, exc)
-            return PageInfo(
-                url=kwargs.get("url", "unknown"),
-                title=None,
-                dom_snapshot=None,
-                page_text=None,
-                screenshot_path=None,
-                response_status=None,
-                last_action=action,
-                metadata={"error": str(exc)},
-            )
+# Remove _execute_with_retry as it was a high-level wrapper that we are replacing with atomic backend calls.
 
     def _format_page_result(self, result: PageInfo) -> dict[str, Any]:
         if result.metadata.get("error"):
@@ -1021,10 +990,8 @@ class BrowserMiddleware(AgentMiddleware):
             if tool_name == "browser_find":
                 lines.append(f"matches_count: {metadata.get('count', 0)}")
             elif tool_name in {"browser_navigate", "browser_click", "browser_fill", "browser_scroll"}:
-                # 非 navigate 动作也回传可交互元素，减少模型盲点。
                 lines.extend(self._format_actionable_elements(artifact.get("current_page")))
                 current_page = artifact.get("current_page", {}) if isinstance(artifact.get("current_page"), dict) else {}
-                # 显式透出网络空闲/URL变化，避免重复点击未加载完成的元素。
                 lines.append(f"network_idle: {current_page.get('network_idle')}")
                 lines.append(f"url_changed: {current_page.get('url_changed')}")
             elif tool_name == "browser_extract":
@@ -1041,9 +1008,6 @@ class BrowserMiddleware(AgentMiddleware):
             lines.append(f"current_page: {compact_current_page}")
         if compact_previous_page:
             lines.append(f"previous_page: {compact_previous_page}")
-        hint = self._next_step_hint(tool_name, artifact)
-        if hint:
-            lines.append(f"next_step_hint: {hint}")
         return "\n".join(lines)
 
     def _compact_page_for_text(self, page: Any) -> dict[str, Any]:
@@ -1055,29 +1019,7 @@ class BrowserMiddleware(AgentMiddleware):
             "screenshot_path": page.get("screenshot_path"),
         }
 
-    def _next_step_hint(self, tool_name: str, artifact: dict[str, Any]) -> str:
-        """Provide concise, scenario-specific guidance for the next LLM action."""
-        status = artifact.get("status")
-        if status == "error":
-            if tool_name in {"browser_click", "browser_fill"}:
-                return "Run browser_find to verify selector before retry."
-            if tool_name == "browser_extract":
-                return "Try browser_screenshot or browser_navigate to recover content."
-            return "Check page state and retry with a safer action."
-
-        metadata = artifact.get("metadata", {}) if isinstance(artifact.get("metadata"), dict) else {}
-        if tool_name == "browser_find" and metadata.get("count", 0) == 0:
-            return "No matching element found; try broader selector or browser_extract first."
-        if tool_name == "browser_extract" and not artifact.get("content_preview"):
-            return "Extracted content is empty; try browser_screenshot or navigate/reload."
-        if tool_name == "browser_navigate":
-            current_page = artifact.get("current_page", {}) if isinstance(artifact.get("current_page"), dict) else {}
-            if self._count_valid_actionable_elements(current_page) > 0:
-                return "Use suggested selectors from actionable_elements for click/fill."
-            return "No clear controls found; run browser_extract then browser_find with broader selectors."
-        if tool_name == "browser_screenshot":
-            return "Use browser_extract to read text after visual confirmation."
-        return ""
+# Remove _next_step_hint as it's no longer needed for an autonomous LLM.
 
     def _format_actionable_elements(self, metadata: dict[str, Any] | Any, *, limit: int = 5) -> list[str]:
         if not isinstance(metadata, dict):
