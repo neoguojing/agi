@@ -16,8 +16,6 @@ from .browser_types import (
     DEFAULT_USER_AGENT, DEFAULT_VIEWPORT, DEFAULT_WAIT_UNTIL,
     STATE_SNAPSHOT_FILENAME, PLAYWRIGHT_STORAGE_STATE_FILENAME,
     BrowserHistoryEntry,
-    BrowserSessionSnapshot,
-    BrowserToolResult,
     PageInfo, QueryMatch, WaitUntilState, MAX_FIND_RESULTS, DEFAULT_CLICK_TIMEOUT_MS,
     normalize_browser_session_snapshot,
     DEFAULT_SCROLL_TIMEOUT_MS, DEFAULT_SMART_WAIT_TIMEOUT_MS, DEFAULT_CAPTURE_DELAY_MS,
@@ -473,73 +471,42 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         )
         return {"value": value, "selector": selector, "property": property_name}
 
-    def get_state_snapshot(self) -> BrowserSessionSnapshot:
-        """Return a compact state snapshot for middleware/LLM planning.
+    async def get_state_snapshot(self) -> PageInfo:
+        """Return current page state for middleware/LLM planning.
         
-        修复：不再接受外部参数，直接从内部状态获取 last_result 和 previous_result。
+        修复：改为异步方法，返回 PageInfo 而非 BrowserSessionSnapshot。
         """
-        browser_state: BrowserRuntimeState = {
-            "is_open": not self.is_closed,
-            "is_closed": self.is_closed,
-        }
-        
-        # Get current page info from the active page
-        if self._page is not None and not self._page_is_closed(self._page):
-            try:
-                current_url = self._page.url
-                current_title = await self._page.title()
-                current_page_info = PageInfo(
-                    url=current_url,
-                    title=current_title,
-                    viewport=DEFAULT_VIEWPORT,
-                    is_loading=False,
-                    last_action_status="success",
-                    error_message=None,
-                )
-            except Exception as exc:
-                logger.debug("Failed to get current page info: %s", exc)
-                current_page_info = PageInfo(
-                    url="",
-                    title=None,
-                    viewport=DEFAULT_VIEWPORT,
-                    is_loading=False,
-                    last_action_status="unknown",
-                    error_message=str(exc),
-                )
-        else:
-            current_page_info = PageInfo(
+        if self._page is None or self._page_is_closed(self._page):
+            return PageInfo(
                 url="",
                 title=None,
                 viewport=DEFAULT_VIEWPORT,
                 is_loading=False,
                 last_action_status="unknown",
-                error_message=None,
+                error_message="No active page",
             )
         
-        # Get previous page info from persisted state
-        previous_snapshot_path = self.storage_dir / "previous_page.json"
-        previous_page_info: PageInfo | None = None
-        if previous_snapshot_path.exists():
-            try:
-                data = json.loads(previous_snapshot_path.read_text())
-                if isinstance(data, dict) and data.get("url"):
-                    previous_page_info = PageInfo(
-                        url=data.get("url", ""),
-                        title=data.get("title"),
-                        viewport=DEFAULT_VIEWPORT,
-                        is_loading=False,
-                        last_action_status=data.get("last_action_status", "unknown"),
-                        error_message=data.get("error_message"),
-                    )
-            except Exception:
-                logger.debug("Failed to load previous page snapshot", exc_info=True)
-        
-        snapshot: BrowserSessionSnapshot = {
-            "browser": browser_state,
-            "current_page": self._page_summary(current_page_info),
-            "previous_page": self._page_summary(previous_page_info) if previous_page_info else None,
-        }
-        return normalize_browser_session_snapshot(snapshot)
+        try:
+            current_url = self._page.url
+            current_title = await self._page.title()
+            return PageInfo(
+                url=current_url,
+                title=current_title,
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="success",
+                error_message=None,
+            )
+        except Exception as exc:
+            logger.debug("Failed to get current page state: %s", exc)
+            return PageInfo(
+                url="",
+                title=None,
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="fail",
+                error_message=str(exc),
+            )
 
     # --- Internal Action Implementations ---
 
