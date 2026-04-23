@@ -77,21 +77,68 @@ BROWSER_OBSERVER_SCRIPT = """(() => {
 WaitUntilState = Literal["commit", "domcontentloaded", "load", "networkidle"]
 
 
+def build_browser_runtime_key(user_id: str, conversation_id: str | None = None) -> str:
+    """Build a stable runtime key for browser session routing."""
+    session_id = (conversation_id or "default").strip() or "default"
+    return f"{user_id}:{session_id}"
+
+
 # --- Action result payloads ---
 @dataclass(slots=True)
 class PageInfo:
+    """Canonical browser page state for agent planning.
+
+    Field naming intentionally reflects semantics:
+    - dom_snapshot: structured/serialized DOM or UI snapshot (not raw HTML only).
+    - page_text: extracted readable page text.
+    - response_status: HTTP-like status from last navigation/action.
+    - last_action: middleware/backend action that produced this state.
+    """
+
     url: str
     title: str | None
-    html: str | None
-    text: str | None
+    dom_snapshot: str | None
+    page_text: str | None
     screenshot_path: str | None
-    status: int | None = None
-    action: str | None = None
+    response_status: int | None = None
+    last_action: str | None = None
     actionable_elements: list[dict[str, Any]] = field(default_factory=list)
     network_idle: bool | None = None
     url_changed: bool | None = None
     diagnostics: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def html(self) -> str | None:  # backward compatibility
+        return self.dom_snapshot
+
+    @html.setter
+    def html(self, value: str | None) -> None:
+        self.dom_snapshot = value
+
+    @property
+    def text(self) -> str | None:  # backward compatibility
+        return self.page_text
+
+    @text.setter
+    def text(self, value: str | None) -> None:
+        self.page_text = value
+
+    @property
+    def status(self) -> int | None:  # backward compatibility
+        return self.response_status
+
+    @status.setter
+    def status(self, value: int | None) -> None:
+        self.response_status = value
+
+    @property
+    def action(self) -> str | None:  # backward compatibility
+        return self.last_action
+
+    @action.setter
+    def action(self, value: str | None) -> None:
+        self.last_action = value
 
 @dataclass(slots=True)
 class QueryMatch:
@@ -130,11 +177,11 @@ def _normalize_page_snapshot(page: Any) -> dict[str, Any]:
         return {
             "url": page.url,
             "title": page.title,
-            "html": page.html,
-            "text": page.text,
+            "dom_snapshot": page.dom_snapshot,
+            "page_text": page.page_text,
             "screenshot_path": page.screenshot_path,
-            "status": page.status,
-            "action": page.action,
+            "response_status": page.response_status,
+            "last_action": page.last_action,
             "actionable_elements": list(page.actionable_elements),
             "network_idle": page.network_idle,
             "url_changed": page.url_changed,
@@ -145,25 +192,29 @@ def _normalize_page_snapshot(page: Any) -> dict[str, Any]:
         return {
             "url": "",
             "title": None,
-            "html": None,
-            "text": None,
+            "dom_snapshot": None,
+            "page_text": None,
             "screenshot_path": None,
-            "status": None,
-            "action": None,
+            "response_status": None,
+            "last_action": None,
             "actionable_elements": [],
             "network_idle": None,
             "url_changed": None,
             "diagnostics": {},
             "metadata": {},
         }
+    dom_snapshot = page.get("dom_snapshot", page.get("html"))
+    page_text = page.get("page_text", page.get("text"))
+    response_status = page.get("response_status", page.get("status"))
+    last_action = page.get("last_action", page.get("action"))
     return {
         "url": str(page.get("url", "")),
         "title": page.get("title"),
-        "html": page.get("html"),
-        "text": page.get("text"),
+        "dom_snapshot": dom_snapshot,
+        "page_text": page_text,
         "screenshot_path": page.get("screenshot_path"),
-        "status": page.get("status"),
-        "action": page.get("action"),
+        "response_status": response_status,
+        "last_action": last_action,
         "actionable_elements": list(page.get("actionable_elements", [])) if isinstance(page.get("actionable_elements"), list) else [],
         "network_idle": page.get("network_idle"),
         "url_changed": page.get("url_changed"),
