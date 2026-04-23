@@ -473,42 +473,71 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         )
         return {"value": value, "selector": selector, "property": property_name}
 
-    def _page_summary(self, result: PageInfo | None) -> dict[str, Any]:
-        if result is None:
-            return {
-                "url": "",
-                "title": None,
-                "viewport": DEFAULT_VIEWPORT,
-                "is_loading": False,
-                "last_action_status": "unknown",
-                "error_message": None,
-            }
-        metadata = dict(result.metadata) if result.metadata else {}
-        return {
-            "url": result.url,
-            "title": result.title,
-            "viewport": DEFAULT_VIEWPORT,
-            "is_loading": False,
-            "last_action_status": result.last_action_status or "success",
-            "error_message": result.error_message,
-        }
-
-    def get_state_snapshot(
-        self,
-        *,
-        user_id: str | None = None,
-        last_result: PageInfo | None = None,
-        previous_result: PageInfo | None = None,
-    ) -> BrowserSessionSnapshot:
-        """Return a compact state snapshot for middleware/LLM planning."""
+    def get_state_snapshot(self) -> BrowserSessionSnapshot:
+        """Return a compact state snapshot for middleware/LLM planning.
+        
+        修复：不再接受外部参数，直接从内部状态获取 last_result 和 previous_result。
+        """
         browser_state: BrowserRuntimeState = {
             "is_open": not self.is_closed,
             "is_closed": self.is_closed,
         }
+        
+        # Get current page info from the active page
+        if self._page is not None and not self._page_is_closed(self._page):
+            try:
+                current_url = self._page.url
+                current_title = await self._page.title()
+                current_page_info = PageInfo(
+                    url=current_url,
+                    title=current_title,
+                    viewport=DEFAULT_VIEWPORT,
+                    is_loading=False,
+                    last_action_status="success",
+                    error_message=None,
+                )
+            except Exception as exc:
+                logger.debug("Failed to get current page info: %s", exc)
+                current_page_info = PageInfo(
+                    url="",
+                    title=None,
+                    viewport=DEFAULT_VIEWPORT,
+                    is_loading=False,
+                    last_action_status="unknown",
+                    error_message=str(exc),
+                )
+        else:
+            current_page_info = PageInfo(
+                url="",
+                title=None,
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="unknown",
+                error_message=None,
+            )
+        
+        # Get previous page info from persisted state
+        previous_snapshot_path = self.storage_dir / "previous_page.json"
+        previous_page_info: PageInfo | None = None
+        if previous_snapshot_path.exists():
+            try:
+                data = json.loads(previous_snapshot_path.read_text())
+                if isinstance(data, dict) and data.get("url"):
+                    previous_page_info = PageInfo(
+                        url=data.get("url", ""),
+                        title=data.get("title"),
+                        viewport=DEFAULT_VIEWPORT,
+                        is_loading=False,
+                        last_action_status=data.get("last_action_status", "unknown"),
+                        error_message=data.get("error_message"),
+                    )
+            except Exception:
+                logger.debug("Failed to load previous page snapshot", exc_info=True)
+        
         snapshot: BrowserSessionSnapshot = {
             "browser": browser_state,
-            "current_page": self._page_summary(last_result),
-            "previous_page": self._page_summary(previous_result) if previous_result else None,
+            "current_page": self._page_summary(current_page_info),
+            "previous_page": self._page_summary(previous_page_info) if previous_page_info else None,
         }
         return normalize_browser_session_snapshot(snapshot)
 
@@ -769,6 +798,22 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         """Sleep briefly to simulate human interaction cadence."""
         page = await self.ensure_page()
         await page.wait_for_timeout(random.randint(min_ms, max_ms))
+
+    def _build_error_page_info(self, url: str, error: str, **metadata: Any) -> PageInfo:
+        """Build an error PageInfo object."""
+        return PageInfo(
+            url=url,
+            title=None,
+            viewport=DEFAULT_VIEWPORT,
+            is_loading=False,
+            last_action_status="fail",
+            error_message=error,
+        )
+
+    async def _capture_environment_feedback(self, page: Page, *, previous_url: str | None) -> tuple[bool, bool]:
+        # 统一动作反馈结构：供 middleware 直接透出给 LLM。
+        network_idle = await self._wait_for_network_idle(page, timeout_ms=DEFAULT_NETWORK_IDLE_TIMEOUT_MS)
+        return network_idle, bool(previous_url) and previous_url != page.url
 
     def _attach_page_audit_hooks(self, page: Page) -> None:
         """Attach console/network listeners once per page for异常审计."""
