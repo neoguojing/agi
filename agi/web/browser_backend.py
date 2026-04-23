@@ -33,7 +33,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
     设计说明：
     - 对外暴露的动作接口（navigate/click/fill...）尽量保持薄封装。
-    - 错误恢复（浏览器被关闭后重拉）统一在 `_run_page_action` 里处理，
+    - 错误恢复（浏览器被关闭后重拉）统一在 `_recover_browser_session` 里处理，
       避免每个接口都复制一套复杂 try/except。
     - 状态持久化与历史记录在动作成功后集中处理，保证行为一致性。
     """
@@ -175,117 +175,153 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         await self.initialize()
         return await self.ensure_page()
 
-    async def _run_page_action(
-        self,
-        *,
-        action: str,
-        operation: Callable[[Page], Awaitable[Response | None]],
-        history_entry: dict[str, Any] | None,
-        capture_url: str | None = None,
-    ) -> PageInfo:
-        """执行页面动作并自动处理重试/恢复。
-
-        流程：
-        1) 执行一次动作；
-        2) 若失败且是关闭类错误，则自动重建浏览器并重试一次；
-        3) 成功后统一等待、记录 history、持久化状态并返回页面快照。
-        """
-        page = await self.ensure_page()
-        attempts = 2  # 首次 + 1 次恢复后重试
-
-        for attempt in range(1, attempts + 1):
-            try:
-                previous_url = page.url
-                response = await operation(page)
-                await self._smart_wait(page)
-                if history_entry:
-                    structured_entry: BrowserHistoryEntry = {
-                        "action": str(history_entry.get("action", action)),
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "params": {k: v for k, v in history_entry.items() if k != "action"},
-                    }
-                    logger.info("Recorded browser history entry: %s", structured_entry)
-                if self._context is not None:
-                    await self._persister.persist_playwright_storage_state(self._context)
-                return await self._capture_page_info(
-                    page,
-                    capture_url or page.url,
-                    response,
-                    action=action,
-                    previous_url=previous_url,
-                )
-            except PlaywrightTimeoutError as exc:
-                logger.warning("%s timed out: %s", action, exc)
-                return self._build_error_page_info(page.url, str(exc), action=action)
-            except Exception as exc:
-                can_retry = attempt < attempts and self._is_recoverable_browser_error(exc)
-                if can_retry:
-                    logger.warning("%s failed due to closed page, retrying once", action)
-                    page = await self._recover_browser_session(action)
-                    continue
-                logger.exception("%s failed", action)
-                return self._build_error_page_info(page.url, str(exc), action=action)
-
-        return self._build_error_page_info("", "unexpected action runner state", action=action)
-
     async def navigate(self, url: str, wait_until: WaitUntilState = "networkidle") -> PageInfo:
         """Navigate to a URL and capture the resulting page state."""
-        return await self._run_page_action(
-            action="navigate",
-            operation=lambda page: page.goto(url, wait_until=wait_until, timeout=self.timeout),
-            history_entry={"action": "navigate", "url": url, "wait_until": wait_until},
-            capture_url=url,
-        )
+        page = await self.ensure_page()
+        
+        try:
+            previous_url = page.url
+            response = await page.goto(url, wait_until=wait_until, timeout=self.timeout)
+            await self._smart_wait(page)
+            
+            if self._context is not None:
+                await self._persister.persist_playwright_storage_state(self._context)
+            
+            return await self._capture_page_info(
+                page,
+                url,
+                response,
+                action="navigate",
+                previous_url=previous_url,
+            )
+        except PlaywrightTimeoutError as exc:
+            logger.warning("navigate timed out: %s", exc)
+            return self._build_error_page_info(page.url, str(exc), action="navigate")
+        except Exception as exc:
+            can_retry = self._is_recoverable_browser_error(exc)
+            if can_retry:
+                logger.warning("navigate failed due to closed page, retrying once")
+                page = await self._recover_browser_session("navigate")
+                return await self.navigate(url, wait_until)
+            logger.exception("navigate failed", exc_info=True)
+            return self._build_error_page_info(page.url, str(exc), action="navigate")
 
     async def click(self, selector: str) -> PageInfo:
         """Click an element identified by CSS selector."""
-        async def _operation(page: Page) -> None:
-            await self._scroll_into_view(page, selector)
-            await self._human_delay(100, 400)
-            await page.click(selector, timeout=DEFAULT_CLICK_TIMEOUT_MS)
-            return None
+        page = await self.ensure_page()
+        
+        try:
+            previous_url = page.url
+            
+            async def _operation():
+                await self._scroll_into_view(page, selector)
+                await self._human_delay(100, 400)
+                await page.click(selector, timeout=DEFAULT_CLICK_TIMEOUT_MS)
+            
+            await _operation()
+            await self._smart_wait(page)
+            
+            if self._context is not None:
+                await self._persister.persist_playwright_storage_state(self._context)
+            
+            return await self._capture_page_info(
+                page,
+                page.url,
+                None,
+                action="click",
+                previous_url=previous_url,
+            )
+        except PlaywrightTimeoutError as exc:
+            logger.warning("click timed out: %s", exc)
+            return self._build_error_page_info(page.url, str(exc), action="click")
+        except Exception as exc:
+            can_retry = self._is_recoverable_browser_error(exc)
+            if can_retry:
+                logger.warning("click failed due to closed page, retrying once")
+                page = await self._recover_browser_session("click")
+                return await self.click(selector)
+            logger.exception("click failed", exc_info=True)
+            return self._build_error_page_info(page.url, str(exc), action="click")
 
-        return await self._run_page_action(
-            action="click",
-            operation=_operation,
-            history_entry={"action": "click", "selector": selector},
-        )
+    async def fill(self, selector: str, value: str) -> PageInfo:
+        """Unified fill action (covers direct fill and human-like interaction intent)."""
+        page = await self.ensure_page()
+        
+        try:
+            previous_url = page.url
+            
+            async def _operation():
+                await self._scroll_into_view(page, selector)
+                await page.fill(selector, value, timeout=DEFAULT_CLICK_TIMEOUT_MS)
+            
+            await _operation()
+            await self._smart_wait(page)
+            
+            if self._context is not None:
+                await self._persister.persist_playwright_storage_state(self._context)
+            
+            return await self._capture_page_info(
+                page,
+                page.url,
+                None,
+                action="fill",
+                previous_url=previous_url,
+            )
+        except PlaywrightTimeoutError as exc:
+            logger.warning("fill timed out: %s", exc)
+            return self._build_error_page_info(page.url, str(exc), action="fill")
+        except Exception as exc:
+            can_retry = self._is_recoverable_browser_error(exc)
+            if can_retry:
+                logger.warning("fill failed due to closed page, retrying once")
+                page = await self._recover_browser_session("fill")
+                return await self.fill(selector, value)
+            logger.exception("fill failed", exc_info=True)
+            return self._build_error_page_info(page.url, str(exc), action="fill")
 
     async def scroll(self, direction: str = "down", distance: int = 800) -> PageInfo:
         """Scroll viewport to reveal off-screen content and trigger lazy-loading."""
-        # 统一滚动参数：仅接受方向+距离，避免上层传坐标导致跨页面不稳定。
-        normalized_direction = direction.lower().strip()
-        signed_distance = abs(int(distance or 800))
-        if normalized_direction in {"up", "backward"}:
-            signed_distance = -signed_distance
+        page = await self.ensure_page()
+        
+        try:
+            previous_url = page.url
+            
+            # 统一滚动参数：仅接受方向 + 距离，避免上层传坐标导致跨页面不稳定。
+            normalized_direction = direction.lower().strip()
+            signed_distance = abs(int(distance or 800))
+            if normalized_direction in {"up", "backward"}:
+                signed_distance = -signed_distance
 
-        async def _operation(page: Page) -> None:
             await page.evaluate(
                 """({ distance }) => {
                     window.scrollBy({ top: distance, left: 0, behavior: "instant" });
                 }""",
                 {"distance": signed_distance},
             )
-            return None
-
-        return await self._run_page_action(
-            action="scroll",
-            operation=_operation,
-            history_entry={"action": "scroll", "direction": normalized_direction, "distance": signed_distance},
-        )
-
-    async def fill(self, selector: str, value: str) -> PageInfo:
-        """Unified fill action (covers direct fill and human-like interaction intent)."""
-        async def _operation(page: Page) -> None:
-            await self._scroll_into_view(page, selector)
-            await page.fill(selector, value, timeout=DEFAULT_CLICK_TIMEOUT_MS)
-            return None
-
-        return await self._run_page_action(
-            action="fill",
-            operation=_operation,
-            history_entry={"action": "fill", "selector": selector, "value": value},
-        )
+            
+            await self._smart_wait(page)
+            
+            if self._context is not None:
+                await self._persister.persist_playwright_storage_state(self._context)
+            
+            return await self._capture_page_info(
+                page,
+                page.url,
+                None,
+                action="scroll",
+                previous_url=previous_url,
+            )
+        except PlaywrightTimeoutError as exc:
+            logger.warning("scroll timed out: %s", exc)
+            return self._build_error_page_info(page.url, str(exc), action="scroll")
+        except Exception as exc:
+            can_retry = self._is_recoverable_browser_error(exc)
+            if can_retry:
+                logger.warning("scroll failed due to closed page, retrying once")
+                page = await self._recover_browser_session("scroll")
+                return await self.scroll(direction, distance)
+            logger.exception("scroll failed", exc_info=True)
+            return self._build_error_page_info(page.url, str(exc), action="scroll")
 
     async def find_elements(self, selector: str) -> BrowserToolResult:
         """Return text and attributes for elements matching a CSS selector."""
@@ -476,7 +512,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             return page_info
         except Exception as exc:
             logger.exception("Failed to capture page info for %s", url)
-            return self._build_error_page_info(url, str(exc), action="capture")
+            return self._build_error_page_info(url, str(exc), action=action)
 
     async def _extract_ui_from_page(self, page: Page, *, limit: int = 12) -> dict[str, Any]:
         """Extract navigation-oriented actionable UI elements from a concrete page."""
@@ -712,7 +748,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         await page.wait_for_timeout(delay)
 
     async def _wait_for_network_idle(self, page: Page, *, timeout_ms: int) -> bool:
-        # click/fill 等动作完成后必须等待“网络空闲”确认，而不是立即判定结束。
+        # click/fill 等动作完成后必须等待"网络空闲"确认，而不是立即判定结束。
         try:
             await page.wait_for_load_state("networkidle", timeout=timeout_ms)
             return True
@@ -753,7 +789,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
     def _attach_page_audit_hooks(self, page: Page) -> None:
         """Attach console/network listeners once per page for异常审计."""
-        # 异常审计为“被动监控”，在动作无响应时给 LLM 提供排障线索。
+        # 异常审计为"被动监控",在动作无响应时给 LLM 提供排障线索。
         if getattr(page, "__agi_audit_hooked__", False):
             return
 
