@@ -323,7 +323,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             logger.exception("scroll failed", exc_info=True)
             return self._build_error_page_info(page.url, str(exc), action="scroll")
 
-    async def find_elements(self, selector: str) -> BrowserToolResult:
+    async def find_elements(self, selector: str) -> List[QueryMatch]:
         """Return text and attributes for elements matching a CSS selector."""
         page = await self.ensure_page()
         try:
@@ -338,53 +338,64 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                         return obj;
                     }"""
                 )
-                results.append(QueryMatch(selector=selector, text=text, attributes=attributes or {}))
+                rect = await element.bounding_box()
+                results.append(QueryMatch(
+                    id=str(uuid.uuid4()),
+                    selector=selector,
+                    tag_name=element.tagName,
+                    text=text,
+                    attributes=attributes or {},
+                    rect=rect or {"x": 0, "y": 0, "width": 0, "height": 0},
+                    is_visible=True,
+                    is_enabled=True
+                ))
 
-            return BrowserToolResult(
-                status="success",
-                content=f"Found {len(results)} element(s) for selector: {selector}",
-                metadata={"matches": results}
-            )
+            return results
         except Exception:
             logger.exception("find_elements failed for selector=%s", selector)
-            return BrowserToolResult(status="error", error="Failed to find elements")
+            return []
 
-    async def extract_ui(self, limit: int = 12) -> BrowserToolResult:
+    async def extract_ui(self, limit: int = 50) -> List[QueryMatch]:
         """Public UI-structure extractor for LLM planning."""
         page = await self.ensure_page()
         ui_payload = await self._extract_ui_from_page(page, limit=limit)
-        return BrowserToolResult(
-            status="success",
-            content=f"Extracted {len(ui_payload.get('elements', [])) if isinstance(ui_payload, dict) else 0} actionable UI element(s).",
-            metadata={"ui": ui_payload}
-        )
+        
+        results: List[QueryMatch] = []
+        for el in ui_payload.get("elements", []):
+            if isinstance(el, dict):
+                rect = el.get("rect") or {"x": 0, "y": 0, "width": 0, "height": 0}
+                results.append(QueryMatch(
+                    id=str(el.get("id")),
+                    selector=el.get("selector", ""),
+                    tag_name=el.get("type", ""),
+                    text=el.get("text", ""),
+                    attributes=el.get("attributes", {}),
+                    rect=rect,
+                    is_visible=True,
+                    is_enabled=not el.get("disabled", False)
+                ))
+        
+        return results
 
-    async def get_screenshot(self, *, full_page: bool = True) -> BrowserToolResult:
+    async def get_screenshot(self, *, full_page: bool = False) -> str:
         """Capture a screenshot for OCR/inspection and return the absolute file path."""
         page = await self.ensure_page()
 
         try:
             screenshot_path = await self._take_screenshot(page, prefix="screenshot", full_page=full_page)
-            return BrowserToolResult(
-                status="success",
-                content=f"Screenshot captured and saved to {screenshot_path}",
-                metadata={"screenshot_path": str(screenshot_path)}
-            )
+            return str(screenshot_path)
         except Exception:
             logger.exception("Screenshot failed")
-            return BrowserToolResult(status="error", error="Screenshot failed")
+            raise
 
-    async def inspect_element_property(self, selector: str, property_name: str) -> BrowserToolResult:
+    async def inspect_element_property(self, selector: str, property_name: str) -> Any:
         """Inspect element property/attribute for decision support."""
         # 属性探测原子：用于在动作前判断可交互性（如 disabled/aria-busy）。
         page = await self.ensure_page()
         element = await page.query_selector(selector)
         if element is None:
-            return BrowserToolResult(
-                status="error",
-                error="element_not_found",
-                metadata={"selector": selector, "property": property_name}
-            )
+            return {"error": "element_not_found", "selector": selector, "property": property_name}
+        
         value = await element.evaluate(
             """(el, propertyName) => {
                 if (propertyName in el) return el[propertyName];
@@ -392,44 +403,26 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             }""",
             property_name,
         )
-        return BrowserToolResult(
-            status="success",
-            content=f"Property {property_name} for {selector} is {value}",
-            metadata={"selector": selector, "property": property_name, "value": value}
-        )
+        return {"value": value, "selector": selector, "property": property_name}
 
     def _page_summary(self, result: PageInfo | None) -> dict[str, Any]:
         if result is None:
             return {
                 "url": "",
                 "title": None,
-                "dom_snapshot": None,
-                "page_text": None,
-                "screenshot_path": None,
-                "metadata": {"load_state": "unknown"},
+                "viewport": DEFAULT_VIEWPORT,
+                "is_loading": False,
+                "last_action_status": "unknown",
+                "error_message": None,
             }
-        metadata = dict(result.metadata)
-        compact_metadata = {
-            "load_state": metadata.get("load_state"),
-            "history_length": metadata.get("history_length"),
-            "error": metadata.get("error"),
-            "empty_page": metadata.get("empty_page", False),
-            "text_length": metadata.get("text_length", 0),
-            "html_length": metadata.get("html_length", 0),
-            "has_screenshot": bool(result.screenshot_path),
-        }
+        metadata = dict(result.metadata) if result.metadata else {}
         return {
             "url": result.url,
             "title": result.title,
-            "dom_snapshot": None,
-            "page_text": None,
-            "screenshot_path": result.screenshot_path,
-            "response_status": result.response_status,
-            "last_action": result.last_action,
-            "actionable_elements": list(result.actionable_elements),
-            "network_idle": result.network_idle,
-            "url_changed": result.url_changed,
-            "metadata": compact_metadata,
+            "viewport": DEFAULT_VIEWPORT,
+            "is_loading": False,
+            "last_action_status": result.last_action_status or "success",
+            "error_message": result.error_message,
         }
 
     def get_state_snapshot(
@@ -465,16 +458,10 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         try:
             # 语义感知：输出精简后的可操作元素，而不是完整 DOM。
             html_repr = await self._extract_ui_from_page(page, limit=8)
-            actionable_elements = self._normalize_actionable_elements(
-                html_repr.get("elements", []) if isinstance(html_repr, dict) else []
-            )
-
+            
             page_text = await page.inner_text("body")
             page_title = await page.title()
             normalized_text = page_text.strip()
-            normalized_html = html_repr if isinstance(html_repr, str) else json.dumps(html_repr, ensure_ascii=False)
-            text_is_empty = len(normalized_text) == 0
-            html_is_empty = len(normalized_html.strip()) == 0
 
             # 视觉捕获：移除自动截图，改为由 LLM 通过 browser_screenshot 工具按需调用。
             screenshot_path = None
@@ -485,26 +472,10 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             page_info = PageInfo(
                 url=page.url,
                 title=page_title,
-                dom_snapshot=normalized_html[: self.max_content_length],
-                page_text="",
-                screenshot_path=screenshot_path,
-                response_status=response.status if response is not None else 200,
-                last_action=action,
-                actionable_elements=actionable_elements,
-                network_idle=network_idle,
-                url_changed=url_changed,
-                diagnostics={
-                    "console_errors": list(self._recent_console_errors[-10:]),
-                    "request_failures": list(self._recent_request_failures[-10:]),
-                },
-                metadata={
-                    "html_length": len(normalized_html),
-                    "text_length": len(normalized_text),
-                    "has_screenshot": screenshot_path is not None,
-                    "empty_page": text_is_empty and html_is_empty,
-                    "text_truncated": len(normalized_text) > self.max_content_length,
-                    "html_truncated": len(normalized_html) > self.max_content_length,
-                }
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="success" if action else "unknown",
+                error_message=None,
             )
 
             logger.info("Captured page info: url=%s title=%s", page_info.url, page_info.title)
@@ -775,11 +746,10 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         return PageInfo(
             url=url,
             title=None,
-            dom_snapshot=None,
-            page_text=None,
-            screenshot_path=None,
-            response_status=None,
-            metadata={"error": error, **metadata},
+            viewport=DEFAULT_VIEWPORT,
+            is_loading=False,
+            last_action_status="fail",
+            error_message=error,
         )
 
     async def _capture_environment_feedback(self, page: Page, *, previous_url: str | None) -> tuple[bool, bool]:
