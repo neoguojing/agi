@@ -12,6 +12,13 @@ MAX_FIND_RESULTS = 5
 STATE_SNAPSHOT_FILENAME = "browser_session_state.json"
 PLAYWRIGHT_STORAGE_STATE_FILENAME = "playwright_storage_state.json"
 
+# --- 超时常量 (ms) ---
+DEFAULT_CLICK_TIMEOUT_MS = 5_000
+DEFAULT_SCROLL_TIMEOUT_MS = 2_000
+DEFAULT_SMART_WAIT_TIMEOUT_MS = 5_000
+DEFAULT_CAPTURE_DELAY_MS = 300
+DEFAULT_NETWORK_IDLE_TIMEOUT_MS = 5_000
+
 WaitUntilState = Literal["load", "domcontentloaded", "networkidle", "commit"]
 
 class Rect(TypedDict):
