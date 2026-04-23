@@ -455,21 +455,43 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             raise
 
     async def inspect_element_property(self, selector: str, property_name: str) -> Any:
-        """Inspect element property/attribute for decision support."""
-        # 属性探测原子：用于在动作前判断可交互性（如 disabled/aria-busy）。
+        """Inspect element property/attribute for decision support.
+        
+        返回 dict 包含属性值或错误信息。
+        """
         page = await self.ensure_page()
         element = await page.query_selector(selector)
-        if element is None:
-            return {"error": "element_not_found", "selector": selector, "property": property_name}
         
-        value = await element.evaluate(
-            """(el, propertyName) => {
-                if (propertyName in el) return el[propertyName];
-                return el.getAttribute(propertyName);
-            }""",
-            property_name,
-        )
-        return {"value": value, "selector": selector, "property": property_name}
+        if element is None:
+            return {
+                "error": "element_not_found",
+                "selector": selector,
+                "property": property_name,
+            }
+        
+        try:
+            # 尝试获取属性值
+            value = await element.evaluate(
+                """(el, propertyName) => {
+                    if (propertyName in el) return el[propertyName];
+                    return el.getAttribute(propertyName);
+                }""",
+                property_name,
+            )
+            
+            return {
+                "value": value,
+                "selector": selector,
+                "property": property_name,
+            }
+        except Exception as exc:
+            logger.debug("Failed to inspect property %s for selector %s: %s", 
+                       property_name, selector, str(exc))
+            return {
+                "error": str(exc),
+                "selector": selector,
+                "property": property_name,
+            }
 
     async def get_state_snapshot(self) -> PageInfo:
         """Return current page state for middleware/LLM planning.
@@ -700,6 +722,37 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
         } """, {"limit": limit})
 
+    def _normalize_actionable_elements(self, elements: Any) -> list[dict[str, Any]]:
+        """Normalize actionable elements from JS payload into a stable schema."""
+        if not isinstance(elements, list):
+            return []
+        normalized: list[dict[str, Any]] = []
+        for item in elements:
+            if not isinstance(item, dict):
+                continue
+            selector = str(item.get("selector") or item.get("sel") or "").strip()
+            text = str(item.get("text") or item.get("c") or "").strip()
+            kind = str(item.get("type") or item.get("t") or "").strip()
+            placeholder = str(item.get("placeholder") or "").strip()
+            aria_label = str(item.get("aria_label") or item.get("ariaLabel") or "").strip()
+            input_type = str(item.get("input_type") or item.get("inputType") or "").strip()
+            disabled = bool(item.get("disabled", False))
+            if not any((selector, text, kind, placeholder)):
+                continue
+            normalized.append(
+                {
+                    "type": kind,
+                    "text": text,
+                    "aria_label": aria_label,
+                    "placeholder": placeholder,
+                    "selector": selector,
+                    "input_type": input_type,
+                    "disabled": disabled,
+                    "action": str(item.get("action") or ""),
+                }
+            )
+        return normalized
+
     async def _take_screenshot(self, page: Page, *, prefix: str, full_page: bool = False) -> Path:
         """Take a screenshot and save to storage."""
         file_path = self.storage_dir / f"{prefix}_{uuid.uuid4().hex[:10]}.png"
@@ -734,6 +787,49 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         """Sleep briefly to simulate human interaction cadence."""
         page = await self.ensure_page()
         await page.wait_for_timeout(random.randint(min_ms, max_ms))
+
+    async def wait_for_selector(self, selector: str, timeout: int = 5000) -> Optional[QueryMatch]:
+        """Wait for element to appear in DOM and become visible.
+        
+        返回 QueryMatch 或 None。
+        """
+        page = await self.ensure_page()
+        
+        try:
+            # 等待元素出现并可见
+            element = await page.wait_for_selector(
+                selector, 
+                state="visible", 
+                timeout=timeout
+            )
+            
+            if element is not None:
+                text = await element.inner_text()
+                attributes = await element.evaluate(
+                    """el => {
+                        const obj = {};
+                        for (const attr of el.attributes) obj[attr.name] = attr.value;
+                        return obj;
+                    }"""
+                )
+                rect = await element.bounding_box()
+                
+                return QueryMatch(
+                    id=str(uuid.uuid4()),
+                    selector=selector,
+                    tag_name=element.tagName,
+                    text=text,
+                    attributes=attributes or {},
+                    rect=rect or {"x": 0, "y": 0, "width": 0, "height": 0},
+                    is_visible=True,
+                    is_enabled=True
+                )
+        except PlaywrightTimeoutError:
+            logger.debug("wait_for_selector timed out for selector=%s", selector)
+            return None
+        except Exception as exc:
+            logger.debug("wait_for_selector failed for selector=%s: %s", selector, str(exc))
+            return None
 
     async def _capture_environment_feedback(self, page: Page, *, previous_url: str | None) -> tuple[bool, bool]:
         # 统一动作反馈结构：供 middleware 直接透出给 LLM。
