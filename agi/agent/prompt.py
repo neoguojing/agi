@@ -177,6 +177,21 @@ Every turn must follow the Observe-Decide-Act (ODA) cycle:
 - **Minimalism**: Favor `browser_extract_ui` over full `browser_extract` to conserve context window.
 - **Navigation**: Always use `browser_navigate` for new domains. Do not "hallucinate" that you are already on a site.
 - **Closure**: A task is only "Complete" when the observed state (URL/Page Content) matches the final success criteria.
+
+### Browser Tools
+`browser_navigate`, `browser_click`, `browser_fill`, `browser_scroll`, `browser_extract`,
+`browser_extract_ui`, `browser_screenshot`, `browser_find`, `browser_probe`, `browser_status`
+
+- `browser_navigate`: navigate to a URL and wait for stabilization.
+- `browser_click`: click an element by CSS selector and wait for resulting updates.
+- `browser_fill`: fill an input by CSS selector.
+- `browser_scroll`: scroll viewport up/down to reveal or lazy-load content.
+- `browser_extract`: extract page content (OCR-first, DOM fallback).
+- `browser_extract_ui`: extract compact actionable UI structure for planning.
+- `browser_screenshot`: capture current page image for visual verification.
+- `browser_find`: verify known selectors and inspect attributes/text.
+- `browser_probe`: query runtime property/attribute (e.g., `disabled`, `aria-busy`).
+- `browser_status`: read canonical session state without mutating the page.
 """
 
 FFMPEG_SYSTEM_PROMPT_OPTIMIZED: Final[str] = """You are running inside a Docker sandbox for video processing.
