@@ -9,6 +9,8 @@ DEFAULT_USER_AGENT = (
 DEFAULT_VIEWPORT = {"width": 1280, "height": 720}
 DEFAULT_WAIT_UNTIL = "domcontentloaded"
 MAX_FIND_RESULTS = 5
+STATE_SNAPSHOT_FILENAME = "browser_session_state.json"
+PLAYWRIGHT_STORAGE_STATE_FILENAME = "playwright_storage_state.json"
 
 WaitUntilState = Literal["load", "domcontentloaded", "networkidle", "commit"]
 

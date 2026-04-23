@@ -13,7 +13,7 @@ from playwright.async_api import (
 )
 from .browser_types import (
     DEFAULT_USER_AGENT, DEFAULT_VIEWPORT, DEFAULT_WAIT_UNTIL,
-    STATE_SNAPSHOT_FILENAME,
+    STATE_SNAPSHOT_FILENAME, PLAYWRIGHT_STORAGE_STATE_FILENAME,
     PageInfo, QueryMatch, WaitUntilState, MAX_FIND_RESULTS, DEFAULT_CLICK_TIMEOUT_MS,
     DEFAULT_SCROLL_TIMEOUT_MS, DEFAULT_SMART_WAIT_TIMEOUT_MS, DEFAULT_CAPTURE_DELAY_MS,
     DEFAULT_NETWORK_IDLE_TIMEOUT_MS,
@@ -834,7 +834,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         return network_idle, bool(previous_url) and previous_url != page.url
 
     def _attach_page_audit_hooks(self, page: Page) -> None:
-        """Attach console/network listeners once per page for异常审计."""
+        """Attach console/network listeners once per page for 异常审计."""
         # 异常审计为"被动监控",在动作无响应时给 LLM 提供排障线索。
         if getattr(page, "__agi_audit_hooked__", False):
             return
