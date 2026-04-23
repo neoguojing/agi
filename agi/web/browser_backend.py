@@ -91,8 +91,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         self._page_runtime_state[page_id] = PageInfo(
             url=page.url,
             title=previous.title if previous else None,
-            html=previous.html if previous else None,
-            text=previous.text if previous else None,
+            dom_snapshot=previous.dom_snapshot if previous else None,
+            page_text=previous.page_text if previous else None,
             screenshot_path=previous.screenshot_path if previous else None,
             metadata=metadata,
         )
@@ -383,8 +383,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             return {
                 "url": "",
                 "title": None,
-                "html": None,
-                "text": None,
+                "dom_snapshot": None,
+                "page_text": None,
                 "screenshot_path": None,
                 "metadata": {"load_state": "unknown"},
             }
@@ -402,15 +402,14 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             "url": source.url,
             "title": source.title,
             # Snapshot for middleware should stay compact; keep raw page content in last_result only.
-            "html": None,
-            "text": None,
+            "dom_snapshot": None,
+            "page_text": None,
             "screenshot_path": source.screenshot_path,
-            "status": source.status,
-            "action": source.action,
+            "response_status": source.response_status,
+            "last_action": source.last_action,
             "actionable_elements": list(source.actionable_elements),
             "network_idle": source.network_idle,
             "url_changed": source.url_changed,
-            "diagnostics": dict(source.diagnostics),
             "metadata": compact_metadata,
         }
 
@@ -479,12 +478,11 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             page_info = PageInfo(
                 url=page.url,
                 title=page_title,
-                html=normalized_html[: self.max_content_length],
-                # text=normalized_text[: self.max_content_length],
-                text="",
+                dom_snapshot=normalized_html[: self.max_content_length],
+                page_text="",
                 screenshot_path=screenshot_path,
-                status=response.status if response is not None else 200,
-                action=action,
+                response_status=response.status if response is not None else 200,
+                last_action=action,
                 actionable_elements=actionable_elements,
                 network_idle=network_idle,
                 url_changed=url_changed,
@@ -771,10 +769,10 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         return PageInfo(
             url=url,
             title=None,
-            html=None,
-            text=None,
+            dom_snapshot=None,
+            page_text=None,
             screenshot_path=None,
-            status=None,
+            response_status=None,
             metadata={"error": error, **metadata},
         )
 

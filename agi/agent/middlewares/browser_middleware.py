@@ -1,7 +1,5 @@
-import asyncio
 import base64
 import logging
-import random
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -223,10 +221,10 @@ class BrowserMiddleware(AgentMiddleware):
         self._storage_root.mkdir(parents=True, exist_ok=True)
         self._session_backends: dict[str, StatefulBrowserBackend] = {}
         self._session_runtime: dict[str, SessionRuntime] = {}
-        # Keep constructor params for compatibility; runtime-routed sessions do not need ttl sweeps.
-        _ = session_ttl, cleanup_interval
+        # Keep constructor params for compatibility.
+        # Retries are handled in StatefulBrowserBackend._run_page_action.
+        _ = max_retries, session_ttl, cleanup_interval
         self.ocr = ocr_engine
-        self.max_retries = max_retries
         self.enable_ocr = enable_ocr_fallback
         self.content_limit = content_token_limit
         self.eviction_handler = eviction_handler
@@ -584,10 +582,10 @@ class BrowserMiddleware(AgentMiddleware):
                 runtime_key,
             )
 
-        html = last_result.html or ""
-        text = last_result.text or ""
+        dom_snapshot = last_result.dom_snapshot or ""
+        page_text = last_result.page_text or ""
         ocr_text, screenshot_path = await self._extract_content_with_ocr(runtime, runtime_key, last_result)
-        if not ocr_text and not html and not text:
+        if not ocr_text and not dom_snapshot and not page_text:
             return await self._artifact_with_state(
                 self._error_artifact(
                     "Page content is empty and OCR extraction was unavailable.",
@@ -598,7 +596,7 @@ class BrowserMiddleware(AgentMiddleware):
                 runtime_key,
             )
 
-        primary_content = ocr_text or text
+        primary_content = ocr_text or page_text
         artifact: dict[str, Any] = {
             "status": "success",
             "metadata": {
@@ -613,12 +611,12 @@ class BrowserMiddleware(AgentMiddleware):
         if ocr_text:
             artifact["ocr_text_preview"] = self._build_preview(ocr_text, limit=self.content_limit)
 
-        if len(html) > self.content_limit:
-            artifact["html_preview"] = self._build_preview(html, limit=self.content_limit)
-            artifact["text_preview"] = self._build_preview(text, limit=self.content_limit)
+        if len(dom_snapshot) > self.content_limit:
+            artifact["dom_snapshot_preview"] = self._build_preview(dom_snapshot, limit=self.content_limit)
+            artifact["page_text_preview"] = self._build_preview(page_text, limit=self.content_limit)
             artifact["is_truncated"] = True
             if self.eviction_handler is not None:
-                file_path = self.eviction_handler(html)
+                file_path = self.eviction_handler(dom_snapshot)
                 artifact["full_content_path"] = file_path
                 artifact["metadata"] = {
                     **artifact["metadata"],
@@ -626,8 +624,8 @@ class BrowserMiddleware(AgentMiddleware):
                     "full_content_path": file_path,
                 }
         else:
-            artifact["html_preview"] = html
-            artifact["text_preview"] = text
+            artifact["dom_snapshot_preview"] = dom_snapshot
+            artifact["page_text_preview"] = page_text
             artifact["is_truncated"] = False
 
         return await self._artifact_with_state(artifact, runtime_key)
@@ -773,70 +771,45 @@ class BrowserMiddleware(AgentMiddleware):
         action: str,
         **kwargs: Any
     ) -> PageInfo:
-        last_error: Exception | None = None
         backend, runtime_key = self._backend_for_runtime(runtime)
-
-        for attempt in range(self.max_retries):
-            try:
-                if attempt > 0:
-                    delay = random.uniform(1.0, 3.0)
-                    await asyncio.sleep(delay)
-
-                started_at = time.perf_counter()
-
-                if action == "navigate":
-                    result = await backend.navigate(kwargs["url"])
-                elif action == "click":
-                    result = await backend.click(kwargs["selector"])
-                elif action == "fill":
-                    result = await backend.fill(kwargs["selector"], kwargs["text"])
-                elif action == "scroll":
-                    result = await backend.scroll(kwargs["direction"], kwargs["distance"])
-                else:
-                    msg = f"Unknown action: {action}"
-                    raise ValueError(msg)
-                self._record_page_result(runtime_key, result)
-
-                logger.info(
-                    "Browser action '%s' for session=%s completed in %.2fs",
-                    action,
-                    runtime_key,
-                    time.perf_counter() - started_at,
-                )
-
-                if result.metadata.get("error"):
-                    raise RuntimeError(str(result.metadata["error"]))
-
-                canonical_state = await self._get_canonical_session_state(runtime_key)
-                # 把实时会话快照塞回每次动作结果，确保“动作-反馈一体化”。
-                result.metadata = {
-                    **result.metadata,
-                    "browser_session_state": canonical_state or {"browser": {"is_open": False, "is_closed": True}, "current_page": {}, "previous_page": None},
-                }
-
-                return result
-
-            except Exception as exc:
-                last_error = exc
-                logger.warning(
-                    "Browser action '%s' failed (%s/%s): %s",
-                    action,
-                    attempt + 1,
-                    self.max_retries,
-                    exc,
-                )
-
-                if attempt < self.max_retries - 1:
-                    await asyncio.sleep(2**attempt)
-
-        return PageInfo(
-            url=kwargs.get("url", "unknown"),
-            title=None,
-            html=None,
-            text=None,
-            screenshot_path=None,
-            metadata={"error": f"Failed after {self.max_retries}: {last_error}"},
-        )
+        started_at = time.perf_counter()
+        try:
+            if action == "navigate":
+                result = await backend.navigate(kwargs["url"])
+            elif action == "click":
+                result = await backend.click(kwargs["selector"])
+            elif action == "fill":
+                result = await backend.fill(kwargs["selector"], kwargs["text"])
+            elif action == "scroll":
+                result = await backend.scroll(kwargs["direction"], kwargs["distance"])
+            else:
+                msg = f"Unknown action: {action}"
+                raise ValueError(msg)
+            self._record_page_result(runtime_key, result)
+            logger.info(
+                "Browser action '%s' for session=%s completed in %.2fs",
+                action,
+                runtime_key,
+                time.perf_counter() - started_at,
+            )
+            canonical_state = await self._get_canonical_session_state(runtime_key)
+            result.metadata = {
+                **result.metadata,
+                "browser_session_state": canonical_state or {"browser": {"is_open": False, "is_closed": True}, "current_page": {}, "previous_page": None},
+            }
+            return result
+        except Exception as exc:
+            logger.warning("Browser action '%s' failed: %s", action, exc)
+            return PageInfo(
+                url=kwargs.get("url", "unknown"),
+                title=None,
+                dom_snapshot=None,
+                page_text=None,
+                screenshot_path=None,
+                response_status=None,
+                last_action=action,
+                metadata={"error": str(exc)},
+            )
 
     def _format_page_result(self, result: PageInfo) -> dict[str, Any]:
         if result.metadata.get("error"):
@@ -852,21 +825,20 @@ class BrowserMiddleware(AgentMiddleware):
         current_page = {
             "url": result.url,
             "title": result.title,
-            "html": result.html,
-            "text": result.text,
+            "dom_snapshot": result.dom_snapshot,
+            "page_text": result.page_text,
             "screenshot_path": result.screenshot_path,
-            "status": result.status,
-            "action": result.action,
+            "response_status": result.response_status,
+            "last_action": result.last_action,
             "actionable_elements": list(result.actionable_elements),
             "network_idle": result.network_idle,
             "url_changed": result.url_changed,
-            "diagnostics": dict(result.diagnostics),
             "metadata": dict(result.metadata),
         }
         artifact: dict[str, Any] = {
             "status": "success",
             "metadata": dict(result.metadata),
-            "content_preview": self._build_preview(result.text),
+            "content_preview": self._build_preview(result.page_text or ""),
             "current_page": current_page,
         }
         logger.info("Formatted tool artifact with current_page for url=%s", result.url)
@@ -884,8 +856,8 @@ class BrowserMiddleware(AgentMiddleware):
         current_page = {
             "url": url,
             "title": title,
-            "html": None,
-            "text": None,
+            "dom_snapshot": None,
+            "page_text": None,
             "screenshot_path": screenshot_path,
             "metadata": dict(metadata or {}),
         }
@@ -961,7 +933,7 @@ class BrowserMiddleware(AgentMiddleware):
                 f"browser: is_open={browser.get('is_open')} is_closed={browser.get('is_closed')}",
                 f"current_page: {current_page_compact}",
                 f"previous_page: {previous_page_compact or '<none>'}",
-                f"last_action: {current_page.get('metadata', {}).get('action') if isinstance(current_page.get('metadata'), dict) else None}",
+                f"last_action: {current_page.get('last_action')}",
                 "Decide next action only from this summary: status, navigate, find, click, fill, extract, screenshot.",
             ]
         )
