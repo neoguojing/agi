@@ -41,14 +41,7 @@ def build_browser_runtime_key(user_id: str, conversation_id: str | None = None) 
 # --- Action result payloads ---
 @dataclass(slots=True)
 class PageInfo:
-    """Canonical browser page state for agent planning.
-
-    Field naming intentionally reflects semantics:
-    - dom_snapshot: structured/serialized DOM or UI snapshot (not raw HTML only).
-    - page_text: extracted readable page text.
-    - response_status: HTTP-like status from last navigation/action.
-    - last_action: middleware/backend action that produced this state.
-    """
+    """Canonical browser page state for agent planning."""
 
     url: str
     title: str | None
@@ -63,44 +56,20 @@ class PageInfo:
     diagnostics: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    @property
-    def html(self) -> str | None:  # backward compatibility
-        return self.dom_snapshot
+@dataclass(slots=True)
+class BrowserToolResult:
+    """Generic result for browser tool operations that don't necessarily result in a new page state."""
+    status: str
+    content: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
 
-    @html.setter
-    def html(self, value: str | None) -> None:
-        self.dom_snapshot = value
-
-    @property
-    def text(self) -> str | None:  # backward compatibility
-        return self.page_text
-
-    @text.setter
-    def text(self, value: str | None) -> None:
-        self.page_text = value
-
-    @property
-    def status(self) -> int | None:  # backward compatibility
-        return self.response_status
-
-    @status.setter
-    def status(self, value: int | None) -> None:
-        self.response_status = value
-
-    @property
-    def action(self) -> str | None:  # backward compatibility
-        return self.last_action
-
-    @action.setter
-    def action(self, value: str | None) -> None:
-        self.last_action = value
 
 @dataclass(slots=True)
 class QueryMatch:
     selector: str
     text: str
     attributes: dict[str, Any]
-
 
 # --- Unified session snapshot exposed to upper layers ---
 class BrowserHistoryEntry(TypedDict):

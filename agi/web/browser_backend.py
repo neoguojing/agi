@@ -210,7 +210,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     page,
                     capture_url or page.url,
                     response,
-                    capture_content=False,
                     action=action,
                     previous_url=previous_url,
                 )
@@ -287,9 +286,9 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             history_entry={"action": "fill", "selector": selector, "value": value},
         )
 
-    async def find_elements(self, selector: str) -> List[QueryMatch]:
+    async def find_elements(self, selector: str) -> BrowserToolResult:
         """Return text and attributes for elements matching a CSS selector."""
-        page = await self.ensure_page()        
+        page = await self.ensure_page()
         try:
             elements = await page.query_selector_all(selector)
             results: List[QueryMatch] = []
@@ -303,34 +302,52 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     }"""
                 )
                 results.append(QueryMatch(selector=selector, text=text, attributes=attributes or {}))
-            return results
+
+            return BrowserToolResult(
+                status="success",
+                content=f"Found {len(results)} element(s) for selector: {selector}",
+                metadata={"matches": results}
+            )
         except Exception:
             logger.exception("find_elements failed for selector=%s", selector)
-            return []
+            return BrowserToolResult(status="error", error="Failed to find elements")
 
-    async def extract_ui(self, limit: int = 12) -> Dict[str, Any]:
+    async def extract_ui(self, limit: int = 12) -> BrowserToolResult:
         """Public UI-structure extractor for LLM planning."""
         page = await self.ensure_page()
-        return await self._extract_ui_from_page(page, limit=limit)
+        ui_payload = await self._extract_ui_from_page(page, limit=limit)
+        return BrowserToolResult(
+            status="success",
+            content=f"Extracted {len(ui_payload.get('elements', [])) if isinstance(ui_payload, dict) else 0} actionable UI element(s).",
+            metadata={"ui": ui_payload}
+        )
 
-    async def get_screenshot(self, *, full_page: bool = True) -> str:
+    async def get_screenshot(self, *, full_page: bool = True) -> BrowserToolResult:
         """Capture a screenshot for OCR/inspection and return the absolute file path."""
         page = await self.ensure_page()
-        
+
         try:
             screenshot_path = await self._take_screenshot(page, prefix="screenshot", full_page=full_page)
-            return str(screenshot_path)
+            return BrowserToolResult(
+                status="success",
+                content=f"Screenshot captured and saved to {screenshot_path}",
+                metadata={"screenshot_path": str(screenshot_path)}
+            )
         except Exception:
             logger.exception("Screenshot failed")
-            return ""
+            return BrowserToolResult(status="error", error="Screenshot failed")
 
-    async def inspect_element_property(self, selector: str, property_name: str) -> Dict[str, Any]:
+    async def inspect_element_property(self, selector: str, property_name: str) -> BrowserToolResult:
         """Inspect element property/attribute for decision support."""
         # 属性探测原子：用于在动作前判断可交互性（如 disabled/aria-busy）。
         page = await self.ensure_page()
         element = await page.query_selector(selector)
         if element is None:
-            return {"ok": False, "selector": selector, "property": property_name, "error": "element_not_found"}
+            return BrowserToolResult(
+                status="error",
+                error="element_not_found",
+                metadata={"selector": selector, "property": property_name}
+            )
         value = await element.evaluate(
             """(el, propertyName) => {
                 if (propertyName in el) return el[propertyName];
@@ -338,7 +355,11 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             }""",
             property_name,
         )
-        return {"ok": True, "selector": selector, "property": property_name, "value": value}
+        return BrowserToolResult(
+            status="success",
+            content=f"Property {property_name} for {selector} is {value}",
+            metadata={"selector": selector, "property": property_name, "value": value}
+        )
 
     def _page_summary(self, result: PageInfo | None) -> dict[str, Any]:
         if result is None:
@@ -363,7 +384,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         return {
             "url": result.url,
             "title": result.title,
-            # Snapshot for middleware should stay compact; keep raw page content in last_result only.
             "dom_snapshot": None,
             "page_text": None,
             "screenshot_path": result.screenshot_path,
@@ -382,12 +402,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         last_result: PageInfo | None = None,
         previous_result: PageInfo | None = None,
     ) -> BrowserSessionSnapshot:
-        """Return a compact state snapshot for middleware/LLM planning.
-
-        Schema is intentionally minimal:
-        - current_page: latest known page summary.
-        - previous_page: immediate previous page summary (if any).
-        """
+        """Return a compact state snapshot for middleware/LLM planning."""
         browser_state: BrowserRuntimeState = {
             "is_open": not self.is_closed,
             "is_closed": self.is_closed,
@@ -397,13 +412,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             "current_page": self._page_summary(last_result),
             "previous_page": self._page_summary(previous_result) if previous_result else None,
         }
-        snapshot = normalize_browser_session_snapshot(snapshot)
-        logger.debug(
-            "Generated browser snapshot: is_open=%s current_url=%s",
-            snapshot["browser"]["is_open"],
-            snapshot["current_page"].get("url"),
-        )
-        return snapshot
+        return normalize_browser_session_snapshot(snapshot)
 
     # --- Internal Action Implementations ---
 
@@ -412,7 +421,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         page: Page,
         url: str,
         response: Response | None,
-        capture_content: bool = True,
         action: str | None = None,
         previous_url: str | None = None,
     ) -> PageInfo:
