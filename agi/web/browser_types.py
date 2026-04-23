@@ -7,7 +7,7 @@ DEFAULT_USER_AGENT = (
     "Chrome/120.0.0.0 Safari/537.36"
 )
 DEFAULT_VIEWPORT = {"width": 1280, "height": 720}
-DEFAULT_WAIT_UNTIL = "domcontentloaded"
+DEFAULT_WAIT_UNTIL = "networkidle"
 MAX_FIND_RESULTS = 5
 STATE_SNAPSHOT_FILENAME = "browser_session_state.json"
 PLAYWRIGHT_STORAGE_STATE_FILENAME = "playwright_storage_state.json"
