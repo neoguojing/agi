@@ -700,37 +700,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
         } """, {"limit": limit})
 
-    def _normalize_actionable_elements(self, elements: Any) -> list[dict[str, Any]]:
-        """Normalize actionable elements from JS payload into a stable schema."""
-        if not isinstance(elements, list):
-            return []
-        normalized: list[dict[str, Any]] = []
-        for item in elements:
-            if not isinstance(item, dict):
-                continue
-            selector = str(item.get("selector") or item.get("sel") or "").strip()
-            text = str(item.get("text") or item.get("c") or "").strip()
-            kind = str(item.get("type") or item.get("t") or "").strip()
-            placeholder = str(item.get("placeholder") or "").strip()
-            aria_label = str(item.get("aria_label") or item.get("ariaLabel") or "").strip()
-            input_type = str(item.get("input_type") or item.get("inputType") or "").strip()
-            disabled = bool(item.get("disabled", False))
-            if not any((selector, text, kind, placeholder)):
-                continue
-            normalized.append(
-                {
-                    "type": kind,
-                    "text": text,
-                    "aria_label": aria_label,
-                    "placeholder": placeholder,
-                    "selector": selector,
-                    "input_type": input_type,
-                    "disabled": disabled,
-                    "action": str(item.get("action") or ""),
-                }
-            )
-        return normalized
-
     async def _take_screenshot(self, page: Page, *, prefix: str, full_page: bool = False) -> Path:
         """Take a screenshot and save to storage."""
         file_path = self.storage_dir / f"{prefix}_{uuid.uuid4().hex[:10]}.png"
@@ -765,17 +734,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         """Sleep briefly to simulate human interaction cadence."""
         page = await self.ensure_page()
         await page.wait_for_timeout(random.randint(min_ms, max_ms))
-
-    def _build_error_page_info(self, url: str, error: str, **metadata: Any) -> PageInfo:
-        """Build an error PageInfo object."""
-        return PageInfo(
-            url=url,
-            title=None,
-            viewport=DEFAULT_VIEWPORT,
-            is_loading=False,
-            last_action_status="fail",
-            error_message=error,
-        )
 
     async def _capture_environment_feedback(self, page: Page, *, previous_url: str | None) -> tuple[bool, bool]:
         # 统一动作反馈结构：供 middleware 直接透出给 LLM。
