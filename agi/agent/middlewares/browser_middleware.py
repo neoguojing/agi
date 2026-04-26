@@ -219,8 +219,8 @@ class BrowserMiddleware(AgentMiddleware):
             self._create_fill_tool(),
             self._create_scroll_tool(),
             self._create_extract_tool(),
-            self._create_extract_ui_tool(),
             self._create_screenshot_tool(),
+            self._create_extract_ui_tool(),
             self._create_find_tool(),
             self._create_probe_tool(),
             self._create_status_tool(),
@@ -373,9 +373,28 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_screenshot_tool(self) -> BaseTool:
-        """Create the screenshot tool."""
+        """Create the screenshot tool - merged from _tool_screenshot."""
         async def async_screenshot(runtime: ToolRuntime[None, MiddlewareBrowserState]) -> ToolMessage | str:
-            return await self._tool_screenshot(runtime, runtime.tool_call_id)
+            backend, runtime_key = self._backend_for_runtime(runtime)
+            result = await backend.get_screenshot()
+
+            if result.status == "error":
+                return f"Error: {result.error or 'Failed to take screenshot'}"
+
+            screenshot_path = result.metadata.get("screenshot_path")
+            if not screenshot_path:
+                return "Error: Screenshot path missing in result"
+
+            page = await backend.ensure_page()
+            current_url = page.url
+            text = f"Screenshot captured for {current_url}" if current_url else "Screenshot captured"
+
+            return ToolMessage(
+                content=text,
+                content_blocks=[create_image_block(file_id=screenshot_path, mime_type="image/png")],
+                name="browser_screenshot",
+                tool_call_id=runtime.tool_call_id,
+            )
 
         return StructuredTool.from_function(
             name="browser_screenshot",
@@ -549,29 +568,6 @@ class BrowserMiddleware(AgentMiddleware):
         normalized_text = str(ocr_text).strip()
         return normalized_text, screenshot_path
 
-    async def _tool_screenshot(self, runtime: ToolRuntime[None, MiddlewareBrowserState], tool_call_id: str) -> ToolMessage | str:
-        """Capture a screenshot and return a multimodal tool response."""
-        backend, runtime_key = self._backend_for_runtime(runtime)
-        result = await backend.get_screenshot()
-
-        if result.status == "error":
-            return f"Error: {result.error or 'Failed to take screenshot'}"
-
-        screenshot_path = result.metadata.get("screenshot_path")
-        if not screenshot_path:
-            return "Error: Screenshot path missing in result"
-
-        page = await backend.ensure_page()
-        current_url = page.url
-        text = f"Screenshot captured for {current_url}" if current_url else "Screenshot captured"
-
-        return ToolMessage(
-            content=text,
-            content_blocks=[create_image_block(file_id=screenshot_path, mime_type="image/png")],
-            name="browser_screenshot",
-            tool_call_id=tool_call_id,
-        )
-
     def _build_preview(self, content: str, *, limit: int = 500) -> str:
         if not content:
             return ""
@@ -600,7 +596,7 @@ class BrowserMiddleware(AgentMiddleware):
         """Get the canonical session state for a runtime key."""
         backend, _ = self._backend_for_runtime(None)  # Use default backend if no runtime provided
         page = await backend.ensure_page()
-        
+
         return {
             "browser": {"open": True},
             "current_page": {
