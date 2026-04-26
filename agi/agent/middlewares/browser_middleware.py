@@ -274,24 +274,19 @@ class BrowserMiddleware(AgentMiddleware):
             result = await backend.navigate(url)
 
             if result.last_action_status == "fail":
-                return f"Error navigating to {url}: {result.error_message or 'Unknown error'}"
+                return f"Error navigating to {url}: {result.error_message or 'Unknown error'}. Please check if the URL is correct and accessible."
 
             if result.last_action_status == "timeout":
-                return f"Navigation timed out after waiting for network idle. URL: {result.url}"
+                return f"Navigation timed out after waiting for network idle. URL: {url}. The page may be loading slowly or is unreachable."
 
-            # Update browser_session_state with new page info
-            state_update = {
-                "browser_session_state": {
-                    "url": result.url,
-                    "title": result.title or "N/A",
-                    "viewport": DEFAULT_VIEWPORT,
-                    "is_loading": False,
-                    "last_action_status": "success",
-                    "error_message": None,
-                }
-            }
-
-            return Command(update={"browser_session_state": state_update["browser_session_state"]})
+            # Rich response with actionable context for LLM
+            title = result.title or "N/A"
+            return (
+                f"Successfully navigated to {url}.\n"
+                f"Page Title: {title}\n"
+                f"Status: Page loaded and stable.\n"
+                f"Next steps: You can now interact with page elements, extract content, or perform actions."
+            )
 
         return StructuredTool.from_function(
             name="browser_navigate",
@@ -309,24 +304,20 @@ class BrowserMiddleware(AgentMiddleware):
             result = await backend.click(selector)
 
             if result.last_action_status == "fail":
-                return f"Error clicking element with selector '{selector}': {result.error_message or 'Unknown error'}"
+                return f"Error clicking element with selector '{selector}': {result.error_message or 'Unknown error'}. The element may not be visible or clickable."
 
             if result.last_action_status == "timeout":
-                return f"Click timed out. Element may not be visible or clickable."
+                return f"Click timed out. Element with selector '{selector}' may not be visible or interactive."
 
-            # Update browser_session_state after successful click
-            state_update = {
-                "browser_session_state": {
-                    "url": result.url,
-                    "title": result.title or "N/A",
-                    "viewport": DEFAULT_VIEWPORT,
-                    "is_loading": False,
-                    "last_action_status": "success",
-                    "error_message": None,
-                }
-            }
-
-            return Command(update={"browser_session_state": state_update["browser_session_state"]})
+            # Rich response with actionable context for LLM
+            new_url = result.url
+            new_title = result.title or "N/A"
+            return (
+                f"Successfully clicked element with selector: {selector}.\n"
+                f"Page URL: {new_url}\n"
+                f"Page Title: {new_title}\n"
+                f"Status: Click completed. Check if navigation occurred or DOM changed."
+            )
 
         return StructuredTool.from_function(
             name="browser_click",
@@ -345,24 +336,21 @@ class BrowserMiddleware(AgentMiddleware):
             result = await backend.fill(selector, text)
 
             if result.last_action_status == "fail":
-                return f"Error filling field with selector '{selector}': {result.error_message or 'Unknown error'}"
+                return f"Error filling field with selector '{selector}': {result.error_message or 'Unknown error'}. The element may not be an input field."
 
             if result.last_action_status == "timeout":
-                return f"Fill timed out. Element may not be visible or editable."
+                return f"Fill timed out. Element with selector '{selector}' may not be editable."
 
-            # Update browser_session_state after successful fill
-            state_update = {
-                "browser_session_state": {
-                    "url": result.url,
-                    "title": result.title or "N/A",
-                    "viewport": DEFAULT_VIEWPORT,
-                    "is_loading": False,
-                    "last_action_status": "success",
-                    "error_message": None,
-                }
-            }
-
-            return Command(update={"browser_session_state": state_update["browser_session_state"]})
+            # Rich response with actionable context for LLM
+            new_url = result.url
+            new_title = result.title or "N/A"
+            return (
+                f"Successfully filled field with selector: {selector}.\n"
+                f"Text entered: {text}\n"
+                f"Page URL: {new_url}\n"
+                f"Page Title: {new_title}\n"
+                f"Status: Fill completed. Check if any validation messages appeared."
+            )
 
         return StructuredTool.from_function(
             name="browser_fill",
@@ -381,24 +369,20 @@ class BrowserMiddleware(AgentMiddleware):
             result = await backend.scroll(direction, distance)
 
             if result.last_action_status == "fail":
-                return f"Error scrolling: {result.error_message or 'Unknown error'}"
+                return f"Error scrolling: {result.error_message or 'Unknown error'}."
 
             if result.last_action_status == "timeout":
                 return f"Scroll timed out."
 
-            # Update browser_session_state after successful scroll
-            state_update = {
-                "browser_session_state": {
-                    "url": result.url,
-                    "title": result.title or "N/A",
-                    "viewport": DEFAULT_VIEWPORT,
-                    "is_loading": False,
-                    "last_action_status": "success",
-                    "error_message": None,
-                }
-            }
-
-            return Command(update={"browser_session_state": state_update["browser_session_state"]})
+            # Rich response with actionable context for LLM
+            new_url = result.url
+            new_title = result.title or "N/A"
+            return (
+                f"Successfully scrolled {direction} by {distance}px.\n"
+                f"Page URL: {new_url}\n"
+                f"Page Title: {new_title}\n"
+                f"Status: Scroll completed. New content may be visible now."
+            )
 
         return StructuredTool.from_function(
             name="browser_scroll",
@@ -428,14 +412,23 @@ class BrowserMiddleware(AgentMiddleware):
                                 )
                             ])
                             if ocr_text:
-                                return f"Extracted {len(str(ocr_text).strip())} characters via OCR from screenshot at {screenshot_path}"
+                                return (
+                                    f"Extracted {len(str(ocr_text).strip())} characters via OCR from screenshot.\n"
+                                    f"Content preview: {str(ocr_text).strip()[:500]}...\n"
+                                    f"Full content available at: {screenshot_path}"
+                                )
                 except Exception as e:
                     logger.debug("OCR extraction failed: %s", e)
 
             # Fallback to DOM text extraction
             try:
                 content = await page.content()
-                return f"Extracted {len(content)} characters from page DOM. URL: {page.url}"
+                return (
+                    f"Extracted {len(content)} characters from page DOM.\n"
+                    f"Page URL: {page.url}\n"
+                    f"Content preview: {content[:500]}...\n"
+                    f"Use pagination (offset/limit) for large files."
+                )
             except Exception as e:
                 logger.debug("DOM extraction failed: %s", e)
                 return "Error extracting page content: Unable to read page content"
@@ -456,9 +449,15 @@ class BrowserMiddleware(AgentMiddleware):
             result = await backend.extract_ui(max(1, min(int(limit or 12), 50)))
 
             if not result:
-                return "No actionable elements found on the current page"
+                return "No actionable elements found on the current page. The page may be empty or have no interactive elements."
 
-            return f"Extracted {len(result)} actionable elements from {result[0].url if result else 'current page'}"
+            # Rich response with actionable context for LLM
+            url = result[0].url if result else ""
+            return (
+                f"Extracted {len(result)} actionable elements from {url}.\n"
+                f"Elements include: search boxes, links, buttons, navigation items.\n"
+                f"Use browser_find to get details on specific elements, or click/fill based on selectors."
+            )
 
         return StructuredTool.from_function(
             name="browser_extract_ui",
@@ -476,9 +475,14 @@ class BrowserMiddleware(AgentMiddleware):
             matches = await backend.find_elements(selector)
 
             if not matches:
-                return f"No elements found matching selector: {selector}"
+                return f"No elements found matching selector: {selector}. Verify the selector is correct or use browser_extract_ui to discover available selectors."
 
-            return f"Found {len(matches)} elements matching selector: {selector}"
+            # Rich response with actionable context for LLM
+            return (
+                f"Found {len(matches)} elements matching selector: {selector}.\n"
+                f"Element details include text, attributes, and positions.\n"
+                f"Use this information to plan click/fill actions or verify element properties."
+            )
 
         return StructuredTool.from_function(
             name="browser_find",
@@ -495,12 +499,18 @@ class BrowserMiddleware(AgentMiddleware):
                 page_info = await backend.get_state_snapshot()
 
                 if not page_info.url:
-                    return "No active browser session. Please navigate first."
+                    return "No active browser session. Please navigate first using browser_navigate."
 
-                return f"Browser Status - URL: {page_info.url}, Title: {page_info.title or 'N/A'}"
+                # Rich response with actionable context for LLM
+                title = page_info.title or "N/A"
+                return (
+                    f"Browser Status - URL: {page_info.url}, Title: {title}\n"
+                    f"Status: Browser is active and ready for interaction.\n"
+                    f"Use browser_extract to understand page content, or browser_extract_ui to find actionable elements."
+                )
             except Exception as e:
                 logger.debug("Failed to get browser state snapshot: %s", e)
-                return "No active browser session. Please navigate first."
+                return "No active browser session. Please navigate first using browser_navigate."
 
         return StructuredTool.from_function(
             name="browser_status",
@@ -519,13 +529,18 @@ class BrowserMiddleware(AgentMiddleware):
             result = await backend.inspect_element_property(selector, property_name)
 
             if result.get("error"):
-                return f"Error inspecting property '{property_name}': {result['error']}"
+                return f"Error inspecting property '{property_name}': {result['error']}. The element may not exist or the property is not accessible."
 
             value = result.get("value")
             if value is None:
-                return f"Property '{property_name}' not found on element with selector: {selector}"
+                return f"Property '{property_name}' not found on element with selector: {selector}. Verify the selector and property name."
 
-            return f"Property '{property_name}' value: {str(value)}"
+            # Rich response with actionable context for LLM
+            return (
+                f"Property '{property_name}' value: {str(value)}\n"
+                f"Element with selector '{selector}' is accessible.\n"
+                f"Use this information to determine if element is enabled, disabled, or has specific attributes."
+            )
 
         return StructuredTool.from_function(
             name="browser_probe",
