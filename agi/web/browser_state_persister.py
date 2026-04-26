@@ -2,16 +2,18 @@
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from playwright.async_api import BrowserContext
 from .browser_types import STATE_SNAPSHOT_FILENAME, PLAYWRIGHT_STORAGE_STATE_FILENAME
 
 logger = logging.getLogger(__name__)
 
+
 class BrowserStatePersister:
     """
     负责所有状态和数据的持久化工作。
     """
+    
     def __init__(self, storage_dir: Path, restored_snapshot: dict[str, Any] | None):
         self.storage_dir = storage_dir
         self._state_snapshot_path = self.storage_dir / STATE_SNAPSHOT_FILENAME
@@ -36,7 +38,7 @@ class BrowserStatePersister:
         except Exception:
             logger.debug("Failed to persist Playwright storage state", exc_info=True)
 
-    def persist_state_snapshot(self, snapshot_func: callable) -> None:
+    def persist_state_snapshot(self, snapshot_func: Callable[[], dict[str, Any]]) -> None:
         snapshot = snapshot_func()
         try:
             self._state_snapshot_path.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2))

@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import TypedDict, List, Dict, Any, Optional, Literal
 from .browser_types import PageInfo, QueryMatch, WaitUntilState
+
+
 class AbstractBrowserBackend(ABC):
     """
     浏览器后端的抽象接口。
@@ -13,7 +15,7 @@ class AbstractBrowserBackend(ABC):
     # --- 生命周期管理 ---
     @abstractmethod
     async def initialize(self, viewport_size: Dict[str, int] = {"width": 1280, "height": 720}) -> None:
-        """初始化浏览器。建议在此处设定初始 Viewport 大小以保证响应式布局一致。"""
+        """初始化浏览器。建议在此处设定初始 Viewport 大小以保证响应式布局一致."""
         pass
 
     @abstractmethod
@@ -71,7 +73,7 @@ class AbstractBrowserBackend(ABC):
     async def find_elements(self, selector: str) -> List[QueryMatch]:
         """
         局部查询。用于获取一组相似元素的详情（如搜索结果列表）。
-        必须包含每个元素的物理坐标(Rect)和可见性。
+        必须包含每个元素的物理坐标 (Rect) 和可见性。
         """
         pass
 
