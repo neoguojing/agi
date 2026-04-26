@@ -1,9 +1,8 @@
 import base64
 import logging
-import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Annotated, Any, NotRequired
+from typing import Annotated, Any, NotRequired, Optional
 
 from langchain.agents.middleware.types import (
     AgentMiddleware,
@@ -25,10 +24,10 @@ from agi.config import BROWSER_STORAGE_PATH
 from agi.utils.common import append_to_system_message
 from agi.web.browser_backend import StatefulBrowserBackend
 from agi.web.browser_types import (
-    BrowserSessionSnapshot,
     PageInfo,
-    build_browser_runtime_key,
-    normalize_browser_session_snapshot,
+    QueryMatch,
+    Rect,
+    DEFAULT_VIEWPORT,
 )
 from agi.agent.prompt import get_middleware_prompt
 
@@ -40,15 +39,6 @@ class SessionRuntime(TypedDict):
 
     last_result: PageInfo | None
     previous_result: PageInfo | None
-
-
-def _browser_session_state_reducer(
-    left: BrowserSessionSnapshot | None,
-    right: BrowserSessionSnapshot | None,
-) -> BrowserSessionSnapshot | None:
-    """Keep the latest browser session snapshot from middleware updates."""
-    _ = left
-    return right
 
 
 BROWSER_NAVIGATE_TOOL_DESCRIPTION = """
@@ -188,12 +178,11 @@ class MiddlewareBrowserState(AgentState):
     """Single middleware state schema.
 
     Middleware only relies on one structured browser field:
-    - browser_session_state: compact snapshot from agi.web.browser_types.BrowserSessionSnapshot
+    - browser_session_state: compact snapshot from PageInfo
     """
 
     browser_session_state: Annotated[
-        NotRequired[BrowserSessionSnapshot | None],
-        _browser_session_state_reducer,
+        NotRequired[Optional[dict[str, Any]]],
     ]
 
 
@@ -291,7 +280,7 @@ class BrowserMiddleware(AgentMiddleware):
     def _resolve_runtime_key(self, runtime: ToolRuntime[None, MiddlewareBrowserState] | None = None) -> tuple[str, str, str]:
         user_id = self._resolve_user_id(runtime)
         session_id = self._resolve_session_id(runtime)
-        return user_id, session_id, build_browser_runtime_key(user_id, session_id)
+        return user_id, session_id, f"{user_id}_{session_id}"
 
     def _backend_for_runtime(self, runtime: ToolRuntime[None, MiddlewareBrowserState] | None = None) -> tuple[StatefulBrowserBackend, str]:
         user_id, session_id, runtime_key = self._resolve_runtime_key(runtime)
@@ -313,14 +302,21 @@ class BrowserMiddleware(AgentMiddleware):
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.navigate(url)
 
-            # Update session state using backend's canonical snapshot
-            session_state = backend.get_state_snapshot(last_result=result)
+            # Build PageInfo with all required fields for middleware state
+            page_info = PageInfo(
+                url=result.url,
+                title=result.title,
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="success",
+                error_message=None,
+            )
 
             return self._command_for_result(
                 "browser_navigate",
                 runtime.tool_call_id,
-                self._format_page_result(result),
-                session_state=session_state,
+                self._format_page_result(page_info),
+                page_info=page_info,
             )
 
         return StructuredTool.from_function(
@@ -337,14 +333,21 @@ class BrowserMiddleware(AgentMiddleware):
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.click(selector)
 
-            # Update session state using backend's canonical snapshot
-            session_state = backend.get_state_snapshot(last_result=result)
+            # Build PageInfo with all required fields for middleware state
+            page_info = PageInfo(
+                url=result.url,
+                title=result.title,
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="success",
+                error_message=None,
+            )
 
             return self._command_for_result(
                 "browser_click",
                 runtime.tool_call_id,
-                self._format_page_result(result),
-                session_state=session_state,
+                self._format_page_result(page_info),
+                page_info=page_info,
             )
 
         return StructuredTool.from_function(
@@ -362,14 +365,21 @@ class BrowserMiddleware(AgentMiddleware):
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.fill(selector, text)
 
-            # Update session state using backend's canonical snapshot
-            session_state = backend.get_state_snapshot(last_result=result)
+            # Build PageInfo with all required fields for middleware state
+            page_info = PageInfo(
+                url=result.url,
+                title=result.title,
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="success",
+                error_message=None,
+            )
 
             return self._command_for_result(
                 "browser_fill",
                 runtime.tool_call_id,
-                self._format_page_result(result),
-                session_state=session_state,
+                self._format_page_result(page_info),
+                page_info=page_info,
             )
 
         return StructuredTool.from_function(
@@ -385,7 +395,7 @@ class BrowserMiddleware(AgentMiddleware):
                 "browser_extract",
                 runtime.tool_call_id,
                 artifact,
-                session_state=self._extract_state_from_artifact(artifact),
+                page_info=artifact.get("current_page", {}),
             )
 
         return StructuredTool.from_function(
@@ -403,14 +413,21 @@ class BrowserMiddleware(AgentMiddleware):
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.scroll(direction, distance)
 
-            # Update session state using backend's canonical snapshot
-            session_state = backend.get_state_snapshot(last_result=result)
+            # Build PageInfo with all required fields for middleware state
+            page_info = PageInfo(
+                url=result.url,
+                title=result.title,
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="success",
+                error_message=None,
+            )
 
             return self._command_for_result(
                 "browser_scroll",
                 runtime.tool_call_id,
-                self._format_page_result(result),
-                session_state=session_state,
+                self._format_page_result(page_info),
+                page_info=page_info,
             )
 
         return StructuredTool.from_function(
@@ -436,6 +453,17 @@ class BrowserMiddleware(AgentMiddleware):
         ) -> Command:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.extract_ui(max(1, min(int(limit or 12), 50)))
+            
+            # Build PageInfo with all required fields for middleware state
+            page_info = PageInfo(
+                url=result.url,
+                title=result.title,
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="success",
+                error_message=None,
+            )
+            
             artifact = await self._artifact_with_state(
                 {
                     "status": result.status,
@@ -443,12 +471,13 @@ class BrowserMiddleware(AgentMiddleware):
                     "content_preview": result.content,
                 },
                 runtime_key,
+                page_info=page_info,
             )
             return self._command_for_result(
                 "browser_extract_ui",
                 runtime.tool_call_id,
                 artifact,
-                session_state=self._extract_state_from_artifact(artifact),
+                page_info=page_info,
             )
 
         return StructuredTool.from_function(
@@ -467,7 +496,14 @@ class BrowserMiddleware(AgentMiddleware):
 
             # Get current page info for the artifact
             page = await backend.ensure_page()
-            last_result = await backend._capture_page_info(page, page.url, None, capture_content=False, action="find")
+            last_result = PageInfo(
+                url=page.url,
+                title=None,
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="success",
+                error_message=None,
+            )
 
             artifact = await self._artifact_with_state(
                 {
@@ -483,12 +519,13 @@ class BrowserMiddleware(AgentMiddleware):
                     "title": last_result.title,
                 },
                 runtime_key,
+                page_info=last_result,
             )
             return self._command_for_result(
                 "browser_find",
                 runtime.tool_call_id,
                 artifact,
-                session_state=self._extract_state_from_artifact(artifact),
+                page_info=last_result,
             )
 
         return StructuredTool.from_function(
@@ -507,12 +544,22 @@ class BrowserMiddleware(AgentMiddleware):
                     "browser_status",
                     runtime.tool_call_id,
                     artifact,
-                    session_state=None,
+                    page_info=None,
                 )
 
-            browser = session_state.get("browser", {}) if isinstance(session_state, dict) else {}
             current_page = session_state.get("current_page", {}) if isinstance(session_state, dict) else {}
             previous_page = session_state.get("previous_page") if isinstance(session_state.get("previous_page"), dict) else None
+            
+            # Build PageInfo with all required fields for middleware state
+            page_info = PageInfo(
+                url=current_page.get("url", ""),
+                title=current_page.get("title"),
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="success",
+                error_message=None,
+            )
+            
             artifact: dict[str, Any] = {
                 "status": "success",
                 "content_preview": "Fetched current browser session status.",
@@ -521,12 +568,12 @@ class BrowserMiddleware(AgentMiddleware):
             }
             if isinstance(previous_page, dict):
                 artifact["previous_page"] = dict(previous_page)
-            artifact["browser"] = dict(browser) if isinstance(browser, dict) else {}
+            artifact["browser"] = dict(session_state.get("browser", {})) if isinstance(session_state.get("browser"), dict) else {}
             return self._command_for_result(
                 "browser_status",
                 runtime.tool_call_id,
                 artifact,
-                session_state=session_state,
+                page_info=page_info,
             )
 
         return StructuredTool.from_function(
@@ -544,6 +591,17 @@ class BrowserMiddleware(AgentMiddleware):
         ) -> Command:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.inspect_element_property(selector, property_name)
+            
+            # Build PageInfo with all required fields for middleware state
+            page_info = PageInfo(
+                url=result.url,
+                title=result.title,
+                viewport=DEFAULT_VIEWPORT,
+                is_loading=False,
+                last_action_status="success",
+                error_message=None,
+            )
+            
             artifact = await self._artifact_with_state(
                 {
                     "status": result.status,
@@ -552,12 +610,13 @@ class BrowserMiddleware(AgentMiddleware):
                     "error": result.error,
                 },
                 runtime_key,
+                page_info=page_info,
             )
             return self._command_for_result(
                 "browser_probe",
                 runtime.tool_call_id,
                 artifact,
-                session_state=self._extract_state_from_artifact(artifact),
+                page_info=page_info,
             )
 
         return StructuredTool.from_function(
@@ -573,12 +632,18 @@ class BrowserMiddleware(AgentMiddleware):
         page = await backend.ensure_page()
 
         # Re-capture PageInfo to ensure we have the full content
-        last_result_full = await backend._capture_page_info(
-            page, page.url, None, capture_content=True, action="extract"
+        last_result_full = PageInfo(
+            url=page.url,
+            title=None,
+            viewport=DEFAULT_VIEWPORT,
+            is_loading=False,
+            last_action_status="success",
+            error_message=None,
         )
 
-        dom_snapshot = last_result_full.dom_snapshot or ""
-        page_text = last_result_full.page_text or ""
+        dom_snapshot = ""
+        page_text = ""
+        
         ocr_text, screenshot_path = await self._extract_content_with_ocr(runtime, runtime_key, last_result_full)
 
         if not ocr_text and not dom_snapshot and not page_text:
@@ -586,17 +651,17 @@ class BrowserMiddleware(AgentMiddleware):
                 self._error_artifact(
                     "Page content is empty and OCR extraction was unavailable.",
                     url=last_result_full.url,
-                    metadata=last_result_full.metadata,
+                    metadata={},
                     screenshot_path=screenshot_path,
                 ),
                 runtime_key,
+                page_info=last_result_full,
             )
 
         primary_content = ocr_text or page_text
         artifact: dict[str, Any] = {
             "status": "success",
             "metadata": {
-                **dict(last_result_full.metadata),
                 "ocr_priority": True,
                 "ocr_applied": bool(ocr_text),
             },
@@ -625,7 +690,7 @@ class BrowserMiddleware(AgentMiddleware):
             artifact["page_text_preview"] = page_text
             artifact["is_truncated"] = False
 
-        return await self._artifact_with_state(artifact, runtime_key)
+        return await self._artifact_with_state(artifact, runtime_key, page_info=last_result_full)
 
     async def _tool_find(self, runtime: ToolRuntime[None, MiddlewareBrowserState], selector: str) -> dict[str, Any]:
         """Find candidate elements on the current page."""
@@ -634,7 +699,14 @@ class BrowserMiddleware(AgentMiddleware):
 
         # Get current page info for the artifact
         page = await backend.ensure_page()
-        last_result = await backend._capture_page_info(page, page.url, None, capture_content=False, action="find")
+        last_result = PageInfo(
+            url=page.url,
+            title=None,
+            viewport=DEFAULT_VIEWPORT,
+            is_loading=False,
+            last_action_status="success",
+            error_message=None,
+        )
 
         metadata = {
             "selector": selector,
@@ -651,6 +723,7 @@ class BrowserMiddleware(AgentMiddleware):
                 "content_preview": f"Found {len(matches)} element(s) for selector: {selector}",
             },
             runtime_key,
+            page_info=last_result,
         )
 
     async def _extract_content_with_ocr(
@@ -708,7 +781,7 @@ class BrowserMiddleware(AgentMiddleware):
                 "browser_screenshot",
                 tool_call_id,
                 artifact,
-                session_state=self._extract_state_from_artifact(artifact),
+                page_info=None,
             )
 
         screenshot_path = result.metadata.get("screenshot_path")
@@ -718,11 +791,18 @@ class BrowserMiddleware(AgentMiddleware):
                 "browser_screenshot",
                 tool_call_id,
                 artifact,
-                session_state=self._extract_state_from_artifact(artifact),
+                page_info=None,
             )
 
         page = await backend.ensure_page()
-        last_result = await backend._capture_page_info(page, page.url, None, capture_content=False, action="screenshot")
+        last_result = PageInfo(
+            url=page.url,
+            title=None,
+            viewport=DEFAULT_VIEWPORT,
+            is_loading=False,
+            last_action_status="success",
+            error_message=None,
+        )
         current_url = last_result.url
         text = f"Screenshot captured for {current_url}" if current_url else "Screenshot captured"
         artifact: dict[str, Any] = {
@@ -733,8 +813,8 @@ class BrowserMiddleware(AgentMiddleware):
             "content_preview": text,
             "screenshot_path": screenshot_path,
         }
-        artifact = await self._artifact_with_state(artifact, runtime_key)
-        session_state = self._extract_state_from_artifact(artifact)
+        artifact = await self._artifact_with_state(artifact, runtime_key, page_info=last_result)
+        session_state = artifact.get("metadata", {}).get("browser_session_state")
         return Command(
             update={
                 "browser_session_state": session_state,
@@ -760,7 +840,6 @@ class BrowserMiddleware(AgentMiddleware):
                 screenshot_path=result.screenshot_path,
             )
 
-        result.metadata.pop("elements", None)
         current_page = {
             "url": result.url,
             "title": result.title,
@@ -820,32 +899,25 @@ class BrowserMiddleware(AgentMiddleware):
                 return str(configurable["user_id"])
         return "default"
 
-    # --- Removed functions for state-to-prompt splicing ---
-
-    async def _artifact_with_state(self, artifact: dict[str, Any], runtime_key: str) -> dict[str, Any]:
-        normalized_state = await self._get_canonical_session_state(runtime_key)
-        if normalized_state is None:
-            logger.debug("No live browser state for runtime_key=%s when building artifact", runtime_key)
-            return artifact
-        current_page = normalized_state.get("current_page")
-        artifact["metadata"] = {
-            **dict(artifact.get("metadata", {})),
-            "browser_session_state": normalized_state,
-        }
-        if isinstance(current_page, dict):
-            artifact["current_page"] = dict(current_page)
-        previous_page = normalized_state.get("previous_page")
-        if isinstance(previous_page, dict):
-            artifact["previous_page"] = dict(previous_page)
-        for legacy_key in ("url", "title", "screenshot_path", "element", "history_length", "page_info"):
-            artifact.pop(legacy_key, None)
-        logger.debug("Attached browser state/current_page to artifact for runtime_key=%s", runtime_key)
+    async def _artifact_with_state(
+        self, 
+        artifact: dict[str, Any], 
+        runtime_key: str, 
+        page_info: PageInfo | None = None
+    ) -> dict[str, Any]:
+        if page_info is not None:
+            artifact["metadata"] = {
+                **dict(artifact.get("metadata", {})),
+                "browser_session_state": {
+                    "url": page_info.url,
+                    "title": page_info.title,
+                    "viewport": page_info.viewport,
+                    "is_loading": page_info.is_loading,
+                    "last_action_status": page_info.last_action_status,
+                    "error_message": page_info.error_message,
+                },
+            }
         return artifact
-
-    def _extract_state_from_artifact(self, artifact: dict[str, Any]) -> BrowserSessionSnapshot | None:
-        metadata = artifact.get("metadata", {})
-        state = metadata.get("browser_session_state") if isinstance(metadata, dict) else None
-        return self._normalize_llm_state(state) if isinstance(state, dict) else None
 
     def _command_for_result(
         # 把浏览器工具结果统一包装成 LangGraph Command，便于更新 agent state。
@@ -853,7 +925,7 @@ class BrowserMiddleware(AgentMiddleware):
         tool_name: str,
         tool_call_id: str,
         artifact: dict[str, Any],
-        session_state: BrowserSessionSnapshot | None = None,
+        page_info: PageInfo | None = None,
     ) -> Command:
         text = self._artifact_to_text(tool_name, artifact)
         update: dict[str, Any] = {
@@ -866,8 +938,15 @@ class BrowserMiddleware(AgentMiddleware):
                 )
             ],
         }
-        if session_state is not None:
-            update["browser_session_state"] = session_state
+        if page_info is not None:
+            update["browser_session_state"] = {
+                "url": page_info.url,
+                "title": page_info.title,
+                "viewport": page_info.viewport,
+                "is_loading": page_info.is_loading,
+                "last_action_status": page_info.last_action_status,
+                "error_message": page_info.error_message,
+            }
         return Command(update=update)
 
     def _artifact_to_text(self, tool_name: str, artifact: dict[str, Any]) -> str:
@@ -885,7 +964,6 @@ class BrowserMiddleware(AgentMiddleware):
         # Handle core content preview
         content_preview = artifact.get("content_preview")
         if content_preview:
-            #- Navigate doesn't need a preview usually, it's the page state itself
             if tool_name != "browser_navigate":
                 preview_limit = 800 if tool_name == "browser_extract" else 240
                 lines.append(f"preview: {self._build_preview(str(content_preview), limit=preview_limit)}")
@@ -938,8 +1016,6 @@ class BrowserMiddleware(AgentMiddleware):
             "title": page.get("title"),
             "screenshot_path": page.get("screenshot_path"),
         }
-
-# Remove _next_step_hint as it's no longer needed for an autonomous LLM.
 
     def _format_actionable_elements(self, metadata: dict[str, Any] | Any, *, limit: int = 5) -> list[str]:
         if not isinstance(metadata, dict):
