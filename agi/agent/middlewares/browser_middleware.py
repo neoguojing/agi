@@ -363,8 +363,34 @@ class BrowserMiddleware(AgentMiddleware):
     def _create_extract_tool(self) -> BaseTool:
         """Create the extract tool."""
         async def async_extract(runtime: ToolRuntime[None, MiddlewareBrowserState]) -> str:
-            artifact = await self._tool_extract(runtime)
-            return artifact.get("content_preview", "")
+            backend, runtime_key = self._backend_for_runtime(runtime)
+            page = await backend.ensure_page()
+            
+            # Try OCR first if enabled
+            if self.enable_ocr and self.ocr is not None:
+                try:
+                    screenshot_path = await backend.get_screenshot()
+                    if screenshot_path:
+                        image_path = Path(screenshot_path)
+                        if image_path.exists():
+                            image_bytes = image_path.read_bytes()
+                            image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+                            ocr_text = await self.ocr.ainvoke([
+                                HumanMessage(
+                                    content="extract the image content",
+                                    content_blocks=[create_image_block(base64=image_b64, mime_type="image/png")],
+                                )
+                            ])
+                            return str(ocr_text).strip() if ocr_text else ""
+                except Exception as e:
+                    logger.debug("OCR extraction failed: %s", e)
+            
+            # Fallback to DOM text extraction
+            try:
+                return await page.content()
+            except Exception as e:
+                logger.debug("DOM extraction failed: %s", e)
+                return ""
 
         return StructuredTool.from_function(
             name="browser_extract",
@@ -475,122 +501,6 @@ class BrowserMiddleware(AgentMiddleware):
             description=BROWSER_PROBE_TOOL_DESCRIPTION,
             coroutine=async_probe,
         )
-
-    async def _tool_extract(self, runtime: ToolRuntime[None, MiddlewareBrowserState]) -> dict[str, Any]:
-        """Extract page content from the last successfully loaded page, prioritizing OCR."""
-        backend, runtime_key = self._backend_for_runtime(runtime)
-        page = await backend.ensure_page()
-
-        dom_snapshot = ""
-        page_text = ""
-
-        ocr_text, screenshot_path = await self._extract_content_with_ocr(runtime, runtime_key)
-
-        if not ocr_text and not dom_snapshot and not page_text:
-            return {
-                "status": "error",
-                "content_preview": "Page content is empty and OCR extraction was unavailable.",
-                "metadata": {},
-                "screenshot_path": screenshot_path,
-            }
-
-        primary_content = ocr_text or page_text
-        artifact: dict[str, Any] = {
-            "status": "success",
-            "metadata": {
-                "ocr_priority": True,
-                "ocr_applied": bool(ocr_text),
-            },
-            "content_preview": self._build_preview(primary_content),
-        }
-        if screenshot_path:
-            artifact["screenshot_path"] = screenshot_path
-        if ocr_text:
-            artifact["ocr_text_preview"] = self._build_preview(ocr_text, limit=self.content_limit)
-
-        if len(dom_snapshot) > self.content_limit:
-            artifact["dom_snapshot_preview"] = self._create_browser_content_preview(dom_snapshot)
-            artifact["page_text_preview"] = self._create_browser_content_preview(page_text)
-            artifact["is_truncated"] = True
-            if self.eviction_handler is not None:
-                file_path = self.eviction_handler(dom_snapshot)
-                artifact["full_content_path"] = file_path
-                artifact["metadata"] = {
-                    **artifact["metadata"],
-                    "evicted": True,
-                    "full_content_path": file_path,
-                }
-        else:
-            artifact["dom_snapshot_preview"] = dom_snapshot
-            artifact["page_text_preview"] = page_text
-            artifact["is_truncated"] = False
-
-        return artifact
-
-    async def _extract_content_with_ocr(
-        self,
-        runtime: ToolRuntime[None, MiddlewareBrowserState],
-        runtime_key: str,
-    ) -> tuple[str, str | None]:
-        """Capture a full-page screenshot and use OCR as the primary extraction path."""
-        if not self.enable_ocr or self.ocr is None:
-            return "", ""
-
-        backend, _ = self._backend_for_runtime(runtime)
-        screenshot_path = await backend.get_screenshot()
-
-        if not screenshot_path:
-            return "", ""
-
-        image_path = Path(screenshot_path)
-        if not image_path.exists():
-            logger.warning("Screenshot file not found: %s", screenshot_path)
-            return "", screenshot_path
-
-        try:
-            image_bytes = image_path.read_bytes()
-        except Exception as e:
-            logger.exception("Failed to read screenshot bytes from %s", screenshot_path, exc_info=True)
-            return "", screenshot_path
-
-        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-        try:
-            ocr_text = await self.ocr.ainvoke([
-                HumanMessage(
-                    content="extract the image content",
-                    content_blocks=[create_image_block(base64=image_b64, mime_type="image/png")],
-                )
-            ])
-        except Exception:
-            logger.exception("OCR extraction failed for %s", screenshot_path)
-            return "", screenshot_path
-
-        normalized_text = str(ocr_text).strip()
-        return normalized_text, screenshot_path
-
-    def _build_preview(self, content: str, *, limit: int = 500) -> str:
-        if not content:
-            return ""
-        if len(content) <= limit:
-            return content
-        return content[:limit] + "..."
-
-    def _create_browser_content_preview(self, content: str, *, head_lines: int = 10, tail_lines: int = 10) -> str:
-        """Create a preview of content showing head and tail with truncation marker."""
-        if not content:
-            return ""
-        lines = content.splitlines()
-        if len(lines) <= head_lines + tail_lines:
-            return "\n".join(lines)
-
-        head = lines[:head_lines]
-        tail = lines[-tail_lines:]
-
-        head_text = "\n".join(head)
-        tail_text = "\n".join(tail)
-        truncation_notice = f"\n... [{len(lines) - head_lines - tail_lines} lines truncated] ...\n"
-
-        return head_text + truncation_notice + tail_text
 
     async def _get_canonical_session_state(self, runtime_key: str) -> dict[str, Any] | None:
         """Get the canonical session state for a runtime key."""
