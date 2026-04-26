@@ -157,6 +157,50 @@ Returns: title/url + ranked actionable elements (id/selector/text/role/disabled)
 """
 
 
+class BrowserSessionState(TypedDict):
+    """Browser session state with browser_session_state field."""
+
+    browser_session_state: Annotated[
+        NotRequired[Optional[dict[str, Any]]],
+    ]
+
+
+def _browser_session_state_reducer(
+    left: dict[str, Any] | None,
+    right: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Merge browser session state updates.
+
+    This reducer enables state updates by treating `None` values in the right
+    dictionary as deletion markers. It's designed to work with LangGraph's
+    state management where annotated reducers control how state updates merge.
+
+    Args:
+        left: Existing browser_session_state dictionary. May be `None` during initialization.
+        right: New browser_session_state dictionary to merge. Entries with `None` values are
+            treated as deletion markers and removed from the result.
+
+    Returns:
+        Merged dictionary where right overwrites left for matching keys,
+        and `None` values in right trigger deletions.
+
+    Example:
+        ```python
+        existing = {"browser_session_state": {"url": "http://example.com"}}
+        updates = {"browser_session_state": None}
+        result = browser_session_state_reducer(existing, updates)
+        # Result: {}
+        ```
+    """
+    if left is None:
+        return right or {}
+
+    if right is None:
+        return left
+
+    return {**left, **right}
+
+
 class MiddlewareBrowserState(AgentState):
     """Single middleware state schema.
 
@@ -166,6 +210,7 @@ class MiddlewareBrowserState(AgentState):
 
     browser_session_state: Annotated[
         NotRequired[Optional[dict[str, Any]]],
+        _browser_session_state_reducer,
     ]
 
 
@@ -276,7 +321,7 @@ class BrowserMiddleware(AgentMiddleware):
         async def async_navigate(
             url: Annotated[str, "URL to open in the current browser session."],
             runtime: ToolRuntime[None, MiddlewareBrowserState],
-        ) -> str:
+        ) -> Command | str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.navigate(url)
 
@@ -286,7 +331,19 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Navigation timed out after waiting for network idle. URL: {result.url}"
 
-            return f"Successfully navigated to {result.url} - Title: {result.title or 'N/A'}"
+            # Update browser_session_state with new page info
+            state_update = {
+                "browser_session_state": {
+                    "url": result.url,
+                    "title": result.title or "N/A",
+                    "viewport": DEFAULT_VIEWPORT,
+                    "is_loading": False,
+                    "last_action_status": "success",
+                    "error_message": None,
+                }
+            }
+
+            return Command(update={"browser_session_state": state_update["browser_session_state"]})
 
         return StructuredTool.from_function(
             name="browser_navigate",
@@ -299,7 +356,7 @@ class BrowserMiddleware(AgentMiddleware):
         async def async_click(
             selector: Annotated[str, "CSS selector to click on the current page."],
             runtime: ToolRuntime[None, MiddlewareBrowserState],
-        ) -> str:
+        ) -> Command | str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.click(selector)
 
@@ -309,7 +366,19 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Click timed out. Element may not be visible or clickable."
 
-            return f"Successfully clicked element with selector: {selector}"
+            # Update browser_session_state after successful click
+            state_update = {
+                "browser_session_state": {
+                    "url": result.url,
+                    "title": result.title or "N/A",
+                    "viewport": DEFAULT_VIEWPORT,
+                    "is_loading": False,
+                    "last_action_status": "success",
+                    "error_message": None,
+                }
+            }
+
+            return Command(update={"browser_session_state": state_update["browser_session_state"]})
 
         return StructuredTool.from_function(
             name="browser_click",
@@ -323,7 +392,7 @@ class BrowserMiddleware(AgentMiddleware):
             selector: Annotated[str, "CSS selector for the field to fill."],
             text: Annotated[str, "Text to enter into the selected field."],
             runtime: ToolRuntime[None, MiddlewareBrowserState],
-        ) -> str:
+        ) -> Command | str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.fill(selector, text)
 
@@ -333,7 +402,19 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Fill timed out. Element may not be visible or editable."
 
-            return f"Successfully filled field with selector: {selector} - Text: {text}"
+            # Update browser_session_state after successful fill
+            state_update = {
+                "browser_session_state": {
+                    "url": result.url,
+                    "title": result.title or "N/A",
+                    "viewport": DEFAULT_VIEWPORT,
+                    "is_loading": False,
+                    "last_action_status": "success",
+                    "error_message": None,
+                }
+            }
+
+            return Command(update={"browser_session_state": state_update["browser_session_state"]})
 
         return StructuredTool.from_function(
             name="browser_fill",
@@ -347,7 +428,7 @@ class BrowserMiddleware(AgentMiddleware):
             direction: Annotated[str, "Scroll direction: up/down."],
             distance: Annotated[int, "Scroll distance in px."],
             runtime: ToolRuntime[None, MiddlewareBrowserState],
-        ) -> str:
+        ) -> Command | str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.scroll(direction, distance)
 
@@ -357,7 +438,19 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Scroll timed out."
 
-            return f"Successfully scrolled {direction} by {distance}px - URL: {result.url}"
+            # Update browser_session_state after successful scroll
+            state_update = {
+                "browser_session_state": {
+                    "url": result.url,
+                    "title": result.title or "N/A",
+                    "viewport": DEFAULT_VIEWPORT,
+                    "is_loading": False,
+                    "last_action_status": "success",
+                    "error_message": None,
+                }
+            }
+
+            return Command(update={"browser_session_state": state_update["browser_session_state"]})
 
         return StructuredTool.from_function(
             name="browser_scroll",
