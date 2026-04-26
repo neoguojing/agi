@@ -299,15 +299,6 @@ class BrowserMiddleware(AgentMiddleware):
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.navigate(url)
 
-            page_info = PageInfo(
-                url=result.url,
-                title=result.title,
-                viewport=DEFAULT_VIEWPORT,
-                is_loading=False,
-                last_action_status="success",
-                error_message=None,
-            )
-
             return f"Navigate to {result.url} - Title: {result.title}"
 
         return StructuredTool.from_function(
@@ -324,15 +315,6 @@ class BrowserMiddleware(AgentMiddleware):
         ) -> str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.click(selector)
-
-            page_info = PageInfo(
-                url=result.url,
-                title=result.title,
-                viewport=DEFAULT_VIEWPORT,
-                is_loading=False,
-                last_action_status="success",
-                error_message=None,
-            )
 
             return f"Clicked element with selector: {selector} - URL: {result.url}"
 
@@ -352,15 +334,6 @@ class BrowserMiddleware(AgentMiddleware):
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.fill(selector, text)
 
-            page_info = PageInfo(
-                url=result.url,
-                title=result.title,
-                viewport=DEFAULT_VIEWPORT,
-                is_loading=False,
-                last_action_status="success",
-                error_message=None,
-            )
-
             return f"Filled field with selector: {selector} - Text: {text}"
 
         return StructuredTool.from_function(
@@ -378,15 +351,6 @@ class BrowserMiddleware(AgentMiddleware):
         ) -> str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.scroll(direction, distance)
-
-            page_info = PageInfo(
-                url=result.url,
-                title=result.title,
-                viewport=DEFAULT_VIEWPORT,
-                is_loading=False,
-                last_action_status="success",
-                error_message=None,
-            )
 
             return f"Scrolled {direction} by {distance}px - URL: {result.url}"
 
@@ -428,15 +392,6 @@ class BrowserMiddleware(AgentMiddleware):
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.extract_ui(max(1, min(int(limit or 12), 50)))
 
-            page_info = PageInfo(
-                url=result.url,
-                title=result.title,
-                viewport=DEFAULT_VIEWPORT,
-                is_loading=False,
-                last_action_status="success",
-                error_message=None,
-            )
-
             return f"Extracted {len(result)} actionable elements from {result.url}"
 
         return StructuredTool.from_function(
@@ -446,23 +401,13 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_find_tool(self) -> BaseTool:
-        """Create the find tool."""
+        """Create the find tool - merged from _tool_find."""
         async def async_find(
             selector: Annotated[str, "CSS selector to query on the current page."],
             runtime: ToolRuntime[None, MiddlewareBrowserState],
         ) -> str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             matches = await backend.find_elements(selector)
-
-            page = await backend.ensure_page()
-            last_result = PageInfo(
-                url=page.url,
-                title=None,
-                viewport=DEFAULT_VIEWPORT,
-                is_loading=False,
-                last_action_status="success",
-                error_message=None,
-            )
 
             return f"Found {len(matches)} elements matching selector: {selector}"
 
@@ -501,15 +446,6 @@ class BrowserMiddleware(AgentMiddleware):
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.inspect_element_property(selector, property_name)
 
-            page_info = PageInfo(
-                url=result.url,
-                title=result.title,
-                viewport=DEFAULT_VIEWPORT,
-                is_loading=False,
-                last_action_status="success",
-                error_message=None,
-            )
-
             if result.get("error"):
                 return f"Error inspecting property {property_name}: {result['error']}"
 
@@ -526,19 +462,10 @@ class BrowserMiddleware(AgentMiddleware):
         backend, runtime_key = self._backend_for_runtime(runtime)
         page = await backend.ensure_page()
 
-        last_result_full = PageInfo(
-            url=page.url,
-            title=None,
-            viewport=DEFAULT_VIEWPORT,
-            is_loading=False,
-            last_action_status="success",
-            error_message=None,
-        )
-
         dom_snapshot = ""
         page_text = ""
 
-        ocr_text, screenshot_path = await self._extract_content_with_ocr(runtime, runtime_key, last_result_full)
+        ocr_text, screenshot_path = await self._extract_content_with_ocr(runtime, runtime_key)
 
         if not ocr_text and not dom_snapshot and not page_text:
             return {
@@ -581,50 +508,20 @@ class BrowserMiddleware(AgentMiddleware):
 
         return artifact
 
-    async def _tool_find(self, runtime: ToolRuntime[None, MiddlewareBrowserState], selector: str) -> dict[str, Any]:
-        """Find candidate elements on the current page."""
-        backend, runtime_key = self._backend_for_runtime(runtime)
-        matches = await backend.find_elements(selector)
-
-        page = await backend.ensure_page()
-        last_result = PageInfo(
-            url=page.url,
-            title=None,
-            viewport=DEFAULT_VIEWPORT,
-            is_loading=False,
-            last_action_status="success",
-            error_message=None,
-        )
-
-        metadata = {
-            "selector": selector,
-            "count": len(matches),
-            "matches": [{"text": match.text, "attrs": match.attributes} for match in matches[:10]],
-            "empty_result": len(matches) == 0,
-        }
-        return {
-            "status": "success",
-            "url": last_result.url,
-            "title": last_result.title,
-            "metadata": metadata,
-            "content_preview": f"Found {len(matches)} element(s) for selector: {selector}",
-        }
-
     async def _extract_content_with_ocr(
         self,
         runtime: ToolRuntime[None, MiddlewareBrowserState],
         runtime_key: str,
-        last_result: PageInfo,
     ) -> tuple[str, str | None]:
         """Capture a full-page screenshot and use OCR as the primary extraction path."""
         if not self.enable_ocr or self.ocr is None:
-            return "", last_result.screenshot_path
+            return "", ""
 
         backend, _ = self._backend_for_runtime(runtime)
         screenshot_path = await backend.get_screenshot()
 
         if not screenshot_path:
-            return "", last_result.screenshot_path
+            return "", ""
 
         image_path = Path(screenshot_path)
         if not image_path.exists():
@@ -646,7 +543,7 @@ class BrowserMiddleware(AgentMiddleware):
                 )
             ])
         except Exception:
-            logger.exception("OCR extraction failed for %s", last_result.url or "current page")
+            logger.exception("OCR extraction failed for %s", screenshot_path)
             return "", screenshot_path
 
         normalized_text = str(ocr_text).strip()
@@ -665,15 +562,7 @@ class BrowserMiddleware(AgentMiddleware):
             return "Error: Screenshot path missing in result"
 
         page = await backend.ensure_page()
-        last_result = PageInfo(
-            url=page.url,
-            title=None,
-            viewport=DEFAULT_VIEWPORT,
-            is_loading=False,
-            last_action_status="success",
-            error_message=None,
-        )
-        current_url = last_result.url
+        current_url = page.url
         text = f"Screenshot captured for {current_url}" if current_url else "Screenshot captured"
 
         return ToolMessage(
@@ -706,3 +595,29 @@ class BrowserMiddleware(AgentMiddleware):
         truncation_notice = f"\n... [{len(lines) - head_lines - tail_lines} lines truncated] ...\n"
 
         return head_text + truncation_notice + tail_text
+
+    async def _get_canonical_session_state(self, runtime_key: str) -> dict[str, Any] | None:
+        """Get the canonical session state for a runtime key."""
+        backend, _ = self._backend_for_runtime(None)  # Use default backend if no runtime provided
+        page = await backend.ensure_page()
+        
+        return {
+            "browser": {"open": True},
+            "current_page": {
+                "url": page.url,
+                "title": await page.title(),
+                "screenshot_path": None,
+            },
+            "previous_page": None,
+        }
+
+    def _resolve_user_id(self, runtime: ToolRuntime[None, MiddlewareBrowserState] | None = None) -> str:
+        if runtime is not None:
+            context = getattr(runtime, "context", None)
+            if getattr(context, "user_id", None):
+                return str(context.user_id)
+            config = getattr(runtime, "config", {}) or {}
+            configurable = config.get("configurable", {})
+            if configurable.get("user_id"):
+                return str(configurable["user_id"])
+        return "default"
