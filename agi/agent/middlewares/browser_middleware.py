@@ -34,13 +34,6 @@ from agi.agent.prompt import get_middleware_prompt
 logger = logging.getLogger(__name__)
 
 
-class SessionRuntime(TypedDict):
-    """In-memory runtime record for a browser session."""
-
-    last_result: PageInfo | None
-    previous_result: PageInfo | None
-
-
 BROWSER_NAVIGATE_TOOL_DESCRIPTION = """
 Navigates the browser to a specific URL.
 
@@ -157,51 +150,7 @@ Returns: title/url + ranked actionable elements (id/selector/text/role/disabled)
 """
 
 
-class BrowserSessionState(TypedDict):
-    """Browser session state with browser_session_state field."""
-
-    browser_session_state: Annotated[
-        NotRequired[Optional[dict[str, Any]]],
-    ]
-
-
-def _browser_session_state_reducer(
-    left: dict[str, Any] | None,
-    right: dict[str, Any] | None,
-) -> dict[str, Any]:
-    """Merge browser session state updates.
-
-    This reducer enables state updates by treating `None` values in the right
-    dictionary as deletion markers. It's designed to work with LangGraph's
-    state management where annotated reducers control how state updates merge.
-
-    Args:
-        left: Existing browser_session_state dictionary. May be `None` during initialization.
-        right: New browser_session_state dictionary to merge. Entries with `None` values are
-            treated as deletion markers and removed from the result.
-
-    Returns:
-        Merged dictionary where right overwrites left for matching keys,
-        and `None` values in right trigger deletions.
-
-    Example:
-        ```python
-        existing = {"browser_session_state": {"url": "http://example.com"}}
-        updates = {"browser_session_state": None}
-        result = browser_session_state_reducer(existing, updates)
-        # Result: {}
-        ```
-    """
-    if left is None:
-        return right or {}
-
-    if right is None:
-        return left
-
-    return {**left, **right}
-
-
-class MiddlewareBrowserState(AgentState):
+class BrowserMiddlewareState(AgentState):
     """Single middleware state schema.
 
     Middleware only relies on one structured browser field:
@@ -210,14 +159,13 @@ class MiddlewareBrowserState(AgentState):
 
     browser_session_state: Annotated[
         NotRequired[Optional[dict[str, Any]]],
-        _browser_session_state_reducer,
     ]
 
 
 class BrowserMiddleware(AgentMiddleware):
     """Stateful browser middleware with filesystem-style tool wrappers."""
 
-    state_schema = MiddlewareBrowserState
+    state_schema = BrowserMiddlewareState
 
     def __init__(
         self,
@@ -289,7 +237,7 @@ class BrowserMiddleware(AgentMiddleware):
         """(async)Check the size of the tool call result and evict to filesystem if too large."""
         return await handler(request)
 
-    def _resolve_user_id(self, runtime: ToolRuntime[None, MiddlewareBrowserState] | None = None) -> str:
+    def _resolve_user_id(self, runtime: ToolRuntime[None, BrowserMiddlewareState] | None = None) -> str:
         if runtime is not None:
             context = getattr(runtime, "context", None)
             if getattr(context, "user_id", None):
@@ -300,11 +248,11 @@ class BrowserMiddleware(AgentMiddleware):
                 return str(configurable["user_id"])
         return "default"
 
-    def _resolve_runtime_key(self, runtime: ToolRuntime[None, MiddlewareBrowserState] | None = None) -> tuple[str, str]:
+    def _resolve_runtime_key(self, runtime: ToolRuntime[None, BrowserMiddlewareState] | None = None) -> tuple[str, str]:
         user_id = self._resolve_user_id(runtime)
         return user_id, user_id
 
-    def _backend_for_runtime(self, runtime: ToolRuntime[None, MiddlewareBrowserState] | None = None) -> tuple[StatefulBrowserBackend, str]:
+    def _backend_for_runtime(self, runtime: ToolRuntime[None, BrowserMiddlewareState] | None = None) -> tuple[StatefulBrowserBackend, str]:
         user_id, runtime_key = self._resolve_runtime_key(runtime)
         backend = self._session_backends.get(runtime_key)
         if backend is not None:
@@ -320,7 +268,7 @@ class BrowserMiddleware(AgentMiddleware):
         """Create the navigate tool."""
         async def async_navigate(
             url: Annotated[str, "URL to open in the current browser session."],
-            runtime: ToolRuntime[None, MiddlewareBrowserState],
+            runtime: ToolRuntime[None, BrowserMiddlewareState],
         ) -> Command | str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.navigate(url)
@@ -355,7 +303,7 @@ class BrowserMiddleware(AgentMiddleware):
         """Create the click tool."""
         async def async_click(
             selector: Annotated[str, "CSS selector to click on the current page."],
-            runtime: ToolRuntime[None, MiddlewareBrowserState],
+            runtime: ToolRuntime[None, BrowserMiddlewareState],
         ) -> Command | str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.click(selector)
@@ -391,7 +339,7 @@ class BrowserMiddleware(AgentMiddleware):
         async def async_fill(
             selector: Annotated[str, "CSS selector for the field to fill."],
             text: Annotated[str, "Text to enter into the selected field."],
-            runtime: ToolRuntime[None, MiddlewareBrowserState],
+            runtime: ToolRuntime[None, BrowserMiddlewareState],
         ) -> Command | str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.fill(selector, text)
@@ -427,7 +375,7 @@ class BrowserMiddleware(AgentMiddleware):
         async def async_scroll(
             direction: Annotated[str, "Scroll direction: up/down."],
             distance: Annotated[int, "Scroll distance in px."],
-            runtime: ToolRuntime[None, MiddlewareBrowserState],
+            runtime: ToolRuntime[None, BrowserMiddlewareState],
         ) -> Command | str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.scroll(direction, distance)
@@ -460,7 +408,7 @@ class BrowserMiddleware(AgentMiddleware):
 
     def _create_extract_tool(self) -> BaseTool:
         """Create the extract tool."""
-        async def async_extract(runtime: ToolRuntime[None, MiddlewareBrowserState]) -> str:
+        async def async_extract(runtime: ToolRuntime[None, BrowserMiddlewareState]) -> str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             page = await backend.ensure_page()
 
@@ -501,7 +449,7 @@ class BrowserMiddleware(AgentMiddleware):
     def _create_extract_ui_tool(self) -> BaseTool:
         """Create the extract UI tool."""
         async def async_extract_ui(
-            runtime: ToolRuntime[None, MiddlewareBrowserState],
+            runtime: ToolRuntime[None, BrowserMiddlewareState],
             limit: Annotated[int, "Maximum number of actionable elements to return."] = 12,
         ) -> str:
             backend, runtime_key = self._backend_for_runtime(runtime)
@@ -522,7 +470,7 @@ class BrowserMiddleware(AgentMiddleware):
         """Create the find tool - merged from _tool_find."""
         async def async_find(
             selector: Annotated[str, "CSS selector to query on the current page."],
-            runtime: ToolRuntime[None, MiddlewareBrowserState],
+            runtime: ToolRuntime[None, BrowserMiddlewareState],
         ) -> str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             matches = await backend.find_elements(selector)
@@ -540,7 +488,7 @@ class BrowserMiddleware(AgentMiddleware):
 
     def _create_status_tool(self) -> BaseTool:
         """Create the status tool - calls get_state_snapshot from backend."""
-        async def async_status(runtime: ToolRuntime[None, MiddlewareBrowserState]) -> str:
+        async def async_status(runtime: ToolRuntime[None, BrowserMiddlewareState]) -> str:
             backend, runtime_key = self._backend_for_runtime(runtime)
 
             try:
@@ -565,7 +513,7 @@ class BrowserMiddleware(AgentMiddleware):
         async def async_probe(
             selector: Annotated[str, "CSS selector."],
             property_name: Annotated[str, "DOM property/attribute name to inspect."],
-            runtime: ToolRuntime[None, MiddlewareBrowserState],
+            runtime: ToolRuntime[None, BrowserMiddlewareState],
         ) -> str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.inspect_element_property(selector, property_name)
@@ -585,7 +533,7 @@ class BrowserMiddleware(AgentMiddleware):
             coroutine=async_probe,
         )
 
-    def _resolve_user_id(self, runtime: ToolRuntime[None, MiddlewareBrowserState] | None = None) -> str:
+    def _resolve_user_id(self, runtime: ToolRuntime[None, BrowserMiddlewareState] | None = None) -> str:
         if runtime is not None:
             context = getattr(runtime, "context", None)
             if getattr(context, "user_id", None):
