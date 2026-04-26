@@ -262,29 +262,28 @@ class BrowserMiddleware(AgentMiddleware):
         """(async)Check the size of the tool call result and evict to filesystem if too large."""
         return await handler(request)
 
-    def _resolve_session_id(self, runtime: ToolRuntime[None, MiddlewareBrowserState] | None = None) -> str:
+    def _resolve_user_id(self, runtime: ToolRuntime[None, MiddlewareBrowserState] | None = None) -> str:
         if runtime is not None:
             context = getattr(runtime, "context", None)
-            if getattr(context, "conversation_id", None):
-                return str(context.conversation_id)
+            if getattr(context, "user_id", None):
+                return str(context.user_id)
             config = getattr(runtime, "config", {}) or {}
-            configurable = config.get("configurable", {}) if isinstance(config, dict) else {}
-            if configurable.get("conversation_id"):
-                return str(configurable["conversation_id"])
+            configurable = config.get("configurable", {})
+            if configurable.get("user_id"):
+                return str(configurable["user_id"])
         return "default"
 
-    def _resolve_runtime_key(self, runtime: ToolRuntime[None, MiddlewareBrowserState] | None = None) -> tuple[str, str, str]:
+    def _resolve_runtime_key(self, runtime: ToolRuntime[None, MiddlewareBrowserState] | None = None) -> tuple[str, str]:
         user_id = self._resolve_user_id(runtime)
-        session_id = self._resolve_session_id(runtime)
-        return user_id, session_id, f"{user_id}_{session_id}"
+        return user_id, user_id
 
     def _backend_for_runtime(self, runtime: ToolRuntime[None, MiddlewareBrowserState] | None = None) -> tuple[StatefulBrowserBackend, str]:
-        user_id, session_id, runtime_key = self._resolve_runtime_key(runtime)
+        user_id, runtime_key = self._resolve_runtime_key(runtime)
         backend = self._session_backends.get(runtime_key)
         if backend is not None:
             return backend, runtime_key
 
-        session_root = self._storage_root / user_id / session_id
+        session_root = self._storage_root / user_id
         session_root.mkdir(parents=True, exist_ok=True)
         backend = StatefulBrowserBackend(storage_dir=str(session_root))
         self._session_backends[runtime_key] = backend
