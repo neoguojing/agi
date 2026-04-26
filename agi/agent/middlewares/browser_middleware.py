@@ -280,7 +280,13 @@ class BrowserMiddleware(AgentMiddleware):
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.navigate(url)
 
-            return f"Navigate to {result.url} - Title: {result.title}"
+            if result.last_action_status == "fail":
+                return f"Error navigating to {url}: {result.error_message or 'Unknown error'}"
+
+            if result.last_action_status == "timeout":
+                return f"Navigation timed out after waiting for network idle. URL: {result.url}"
+
+            return f"Successfully navigated to {result.url} - Title: {result.title or 'N/A'}"
 
         return StructuredTool.from_function(
             name="browser_navigate",
@@ -297,7 +303,13 @@ class BrowserMiddleware(AgentMiddleware):
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.click(selector)
 
-            return f"Clicked element with selector: {selector} - URL: {result.url}"
+            if result.last_action_status == "fail":
+                return f"Error clicking element with selector '{selector}': {result.error_message or 'Unknown error'}"
+
+            if result.last_action_status == "timeout":
+                return f"Click timed out. Element may not be visible or clickable."
+
+            return f"Successfully clicked element with selector: {selector}"
 
         return StructuredTool.from_function(
             name="browser_click",
@@ -315,7 +327,13 @@ class BrowserMiddleware(AgentMiddleware):
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.fill(selector, text)
 
-            return f"Filled field with selector: {selector} - Text: {text}"
+            if result.last_action_status == "fail":
+                return f"Error filling field with selector '{selector}': {result.error_message or 'Unknown error'}"
+
+            if result.last_action_status == "timeout":
+                return f"Fill timed out. Element may not be visible or editable."
+
+            return f"Successfully filled field with selector: {selector} - Text: {text}"
 
         return StructuredTool.from_function(
             name="browser_fill",
@@ -333,7 +351,13 @@ class BrowserMiddleware(AgentMiddleware):
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.scroll(direction, distance)
 
-            return f"Scrolled {direction} by {distance}px - URL: {result.url}"
+            if result.last_action_status == "fail":
+                return f"Error scrolling: {result.error_message or 'Unknown error'}"
+
+            if result.last_action_status == "timeout":
+                return f"Scroll timed out."
+
+            return f"Successfully scrolled {direction} by {distance}px - URL: {result.url}"
 
         return StructuredTool.from_function(
             name="browser_scroll",
@@ -346,7 +370,7 @@ class BrowserMiddleware(AgentMiddleware):
         async def async_extract(runtime: ToolRuntime[None, MiddlewareBrowserState]) -> str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             page = await backend.ensure_page()
-            
+
             # Try OCR first if enabled
             if self.enable_ocr and self.ocr is not None:
                 try:
@@ -362,16 +386,18 @@ class BrowserMiddleware(AgentMiddleware):
                                     content_blocks=[create_image_block(base64=image_b64, mime_type="image/png")],
                                 )
                             ])
-                            return str(ocr_text).strip() if ocr_text else ""
+                            if ocr_text:
+                                return f"Extracted {len(str(ocr_text).strip())} characters via OCR from screenshot at {screenshot_path}"
                 except Exception as e:
                     logger.debug("OCR extraction failed: %s", e)
-            
+
             # Fallback to DOM text extraction
             try:
-                return await page.content()
+                content = await page.content()
+                return f"Extracted {len(content)} characters from page DOM. URL: {page.url}"
             except Exception as e:
                 logger.debug("DOM extraction failed: %s", e)
-                return ""
+                return "Error extracting page content: Unable to read page content"
 
         return StructuredTool.from_function(
             name="browser_extract",
@@ -388,7 +414,10 @@ class BrowserMiddleware(AgentMiddleware):
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.extract_ui(max(1, min(int(limit or 12), 50)))
 
-            return f"Extracted {len(result)} actionable elements from {result.url}"
+            if not result:
+                return "No actionable elements found on the current page"
+
+            return f"Extracted {len(result)} actionable elements from {result[0].url if result else 'current page'}"
 
         return StructuredTool.from_function(
             name="browser_extract_ui",
@@ -405,6 +434,9 @@ class BrowserMiddleware(AgentMiddleware):
             backend, runtime_key = self._backend_for_runtime(runtime)
             matches = await backend.find_elements(selector)
 
+            if not matches:
+                return f"No elements found matching selector: {selector}"
+
             return f"Found {len(matches)} elements matching selector: {selector}"
 
         return StructuredTool.from_function(
@@ -417,14 +449,14 @@ class BrowserMiddleware(AgentMiddleware):
         """Create the status tool - calls get_state_snapshot from backend."""
         async def async_status(runtime: ToolRuntime[None, MiddlewareBrowserState]) -> str:
             backend, runtime_key = self._backend_for_runtime(runtime)
-            
+
             try:
                 page_info = await backend.get_state_snapshot()
-                
+
                 if not page_info.url:
                     return "No active browser session. Please navigate first."
-                
-                return f"Browser Status - URL: {page_info.url}, Title: {page_info.title}"
+
+                return f"Browser Status - URL: {page_info.url}, Title: {page_info.title or 'N/A'}"
             except Exception as e:
                 logger.debug("Failed to get browser state snapshot: %s", e)
                 return "No active browser session. Please navigate first."
@@ -446,9 +478,13 @@ class BrowserMiddleware(AgentMiddleware):
             result = await backend.inspect_element_property(selector, property_name)
 
             if result.get("error"):
-                return f"Error inspecting property {property_name}: {result['error']}"
+                return f"Error inspecting property '{property_name}': {result['error']}"
 
-            return f"Property '{property_name}' value: {result.get('value', 'N/A')}"
+            value = result.get("value")
+            if value is None:
+                return f"Property '{property_name}' not found on element with selector: {selector}"
+
+            return f"Property '{property_name}' value: {str(value)}"
 
         return StructuredTool.from_function(
             name="browser_probe",
