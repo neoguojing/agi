@@ -732,7 +732,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
     async def _human_delay(self, min_ms: int = 200, max_ms: int = 800) -> None:
         """Sleep briefly to simulate human interaction cadence."""
-        await page.wait_for_timeout(random.randint(min_ms, max_ms))
+        if self._page is not None:
+            await self._page.wait_for_timeout(random.randint(min_ms, max_ms))
 
     async def wait_for_selector(self, selector: str, timeout: int = 5000) -> Optional[QueryMatch]:
         """Wait for element to appear in DOM and become visible.
