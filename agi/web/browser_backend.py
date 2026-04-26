@@ -22,6 +22,7 @@ from .browser_state_persister import BrowserStatePersister
 
 logger = logging.getLogger(__name__)
 
+
 class StatefulBrowserBackend(AbstractBrowserBackend):
     """Stateful Playwright backend for browser automation.
 
@@ -174,14 +175,12 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         page = await self.ensure_page()
         
         try:
-            previous_url = page.url
             response = await page.goto(url, wait_until=wait_until, timeout=self.timeout)
             await self._smart_wait(page)
             
             if self._context is not None:
                 await self._persister.persist_playwright_storage_state(self._context)
             
-            # Directly build PageInfo without _capture_page_info
             page_info = PageInfo(
                 url=page.url,
                 title=await page.title(),
@@ -222,8 +221,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         page = await self.ensure_page()
         
         try:
-            previous_url = page.url
-            
             async def _operation():
                 await self._scroll_into_view(page, selector)
                 await self._human_delay(100, 400)
@@ -235,7 +232,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             if self._context is not None:
                 await self._persister.persist_playwright_storage_state(self._context)
             
-            # Directly build PageInfo without _capture_page_info
             page_info = PageInfo(
                 url=page.url,
                 title=await page.title(),
@@ -276,8 +272,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         page = await self.ensure_page()
         
         try:
-            previous_url = page.url
-            
             async def _operation():
                 await self._scroll_into_view(page, selector)
                 await page.fill(selector, value, timeout=DEFAULT_CLICK_TIMEOUT_MS)
@@ -288,7 +282,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             if self._context is not None:
                 await self._persister.persist_playwright_storage_state(self._context)
             
-            # Directly build PageInfo without _capture_page_info
             page_info = PageInfo(
                 url=page.url,
                 title=await page.title(),
@@ -329,9 +322,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         page = await self.ensure_page()
         
         try:
-            previous_url = page.url
-            
-            # 统一滚动参数：仅接受方向 + 距离，避免上层传坐标导致跨页面不稳定。
             normalized_direction = direction.lower().strip()
             signed_distance = abs(int(distance or 800))
             if normalized_direction in {"up", "backward"}:
@@ -349,7 +339,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             if self._context is not None:
                 await self._persister.persist_playwright_storage_state(self._context)
             
-            # Directly build PageInfo without _capture_page_info
             page_info = PageInfo(
                 url=page.url,
                 title=await page.title(),
@@ -400,14 +389,14 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                         return obj;
                     }"""
                 )
-                rect = await element.bounding_box()
+                rect = await element.bounding_box() or {"x": 0, "y": 0, "width": 0, "height": 0}
                 results.append(QueryMatch(
                     id=str(uuid.uuid4()),
                     selector=selector,
                     tag_name=element.tagName,
                     text=text,
                     attributes=attributes or {},
-                    rect=rect or {"x": 0, "y": 0, "width": 0, "height": 0},
+                    rect=rect,
                     is_visible=True,
                     is_enabled=True
                 ))
@@ -451,10 +440,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             raise
 
     async def inspect_element_property(self, selector: str, property_name: str) -> Any:
-        """Inspect element property/attribute for decision support.
-        
-        返回 dict 包含属性值或错误信息。
-        """
+        """Inspect element property/attribute for decision support."""
         page = await self.ensure_page()
         element = await page.query_selector(selector)
         
@@ -466,7 +452,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             }
         
         try:
-            # 尝试获取属性值
             value = await element.evaluate(
                 """(el, propertyName) => {
                     if (propertyName in el) return el[propertyName];
@@ -490,10 +475,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
             }
 
     async def get_state_snapshot(self) -> PageInfo:
-        """Return current page state for middleware/LLM planning.
-        
-        修复：改为异步方法，返回 PageInfo 而非 BrowserSessionSnapshot。
-        """
+        """Return current page state for middleware/LLM planning."""
         if self._page is None or self._page_is_closed(self._page):
             return PageInfo(
                 url="",
@@ -750,7 +732,6 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
     async def _human_delay(self, min_ms: int = 200, max_ms: int = 800) -> None:
         """Sleep briefly to simulate human interaction cadence."""
-        page = await self.ensure_page()
         await page.wait_for_timeout(random.randint(min_ms, max_ms))
 
     async def wait_for_selector(self, selector: str, timeout: int = 5000) -> Optional[QueryMatch]:
@@ -777,7 +758,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                         return obj;
                     }"""
                 )
-                rect = await element.bounding_box()
+                rect = await element.bounding_box() or {"x": 0, "y": 0, "width": 0, "height": 0}
                 
                 return QueryMatch(
                     id=str(uuid.uuid4()),
@@ -785,7 +766,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     tag_name=element.tagName,
                     text=text,
                     attributes=attributes or {},
-                    rect=rect or {"x": 0, "y": 0, "width": 0, "height": 0},
+                    rect=rect,
                     is_visible=True,
                     is_enabled=True
                 )
