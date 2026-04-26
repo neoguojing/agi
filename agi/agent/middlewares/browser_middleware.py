@@ -195,7 +195,7 @@ class BrowserMiddleware(AgentMiddleware):
             self._create_fill_tool(),
             self._create_scroll_tool(),
             self._create_extract_tool(),
-            self._create_extract_ui_tool(),
+            self._create_extract_ui_tool,
             self._create_find_tool(),
             self._create_probe_tool(),
             self._create_status_tool(),
@@ -456,7 +456,7 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_extract_ui_tool(self) -> BaseTool:
-        """Create the extract UI tool - returns only string (no state update needed)."""
+        """Create the extract UI tool - returns full UI structure for LLM planning."""
         async def async_extract_ui(
             runtime: ToolRuntime[None, BrowserMiddlewareState],
             limit: Annotated[int, "Maximum number of actionable elements to return."] = 12,
@@ -467,12 +467,16 @@ class BrowserMiddleware(AgentMiddleware):
             if not result:
                 return "No actionable elements found on the current page. The page may be empty or have no interactive elements."
 
-            # Rich response with actionable context for LLM
+            # Return full UI structure with all element details for LLM planning
             url = result[0].url if result else ""
+            title = result[0].title if result and hasattr(result[0], 'title') else ""
+            
             return (
                 f"Extracted {len(result)} actionable elements from {url}.\n"
-                f"Elements include: search boxes, links, buttons, navigation items.\n"
-                f"Use browser_find to get details on specific elements, or click/fill based on selectors."
+                f"Page Title: {title}\n\n"
+                f"Actionable Elements:\n"
+            ) + "\n".join([f"- Element {i+1}: selector='{el.selector}', text='{el.text[:50]}...', type='{el.tag_name}'" for i, el in enumerate(result[:10])]) + (
+                f"\n... and {len(result) - 10} more elements." if len(result) > 10 else ""
             )
 
         return StructuredTool.from_function(
