@@ -265,7 +265,7 @@ class BrowserMiddleware(AgentMiddleware):
         return backend, runtime_key
 
     def _create_navigate_tool(self) -> BaseTool:
-        """Create the navigate tool."""
+        """Create the navigate tool - returns Command with state update on success."""
         async def async_navigate(
             url: Annotated[str, "URL to open in the current browser session."],
             runtime: ToolRuntime[None, BrowserMiddlewareState],
@@ -279,14 +279,19 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Navigation timed out after waiting for network idle. URL: {url}. The page may be loading slowly or is unreachable."
 
-            # Rich response with actionable context for LLM
-            title = result.title or "N/A"
-            return (
-                f"Successfully navigated to {url}.\n"
-                f"Page Title: {title}\n"
-                f"Status: Page loaded and stable.\n"
-                f"Next steps: You can now interact with page elements, extract content, or perform actions."
-            )
+            # Update browser_session_state with new page info - this is an action that changes state
+            state_update = {
+                "browser_session_state": {
+                    "url": result.url,
+                    "title": result.title or "N/A",
+                    "viewport": DEFAULT_VIEWPORT,
+                    "is_loading": False,
+                    "last_action_status": "success",
+                    "error_message": None,
+                }
+            }
+
+            return Command(update={"browser_session_state": state_update["browser_session_state"]})
 
         return StructuredTool.from_function(
             name="browser_navigate",
@@ -295,7 +300,7 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_click_tool(self) -> BaseTool:
-        """Create the click tool."""
+        """Create the click tool - returns Command with state update on success."""
         async def async_click(
             selector: Annotated[str, "CSS selector to click on the current page."],
             runtime: ToolRuntime[None, BrowserMiddlewareState],
@@ -309,15 +314,19 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Click timed out. Element with selector '{selector}' may not be visible or interactive."
 
-            # Rich response with actionable context for LLM
-            new_url = result.url
-            new_title = result.title or "N/A"
-            return (
-                f"Successfully clicked element with selector: {selector}.\n"
-                f"Page URL: {new_url}\n"
-                f"Page Title: {new_title}\n"
-                f"Status: Click completed. Check if navigation occurred or DOM changed."
-            )
+            # Update browser_session_state after successful click - this is an action that changes state
+            state_update = {
+                "browser_session_state": {
+                    "url": result.url,
+                    "title": result.title or "N/A",
+                    "viewport": DEFAULT_VIEWPORT,
+                    "is_loading": False,
+                    "last_action_status": "success",
+                    "error_message": None,
+                }
+            }
+
+            return Command(update={"browser_session_state": state_update["browser_session_state"]})
 
         return StructuredTool.from_function(
             name="browser_click",
@@ -326,7 +335,7 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_fill_tool(self) -> BaseTool:
-        """Create the fill tool."""
+        """Create the fill tool - returns Command with state update on success."""
         async def async_fill(
             selector: Annotated[str, "CSS selector for the field to fill."],
             text: Annotated[str, "Text to enter into the selected field."],
@@ -341,16 +350,19 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Fill timed out. Element with selector '{selector}' may not be editable."
 
-            # Rich response with actionable context for LLM
-            new_url = result.url
-            new_title = result.title or "N/A"
-            return (
-                f"Successfully filled field with selector: {selector}.\n"
-                f"Text entered: {text}\n"
-                f"Page URL: {new_url}\n"
-                f"Page Title: {new_title}\n"
-                f"Status: Fill completed. Check if any validation messages appeared."
-            )
+            # Update browser_session_state after successful fill - this is an action that changes state
+            state_update = {
+                "browser_session_state": {
+                    "url": result.url,
+                    "title": result.title or "N/A",
+                    "viewport": DEFAULT_VIEWPORT,
+                    "is_loading": False,
+                    "last_action_status": "success",
+                    "error_message": None,
+                }
+            }
+
+            return Command(update={"browser_session_state": state_update["browser_session_state"]})
 
         return StructuredTool.from_function(
             name="browser_fill",
@@ -359,7 +371,7 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_scroll_tool(self) -> BaseTool:
-        """Create the scroll tool."""
+        """Create the scroll tool - returns Command with state update on success."""
         async def async_scroll(
             direction: Annotated[str, "Scroll direction: up/down."],
             distance: Annotated[int, "Scroll distance in px."],
@@ -374,15 +386,19 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Scroll timed out."
 
-            # Rich response with actionable context for LLM
-            new_url = result.url
-            new_title = result.title or "N/A"
-            return (
-                f"Successfully scrolled {direction} by {distance}px.\n"
-                f"Page URL: {new_url}\n"
-                f"Page Title: {new_title}\n"
-                f"Status: Scroll completed. New content may be visible now."
-            )
+            # Update browser_session_state after successful scroll - this is an action that changes state
+            state_update = {
+                "browser_session_state": {
+                    "url": result.url,
+                    "title": result.title or "N/A",
+                    "viewport": DEFAULT_VIEWPORT,
+                    "is_loading": False,
+                    "last_action_status": "success",
+                    "error_message": None,
+                }
+            }
+
+            return Command(update={"browser_session_state": state_update["browser_session_state"]})
 
         return StructuredTool.from_function(
             name="browser_scroll",
@@ -391,7 +407,7 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_extract_tool(self) -> BaseTool:
-        """Create the extract tool."""
+        """Create the extract tool - returns only string (no state update needed)."""
         async def async_extract(runtime: ToolRuntime[None, BrowserMiddlewareState]) -> str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             page = await backend.ensure_page()
@@ -440,7 +456,7 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_extract_ui_tool(self) -> BaseTool:
-        """Create the extract UI tool."""
+        """Create the extract UI tool - returns only string (no state update needed)."""
         async def async_extract_ui(
             runtime: ToolRuntime[None, BrowserMiddlewareState],
             limit: Annotated[int, "Maximum number of actionable elements to return."] = 12,
@@ -466,7 +482,7 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_find_tool(self) -> BaseTool:
-        """Create the find tool - merged from _tool_find."""
+        """Create the find tool - returns only string (no state update needed)."""
         async def async_find(
             selector: Annotated[str, "CSS selector to query on the current page."],
             runtime: ToolRuntime[None, BrowserMiddlewareState],
@@ -491,7 +507,7 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_status_tool(self) -> BaseTool:
-        """Create the status tool - calls get_state_snapshot from backend."""
+        """Create the status tool - returns only string (no state update needed)."""
         async def async_status(runtime: ToolRuntime[None, BrowserMiddlewareState]) -> str:
             backend, runtime_key = self._backend_for_runtime(runtime)
 
@@ -519,7 +535,7 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_probe_tool(self) -> BaseTool:
-        """Create the probe tool."""
+        """Create the probe tool - returns only string (no state update needed)."""
         async def async_probe(
             selector: Annotated[str, "CSS selector."],
             property_name: Annotated[str, "DOM property/attribute name to inspect."],
