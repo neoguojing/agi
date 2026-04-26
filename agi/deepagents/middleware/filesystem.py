@@ -425,8 +425,7 @@ class FilesystemMiddleware(AgentMiddleware[FilesystemState, ContextT, ResponseT]
             For execution support, use a backend that implements `SandboxBackendProtocol`.
         system_prompt: Optional custom system prompt override.
         custom_tool_descriptions: Optional custom tool descriptions override.
-        tool_token_limit_before_evict: Token limit before evicting a tool result to the
-            filesystem.
+        tool_token_limit_before_evict: Token limit before evicting a tool result to the filesystem.
 
             When exceeded, writes the result using the configured backend and replaces it
             with a truncated preview and file reference.
