@@ -291,10 +291,11 @@ class BrowserMiddleware(AgentMiddleware):
         return backend, runtime_key
 
     def _create_navigate_tool(self) -> BaseTool:
+        """Create the navigate tool."""
         async def async_navigate(
             url: Annotated[str, "URL to open in the current browser session."],
             runtime: ToolRuntime[None, MiddlewareBrowserState],
-        ) -> Command:
+        ) -> str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.navigate(url)
 
@@ -307,15 +308,7 @@ class BrowserMiddleware(AgentMiddleware):
                 error_message=None,
             )
 
-            artifact = self._build_artifact(
-                "browser_navigate",
-                runtime.tool_call_id,
-                page_info,
-                result.url,
-                result.title,
-            )
-
-            return Command(update={"messages": [ToolMessage(content=artifact, name="browser_navigate", tool_call_id=runtime.tool_call_id)]})
+            return f"Navigate to {result.url} - Title: {result.title}"
 
         return StructuredTool.from_function(
             name="browser_navigate",
@@ -324,10 +317,11 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_click_tool(self) -> BaseTool:
+        """Create the click tool."""
         async def async_click(
             selector: Annotated[str, "CSS selector to click on the current page."],
             runtime: ToolRuntime[None, MiddlewareBrowserState],
-        ) -> Command:
+        ) -> str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.click(selector)
 
@@ -340,15 +334,7 @@ class BrowserMiddleware(AgentMiddleware):
                 error_message=None,
             )
 
-            artifact = self._build_artifact(
-                "browser_click",
-                runtime.tool_call_id,
-                page_info,
-                result.url,
-                result.title,
-            )
-
-            return Command(update={"messages": [ToolMessage(content=artifact, name="browser_click", tool_call_id=runtime.tool_call_id)]})
+            return f"Clicked element with selector: {selector} - URL: {result.url}"
 
         return StructuredTool.from_function(
             name="browser_click",
@@ -357,11 +343,12 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_fill_tool(self) -> BaseTool:
+        """Create the fill tool."""
         async def async_fill(
             selector: Annotated[str, "CSS selector for the field to fill."],
             text: Annotated[str, "Text to enter into the selected field."],
             runtime: ToolRuntime[None, MiddlewareBrowserState],
-        ) -> Command:
+        ) -> str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.fill(selector, text)
 
@@ -374,15 +361,7 @@ class BrowserMiddleware(AgentMiddleware):
                 error_message=None,
             )
 
-            artifact = self._build_artifact(
-                "browser_fill",
-                runtime.tool_call_id,
-                page_info,
-                result.url,
-                result.title,
-            )
-
-            return Command(update={"messages": [ToolMessage(content=artifact, name="browser_fill", tool_call_id=runtime.tool_call_id)]})
+            return f"Filled field with selector: {selector} - Text: {text}"
 
         return StructuredTool.from_function(
             name="browser_fill",
@@ -391,11 +370,12 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_scroll_tool(self) -> BaseTool:
+        """Create the scroll tool."""
         async def async_scroll(
             direction: Annotated[str, "Scroll direction: up/down."],
             distance: Annotated[int, "Scroll distance in px."],
             runtime: ToolRuntime[None, MiddlewareBrowserState],
-        ) -> Command:
+        ) -> str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.scroll(direction, distance)
 
@@ -408,15 +388,7 @@ class BrowserMiddleware(AgentMiddleware):
                 error_message=None,
             )
 
-            artifact = self._build_artifact(
-                "browser_scroll",
-                runtime.tool_call_id,
-                page_info,
-                result.url,
-                result.title,
-            )
-
-            return Command(update={"messages": [ToolMessage(content=artifact, name="browser_scroll", tool_call_id=runtime.tool_call_id)]})
+            return f"Scrolled {direction} by {distance}px - URL: {result.url}"
 
         return StructuredTool.from_function(
             name="browser_scroll",
@@ -425,9 +397,10 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_extract_tool(self) -> BaseTool:
-        async def async_extract(runtime: ToolRuntime[None, MiddlewareBrowserState]) -> Command:
+        """Create the extract tool."""
+        async def async_extract(runtime: ToolRuntime[None, MiddlewareBrowserState]) -> str:
             artifact = await self._tool_extract(runtime)
-            return Command(update={"messages": [ToolMessage(content=artifact.get("content"), name="browser_extract", tool_call_id=runtime.tool_call_id)]})
+            return artifact.get("content_preview", "")
 
         return StructuredTool.from_function(
             name="browser_extract",
@@ -436,7 +409,8 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_screenshot_tool(self) -> BaseTool:
-        async def async_screenshot(runtime: ToolRuntime[None, MiddlewareBrowserState]) -> ToolMessage | Command:
+        """Create the screenshot tool."""
+        async def async_screenshot(runtime: ToolRuntime[None, MiddlewareBrowserState]) -> ToolMessage | str:
             return await self._tool_screenshot(runtime, runtime.tool_call_id)
 
         return StructuredTool.from_function(
@@ -446,10 +420,11 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_extract_ui_tool(self) -> BaseTool:
+        """Create the extract UI tool."""
         async def async_extract_ui(
             runtime: ToolRuntime[None, MiddlewareBrowserState],
             limit: Annotated[int, "Maximum number of actionable elements to return."] = 12,
-        ) -> Command:
+        ) -> str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.extract_ui(max(1, min(int(limit or 12), 50)))
 
@@ -462,15 +437,7 @@ class BrowserMiddleware(AgentMiddleware):
                 error_message=None,
             )
 
-            artifact = self._build_artifact(
-                "browser_extract_ui",
-                runtime.tool_call_id,
-                page_info,
-                result.url,
-                result.title,
-            )
-
-            return Command(update={"messages": [ToolMessage(content=artifact.get("content"), name="browser_extract_ui", tool_call_id=runtime.tool_call_id)]})
+            return f"Extracted {len(result)} actionable elements from {result.url}"
 
         return StructuredTool.from_function(
             name="browser_extract_ui",
@@ -479,10 +446,11 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_find_tool(self) -> BaseTool:
+        """Create the find tool."""
         async def async_find(
             selector: Annotated[str, "CSS selector to query on the current page."],
             runtime: ToolRuntime[None, MiddlewareBrowserState],
-        ) -> Command:
+        ) -> str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             matches = await backend.find_elements(selector)
 
@@ -496,15 +464,7 @@ class BrowserMiddleware(AgentMiddleware):
                 error_message=None,
             )
 
-            artifact = self._build_artifact(
-                "browser_find",
-                runtime.tool_call_id,
-                last_result,
-                page.url,
-                None,
-            )
-
-            return Command(update={"messages": [ToolMessage(content=artifact.get("content"), name="browser_find", tool_call_id=runtime.tool_call_id)]})
+            return f"Found {len(matches)} elements matching selector: {selector}"
 
         return StructuredTool.from_function(
             name="browser_find",
@@ -513,34 +473,17 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_status_tool(self) -> BaseTool:
-        async def async_status(runtime: ToolRuntime[None, MiddlewareBrowserState]) -> Command:
+        """Create the status tool."""
+        async def async_status(runtime: ToolRuntime[None, MiddlewareBrowserState]) -> str:
             _, runtime_key = self._backend_for_runtime(runtime)
             session_state = await self._get_canonical_session_state(runtime_key)
-            
+
             if session_state is None:
-                artifact = self._error_artifact("No active browser session. Please navigate first.")
-                return Command(update={"messages": [ToolMessage(content=artifact, name="browser_status", tool_call_id=runtime.tool_call_id)]})
+                return "No active browser session. Please navigate first."
 
             current_page = session_state.get("current_page", {}) if isinstance(session_state, dict) else {}
-            
-            page_info = PageInfo(
-                url=current_page.get("url", ""),
-                title=current_page.get("title"),
-                viewport=DEFAULT_VIEWPORT,
-                is_loading=False,
-                last_action_status="success",
-                error_message=None,
-            )
 
-            artifact = self._build_artifact(
-                "browser_status",
-                runtime.tool_call_id,
-                page_info,
-                current_page.get("url", ""),
-                current_page.get("title"),
-            )
-
-            return Command(update={"messages": [ToolMessage(content=artifact, name="browser_status", tool_call_id=runtime.tool_call_id)]})
+            return f"Browser Status - URL: {current_page.get('url', 'N/A')}, Title: {current_page.get('title', 'N/A')}"
 
         return StructuredTool.from_function(
             name="browser_status",
@@ -549,11 +492,12 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_probe_tool(self) -> BaseTool:
+        """Create the probe tool."""
         async def async_probe(
             selector: Annotated[str, "CSS selector."],
             property_name: Annotated[str, "DOM property/attribute name to inspect."],
             runtime: ToolRuntime[None, MiddlewareBrowserState],
-        ) -> Command:
+        ) -> str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.inspect_element_property(selector, property_name)
 
@@ -566,15 +510,10 @@ class BrowserMiddleware(AgentMiddleware):
                 error_message=None,
             )
 
-            artifact = self._build_artifact(
-                "browser_probe",
-                runtime.tool_call_id,
-                page_info,
-                result.url,
-                result.title,
-            )
+            if result.get("error"):
+                return f"Error inspecting property {property_name}: {result['error']}"
 
-            return Command(update={"messages": [ToolMessage(content=artifact.get("content"), name="browser_probe", tool_call_id=runtime.tool_call_id)]})
+            return f"Property '{property_name}' value: {result.get('value', 'N/A')}"
 
         return StructuredTool.from_function(
             name="browser_probe",
@@ -602,13 +541,12 @@ class BrowserMiddleware(AgentMiddleware):
         ocr_text, screenshot_path = await self._extract_content_with_ocr(runtime, runtime_key, last_result_full)
 
         if not ocr_text and not dom_snapshot and not page_text:
-            artifact = self._error_artifact(
-                "Page content is empty and OCR extraction was unavailable.",
-                url=last_result_full.url,
-                metadata={},
-                screenshot_path=screenshot_path,
-            )
-            return artifact
+            return {
+                "status": "error",
+                "content_preview": "Page content is empty and OCR extraction was unavailable.",
+                "metadata": {},
+                "screenshot_path": screenshot_path,
+            }
 
         primary_content = ocr_text or page_text
         artifact: dict[str, Any] = {
@@ -664,14 +602,13 @@ class BrowserMiddleware(AgentMiddleware):
             "matches": [{"text": match.text, "attrs": match.attributes} for match in matches[:10]],
             "empty_result": len(matches) == 0,
         }
-        return self._build_artifact(
-            "browser_find",
-            runtime.tool_call_id,
-            last_result,
-            page.url,
-            None,
-            metadata=metadata,
-        )
+        return {
+            "status": "success",
+            "url": last_result.url,
+            "title": last_result.title,
+            "metadata": metadata,
+            "content_preview": f"Found {len(matches)} element(s) for selector: {selector}",
+        }
 
     async def _extract_content_with_ocr(
         self,
@@ -715,19 +652,17 @@ class BrowserMiddleware(AgentMiddleware):
         normalized_text = str(ocr_text).strip()
         return normalized_text, screenshot_path
 
-    async def _tool_screenshot(self, runtime: ToolRuntime[None, MiddlewareBrowserState], tool_call_id: str) -> ToolMessage | Command:
+    async def _tool_screenshot(self, runtime: ToolRuntime[None, MiddlewareBrowserState], tool_call_id: str) -> ToolMessage | str:
         """Capture a screenshot and return a multimodal tool response."""
         backend, runtime_key = self._backend_for_runtime(runtime)
         result = await backend.get_screenshot()
 
         if result.status == "error":
-            artifact = self._error_artifact(result.error or "Failed to take screenshot")
-            return Command(update={"messages": [ToolMessage(content=artifact, name="browser_screenshot", tool_call_id=tool_call_id)]})
+            return f"Error: {result.error or 'Failed to take screenshot'}"
 
         screenshot_path = result.metadata.get("screenshot_path")
         if not screenshot_path:
-            artifact = self._error_artifact("Screenshot path missing in result")
-            return Command(update={"messages": [ToolMessage(content=artifact, name="browser_screenshot", tool_call_id=tool_call_id)]})
+            return "Error: Screenshot path missing in result"
 
         page = await backend.ensure_page()
         last_result = PageInfo(
@@ -740,96 +675,13 @@ class BrowserMiddleware(AgentMiddleware):
         )
         current_url = last_result.url
         text = f"Screenshot captured for {current_url}" if current_url else "Screenshot captured"
-        artifact = self._build_artifact(
-            "browser_screenshot",
-            tool_call_id,
-            last_result,
-            current_url,
-            None,
-            metadata={"screenshot_path": screenshot_path},
+
+        return ToolMessage(
+            content=text,
+            content_blocks=[create_image_block(file_id=screenshot_path, mime_type="image/png")],
+            name="browser_screenshot",
+            tool_call_id=tool_call_id,
         )
-        return Command(update={
-            "messages": [ToolMessage(content=text, content_blocks=[create_image_block(file_id=screenshot_path, mime_type="image/png")], name="browser_screenshot", tool_call_id=tool_call_id)],
-        })
-
-    def _build_artifact(
-        self,
-        tool_name: str,
-        tool_call_id: str,
-        page_info: PageInfo,
-        url: str,
-        title: str | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Build a structured artifact for browser tool results."""
-        if page_info.metadata.get("error"):
-            return self._error_artifact(
-                str(page_info.metadata["error"]),
-                url=page_info.url,
-                title=page_info.title,
-                metadata=page_info.metadata,
-                screenshot_path=page_info.screenshot_path,
-            )
-
-        current_page = {
-            "url": page_info.url,
-            "title": page_info.title,
-            "dom_snapshot": None,
-            "page_text": None,
-            "screenshot_path": page_info.screenshot_path,
-            "response_status": page_info.response_status,
-            "last_action": page_info.last_action,
-            "actionable_elements": list(page_info.actionable_elements),
-            "network_idle": page_info.network_idle,
-            "url_changed": page_info.url_changed,
-            "metadata": dict(page_info.metadata),
-        }
-
-        artifact: dict[str, Any] = {
-            "status": "success",
-            "metadata": dict(page_info.metadata) if metadata is None else metadata,
-            "content_preview": self._build_preview(page_info.page_text or ""),
-            "current_page": current_page,
-        }
-
-        return artifact
-
-    def _error_artifact(
-        self,
-        error: str,
-        *,
-        url: str = "",
-        title: str | None = None,
-        metadata: dict[str, Any] | None = None,
-        screenshot_path: str | None = None,
-    ) -> dict[str, Any]:
-        current_page = {
-            "url": url,
-            "title": title,
-            "dom_snapshot": None,
-            "page_text": None,
-            "screenshot_path": screenshot_path,
-            "metadata": dict(metadata or {}),
-        }
-        artifact: dict[str, Any] = {
-            "status": "error",
-            "metadata": dict(metadata or {}),
-            "content_preview": error,
-            "error": error,
-            "current_page": current_page,
-        }
-        return artifact
-
-    def _resolve_user_id(self, runtime: ToolRuntime[None, MiddlewareBrowserState] | None = None) -> str:
-        if runtime is not None:
-            context = getattr(runtime, "context", None)
-            if getattr(context, "user_id", None):
-                return str(context.user_id)
-            config = getattr(runtime, "config", {}) or {}
-            configurable = config.get("configurable", {})
-            if configurable.get("user_id"):
-                return str(configurable["user_id"])
-        return "default"
 
     def _build_preview(self, content: str, *, limit: int = 500) -> str:
         if not content:
