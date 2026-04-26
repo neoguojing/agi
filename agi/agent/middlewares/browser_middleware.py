@@ -463,17 +463,20 @@ class BrowserMiddleware(AgentMiddleware):
         )
 
     def _create_status_tool(self) -> BaseTool:
-        """Create the status tool."""
+        """Create the status tool - calls get_state_snapshot from backend."""
         async def async_status(runtime: ToolRuntime[None, MiddlewareBrowserState]) -> str:
-            _, runtime_key = self._backend_for_runtime(runtime)
-            session_state = await self._get_canonical_session_state(runtime_key)
-
-            if session_state is None:
+            backend, runtime_key = self._backend_for_runtime(runtime)
+            
+            try:
+                page_info = await backend.get_state_snapshot()
+                
+                if not page_info.url:
+                    return "No active browser session. Please navigate first."
+                
+                return f"Browser Status - URL: {page_info.url}, Title: {page_info.title}"
+            except Exception as e:
+                logger.debug("Failed to get browser state snapshot: %s", e)
                 return "No active browser session. Please navigate first."
-
-            current_page = session_state.get("current_page", {}) if isinstance(session_state, dict) else {}
-
-            return f"Browser Status - URL: {current_page.get('url', 'N/A')}, Title: {current_page.get('title', 'N/A')}"
 
         return StructuredTool.from_function(
             name="browser_status",
@@ -502,20 +505,29 @@ class BrowserMiddleware(AgentMiddleware):
             coroutine=async_probe,
         )
 
-    async def _get_canonical_session_state(self, runtime_key: str) -> dict[str, Any] | None:
-        """Get the canonical session state for a runtime key."""
-        backend, _ = self._backend_for_runtime(None)  # Use default backend if no runtime provided
-        page = await backend.ensure_page()
+    def _build_preview(self, content: str, *, limit: int = 500) -> str:
+        if not content:
+            return ""
+        if len(content) <= limit:
+            return content
+        return content[:limit] + "..."
 
-        return {
-            "browser": {"open": True},
-            "current_page": {
-                "url": page.url,
-                "title": await page.title(),
-                "screenshot_path": None,
-            },
-            "previous_page": None,
-        }
+    def _create_browser_content_preview(self, content: str, *, head_lines: int = 10, tail_lines: int = 10) -> str:
+        """Create a preview of content showing head and tail with truncation marker."""
+        if not content:
+            return ""
+        lines = content.splitlines()
+        if len(lines) <= head_lines + tail_lines:
+            return "\n".join(lines)
+
+        head = lines[:head_lines]
+        tail = lines[-tail_lines:]
+
+        head_text = "\n".join(head)
+        tail_text = "\n".join(tail)
+        truncation_notice = f"\n... [{len(lines) - head_lines - tail_lines} lines truncated] ...\n"
+
+        return head_text + truncation_notice + tail_text
 
     def _resolve_user_id(self, runtime: ToolRuntime[None, MiddlewareBrowserState] | None = None) -> str:
         if runtime is not None:
