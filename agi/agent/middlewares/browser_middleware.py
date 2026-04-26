@@ -109,23 +109,6 @@ Guidelines:
 - Prefer this over relying on previous observations.
 """
 
-BROWSER_SCREENSHOT_TOOL_DESCRIPTION = """
-Captures a screenshot of the current page.
-
-Key Behavior:
-- Produces an image for OCR or visual inspection.
-
-Returns:
-- Image content (for model inspection)
-- Metadata including URL and file path
-
-Guidelines:
-- Use when:
-  - OCR is needed explicitly
-  - layout or visual elements matter
-  - debugging is required
-"""
-
 BROWSER_FIND_TOOL_DESCRIPTION = """
 Finds elements by a known CSS selector (precision lookup).
 
@@ -219,7 +202,6 @@ class BrowserMiddleware(AgentMiddleware):
             self._create_fill_tool(),
             self._create_scroll_tool(),
             self._create_extract_tool(),
-            self._create_screenshot_tool(),
             self._create_extract_ui_tool(),
             self._create_find_tool(),
             self._create_probe_tool(),
@@ -395,36 +377,6 @@ class BrowserMiddleware(AgentMiddleware):
             name="browser_extract",
             description=BROWSER_EXTRACT_TOOL_DESCRIPTION,
             coroutine=async_extract,
-        )
-
-    def _create_screenshot_tool(self) -> BaseTool:
-        """Create the screenshot tool - merged from _tool_screenshot."""
-        async def async_screenshot(runtime: ToolRuntime[None, MiddlewareBrowserState]) -> ToolMessage | str:
-            backend, runtime_key = self._backend_for_runtime(runtime)
-            result = await backend.get_screenshot()
-
-            if result.status == "error":
-                return f"Error: {result.error or 'Failed to take screenshot'}"
-
-            screenshot_path = result.metadata.get("screenshot_path")
-            if not screenshot_path:
-                return "Error: Screenshot path missing in result"
-
-            page = await backend.ensure_page()
-            current_url = page.url
-            text = f"Screenshot captured for {current_url}" if current_url else "Screenshot captured"
-
-            return ToolMessage(
-                content=text,
-                content_blocks=[create_image_block(file_id=screenshot_path, mime_type="image/png")],
-                name="browser_screenshot",
-                tool_call_id=runtime.tool_call_id,
-            )
-
-        return StructuredTool.from_function(
-            name="browser_screenshot",
-            description=BROWSER_SCREENSHOT_TOOL_DESCRIPTION,
-            coroutine=async_screenshot,
         )
 
     def _create_extract_ui_tool(self) -> BaseTool:
