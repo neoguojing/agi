@@ -505,30 +505,6 @@ class BrowserMiddleware(AgentMiddleware):
             coroutine=async_probe,
         )
 
-    def _build_preview(self, content: str, *, limit: int = 500) -> str:
-        if not content:
-            return ""
-        if len(content) <= limit:
-            return content
-        return content[:limit] + "..."
-
-    def _create_browser_content_preview(self, content: str, *, head_lines: int = 10, tail_lines: int = 10) -> str:
-        """Create a preview of content showing head and tail with truncation marker."""
-        if not content:
-            return ""
-        lines = content.splitlines()
-        if len(lines) <= head_lines + tail_lines:
-            return "\n".join(lines)
-
-        head = lines[:head_lines]
-        tail = lines[-tail_lines:]
-
-        head_text = "\n".join(head)
-        tail_text = "\n".join(tail)
-        truncation_notice = f"\n... [{len(lines) - head_lines - tail_lines} lines truncated] ...\n"
-
-        return head_text + truncation_notice + tail_text
-
     def _resolve_user_id(self, runtime: ToolRuntime[None, MiddlewareBrowserState] | None = None) -> str:
         if runtime is not None:
             context = getattr(runtime, "context", None)
