@@ -158,8 +158,9 @@ class BrowserMiddlewareState(AgentState):
     """
 
     browser_session_state: Annotated[
-        NotRequired[Optional[dict[str, Any]]],
-    ]
+        Optional[dict[str, Any]],
+        "Current browser session state (URL, title, viewport, action status)",
+    ] = None
 
 
 class BrowserMiddleware(AgentMiddleware):
@@ -237,22 +238,13 @@ class BrowserMiddleware(AgentMiddleware):
         """(async)Check the size of the tool call result and evict to filesystem if too large."""
         return await handler(request)
 
-    def _resolve_user_id(self, runtime: ToolRuntime[None, BrowserMiddlewareState] | None = None) -> str:
-        if runtime is not None:
-            context = getattr(runtime, "context", None)
-            if getattr(context, "user_id", None):
-                return str(context.user_id)
-            config = getattr(runtime, "config", {}) or {}
-            configurable = config.get("configurable", {})
-            if configurable.get("user_id"):
-                return str(configurable["user_id"])
-        return "default"
 
     def _resolve_runtime_key(self, runtime: ToolRuntime[None, BrowserMiddlewareState] | None = None) -> tuple[str, str]:
         user_id = self._resolve_user_id(runtime)
         return user_id, user_id
 
     def _backend_for_runtime(self, runtime: ToolRuntime[None, BrowserMiddlewareState] | None = None) -> tuple[StatefulBrowserBackend, str]:
+        """Get or create a backend for the given runtime, creating storage dir as needed."""
         user_id, runtime_key = self._resolve_runtime_key(runtime)
         backend = self._session_backends.get(runtime_key)
         if backend is not None:
@@ -262,12 +254,35 @@ class BrowserMiddleware(AgentMiddleware):
         session_root.mkdir(parents=True, exist_ok=True)
         backend = StatefulBrowserBackend(storage_dir=str(session_root))
         self._session_backends[runtime_key] = backend
+        logger.debug("Created new browser backend for user_id=%s", user_id)
         return backend, runtime_key
+
+    def _build_action_command(self, result: PageInfo) -> Command | str:
+        """Build a Command for state update or an error message based on action result."""
+        if result.last_action_status == "fail":
+            error_msg = result.error_message or "Unknown error"
+            return f"Error: {error_msg}"
+        if result.last_action_status == "timeout":
+            return "Action timed out. The operation may require more time or the element may not be interactive."
+
+        # Build updated state - only include title if it changed
+        title = result.title or "N/A"
+        updated_state = {
+            "browser_session_state": {
+                "url": result.url,
+                "title": title,
+                "viewport": DEFAULT_VIEWPORT,
+                "is_loading": False,
+                "last_action_status": "success",
+                "error_message": None,
+            }
+        }
+        return Command(update={"browser_session_state": updated_state["browser_session_state"]})
 
     def _create_navigate_tool(self) -> BaseTool:
         """Create the navigate tool - returns Command with state update on success."""
         async def async_navigate(
-            url: Annotated[str, "URL to open in the current browser session."],
+            url: Annotated[str, "URL to navigate to in the current browser session."],
             runtime: ToolRuntime[None, BrowserMiddlewareState],
         ) -> Command | str:
             backend, runtime_key = self._backend_for_runtime(runtime)
@@ -279,19 +294,7 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Navigation timed out after waiting for network idle. URL: {url}. The page may be loading slowly or is unreachable."
 
-            # Update browser_session_state with new page info - this is an action that changes state
-            state_update = {
-                "browser_session_state": {
-                    "url": result.url,
-                    "title": result.title or "N/A",
-                    "viewport": DEFAULT_VIEWPORT,
-                    "is_loading": False,
-                    "last_action_status": "success",
-                    "error_message": None,
-                }
-            }
-
-            return Command(update={"browser_session_state": state_update["browser_session_state"]})
+            return self._build_action_command(result)
 
         return StructuredTool.from_function(
             name="browser_navigate",
@@ -314,19 +317,7 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Click timed out. Element with selector '{selector}' may not be visible or interactive."
 
-            # Update browser_session_state after successful click - this is an action that changes state
-            state_update = {
-                "browser_session_state": {
-                    "url": result.url,
-                    "title": result.title or "N/A",
-                    "viewport": DEFAULT_VIEWPORT,
-                    "is_loading": False,
-                    "last_action_status": "success",
-                    "error_message": None,
-                }
-            }
-
-            return Command(update={"browser_session_state": state_update["browser_session_state"]})
+            return self._build_action_command(result)
 
         return StructuredTool.from_function(
             name="browser_click",
@@ -337,7 +328,7 @@ class BrowserMiddleware(AgentMiddleware):
     def _create_fill_tool(self) -> BaseTool:
         """Create the fill tool - returns Command with state update on success."""
         async def async_fill(
-            selector: Annotated[str, "CSS selector for the field to fill."],
+            selector: Annotated[str, "CSS selector for the input field to fill."],
             text: Annotated[str, "Text to enter into the selected field."],
             runtime: ToolRuntime[None, BrowserMiddlewareState],
         ) -> Command | str:
@@ -350,19 +341,7 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Fill timed out. Element with selector '{selector}' may not be editable."
 
-            # Update browser_session_state after successful fill - this is an action that changes state
-            state_update = {
-                "browser_session_state": {
-                    "url": result.url,
-                    "title": result.title or "N/A",
-                    "viewport": DEFAULT_VIEWPORT,
-                    "is_loading": False,
-                    "last_action_status": "success",
-                    "error_message": None,
-                }
-            }
-
-            return Command(update={"browser_session_state": state_update["browser_session_state"]})
+            return self._build_action_command(result)
 
         return StructuredTool.from_function(
             name="browser_fill",
@@ -373,8 +352,8 @@ class BrowserMiddleware(AgentMiddleware):
     def _create_scroll_tool(self) -> BaseTool:
         """Create the scroll tool - returns Command with state update on success."""
         async def async_scroll(
-            direction: Annotated[str, "Scroll direction: up/down."],
-            distance: Annotated[int, "Scroll distance in px."],
+            direction: Annotated[str, "Scroll direction (up/down/left/right)."],
+            distance: Annotated[int, "Scroll distance in pixels."],
             runtime: ToolRuntime[None, BrowserMiddlewareState],
         ) -> Command | str:
             backend, runtime_key = self._backend_for_runtime(runtime)
@@ -386,19 +365,7 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Scroll timed out."
 
-            # Update browser_session_state after successful scroll - this is an action that changes state
-            state_update = {
-                "browser_session_state": {
-                    "url": result.url,
-                    "title": result.title or "N/A",
-                    "viewport": DEFAULT_VIEWPORT,
-                    "is_loading": False,
-                    "last_action_status": "success",
-                    "error_message": None,
-                }
-            }
-
-            return Command(update={"browser_session_state": state_update["browser_session_state"]})
+            return self._build_action_command(result)
 
         return StructuredTool.from_function(
             name="browser_scroll",
@@ -459,7 +426,7 @@ class BrowserMiddleware(AgentMiddleware):
         """Create the extract UI tool - returns full UI structure for LLM planning."""
         async def async_extract_ui(
             runtime: ToolRuntime[None, BrowserMiddlewareState],
-            limit: Annotated[int, "Maximum number of actionable elements to return."] = 12,
+            limit: Annotated[int, "Maximum number of actionable elements to return (1-50)."] = 12,
         ) -> str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.extract_ui(max(1, min(int(limit or 12), 50)))
@@ -468,8 +435,9 @@ class BrowserMiddleware(AgentMiddleware):
                 return "No actionable elements found on the current page. The page may be empty or have no interactive elements."
 
             # Return full UI structure with all element details for LLM planning
+            # result is a list of QueryMatch objects
             url = result[0].url if result else ""
-            title = result[0].title if result and hasattr(result[0], 'title') else ""
+            title = result[0].title if result else ""
             
             return (
                 f"Extracted {len(result)} actionable elements from {url}.\n"
@@ -568,13 +536,3 @@ class BrowserMiddleware(AgentMiddleware):
             coroutine=async_probe,
         )
 
-    def _resolve_user_id(self, runtime: ToolRuntime[None, BrowserMiddlewareState] | None = None) -> str:
-        if runtime is not None:
-            context = getattr(runtime, "context", None)
-            if getattr(context, "user_id", None):
-                return str(context.user_id)
-            config = getattr(runtime, "config", {}) or {}
-            configurable = config.get("configurable", {})
-            if configurable.get("user_id"):
-                return str(configurable["user_id"])
-        return "default"
