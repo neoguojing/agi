@@ -1,6 +1,7 @@
 import base64
 import logging
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, NotRequired, Optional
 
@@ -265,46 +266,6 @@ class BrowserMiddleware(AgentMiddleware):
         logger.debug("Created new browser backend for user_id=%s", user_id)
         return backend, runtime_key
 
-    def _build_action_command(
-        self, 
-        result: PageInfo, 
-        tool_call_id: str | None = None,
-        runtime: ToolRuntime[None, BrowserMiddlewareState] | None = None
-    ) -> Command:
-        """Build a Command for state update based on action result.
-
-        Always returns Command with proper ToolMessage containing the correct tool_call_id.
-        Error cases are handled by returning error strings from individual tool functions.
-        """
-        # Build updated state - only include title if it changed
-        title = result.title or "N/A"
-        updated_state = {
-            "browser_session_state": {
-                "url": result.url,
-                "title": title,
-                "viewport": DEFAULT_VIEWPORT,
-                "is_loading": False,
-                "last_action_status": "success",
-                "error_message": None,
-            }
-        }
-        
-        # Always use runtime.tool_call_id - it's always set by LangChain when tool is called
-        actual_tool_call_id = runtime.tool_call_id if runtime else ""
-        
-        return Command(
-            update={
-                "browser_session_state": updated_state["browser_session_state"],
-                "messages": [
-                    ToolMessage(
-                        content=f"Successfully navigated to {title} at {result.url}. Page is now ready for interaction.",
-                        name="browser_action",
-                        tool_call_id=actual_tool_call_id,
-                    )
-                ],
-            }
-        )
-
     def _create_navigate_tool(self) -> BaseTool:
         """Create the navigate tool - returns Command with state update on success."""
         async def async_navigate(
@@ -320,7 +281,26 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Navigation timed out after waiting for network idle. URL: {url}. The page may be loading slowly or is unreachable."
 
-            return self._build_action_command(result, runtime.tool_call_id, runtime)
+            # Structured response: who, what, result
+            tool_message = ToolMessage(
+                content=f"I am browser_navigate tool. I navigated the browser to '{result.url}'. The page title is '{result.title}'. Navigation completed successfully.",
+                name="browser_action",
+                tool_call_id=runtime.tool_call_id,
+            )
+            
+            return Command(
+                update={
+                    "browser_session_state": {
+                        "url": result.url,
+                        "title": result.title,
+                        "viewport": DEFAULT_VIEWPORT,
+                        "is_loading": False,
+                        "last_action_status": "success",
+                        "error_message": None,
+                    },
+                    "messages": [tool_message],
+                }
+            )
 
         return StructuredTool.from_function(
             name="browser_navigate",
@@ -343,7 +323,26 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Click timed out. Element with selector '{selector}' may not be visible or interactive."
 
-            return self._build_action_command(result, runtime.tool_call_id, runtime)
+            # Structured response: who, what, result
+            tool_message = ToolMessage(
+                content=f"I am browser_click tool. I clicked on element with selector '{selector}'. The page is now at '{result.url}' with title '{result.title}'. Click completed successfully.",
+                name="browser_action",
+                tool_call_id=runtime.tool_call_id,
+            )
+            
+            return Command(
+                update={
+                    "browser_session_state": {
+                        "url": result.url,
+                        "title": result.title,
+                        "viewport": DEFAULT_VIEWPORT,
+                        "is_loading": False,
+                        "last_action_status": "success",
+                        "error_message": None,
+                    },
+                    "messages": [tool_message],
+                }
+            )
 
         return StructuredTool.from_function(
             name="browser_click",
@@ -367,7 +366,26 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Fill timed out. Element with selector '{selector}' may not be editable."
 
-            return self._build_action_command(result, runtime.tool_call_id, runtime)
+            # Structured response: who, what, result
+            tool_message = ToolMessage(
+                content=f"I am browser_fill tool. I filled the input field with selector '{selector}' with text '{text}'. The page is now at '{result.url}' with title '{result.title}'. Fill completed successfully.",
+                name="browser_action",
+                tool_call_id=runtime.tool_call_id,
+            )
+            
+            return Command(
+                update={
+                    "browser_session_state": {
+                        "url": result.url,
+                        "title": result.title,
+                        "viewport": DEFAULT_VIEWPORT,
+                        "is_loading": False,
+                        "last_action_status": "success",
+                        "error_message": None,
+                    },
+                    "messages": [tool_message],
+                }
+            )
 
         return StructuredTool.from_function(
             name="browser_fill",
@@ -391,7 +409,26 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Scroll timed out."
 
-            return self._build_action_command(result, runtime.tool_call_id, runtime)
+            # Structured response: who, what, result
+            tool_message = ToolMessage(
+                content=f"I am browser_scroll tool. I scrolled the viewport {'up' if direction.lower() in ['up', 'backward'] else 'down'} by {abs(distance)} pixels. The page is now at '{result.url}' with title '{result.title}'. Scroll completed successfully.",
+                name="browser_action",
+                tool_call_id=runtime.tool_call_id,
+            )
+            
+            return Command(
+                update={
+                    "browser_session_state": {
+                        "url": result.url,
+                        "title": result.title,
+                        "viewport": DEFAULT_VIEWPORT,
+                        "is_loading": False,
+                        "last_action_status": "success",
+                        "error_message": None,
+                    },
+                    "messages": [tool_message],
+                }
+            )
 
         return StructuredTool.from_function(
             name="browser_scroll",
@@ -422,7 +459,7 @@ class BrowserMiddleware(AgentMiddleware):
                             ])
                             if ocr_text:
                                 return (
-                                    f"Extracted {len(str(ocr_text).strip())} characters via OCR from screenshot.\n"
+                                    f"I am browser_extract tool. I extracted {len(str(ocr_text).strip())} characters via OCR from screenshot.\n"
                                     f"Content preview: {str(ocr_text).strip()[:500]}...\n"
                                     f"Full content available at: {screenshot_path}"
                                 )
@@ -433,7 +470,7 @@ class BrowserMiddleware(AgentMiddleware):
             try:
                 content = await page.content()
                 return (
-                    f"Extracted {len(content)} characters from page DOM.\n"
+                    f"I am browser_extract tool. I extracted {len(content)} characters from page DOM.\n"
                     f"Page URL: {page.url}\n"
                     f"Content preview: {content[:500]}...\n"
                     f"Use pagination (offset/limit) for large files."
@@ -460,10 +497,10 @@ class BrowserMiddleware(AgentMiddleware):
                 result = await backend.extract_ui(max(1, min(int(limit or 12), 50)))
             except Exception as e:
                 logger.error("extract_ui failed: %s", e, exc_info=True)
-                return "Error extracting UI elements: Unable to extract UI structure from page."
+                return "I am browser_extract_ui tool. Error extracting UI elements: Unable to extract UI structure from page."
 
             if not result or len(result) == 0:
-                return "No actionable elements found on the current page. The page may be empty or have no interactive elements."
+                return "I am browser_extract_ui tool. No actionable elements found on the current page. The page may be empty or have no interactive elements."
 
             try:
                 # Return full UI structure with all element details for LLM planning
@@ -472,7 +509,7 @@ class BrowserMiddleware(AgentMiddleware):
                 title = result[0].title if result else ""
                 
                 return (
-                    f"Extracted {len(result)} actionable elements from {url}.\n"
+                    f"I am browser_extract_ui tool. I extracted {len(result)} actionable elements from {url}.\n"
                     f"Page Title: {title}\n\n"
                     f"Actionable Elements:\n"
                 ) + "\n".join([f"- Element {i+1}: selector='{el.selector}', text='{el.text[:50]}...', type='{el.tag_name}'" for i, el in enumerate(result[:10])]) + (
@@ -480,7 +517,7 @@ class BrowserMiddleware(AgentMiddleware):
                 )
             except Exception as e:
                 logger.error("Failed to format extract_ui result: %s", e, exc_info=True)
-                return "Error formatting extracted UI elements. Please try browser_extract instead."
+                return "I am browser_extract_ui tool. Error formatting extracted UI elements. Please try browser_extract instead."
 
         return StructuredTool.from_function(
             name="browser_extract_ui",
@@ -498,11 +535,11 @@ class BrowserMiddleware(AgentMiddleware):
             matches = await backend.find_elements(selector)
 
             if not matches:
-                return f"No elements found matching selector: {selector}. Verify the selector is correct or use browser_extract_ui to discover available selectors."
+                return f"I am browser_find tool. No elements found matching selector: {selector}. Verify the selector is correct or use browser_extract_ui to discover available selectors."
 
             # Rich response with actionable context for LLM
             return (
-                f"Found {len(matches)} elements matching selector: {selector}.\n"
+                f"I am browser_find tool. I found {len(matches)} elements matching selector: {selector}.\n"
                 f"Element details include text, attributes, and positions.\n"
                 f"Use this information to plan click/fill actions or verify element properties."
             )
@@ -522,18 +559,18 @@ class BrowserMiddleware(AgentMiddleware):
                 page_info = await backend.get_state_snapshot()
 
                 if not page_info.url:
-                    return "No active browser session. Please navigate first using browser_navigate."
+                    return "I am browser_status tool. No active browser session. Please navigate first using browser_navigate."
 
                 # Rich response with actionable context for LLM
                 title = page_info.title or "N/A"
                 return (
-                    f"Browser Status - URL: {page_info.url}, Title: {title}\n"
+                    f"I am browser_status tool. Browser Status - URL: {page_info.url}, Title: {title}\n"
                     f"Status: Browser is active and ready for interaction.\n"
                     f"Use browser_extract to understand page content, or browser_extract_ui to find actionable elements."
                 )
             except Exception as e:
                 logger.debug("Failed to get browser state snapshot: %s", e)
-                return "No active browser session. Please navigate first using browser_navigate."
+                return "I am browser_status tool. No active browser session. Please navigate first using browser_navigate."
 
         return StructuredTool.from_function(
             name="browser_status",
@@ -552,15 +589,15 @@ class BrowserMiddleware(AgentMiddleware):
             result = await backend.inspect_element_property(selector, property_name)
 
             if result.get("error"):
-                return f"Error inspecting property '{property_name}': {result['error']}. The element may not exist or the property is not accessible."
+                return f"I am browser_probe tool. Error inspecting property '{property_name}': {result['error']}. The element may not exist or the property is not accessible."
 
             value = result.get("value")
             if value is None:
-                return f"Property '{property_name}' not found on element with selector: {selector}. Verify the selector and property name."
+                return f"I am browser_probe tool. Property '{property_name}' not found on element with selector: {selector}. Verify the selector and property name."
 
             # Rich response with actionable context for LLM
             return (
-                f"Property '{property_name}' value: {str(value)}\n"
+                f"I am browser_probe tool. Property '{property_name}' value: {str(value)}\n"
                 f"Element with selector '{selector}' is accessible.\n"
                 f"Use this information to determine if element is enabled, disabled, or has specific attributes."
             )
