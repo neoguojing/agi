@@ -270,14 +270,12 @@ class BrowserMiddleware(AgentMiddleware):
         result: PageInfo, 
         tool_call_id: str | None = None,
         runtime: ToolRuntime[None, BrowserMiddlewareState] | None = None
-    ) -> Command | str:
-        """Build a Command for state update or an error message based on action result."""
-        if result.last_action_status == "fail":
-            error_msg = result.error_message or "Unknown error"
-            return f"Error: {error_msg}"
-        if result.last_action_status == "timeout":
-            return "Action timed out. The operation may require more time or the element may not be interactive."
+    ) -> Command:
+        """Build a Command for state update based on action result.
 
+        Always returns Command with proper ToolMessage containing the correct tool_call_id.
+        Error cases are handled by returning error strings from individual tool functions.
+        """
         # Build updated state - only include title if it changed
         title = result.title or "N/A"
         updated_state = {
