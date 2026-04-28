@@ -162,7 +162,14 @@ class BrowserMiddlewareState(AgentState):
 
 
 class BrowserMiddleware(AgentMiddleware):
-    """Stateful browser middleware with filesystem-style tool wrappers."""
+    """Stateful browser middleware with filesystem-style tool wrappers.
+
+    This middleware provides browser automation tools with:
+    - Structured ToolMessage responses (identity, action, result)
+    - Proper tool_call_id tracking for each tool invocation
+    - Error handling and recovery
+    - State persistence across sessions
+    """
 
     state_schema = BrowserMiddlewareState
 
@@ -273,7 +280,12 @@ class BrowserMiddleware(AgentMiddleware):
             runtime: ToolRuntime[None, BrowserMiddlewareState],
         ) -> Command | str:
             backend, runtime_key = self._backend_for_runtime(runtime)
-            result = await backend.navigate(url)
+            
+            try:
+                result = await backend.navigate(url)
+            except Exception as e:
+                logger.exception("navigate failed with exception", exc_info=True)
+                return f"Error navigating to {url}: Unexpected error occurred. Please check if the URL is correct and accessible."
 
             if result.last_action_status == "fail":
                 return f"Error navigating to {url}: {result.error_message or 'Unknown error'}. Please check if the URL is correct and accessible."
@@ -317,7 +329,12 @@ Result: Success - Page loaded at '{result.url}' with title '{result.title}'. Bro
             runtime: ToolRuntime[None, BrowserMiddlewareState],
         ) -> Command | str:
             backend, runtime_key = self._backend_for_runtime(runtime)
-            result = await backend.click(selector)
+            
+            try:
+                result = await backend.click(selector)
+            except Exception as e:
+                logger.exception("click failed with exception", exc_info=True)
+                return f"Error clicking element with selector '{selector}': Unexpected error occurred. The element may not be visible or clickable."
 
             if result.last_action_status == "fail":
                 return f"Error clicking element with selector '{selector}': {result.error_message or 'Unknown error'}. The element may not be visible or clickable."
@@ -362,7 +379,12 @@ Result: Success - Page updated at '{result.url}' with title '{result.title}'. DO
             runtime: ToolRuntime[None, BrowserMiddlewareState],
         ) -> Command | str:
             backend, runtime_key = self._backend_for_runtime(runtime)
-            result = await backend.fill(selector, text)
+            
+            try:
+                result = await backend.fill(selector, text)
+            except Exception as e:
+                logger.exception("fill failed with exception", exc_info=True)
+                return f"Error filling field with selector '{selector}': Unexpected error occurred. The element may not be an input field."
 
             if result.last_action_status == "fail":
                 return f"Error filling field with selector '{selector}': {result.error_message or 'Unknown error'}. The element may not be an input field."
@@ -407,7 +429,12 @@ Result: Success - Field populated. Page updated at '{result.url}' with title '{r
             runtime: ToolRuntime[None, BrowserMiddlewareState],
         ) -> Command | str:
             backend, runtime_key = self._backend_for_runtime(runtime)
-            result = await backend.scroll(direction, distance)
+            
+            try:
+                result = await backend.scroll(direction, distance)
+            except Exception as e:
+                logger.exception("scroll failed with exception", exc_info=True)
+                return f"Error scrolling: Unexpected error occurred."
 
             if result.last_action_status == "fail":
                 return f"Error scrolling: {result.error_message or 'Unknown error'}."
@@ -608,7 +635,14 @@ Result: Error - No active browser session. Please navigate first using browser_n
             runtime: ToolRuntime[None, BrowserMiddlewareState],
         ) -> str:
             backend, runtime_key = self._backend_for_runtime(runtime)
-            result = await backend.inspect_element_property(selector, property_name)
+            
+            try:
+                result = await backend.inspect_element_property(selector, property_name)
+            except Exception as e:
+                logger.exception("probe failed with exception", exc_info=True)
+                return f"""Tool Identity: browser_probe
+Action: Inspected element property '{property_name}' for selector '{selector}'
+Result: Error - Unexpected error occurred while inspecting element."""
 
             if result.get("error"):
                 return f"""Tool Identity: browser_probe

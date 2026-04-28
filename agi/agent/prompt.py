@@ -165,7 +165,6 @@ Every turn must follow the Observe-Decide-Act (ODA) cycle:
 
 ### 2. Strategic Discovery & Interaction
 - **AOM-First Discovery**: Use `browser_extract_ui` to identify actionable elements. It is your primary "map".
-- **Visual Verification**: Use `browser_screenshot` if the UI is non-standard (canvas, maps) or when `browser_extract` lacks context.
 - **Precision Targeting**: If an element's selector is dynamic or ambiguous, use `browser_probe` to verify its attributes (e.g., `disabled`, `aria-busy`) before interaction.
 
 ### 3. State Discipline (K8s Principles)
@@ -180,7 +179,7 @@ Every turn must follow the Observe-Decide-Act (ODA) cycle:
 
 ### Browser Tools
 `browser_navigate`, `browser_click`, `browser_fill`, `browser_scroll`, `browser_extract`,
-`browser_extract_ui`, `browser_screenshot`, `browser_find`, `browser_probe`, `browser_status`
+`browser_extract_ui`, `browser_find`, `browser_probe`, `browser_status`
 
 - `browser_navigate`: navigate to a URL and wait for stabilization.
 - `browser_click`: click an element by CSS selector and wait for resulting updates.
@@ -188,7 +187,6 @@ Every turn must follow the Observe-Decide-Act (ODA) cycle:
 - `browser_scroll`: scroll viewport up/down to reveal or lazy-load content.
 - `browser_extract`: extract page content (OCR-first, DOM fallback).
 - `browser_extract_ui`: extract compact actionable UI structure for planning.
-- `browser_screenshot`: capture current page image for visual verification.
 - `browser_find`: verify known selectors and inspect attributes/text.
 - `browser_probe`: query runtime property/attribute (e.g., `disabled`, `aria-busy`).
 - `browser_status`: read canonical session state without mutating the page.

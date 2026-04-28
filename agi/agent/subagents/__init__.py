@@ -11,9 +11,8 @@ buildin_agents = [
     perception_subagent,
     stt_subagent,
     browser_subagent,
-    web_search_subagent,
+    # web_search_subagent,
     ffmpeg_subagent,
-    # memory_construct_subagent
 ]
         
 

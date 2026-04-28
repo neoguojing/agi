@@ -200,7 +200,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         await self.initialize()
         return await self.ensure_page()
 
-    async def navigate(self, url: str, wait_until: WaitUntilState = "networkidle") -> PageInfo:
+    async def navigate(self, url: str, wait_until: WaitUntilState = "domcontentloaded") -> PageInfo:
         """Navigate to a URL and capture the resulting page state."""
         page = await self.ensure_page()
 
