@@ -289,15 +289,20 @@ class BrowserMiddleware(AgentMiddleware):
             }
         }
         
-        # Create ToolMessage with proper tool_call_id from runtime if not provided
-        actual_tool_call_id = tool_call_id or (runtime.tool_call_id if runtime else "")
+        # Create ToolMessage with proper tool_call_id from runtime
+        # Always use runtime.tool_call_id if available, otherwise raise error
+        if runtime is not None and hasattr(runtime, 'tool_call_id'):
+            actual_tool_call_id = runtime.tool_call_id
+        else:
+            logger.error("Runtime does not have tool_call_id attribute. This should never happen.")
+            actual_tool_call_id = ""
         
         return Command(
             update={
                 "browser_session_state": updated_state["browser_session_state"],
                 "messages": [
                     ToolMessage(
-                        content=f"Updated to {title} - {result.url}",
+                        content=f"Successfully navigated to {title} at {result.url}. Page is now ready for interaction.",
                         name="browser_action",
                         tool_call_id=actual_tool_call_id,
                     )
