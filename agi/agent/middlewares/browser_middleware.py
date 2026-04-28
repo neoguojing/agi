@@ -455,23 +455,32 @@ class BrowserMiddleware(AgentMiddleware):
             limit: Annotated[int, "Maximum number of actionable elements to return (1-50)."] = 12,
         ) -> str:
             backend, runtime_key = self._backend_for_runtime(runtime)
-            result = await backend.extract_ui(max(1, min(int(limit or 12), 50)))
+            
+            try:
+                result = await backend.extract_ui(max(1, min(int(limit or 12), 50)))
+            except Exception as e:
+                logger.error("extract_ui failed: %s", e, exc_info=True)
+                return "Error extracting UI elements: Unable to extract UI structure from page."
 
-            if not result:
+            if not result or len(result) == 0:
                 return "No actionable elements found on the current page. The page may be empty or have no interactive elements."
 
-            # Return full UI structure with all element details for LLM planning
-            # result is a list of QueryMatch objects
-            url = result[0].url if result else ""
-            title = result[0].title if result else ""
-            
-            return (
-                f"Extracted {len(result)} actionable elements from {url}.\n"
-                f"Page Title: {title}\n\n"
-                f"Actionable Elements:\n"
-            ) + "\n".join([f"- Element {i+1}: selector='{el.selector}', text='{el.text[:50]}...', type='{el.tag_name}'" for i, el in enumerate(result[:10])]) + (
-                f"\n... and {len(result) - 10} more elements." if len(result) > 10 else ""
-            )
+            try:
+                # Return full UI structure with all element details for LLM planning
+                # result is a list of QueryMatch objects
+                url = result[0].url if result else ""
+                title = result[0].title if result else ""
+                
+                return (
+                    f"Extracted {len(result)} actionable elements from {url}.\n"
+                    f"Page Title: {title}\n\n"
+                    f"Actionable Elements:\n"
+                ) + "\n".join([f"- Element {i+1}: selector='{el.selector}', text='{el.text[:50]}...', type='{el.tag_name}'" for i, el in enumerate(result[:10])]) + (
+                    f"\n... and {len(result) - 10} more elements." if len(result) > 10 else ""
+                )
+            except Exception as e:
+                logger.error("Failed to format extract_ui result: %s", e, exc_info=True)
+                return "Error formatting extracted UI elements. Please try browser_extract instead."
 
         return StructuredTool.from_function(
             name="browser_extract_ui",
