@@ -290,17 +290,19 @@ class BrowserMiddleware(AgentMiddleware):
             }
         }
         
-        # Create ToolMessage with proper tool_call_id
-        tool_message = ToolMessage(
-            content=f"Updated to {title} - {result.url}",
-            name="browser_action",
-            tool_call_id=tool_call_id or "",
-        )
+        # Create ToolMessage with proper tool_call_id from runtime if not provided
+        actual_tool_call_id = tool_call_id or (getattr(runtime, 'tool_call_id', None) if 'runtime' in locals() else None)
         
         return Command(
             update={
                 "browser_session_state": updated_state["browser_session_state"],
-                "messages": [tool_message],
+                "messages": [
+                    ToolMessage(
+                        content=f"Updated to {title} - {result.url}",
+                        name="browser_action",
+                        tool_call_id=actual_tool_call_id or "",
+                    )
+                ],
             }
         )
 
@@ -309,7 +311,6 @@ class BrowserMiddleware(AgentMiddleware):
         async def async_navigate(
             url: Annotated[str, "URL to navigate to in the current browser session."],
             runtime: ToolRuntime[None, BrowserMiddlewareState],
-            tool_call_id: Annotated[str | None, "Tool call ID for response"] = None,
         ) -> Command | str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.navigate(url)
@@ -320,7 +321,7 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Navigation timed out after waiting for network idle. URL: {url}. The page may be loading slowly or is unreachable."
 
-            return self._build_action_command(result, tool_call_id)
+            return self._build_action_command(result, runtime.tool_call_id)
 
         return StructuredTool.from_function(
             name="browser_navigate",
@@ -333,7 +334,6 @@ class BrowserMiddleware(AgentMiddleware):
         async def async_click(
             selector: Annotated[str, "CSS selector to click on the current page."],
             runtime: ToolRuntime[None, BrowserMiddlewareState],
-            tool_call_id: Annotated[str | None, "Tool call ID for response"] = None,
         ) -> Command | str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.click(selector)
@@ -344,7 +344,7 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Click timed out. Element with selector '{selector}' may not be visible or interactive."
 
-            return self._build_action_command(result, tool_call_id)
+            return self._build_action_command(result, runtime.tool_call_id)
 
         return StructuredTool.from_function(
             name="browser_click",
@@ -358,7 +358,6 @@ class BrowserMiddleware(AgentMiddleware):
             selector: Annotated[str, "CSS selector for the input field to fill."],
             text: Annotated[str, "Text to enter into the selected field."],
             runtime: ToolRuntime[None, BrowserMiddlewareState],
-            tool_call_id: Annotated[str | None, "Tool call ID for response"] = None,
         ) -> Command | str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.fill(selector, text)
@@ -369,7 +368,7 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Fill timed out. Element with selector '{selector}' may not be editable."
 
-            return self._build_action_command(result, tool_call_id)
+            return self._build_action_command(result, runtime.tool_call_id)
 
         return StructuredTool.from_function(
             name="browser_fill",
@@ -383,7 +382,6 @@ class BrowserMiddleware(AgentMiddleware):
             direction: Annotated[str, "Scroll direction (up/down/left/right)."],
             distance: Annotated[int, "Scroll distance in pixels."],
             runtime: ToolRuntime[None, BrowserMiddlewareState],
-            tool_call_id: Annotated[str | None, "Tool call ID for response"] = None,
         ) -> Command | str:
             backend, runtime_key = self._backend_for_runtime(runtime)
             result = await backend.scroll(direction, distance)
@@ -394,7 +392,7 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Scroll timed out."
 
-            return self._build_action_command(result, tool_call_id)
+            return self._build_action_command(result, runtime.tool_call_id)
 
         return StructuredTool.from_function(
             name="browser_scroll",
