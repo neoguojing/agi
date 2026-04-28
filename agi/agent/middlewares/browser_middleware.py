@@ -157,10 +157,7 @@ class BrowserMiddlewareState(AgentState):
     - browser_session_state: compact snapshot from PageInfo
     """
 
-    browser_session_state: Annotated[
-        Optional[dict[str, Any]],
-        "Current browser session state (URL, title, viewport, action status)",
-    ] = None
+    browser_session_state: NotRequired[Optional[dict[str, Any]]]
 
 
 class BrowserMiddleware(AgentMiddleware):
@@ -239,6 +236,17 @@ class BrowserMiddleware(AgentMiddleware):
         return await handler(request)
 
 
+    def _resolve_user_id(self, runtime: ToolRuntime[None, BrowserMiddlewareState] | None = None) -> str:
+        if runtime is not None:
+            context = getattr(runtime, "context", None)
+            if getattr(context, "user_id", None):
+                return str(context.user_id)
+            config = getattr(runtime, "config", {}) or {}
+            configurable = config.get("configurable", {})
+            if configurable.get("user_id"):
+                return str(configurable["user_id"])
+        return "default"
+
     def _resolve_runtime_key(self, runtime: ToolRuntime[None, BrowserMiddlewareState] | None = None) -> tuple[str, str]:
         user_id = self._resolve_user_id(runtime)
         return user_id, user_id
@@ -277,7 +285,18 @@ class BrowserMiddleware(AgentMiddleware):
                 "error_message": None,
             }
         }
-        return Command(update={"browser_session_state": updated_state["browser_session_state"]})
+        return Command(
+            update={
+                "browser_session_state": updated_state["browser_session_state"],
+                "messages": [
+                    ToolMessage(
+                        content=f"Updated to {title} - {result.url}",
+                        name="browser_action",
+                        tool_call_id="",
+                    )
+                ],
+            }
+        )
 
     def _create_navigate_tool(self) -> BaseTool:
         """Create the navigate tool - returns Command with state update on success."""
