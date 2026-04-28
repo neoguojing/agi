@@ -289,13 +289,8 @@ class BrowserMiddleware(AgentMiddleware):
             }
         }
         
-        # Create ToolMessage with proper tool_call_id from runtime
-        # Always use runtime.tool_call_id if available, otherwise raise error
-        if runtime is not None and hasattr(runtime, 'tool_call_id'):
-            actual_tool_call_id = runtime.tool_call_id
-        else:
-            logger.error("Runtime does not have tool_call_id attribute. This should never happen.")
-            actual_tool_call_id = ""
+        # Always use runtime.tool_call_id - it's always set by LangChain when tool is called
+        actual_tool_call_id = runtime.tool_call_id if runtime else ""
         
         return Command(
             update={
