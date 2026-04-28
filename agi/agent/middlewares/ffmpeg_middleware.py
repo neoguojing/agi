@@ -35,6 +35,7 @@ class FileData(TypedDict, total=False):
     status: str
     container_path: str
     local_path: str
+    operation: str
 
 
 def _file_data_reducer(
@@ -72,7 +73,6 @@ class FfmpegState(AgentState):
 # Configuration constants
 MAX_EXECUTE_TIMEOUT = 300  # seconds - max timeout for FFmpeg operations
 MAX_VIDEO_SIZE_MB = 2048  # 2GB limit for uploaded files
-MAX_CONCURRENT_OPERATIONS = 5  # limit concurrent FFmpeg operations
 DEFAULT_OUTPUT_DIR = "/workspace/outputs"  # default output path in container
 
 
@@ -83,117 +83,109 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
     backend: DockerSandbox
     tools: list
     _custom_system_prompt: str | None = None
-    _output_dir: Path | None = None
 
     def __init__(self, *, backend: DockerSandbox, output_dir: str = DEFAULT_OUTPUT_DIR):
+        """Initialize FFmpeg middleware.
+
+        Args:
+            backend: Docker sandbox backend
+            output_dir: Output directory path in container (not used for host)
+        """
         self.backend = backend
-        self._output_dir = Path(output_dir)
-        self._output_dir.mkdir(parents=True, exist_ok=True)
         self.tools = self._create_tools()
-        self._active_operations: set[str] = set()  # track concurrent operations
 
     def _resolve_user_id(self, runtime: ToolRuntime[None, FfmpegState] | None = None) -> str:
+        """Extract user_id from runtime context or config."""
         if runtime is not None:
             context = getattr(runtime, "context", None)
-            if getattr(context, "user_id", None):
+            if context and context.user_id:
                 return str(context.user_id)
             config = getattr(runtime, "config", {}) or {}
-            configurable = config.get("configurable", {}) if isinstance(config, dict) else {}
-            if configurable.get("user_id"):
-                return str(configurable["user_id"])
+            if isinstance(config, dict) and "configurable" in config:
+                configurable = config["configurable"]
+                if configurable.get("user_id"):
+                    return str(configurable["user_id"])
         raise ValueError("user_id is required for ffmpeg tools")
 
     def _backend_for_runtime(self, runtime: ToolRuntime[None, FfmpegState]) -> Any:
-        user_id = self._resolve_user_id(runtime)
-        return self.backend.for_user(user_id)
+        """Get backend instance for the given runtime."""
+        return self.backend.for_user(self._resolve_user_id(runtime))
 
     def _validate_path(self, path: str) -> str:
         """Validate and normalize path, return empty string if invalid."""
         if not path:
             return ""
-        # Normalize and check for absolute path
         normalized = str(Path(path).expanduser().resolve())
         if not normalized.startswith("/") and not Path(normalized).is_absolute():
-            logger.warning(f"Path is not absolute: {path}")
+            logger.warning(f"Non-absolute path rejected: {path}")
         return normalized
 
     def _validate_ffmpeg_command(self, cmd: str) -> tuple[bool, str | None]:
-        """Validate FFmpeg command before execution."""
-        # Check for dangerous patterns
+        """Validate FFmpeg command for safety and constraints.
+
+        Args:
+            cmd: FFmpeg command to validate
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        # Check for dangerous shell patterns
         dangerous_patterns = ["rm -rf", "mkfs", "dd if=/dev/zero", "nc ", "curl ", "wget "]
         for pattern in dangerous_patterns:
             if pattern in cmd.lower():
-                return False, f"Command contains dangerous pattern: {pattern}"
-        # Check command length
+                return False, f"Blocked dangerous pattern: {pattern}"
+        # Check command length (4KB is generous for ffmpeg)
         if len(cmd) > 4096:
-            return False, f"Command too long: {len(cmd)} chars"
+            return False, f"Command exceeds limit: {len(cmd)} > 4096 chars"
         return True, None
 
-    def _generate_unique_output_path(self, input_path: str, ext: str = ".mp4") -> str:
-        """Generate a unique output path based on input path."""
-        base = Path(input_path).stem
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        unique_base = f"{base}_{timestamp}"
-        return f"{unique_base}{ext}"
+    async def _run_ffmpeg(self, backend: Any, cmd: str, *, timeout: int = MAX_EXECUTE_TIMEOUT) -> str | None:
+        """Execute FFmpeg command with error handling.
 
-    def _run_ffmpeg(self, backend: Any, cmd: str, *, timeout: int = MAX_EXECUTE_TIMEOUT) -> str | None:
-        """Run FFmpeg command with proper error handling."""
-        # Validate command
+        Args:
+            backend: Docker backend
+            cmd: FFmpeg command
+            timeout: Execution timeout in seconds
+
+        Returns:
+            Error message on failure, None on success
+        """
+        # Validate command before execution
         is_valid, error = self._validate_ffmpeg_command(cmd)
         if not is_valid:
+            logger.warning(f"Command rejected: {error}")
             return error
 
         try:
             result = await backend.aexecute(cmd, timeout=timeout)
             if result.exit_code != 0:
-                # Extract and format error message
-                error_msg = result.output or "Unknown error"
-                # Check for common FFmpeg errors
+                error_msg = (result.output or "").strip() or f"Exit code {result.exit_code}"
+
                 if "No such file or directory" in error_msg:
-                    logger.warning(f"FFmpeg not found or command invalid: {cmd}")
+                    logger.warning(f"FFmpeg binary missing: {cmd[:100]}")
                 elif "Invalid data found when processing input" in error_msg:
-                    logger.warning(f"Input file may be corrupt or unsupported: {cmd}")
+                    logger.warning(f"Invalid input file: {cmd[:100]}")
                 elif "timeout" in error_msg.lower():
-                    logger.warning(f"FFmpeg command timed out: {cmd}")
+                    logger.warning(f"FFmpeg timeout: {cmd[:100]}")
                 elif result.exit_code == 1:
-                    # FFmpeg error code 1 = encoding errors
-                    logger.warning(f"FFmpeg encoding error: {cmd}")
+                    logger.warning(f"FFmpeg encoding error: {cmd[:100]}")
                 return error_msg
             return None
         except asyncio.TimeoutError:
-            return f"Command timed out after {timeout}s: {cmd}"
+            logger.warning(f"Command timeout: {cmd[:100]}")
+            return f"Timed out after {timeout}s"
+        except FileNotFoundError:
+            logger.error(f"FFmpeg binary not found", exc_info=True)
+            return "FFmpeg binary missing in container"
+        except PermissionError:
+            logger.error(f"Permission denied: {cmd[:100]}", exc_info=True)
+            return "Permission denied"
+        except BrokenPipeError:
+            logger.error(f"Pipe broken: {cmd[:100]}", exc_info=True)
+            return "Execution interrupted"
         except Exception as e:
-            logger.error(f"FFmpeg execution failed: {e}", exc_info=True)
-            return f"Execution error: {str(e)}"
-
-    def _build_file_state(
-        self,
-        path: str,
-        *,
-        type_: str = "video",
-        status: str = "ready",
-        local_path: str | None = None,
-        operation: str | None = None,
-    ) -> dict[str, FileData]:
-        now = datetime.utcnow().isoformat()
-        return {
-            path: {
-                "content": [],
-                "created_at": now,
-                "modified_at": now,
-                "type": type_,
-                "status": status,
-                "container_path": path,
-                "local_path": local_path or "",
-                "operation": operation or "",
-            }
-        }
-
-    async def _run_ffmpeg(self, backend: Any, cmd: str) -> str | None:
-        result = await backend.aexecute(cmd)
-        if result.exit_code != 0:
-            return result.output
-        return None
+            logger.error(f"FFmpeg error: {e}", exc_info=True)
+            return str(e)
 
     def _tool_success(
         self,
@@ -236,7 +228,7 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
         )
 
     # -------------------------
-    # 文件状态
+    # 文件状态管理
     # -------------------------
 
     def _build_file_state(
@@ -247,10 +239,11 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
         status: str = "ready",
         local_path: str | None = None,
     ) -> dict[str, FileData]:
+        """Build file state dictionary for state management."""
         now = datetime.utcnow().isoformat()
         return {
             path: {
-                "content": [],  # 可扩展为 hash 或缩略图路径
+                "content": [],
                 "created_at": now,
                 "modified_at": now,
                 "type": type_,
@@ -260,12 +253,27 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             }
         }
 
+    def _generate_tool_name(self, func_name: str) -> str:
+        """Generate clean tool name from function name."""
+        return func_name.replace("async_", "").replace("_", "_")
+
     # -------------------------
     # 文件存在与上传
     # -------------------------
 
-    async def _ensure_file_exists(self, backend, path: str, runtime: ToolRuntime) -> tuple[bool, str | None]:
-        """Check if file exists in container or state, auto-upload if in state."""
+    async def _ensure_file_exists(
+        self, backend: Any, path: str, runtime: ToolRuntime
+    ) -> tuple[bool, str | None]:
+        """Check if file exists in container or state, auto-upload if in state.
+
+        Args:
+            backend: Docker backend
+            path: File path to check
+            runtime: ToolRuntime context
+
+        Returns:
+            Tuple of (exists, error)
+        """
         # Validate path first
         validated_path = self._validate_path(path)
         if not validated_path:
@@ -273,7 +281,7 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
 
         # Check in container filesystem
         try:
-            res = await backend.aexecute(f"test -f {shlex.quote(validated_path)} && echo OK")
+            res = await backend.aexecute(f"test -f {shlex.quote(validated_path)} && echo OK", timeout=10)
             exists = "OK" in res.output
             if exists:
                 logger.debug(f"File exists in container: {validated_path}")
@@ -304,7 +312,8 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
     # -------------------------
 
     def _create_tools(self):
-        return [
+        """Create and return all FFmpeg processing tools."""
+        tools = [
             self._create_video_upload_tool(),
             self._create_video_download_tool(),
             self._create_video_cut_tool(),
@@ -315,13 +324,13 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             self._create_video_add_text_tool(),
             self._create_video_overlay_tool(),
         ]
+        logger.info(f"Initialized {len(tools)} FFmpeg tools")
+        return tools
 
     def _create_video_upload_tool(self):
         tool_description = (
-            "Upload a local file into Docker workspace before FFmpeg processing.\n"
-            "Use this to load local video files for processing.\n"
-            "Always specify an absolute path.\n"
-            "After upload, run FFmpeg tools with the container_path."
+            "Upload local files to Docker container for FFmpeg processing.\n"
+            "Specify absolute paths. Use container_path in subsequent FFmpeg tools.\n"
         )
 
         async def async_video_upload(
@@ -368,7 +377,6 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
                         target_container_path,
                         status="uploaded",
                         local_path=str(source_path),
-                        operation="video_upload",
                     ),
                     last_operation={
                         "action": "video_upload",
@@ -394,14 +402,13 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
 
     def _create_video_download_tool(self):
         tool_description = (
-            "Download processed file from container and return host local path.\n"
-            "Use this to retrieve processed videos after FFmpeg operations.\n"
-            "Check file status first to ensure it's ready for download."
+            "Download processed files from Docker container to host.\n"
+            "Retrieve results after FFmpeg processing completes.\n"
         )
 
         async def async_video_download(
             runtime: ToolRuntime[None, FfmpegState],
-            container_path: Annotated[str, "Processed file path in container workspace."],
+            container_path: Annotated[str, "File path in container"],
         ) -> Command | str:
             backend = self._backend_for_runtime(runtime)
 
@@ -433,7 +440,6 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
                         validated_path,
                         status="downloaded",
                         local_path=local_path,
-                        operation="video_download",
                     ),
                     last_operation={
                         "action": "video_download",
@@ -452,13 +458,11 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             coroutine=async_video_download,
         )
 
-    # 🎬 video_cut
     def _create_video_cut_tool(self):
         tool_description = (
-            "Trim a video precisely with re-encoding.\n"
-            "More accurate than fast cut but slower.\n"
-            "Input: input_path, start (seconds), end (seconds), output_path\n"
-            "Output: trimmed video at output_path"
+            "Trim video by specifying start/end timestamps.\n"
+            "Re-encodes to libx264 for quality.\n"
+            "Parameters: input_path, output_path, start_sec, end_sec\n"
         )
 
         async def async_video_trim(
@@ -519,10 +523,9 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
     # 🎬 video_snapshot
     def _create_video_snapshot_tool(self):
         tool_description = (
-            "Extract a single frame (snapshot) from a video at a specific time.\n"
-            "Useful for thumbnails or preview images.\n"
-            "Input: input_path (video), time_sec (seconds), output_path (image)\n"
-            "Supported formats: .jpg, .png, .jpeg"
+            "Extract a single frame as image (thumbnail).\n"
+            "Parameters: input_path, time_sec, output_path\n"
+            "Auto-generates .jpg if output_path has no extension.\n"
         )
 
         async def async_snapshot(
@@ -576,7 +579,6 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
                 files_update=self._build_file_state(
                     validated_output,
                     type_="snapshot",
-                    operation="video_snapshot",
                 ),
                 last_operation={
                     "action": "video_snapshot",
@@ -596,10 +598,9 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
     
     def _create_video_concat_tool(self):
         tool_description = (
-            "Concatenate multiple video files into one.\n"
-            "All videos must have same codec, resolution, and format.\n"
-            "Input: list of input_paths, output_path\n"
-            "Tip: Use ffmpeg -hide_banner -f concat -safe 0 -i concat_list.txt -c copy out.mp4"
+            "Concatenate multiple videos using copy stream.\n"
+            "Videos must have identical codec/resolution/fps.\n"
+            "Parameters: input_paths (list), output_path\n"
         )
 
         async def async_video_concat(
@@ -674,10 +675,8 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
     
     def _create_video_resize_tool(self):
         tool_description = (
-            "Resize video resolution.\n"
-            "Input: input_path, width, height, output_path\n"
-            "Uses ffmpeg scale filter to resize to exact dimensions.\n"
-            "Preserves aspect ratio if using width= or height= with :2"
+            "Resize video to exact width x height.\n"
+            "Re-encodes to libx264. Parameters: input_path, width, height, output_path\n"
         )
 
         async def async_resize(
@@ -735,10 +734,8 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
     
     def _create_video_crop_tool(self):
         tool_description = (
-            "Crop a region from video.\n"
-            "Input: input_path, x, y, width, height, output_path\n"
-            "Uses ffmpeg crop filter to crop from top-left corner (x, y).\n"
-            "Format: crop=width:height:x:y (note: parameters in reverse order)"
+            "Crop video to specified width x height region.\n"
+            "Crops from top-left at (x, y). Parameters: input_path, output_path, x, y, width, height\n"
         )
 
         async def async_crop(
@@ -798,11 +795,9 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
     def _create_video_add_text_tool(self):
 
         tool_description = (
-            "Overlay text on video.\n"
-            "Input: input_path, text, x, y, output_path\n"
-            "Creates subtitle-like text overlay.\n"
-            "Tip: Use fontfile= for custom fonts, adjust fontsize/fontcolor as needed.\n"
-            "Default font: DejaVu Sans (usually available in FFmpeg)"
+            "Add text overlay to video.\n"
+            "Creates static text at (x, y) position. Escapes single quotes in text.\n"
+            "Parameters: input_path, output_path, text, x, y\n"
         )
 
         async def async_text(
@@ -860,11 +855,9 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
     
     def _create_video_overlay_tool(self):
         tool_description = (
-            "Overlay an image watermark on video.\n"
-            "Input: video_path, image_path, output_path\n"
-            "Creates a video watermark overlay.\n"
-            "Tip: Ensure image resolution is smaller than video for best results.\n"
-            "Default offset: 10px from top-left (adjust overlay=offset_x:offset_y)"
+            "Overlay image watermark on video.\n"
+            "Parameters: video_path, image_path, output_path\n"
+            "Auto-generates .mp4 output with watermark.\n"
         )
 
         async def async_overlay(
@@ -933,9 +926,8 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
             description=tool_description,
             coroutine=async_overlay,
         )
-    # -------------------------
-    # Model Hook
-    # -------------------------
+
+    # =============== System Hooks ===============
 
     def wrap_model_call(self, request: ModelRequest, handler):
         """Wrap model call to add FFmpeg tools to the request."""
