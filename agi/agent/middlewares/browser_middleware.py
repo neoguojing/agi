@@ -497,7 +497,7 @@ Result: Success - Viewport scrolled. Page updated at '{result.url}' with title '
                                 return (
                                     f"""Tool Identity: browser_extract
 Action: Extracted page content via OCR from screenshot at '{screenshot_path}'
-Result: Success - Extracted {len(str(ocr_text).strip())} characters. Content preview available.""",
+Result: Success - {ocr_text}""",
                                 )
                 except Exception as e:
                     logger.debug("OCR extraction failed: %s", e)
