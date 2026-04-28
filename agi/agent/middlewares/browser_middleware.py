@@ -268,7 +268,8 @@ class BrowserMiddleware(AgentMiddleware):
     def _build_action_command(
         self, 
         result: PageInfo, 
-        tool_call_id: str | None = None
+        tool_call_id: str | None = None,
+        runtime: ToolRuntime[None, BrowserMiddlewareState] | None = None
     ) -> Command | str:
         """Build a Command for state update or an error message based on action result."""
         if result.last_action_status == "fail":
@@ -291,7 +292,7 @@ class BrowserMiddleware(AgentMiddleware):
         }
         
         # Create ToolMessage with proper tool_call_id from runtime if not provided
-        actual_tool_call_id = tool_call_id or (getattr(runtime, 'tool_call_id', None) if 'runtime' in locals() else None)
+        actual_tool_call_id = tool_call_id or (runtime.tool_call_id if runtime else "")
         
         return Command(
             update={
@@ -300,7 +301,7 @@ class BrowserMiddleware(AgentMiddleware):
                     ToolMessage(
                         content=f"Updated to {title} - {result.url}",
                         name="browser_action",
-                        tool_call_id=actual_tool_call_id or "",
+                        tool_call_id=actual_tool_call_id,
                     )
                 ],
             }
@@ -321,7 +322,7 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Navigation timed out after waiting for network idle. URL: {url}. The page may be loading slowly or is unreachable."
 
-            return self._build_action_command(result, runtime.tool_call_id)
+            return self._build_action_command(result, runtime.tool_call_id, runtime)
 
         return StructuredTool.from_function(
             name="browser_navigate",
@@ -344,7 +345,7 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Click timed out. Element with selector '{selector}' may not be visible or interactive."
 
-            return self._build_action_command(result, runtime.tool_call_id)
+            return self._build_action_command(result, runtime.tool_call_id, runtime)
 
         return StructuredTool.from_function(
             name="browser_click",
@@ -368,7 +369,7 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Fill timed out. Element with selector '{selector}' may not be editable."
 
-            return self._build_action_command(result, runtime.tool_call_id)
+            return self._build_action_command(result, runtime.tool_call_id, runtime)
 
         return StructuredTool.from_function(
             name="browser_fill",
@@ -392,7 +393,7 @@ class BrowserMiddleware(AgentMiddleware):
             if result.last_action_status == "timeout":
                 return f"Scroll timed out."
 
-            return self._build_action_command(result, runtime.tool_call_id)
+            return self._build_action_command(result, runtime.tool_call_id, runtime)
 
         return StructuredTool.from_function(
             name="browser_scroll",
