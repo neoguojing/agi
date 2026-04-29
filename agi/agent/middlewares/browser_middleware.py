@@ -30,7 +30,7 @@ from agi.web.browser_types import (
     Rect,
     DEFAULT_VIEWPORT,
 )
-from agi.agent.prompt import get_middleware_prompt
+from agi.agent.prompt import get_middleware_prompt, BROWSER_SYSTEM_PROMPT_OPTIMIZED
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +201,7 @@ class BrowserMiddleware(AgentMiddleware):
             self._create_fill_tool(),
             self._create_scroll_tool(),
             self._create_extract_tool(),
-            self._create_extract_ui_tool,
+            self._create_extract_ui_tool(),
             self._create_find_tool(),
             self._create_probe_tool(),
             self._create_status_tool(),
