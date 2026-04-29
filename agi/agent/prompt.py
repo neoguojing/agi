@@ -194,10 +194,39 @@ CONTEXT_SYSTEM_PROMPT: Final[str] = """
 </agent_memory>
 """
 
+PDF_SYSTEM_PROMPT = """## PDF Processing Guidelines
+
+You have access to tools for parsing and processing PDF documents.
+
+### Workflow
+
+1. Always start with `parse_pdf` to initialize pages
+2. For each page:
+   - Use `read_pdf_page` to extract text OR `render_pdf_page` for image
+   - Use `prepare_pdf_page` to prepare content for reasoning
+   - Summarize the page
+   - Use `set_page_summary` to store results
+3. After processing all pages:
+   - Use `export_pdf` to save final output
+
+### Important Rules
+
+- Process pages ONE BY ONE (do not load entire PDF into context)
+- Prefer text extraction first, fallback to image rendering if needed
+- Keep summaries concise but structured
+- Always store results using `set_page_summary` before moving on
+
+### Performance Tips
+
+- Avoid re-processing pages that already have summaries
+- You can process pages in parallel if supported
+"""
+
 MIDDLEWARE_PROMPTS: Final[dict[str, str]] = {
     "browser": BROWSER_SYSTEM_PROMPT_OPTIMIZED,
     "ffmpeg": FFMPEG_SYSTEM_PROMPT_OPTIMIZED,
-    "context": CONTEXT_SYSTEM_PROMPT
+    "context": CONTEXT_SYSTEM_PROMPT,
+    "pdf": PDF_SYSTEM_PROMPT
 }
 
 
