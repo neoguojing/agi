@@ -11,10 +11,12 @@ def get_session_context_id(session_id):
 def get_session_entity_id(session_id):
     return f'{session_id}_entities'
 
-@dataclass
-class Context:
+class Context(BaseModel):
     user_id: str
     conversation_id: str
+
+    def model_dump(self, *args, **kwargs):
+        return super().model_dump(*args, **kwargs)
     
 class UserPersona(BaseModel):
     full_name: Optional[str] = None
