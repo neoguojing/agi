@@ -145,7 +145,7 @@ class PDFMiddleware(AgentMiddleware[PDFState, ContextT, ResponseT]):
             self._create_export_pdf_tool(),
         ]
 
-    def _get_backend(self, runtime) -> BackendProtocol:
+    def _get_backend(self, runtime: ToolRuntime) -> BackendProtocol:
         """Get the resolved backend instance from backend or factory.
 
         Args:
@@ -233,18 +233,41 @@ class PDFMiddleware(AgentMiddleware[PDFState, ContextT, ResponseT]):
 
             updates: dict[str, PDFPageData] = {}
             total = 0
+            pdf_errors: list[str] = []
 
             for f in files:
-                with pdfplumber.open(f) as pdf:
-                    for i, _ in enumerate(pdf.pages):
-                        key = f"{f}#page_{i}"
-                        updates[key] = {
-                            "page": i,
-                            "content": None,
-                            "image_path": None,
-                            "processed": False,
-                        }
-                        total += 1
+                try:
+                    with pdfplumber.open(f) as pdf:
+                        for i, _ in enumerate(pdf.pages):
+                            key = f"{f}#page_{i}"
+                            updates[key] = {
+                                "page": i,
+                                "content": None,
+                                "image_path": None,
+                                "processed": False,
+                            }
+                            total += 1
+                except Exception as e:
+                    key = f"{f}#page_0"
+                    updates[key] = {
+                        "page": 0,
+                        "content": None,
+                        "image_path": None,
+                        "processed": False,
+                        "error": f"Failed to open PDF: {e}",
+                    }
+                    total += 1
+                    pdf_errors.append(f)
+
+            if total == 0:
+                return f"Error: No PDF files found at path: {validated}"
+
+            if pdf_errors:
+                return self._cmd(
+                    runtime,
+                    f"Parsed {len(files)} PDFs, {total} pages (some had errors: {', '.join(pdf_errors)})",
+                    {"pdf_pages": updates},
+                )
 
             return self._cmd(runtime, f"Parsed {len(files)} PDFs, {total} pages", {"pdf_pages": updates})
 
@@ -292,8 +315,17 @@ class PDFMiddleware(AgentMiddleware[PDFState, ContextT, ResponseT]):
             """
             import pdfplumber
 
-            with pdfplumber.open(file_path) as pdf:
-                text = pdf.pages[page].extract_text() or ""
+            try:
+                with pdfplumber.open(file_path) as pdf:
+                    if page >= len(pdf.pages):
+                        return f"Error: Page {page} does not exist in {file_path} (total pages: {len(pdf.pages)})"
+                    text = pdf.pages[page].extract_text() or ""
+            except FileNotFoundError:
+                return f"Error: File not found: {file_path}"
+            except pdfplumber.pdf.PdfReadError as e:
+                return f"Error: Invalid PDF file: {file_path} - {e}"
+            except Exception as e:
+                return f"Error: Failed to read page {page}: {e}"
 
             key = f"{file_path}#page_{page}"
 
@@ -357,14 +389,26 @@ class PDFMiddleware(AgentMiddleware[PDFState, ContextT, ResponseT]):
             """
             import fitz
 
-            doc = fitz.open(file_path)
-            pix = doc[page].get_pixmap()
+            try:
+                doc = fitz.open(file_path)
+                if page >= len(doc):
+                    doc.close()
+                    return f"Error: Page {page} does not exist (total pages: {len(doc)})"
+                pix = doc[page].get_pixmap()
+                doc.close()
+            except FileNotFoundError:
+                return f"Error: File not found: {file_path}"
+            except Exception as e:
+                return f"Error: Failed to render page {page}: {e}"
 
-            out_dir = "/tmp/pdf_images"
-            Path(out_dir).mkdir(exist_ok=True)
+            try:
+                out_dir = "/tmp/pdf_images"
+                Path(out_dir).mkdir(exist_ok=True)
 
-            path = f"{out_dir}/{Path(file_path).name}_{page}.png"
-            pix.save(path)
+                path = f"{out_dir}/{Path(file_path).name}_{page}.png"
+                pix.save(path)
+            except Exception as e:
+                return f"Error: Failed to save image: {e}"
 
             key = f"{file_path}#page_{page}"
 
@@ -470,7 +514,7 @@ class PDFMiddleware(AgentMiddleware[PDFState, ContextT, ResponseT]):
             summary: Annotated[str, "The summary to save for the page."],
             runtime: ToolRuntime[None, PDFState],
         ) -> Command | str:
-            """Save summary for a page.
+            """Save summary for a page and export to file.
 
             Args:
                 key: Key identifying the page (file_path#page_N).
@@ -480,18 +524,46 @@ class PDFMiddleware(AgentMiddleware[PDFState, ContextT, ResponseT]):
             Returns:
                 A Command with the save result.
             """
-            return self._cmd(
-                runtime,
-                f"Saved summary for {key}",
-                {
-                    "pdf_pages": {
-                        key: {
-                            "summary": summary,
-                            "processed": True,
-                        }
-                    }
-                },
-            )
+            pages = runtime.state.get("pdf_pages", {})
+            key = key or ""
+            p = pages.get(key)
+
+            if not p:
+                return f"Error: Page not found: {key}"
+
+            # 更新当前 page 状态
+            p["summary"] = summary
+            p["processed"] = True
+
+            # 导出当前文件的所有 summary 到文件
+            file_path = key.split("#page_")[0]  # 提取原始文件路径
+            output_dir = "/tmp/pdf_summaries"
+            Path(output_dir).mkdir(exist_ok=True)
+
+            # 生成文件名：{文件名}_page_{页码}.txt
+            summary_file = f"{output_dir}/{Path(file_path).name}_page_{p['page']}.txt"
+            text_content = f"# Page {p['page']}\n{summary}\n"
+
+            try:
+                backend = self._get_backend(runtime)
+                res = await backend.awrite(summary_file, text_content)
+
+                if res.error:
+                    return f"Error: Failed to write summary to {summary_file}: {res.error}"
+
+                # 更新 state，让后续的 export_pdf 能找到这个文件
+                # 创建文件到状态映射
+                file_path_key = f"{file_path}#summary_{key}"
+                pages[file_path_key] = {
+                    "summary": summary,
+                    "processed": True,
+                    "summary_file": summary_file,
+                }
+
+                return f"Saved summary for {key} to {summary_file}"
+
+            except Exception as e:
+                return f"Error: {e}"
 
         def sync_set(
             key: Annotated[str, "Key identifying the page (file_path#page_N)."],
@@ -503,7 +575,7 @@ class PDFMiddleware(AgentMiddleware[PDFState, ContextT, ResponseT]):
 
         return StructuredTool.from_function(
             name="set_page_summary",
-            description="Save summary",
+            description="Save summary (also exports to file)",
             func=sync_set,
             coroutine=async_set,
         )
@@ -515,7 +587,7 @@ class PDFMiddleware(AgentMiddleware[PDFState, ContextT, ResponseT]):
     def _create_export_pdf_tool(self) -> BaseTool:
         """Create the export_pdf tool.
 
-        Exports processed page summaries to a text file.
+        Exports all processed PDF summaries to a single text file.
 
         Returns:
             A structured tool for exporting PDF summaries.
@@ -525,7 +597,7 @@ class PDFMiddleware(AgentMiddleware[PDFState, ContextT, ResponseT]):
             output_path: Annotated[str, "Absolute path where the exported text file should be written. Must be absolute, not relative."],
             runtime: ToolRuntime[None, PDFState],
         ) -> Command | str:
-            """Export processed summaries to a text file.
+            """Export all processed summaries to a text file.
 
             Args:
                 output_path: Path where the exported text file should be written.
@@ -536,10 +608,42 @@ class PDFMiddleware(AgentMiddleware[PDFState, ContextT, ResponseT]):
             """
             pages = runtime.state.get("pdf_pages", {})
 
+            # 从 pages 中提取所有已处理的 summary
             lines: list[str] = []
             for k, p in sorted(pages.items()):
-                if "summary" in p and "page" in p:
-                    lines.append(f"# Page {p['page']}\n{p['summary']}\n")
+                if "summary" in p:
+                    # 如果存在 page 字段，添加页码信息
+                    if "page" in p:
+                        lines.append(f"# Page {p['page']}\n{p['summary']}\n")
+                    else:
+                        lines.append(f"# {p['summary']}\n")
+
+            # 如果没有已处理的 summary，尝试从文件读取
+            if not lines:
+                output_dir = "/tmp/pdf_summaries"
+                output_path = Path(output_path)
+
+                # 检查父目录中是否存在 summary 文件
+                parent_dir = output_path.parent
+                if parent_dir.exists():
+                    for summary_file in parent_dir.glob("*.txt"):
+                        try:
+                            with open(summary_file, "r", encoding="utf-8") as f:
+                                content = f.read()
+                                # 更新 pages 状态
+                                state_key = f"{summary_file.stem}#summary_export"
+                                pages[state_key] = {
+                                    "summary": content,
+                                    "processed": True,
+                                    "summary_file": str(summary_file),
+                                }
+                                lines.append(f"\n\n--- Summary from {summary_file} ---\n{content}")
+                        except Exception as e:
+                            lines.append(f"Error reading {summary_file}: {e}")
+                            continue
+
+            if not lines:
+                return "Warning: No processed summaries found. Please call set_page_summary first."
 
             text = "\n".join(lines)
 
@@ -548,6 +652,14 @@ class PDFMiddleware(AgentMiddleware[PDFState, ContextT, ResponseT]):
 
             if res.error:
                 return res.error
+
+            # 更新 output_path 的 summary
+            output_path_key = f"{Path(output_path).name}#export"
+            pages[output_path_key] = {
+                "summary": text,
+                "processed": True,
+                "export_path": str(output_path),
+            }
 
             return self._cmd(runtime, f"Exported to {output_path}", {})
 
@@ -560,7 +672,7 @@ class PDFMiddleware(AgentMiddleware[PDFState, ContextT, ResponseT]):
 
         return StructuredTool.from_function(
             name="export_pdf",
-            description="Export summaries",
+            description="Export all processed summaries to a file",
             func=sync_export,
             coroutine=async_export,
         )
