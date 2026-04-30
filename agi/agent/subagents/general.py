@@ -135,7 +135,7 @@ def make_backend(runtime):
     user_id = runtime.context.user_id
     session_id = runtime.context.conversation_id
     return CompositeBackend(
-        default=StateBackend(runtime),
+        default=FilesystemBackend(root ,virtual_mode=False),
         routes={
             "/memories/": FilesystemBackend(root / user_id,virtual_mode=True),
             "/skills/": FilesystemBackend(root / user_id,virtual_mode=True),

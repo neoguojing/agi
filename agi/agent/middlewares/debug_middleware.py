@@ -2,7 +2,7 @@ import json
 import time
 import traceback
 from typing import Callable, Awaitable, List, Any, Optional, Union, Generator
-from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
+from langchain.agents.middleware.types import AgentMiddleware, ModelRequest, ModelResponse
 from langchain_core.messages import BaseMessage, ToolMessage
 from langgraph.types import Command
 from langchain.tools.tool_node import ToolCallRequest

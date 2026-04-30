@@ -537,9 +537,8 @@ class PDFMiddleware(AgentMiddleware[PDFState, ContextT, ResponseT]):
             pages = runtime.state.get("pdf_pages", {})
 
             lines: list[str] = []
-            for k in sorted(pages.keys()):
-                p = pages[k]
-                if "summary" in p:
+            for k, p in sorted(pages.items()):
+                if "summary" in p and "page" in p:
                     lines.append(f"# Page {p['page']}\n{p['summary']}\n")
 
             text = "\n".join(lines)
