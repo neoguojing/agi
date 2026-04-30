@@ -5,22 +5,7 @@ from .browser_middleware import BrowserMiddleware
 from .ffmpeg_middleware import FfmpegMiddleware
 from .common_middleware import MultimodalBase64Middleware
 from .memory_middleware import MemoryMiddleware
-from .pdf_middleware import (  # PDF 解析工具集
-    PdfParseMiddleware,
-    PdfParseTool,
-    PdfBatchParser,
-    PdfImageExtractor,
-    PdfExportTool,
-    PdfStructuredOutput,
-    parse_pdf,
-    parse_pdf_async,
-    batch_parse_pdfs,
-    batch_parse_pdfs_async,
-    parse_directory,
-    parse_directory_async,
-    export_to_images,
-    export_directory_to_images,
-)
+from .pdf_middleware import PDFMiddleware
 from langchain.chat_models import BaseChatModel
 from deepagents.backends.protocol import BACKEND_TYPES
 from deepagents.middleware.summarization import SummarizationMiddleware
@@ -70,5 +55,6 @@ __all__ = [
            "BrowserMiddleware",
            "FfmpegMiddleware",
            "MultimodalBase64Middleware",
-           "MemoryMiddleware"
+           "MemoryMiddleware",
+           "PDFMiddleware"
 ]

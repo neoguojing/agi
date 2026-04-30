@@ -6,6 +6,7 @@ from agi.agent.models import ModelProvider
 from agi.agent.sandbox.docker import DockerSandbox
 from agi.agent.prompt import get_subagent_prompt
 from agi.agent.middlewares.memory_middleware import MemoryMiddleware
+from agi.agent.middlewares.pdf_middleware import PDFMiddleware
 from pathlib import Path
 from deepagents.backends import CompositeBackend,StateBackend,FilesystemBackend
 from agi.config import CACHE_DIR
@@ -153,4 +154,15 @@ memory_construct_subagent = {
         DebugLLMContextMiddleware(name="memory_construct_subagent")
     ]
 }
+
+pdf_parser_subagent = {
+    "name": "pdf-parser-subagent",
+    "description": "Specialized in pdf content parser.",
+    "system_prompt": '',
+    "middleware": [
+        PDFMiddleware(backend=make_backend),
+        DebugLLMContextMiddleware(name="pdf_parser_subagent")
+    ]
+}
+
 
