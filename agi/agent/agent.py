@@ -114,7 +114,7 @@ class DeepAgentBuilder:
     def __init__(self, name: str = "main"):
         self.name = name
         self.llm = ModelProvider.get_chat_model(provider="ollama", model_name=OLLAMA_DEFAULT_MODE)
-        self.fallback_llm = ModelProvider.get_chat_model(provider="ollama", model_name="qwen3.5:9b")
+        self.fallback_llm = ModelProvider.get_chat_model(provider="ollama", model_name="gemma4:31b-cloud")
         self.embd = ModelProvider.get_embeddings(provider="ollama", model_name="embeddinggemma:latest")
 
         self.system_prompt = ""
@@ -230,7 +230,7 @@ class DeepAgentManager:
             await self._init_async_agent()
         return self._async_agent
 
-    async def get_background_agent(self, config: Optional[Dict],context, interval: int = 60):
+    async def get_background_agent(self, config: Optional[Dict],context, interval: int = 60*15):
         if self._async_backgroud_agent is not None:
             return self._async_backgroud_agent
 
