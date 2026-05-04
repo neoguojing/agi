@@ -86,12 +86,32 @@ class DeepAgentCLI:
         async for part in stream_agent_async(self.state, config=config, context=context, stream_mode=["messages"]):
             # 实时计算已经过去的时间
             current_elapsed = time.time() - start_time
-            print(f"{part}")
-            # --- 1. 处理消息内容与元数据 ---
+            
+            # --- 过滤 lc_source 为 summarization 的消息 ---
             if isinstance(part, dict) and part.get("type") == "messages":
                 data = part.get("data")
                 if data and len(data) > 0:
                     chunk = data[0]
+                    
+                    # 检查是否是 summarization 消息 (通过 additional_kwargs 或嵌套元数据)
+                    is_summarization = False
+                    
+                    # 检查 chunk 的 additional_kwargs 是否有 lc_source
+                    if hasattr(chunk, 'additional_kwargs'):
+                        meta = getattr(chunk.additional_kwargs, 'lc_source', None) or \
+                                getattr(chunk.additional_kwargs, 'get', lambda x: None)(None)
+                        if meta == 'summarization':
+                            is_summarization = True
+                    
+                    # 检查嵌套元数据 (第二个元素可能是元数据字典)
+                    if not is_summarization and isinstance(data, tuple) and len(data) > 1:
+                        nested_meta = data[1]
+                        if isinstance(nested_meta, dict) and nested_meta.get('lc_source') == 'summarization':
+                            is_summarization = True
+                    
+                    # 跳过 summarization 消息
+                    if is_summarization:
+                        continue
                     
                     # 提取正文并处理特殊符号兼容性
                     content = getattr(chunk, "content", "")
@@ -121,7 +141,7 @@ class DeepAgentCLI:
             # --- 3. 实时刷新 UI 界面 ---
             now = time.time()
             if now - last_update_time > update_interval:
-                # 格式化副标题：[时长] 模型 | 节点 | Token统计 | 速度
+                # 格式化副标题：[时长] 模型 | 节点 | Token 统计 | 速度
                 time_display = f"[bold cyan]{current_elapsed:.1f}s[/bold cyan]"
                 speed_display = f"[magenta]{stats_info['tps']:.1f} t/s[/magenta]"
                 
