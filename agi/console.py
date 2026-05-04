@@ -83,10 +83,10 @@ class DeepAgentCLI:
         
         stats_info = {"model": "N/A", "tokens": "In: 0 | Out: 0", "node": "N/A", "tps": 0.0}
 
-        async for part in stream_agent_async(self.state, config=config, context=context, stream_mode=["messages", "updates"]):
+        async for part in stream_agent_async(self.state, config=config, context=context, stream_mode=["messages"]):
             # 实时计算已经过去的时间
             current_elapsed = time.time() - start_time
-            # print(f"{part}")
+            print(f"{part}")
             # --- 1. 处理消息内容与元数据 ---
             if isinstance(part, dict) and part.get("type") == "messages":
                 data = part.get("data")
