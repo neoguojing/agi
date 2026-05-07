@@ -14,11 +14,10 @@ import logging
 import random
 import uuid
 from asyncio import Lock
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from playwright.async_api import (
-    Browser, BrowserContext, Page, Response, TimeoutError as PlaywrightTimeoutError,
+    Browser, BrowserContext, Page, TimeoutError as PlaywrightTimeoutError,
     async_playwright
 )
 from .browser_types import (
@@ -205,7 +204,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         page = await self.ensure_page()
 
         try:
-            response = await page.goto(url, wait_until=wait_until, timeout=self.timeout)
+            await page.goto(url, wait_until=wait_until, timeout=self.timeout)
             await self._smart_wait(page)
 
             # Build success response
@@ -434,19 +433,22 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     }"""
                 )
                 rect = await element.bounding_box() or {"x": 0, "y": 0, "width": 0, "height": 0}
+                tag_name = await element.evaluate("el => el.tagName.toLowerCase()")
+                is_visible = await element.is_visible()
+                is_enabled = await element.is_enabled()
                 results.append(QueryMatch(
                     id=str(uuid.uuid4()),
                     selector=selector,
-                    tag_name=element.tagName,
+                    tag_name=tag_name,
                     text=text,
                     attributes=attributes or {},
                     rect=rect,
-                    is_visible=True,
-                    is_enabled=True
+                    is_visible=is_visible,
+                    is_enabled=is_enabled
                 ))
 
             return results
-        except Exception as exc:
+        except Exception:
             logger.exception("find_elements failed for selector=%s", selector, exc_info=True)
             return []
 
@@ -479,7 +481,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
         try:
             screenshot_path = await self._take_screenshot(page, prefix="screenshot", full_page=full_page)
             return str(screenshot_path)
-        except Exception as exc:
+        except Exception:
             logger.exception("Screenshot failed", exc_info=True)
             raise
 
@@ -556,9 +558,9 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
     async def _extract_ui_from_page(self, page: Page, *, limit: int = 12) -> Dict[str, Any]:
         """Extract navigation-oriented actionable UI elements from a concrete page."""
-        return await page.evaluate(f""" ({{ limit }}) => {{
+        return await page.evaluate(""" ({ limit }) => {
 
-            function getText(el) {{
+            function getText(el) {
                 return (
                     (el.innerText ||
                     el.value ||
@@ -567,31 +569,31 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     el.title ||
                     "")
                 ).trim();
-            }}
+            }
 
-            function isVisible(el) {{
+            function isVisible(el) {
                 const style = window.getComputedStyle(el);
                 return (
                     el.offsetParent !== null &&
                     style.visibility !== "hidden" &&
                     style.display !== "none"
                 );
-            }}
+            }
 
-            function getSelector(el) {{
+            function getSelector(el) {
                 if (el.id) return `#${el.id}`;
                 if (el.name) return `[name="${el.name}"]`;
 
                 const parent = el.parentElement;
-                if (parent) {{
+                if (parent) {
                     const siblings = Array.from(parent.children);
                     const index = siblings.indexOf(el) + 1;
                     return `${el.tagName.toLowerCase()}:nth-child(${index})`;
-                }}
+                }
                 return el.tagName.toLowerCase();
-            }}
+            }
 
-            function getRole(el) {{
+            function getRole(el) {
                 const role = el.getAttribute("role") || "";
                 if (role) return role;
 
@@ -599,23 +601,23 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
                 if (tag === "a") return "link";
                 if (tag === "button") return "button";
-                if (tag === "input") {{
+                if (tag === "input") {
                     if (el.type === "search") return "search";
                     if (el.type === "text") return "input";
-                }}
+                }
 
                 return "";
-            }}
+            }
 
-            function isDisabled(el) {{
+            function isDisabled(el) {
                 return Boolean(
                     el.disabled ||
                     el.getAttribute("aria-disabled") === "true" ||
                     el.getAttribute("aria-busy") === "true"
                 );
-            }}
+            }
 
-            function isSearch(el) {{
+            function isSearch(el) {
                 return (
                     el.tagName === "INPUT" &&
                     (
@@ -623,9 +625,9 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                         (el.placeholder || "").toLowerCase().includes("search")
                     )
                 );
-            }}
+            }
 
-            function isNavLike(el) {{
+            function isNavLike(el) {
                 const tag = el.tagName.toLowerCase();
                 const role = el.getAttribute("role") || "";
 
@@ -636,20 +638,20 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     role.includes("navigation") ||
                     role === "tablist"
                 );
-            }}
+            }
 
-            function isTab(el) {{
+            function isTab(el) {
                 return (
                     el.getAttribute("role") === "tab" ||
                     el.getAttribute("aria-selected") !== null
                 );
-            }}
+            }
 
-            function isLink(el) {{
+            function isLink(el) {
                 return el.tagName === "A" && el.href;
-            }}
+            }
 
-            function isNavButton(el) {{
+            function isNavButton(el) {
                 const txt = getText(el).toLowerCase();
                 return (
                     el.tagName === "BUTTON" &&
@@ -661,13 +663,13 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                         txt.includes("back")
                     )
                 );
-            }}
+            }
 
             // ---- 主逻辑 ----
 
             const all = Array.from(document.querySelectorAll("*"));
 
-            const candidates = all.filter(el => {{
+            const candidates = all.filter(el => {
                 if (!isVisible(el)) return false;
 
                 return (
@@ -677,12 +679,12 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     isNavButton(el) ||
                     isNavLike(el)
                 );
-            }});
+            });
 
-            const raw = candidates.map(el => {{
+            const raw = candidates.map(el => {
                 const rect = el.getBoundingClientRect();
 
-                return {{
+                return {
                     type: el.tagName.toLowerCase(),
                     role: getRole(el),
                     text: getText(el).slice(0, 60),
@@ -694,8 +696,8 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     disabled: isDisabled(el),
                     y: rect.top,
                     area: rect.width * rect.height
-                }};
-            }})
+                };
+            })
             // 过滤垃圾
             .filter(el =>
                 el.selector &&
@@ -706,18 +708,18 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                 )
             )
             // 排序：优先顶部 + 大区域（导航栏）
-            .sort((a, b) => {{
-                if (Math.abs(a.y - b.y) < 50) {{
+            .sort((a, b) => {
+                if (Math.abs(a.y - b.y) < 50) {
                     return b.area - a.area;
-                }}
+                }
                 return a.y - b.y;
-            }})
+            })
             .slice(0, Number(limit) || 12);
 
-            return {{
+            return {
                 title: document.title,
                 url: location.href,
-                elements: raw.map((el, i) => ({{
+                elements: raw.map((el, i) => ({
                     id: i + 1,
                     type: el.type,
                     role: el.role,
@@ -730,19 +732,19 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
                     href: el.href,
                     action: inferAction(el),
                     y: el.y
-                }}))
-            }};
+                }))
+            };
 
             // ---- 行为推断 ----
-            function inferAction(el) {{
+            function inferAction(el) {
                 if (el.role === "search") return "search";
                 if (el.role === "tab") return "switch_tab";
                 if (el.type === "a") return "navigate";
                 if (el.type === "button") return "click";
                 return "interact";
-            }}
+            }
 
-        }}""", {"limit": limit})
+        }""", {"limit": limit})
 
     async def _take_screenshot(self, page: Page, *, prefix: str, full_page: bool = False) -> Path:
         """Take a screenshot and save to storage."""

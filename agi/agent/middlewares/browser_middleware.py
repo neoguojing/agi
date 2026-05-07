@@ -1,7 +1,7 @@
 import base64
 import logging
-from collections.abc import Awaitable, Callable
-from datetime import datetime
+from collections.abc import Awaitable, Callable, Mapping
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Any, NotRequired, Optional
 
@@ -19,18 +19,14 @@ from langchain_core.messages.content import create_image_block
 from langchain_core.tools import BaseTool, StructuredTool
 from langchain.tools.tool_node import ToolCallRequest
 from langgraph.types import Command
-from typing_extensions import TypedDict
-
 from agi.config import BROWSER_STORAGE_PATH
 from agi.utils.common import append_to_system_message
 from agi.web.browser_backend import StatefulBrowserBackend
 from agi.web.browser_types import (
     PageInfo,
-    QueryMatch,
-    Rect,
     DEFAULT_VIEWPORT,
 )
-from agi.agent.prompt import get_middleware_prompt, BROWSER_SYSTEM_PROMPT_OPTIMIZED
+from agi.agent.prompt import get_middleware_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -124,9 +120,9 @@ Key Behavior:
 - Does not navigate, click, or mutate page content.
 
 Returns:
-- Browser open/closed flags
-- Current page summary (URL/title/screenshot path when available)
-- Previous page summary (if available)
+- Browser exists/open flags
+- Current page summary (URL/title/viewport/status/error)
+- No historical page state is retained
 
 Guidelines:
 - Use this when you need to confirm browser state before deciding next action.
@@ -213,8 +209,10 @@ class BrowserMiddleware(AgentMiddleware):
         handler: Callable[[ModelRequest[ContextT]], ModelResponse[ResponseT]],
     ) -> ModelResponse[ResponseT]:
         system_prompt = self._custom_system_prompt or get_middleware_prompt("browser")
-        if system_prompt:
-            request = request.override(system_message=append_to_system_message(request.system_message, system_prompt))
+        browser_state_prompt = self._format_browser_state_prompt(self._extract_request_browser_state(request))
+        combined_prompt = "\n\n".join(part for part in [system_prompt, browser_state_prompt] if part)
+        if combined_prompt:
+            request = request.override(system_message=append_to_system_message(request.system_message, combined_prompt))
         return handler(request)
 
     async def awrap_model_call(
@@ -223,8 +221,10 @@ class BrowserMiddleware(AgentMiddleware):
         handler: Callable[[ModelRequest[ContextT]], Awaitable[ModelResponse[ResponseT]]],
     ) -> ModelResponse[ResponseT]:
         system_prompt = self._custom_system_prompt or get_middleware_prompt("browser")
-        if system_prompt:
-            request = request.override(system_message=append_to_system_message(request.system_message, system_prompt))
+        browser_state_prompt = self._format_browser_state_prompt(self._extract_request_browser_state(request))
+        combined_prompt = "\n\n".join(part for part in [system_prompt, browser_state_prompt] if part)
+        if combined_prompt:
+            request = request.override(system_message=append_to_system_message(request.system_message, combined_prompt))
         return await handler(request)
 
     def wrap_tool_call(
@@ -253,9 +253,15 @@ class BrowserMiddleware(AgentMiddleware):
             configurable = config.get("configurable", {})
             if configurable.get("user_id"):
                 return str(configurable["user_id"])
+        logger.warning("Browser middleware could not resolve user_id; falling back to shared 'default' user")
         return "default"
 
     def _resolve_runtime_key(self, runtime: ToolRuntime[None, BrowserMiddlewareState] | None = None) -> tuple[str, str]:
+        """Resolve the single browser instance key for a user.
+
+        Product semantics are intentionally one browser per user: different
+        tasks from the same user share the same backend and active page.
+        """
         user_id = self._resolve_user_id(runtime)
         return user_id, user_id
 
@@ -273,47 +279,178 @@ class BrowserMiddleware(AgentMiddleware):
         logger.debug("Created new browser backend for user_id=%s", user_id)
         return backend, runtime_key
 
+    def _utc_now(self) -> str:
+        return datetime.now(timezone.utc).isoformat()
+
+    def _extract_request_browser_state(self, request: ModelRequest[ContextT]) -> dict[str, Any] | None:
+        state = getattr(request, "state", None)
+        if isinstance(state, Mapping):
+            browser_state = state.get("browser_session_state")
+            return browser_state if isinstance(browser_state, dict) else None
+        return None
+
+    def _format_browser_state_prompt(self, state: dict[str, Any] | None) -> str:
+        if not state:
+            return (
+                "Current browser state for this user: unknown. "
+                "Call browser_status before assuming a browser instance or active page exists."
+            )
+
+        return (
+            "Current browser state for this user:\n"
+            f"- browser_exists: {bool(state.get('browser_exists'))}\n"
+            f"- browser_open: {bool(state.get('browser_open'))}\n"
+            f"- page_exists: {bool(state.get('page_exists'))}\n"
+            f"- url: {state.get('url') or ''}\n"
+            f"- title: {state.get('title') or ''}\n"
+            f"- last_action_status: {state.get('last_action_status') or 'unknown'}\n"
+            f"- error_message: {state.get('error_message') or ''}\n"
+            "Use browser_status if you need to refresh this state before acting."
+        )
+
+    def _empty_browser_state(
+        self,
+        user_id: str,
+        *,
+        browser_exists: bool = False,
+        browser_open: bool = False,
+        last_action_status: str = "unknown",
+        error_message: str | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "user_id": user_id,
+            "browser_exists": browser_exists,
+            "browser_open": browser_open,
+            "page_exists": False,
+            "url": "",
+            "title": None,
+            "viewport": DEFAULT_VIEWPORT,
+            "is_loading": False,
+            "last_action_status": last_action_status,
+            "error_message": error_message,
+            "updated_at": self._utc_now(),
+        }
+
+    def _state_from_page_info(
+        self,
+        user_id: str,
+        backend: StatefulBrowserBackend,
+        page_info: PageInfo,
+        *,
+        last_action_status: str | None = None,
+        error_message: str | None = None,
+    ) -> dict[str, Any]:
+        status = last_action_status or page_info.last_action_status
+        resolved_error = error_message if error_message is not None else page_info.error_message
+        return {
+            "user_id": user_id,
+            "browser_exists": True,
+            "browser_open": not backend.is_closed,
+            "page_exists": bool(page_info.url),
+            "url": page_info.url,
+            "title": page_info.title,
+            "viewport": page_info.viewport or DEFAULT_VIEWPORT,
+            "is_loading": page_info.is_loading,
+            "last_action_status": status,
+            "error_message": resolved_error,
+            "updated_at": self._utc_now(),
+        }
+
+    async def _state_from_backend(
+        self,
+        user_id: str,
+        backend: StatefulBrowserBackend,
+        *,
+        last_action_status: str | None = None,
+        error_message: str | None = None,
+    ) -> dict[str, Any]:
+        try:
+            page_info = await backend.get_state_snapshot()
+            return self._state_from_page_info(
+                user_id,
+                backend,
+                page_info,
+                last_action_status=last_action_status,
+                error_message=error_message,
+            )
+        except Exception as exc:
+            logger.debug("Failed to build browser state from backend: %s", exc)
+            return self._empty_browser_state(
+                user_id,
+                browser_exists=True,
+                browser_open=False,
+                last_action_status=last_action_status or "fail",
+                error_message=error_message or str(exc),
+            )
+
+    def _tool_command(
+        self,
+        runtime: ToolRuntime[None, BrowserMiddlewareState],
+        *,
+        content: str,
+        state: dict[str, Any],
+        name: str = "browser_action",
+    ) -> Command:
+        tool_message = ToolMessage(content=content, name=name, tool_call_id=runtime.tool_call_id)
+        return Command(update={"browser_session_state": state, "messages": [tool_message]})
+
+    def _truncate_content(self, content: str) -> tuple[str, bool]:
+        if self.content_limit <= 0 or len(content) <= self.content_limit:
+            return content, False
+        return content[: self.content_limit], True
+
     def _create_navigate_tool(self) -> BaseTool:
-        """Create the navigate tool - returns Command with state update on success."""
+        """Create the navigate tool and refresh minimal browser state on every path."""
         async def async_navigate(
             url: Annotated[str, "URL to navigate to in the current browser session."],
             runtime: ToolRuntime[None, BrowserMiddlewareState],
-        ) -> Command | str:
-            backend, runtime_key = self._backend_for_runtime(runtime)
-            
+        ) -> Command:
+            user_id, _ = self._resolve_runtime_key(runtime)
+            backend, _ = self._backend_for_runtime(runtime)
+
             try:
                 result = await backend.navigate(url)
-            except Exception as e:
+            except Exception:
                 logger.exception("navigate failed with exception", exc_info=True)
-                return f"Error navigating to {url}: Unexpected error occurred. Please check if the URL is correct and accessible."
+                error = f"Error navigating to {url}: Unexpected error occurred. Please check if the URL is correct and accessible."
+                state = await self._state_from_backend(user_id, backend, last_action_status="fail", error_message=error)
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_navigate
+Action: Navigated to URL '{url}'
+Result: Error - {error}""",
+                    state=state,
+                )
 
             if result.last_action_status == "fail":
-                return f"Error navigating to {url}: {result.error_message or 'Unknown error'}. Please check if the URL is correct and accessible."
+                error = result.error_message or "Unknown error"
+                state = self._state_from_page_info(user_id, backend, result)
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_navigate
+Action: Navigated to URL '{url}'
+Result: Error - {error}. Please check if the URL is correct and accessible.""",
+                    state=state,
+                )
 
             if result.last_action_status == "timeout":
-                return f"Navigation timed out after waiting for network idle. URL: {url}. The page may be loading slowly or is unreachable."
+                error = f"Navigation timed out after waiting for network idle. URL: {url}. The page may be loading slowly or is unreachable."
+                state = self._state_from_page_info(user_id, backend, result)
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_navigate
+Action: Navigated to URL '{url}'
+Result: Timeout - {error}""",
+                    state=state,
+                )
 
-            # Structured response with clear identity, action, and result
-            tool_message = ToolMessage(
+            state = self._state_from_page_info(user_id, backend, result)
+            return self._tool_command(
+                runtime,
                 content=f"""Tool Identity: browser_navigate
 Action: Navigated to URL '{url}'
 Result: Success - Page loaded at '{result.url}' with title '{result.title}'. Browser session updated.""",
-                name="browser_action",
-                tool_call_id=runtime.tool_call_id,
-            )
-            
-            return Command(
-                update={
-                    "browser_session_state": {
-                        "url": result.url,
-                        "title": result.title,
-                        "viewport": DEFAULT_VIEWPORT,
-                        "is_loading": False,
-                        "last_action_status": "success",
-                        "error_message": None,
-                    },
-                    "messages": [tool_message],
-                }
+                state=state,
             )
 
         return StructuredTool.from_function(
@@ -323,46 +460,57 @@ Result: Success - Page loaded at '{result.url}' with title '{result.title}'. Bro
         )
 
     def _create_click_tool(self) -> BaseTool:
-        """Create the click tool - returns Command with state update on success."""
+        """Create the click tool and refresh minimal browser state on every path."""
         async def async_click(
             selector: Annotated[str, "CSS selector to click on the current page."],
             runtime: ToolRuntime[None, BrowserMiddlewareState],
-        ) -> Command | str:
-            backend, runtime_key = self._backend_for_runtime(runtime)
-            
+        ) -> Command:
+            user_id, _ = self._resolve_runtime_key(runtime)
+            backend, _ = self._backend_for_runtime(runtime)
+
             try:
                 result = await backend.click(selector)
-            except Exception as e:
+            except Exception:
                 logger.exception("click failed with exception", exc_info=True)
-                return f"Error clicking element with selector '{selector}': Unexpected error occurred. The element may not be visible or clickable."
+                error = f"Error clicking element with selector '{selector}': Unexpected error occurred. The element may not be visible or clickable."
+                state = await self._state_from_backend(user_id, backend, last_action_status="fail", error_message=error)
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_click
+Action: Clicked element with CSS selector '{selector}'
+Result: Error - {error}""",
+                    state=state,
+                )
 
             if result.last_action_status == "fail":
-                return f"Error clicking element with selector '{selector}': {result.error_message or 'Unknown error'}. The element may not be visible or clickable."
+                error = result.error_message or "Unknown error"
+                state = self._state_from_page_info(user_id, backend, result)
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_click
+Action: Clicked element with CSS selector '{selector}'
+Result: Error - {error}. The element may not be visible or clickable.""",
+                    state=state,
+                )
 
             if result.last_action_status == "timeout":
-                return f"Click timed out. Element with selector '{selector}' may not be visible or interactive."
+                error = f"Click timed out. Element with selector '{selector}' may not be visible or interactive."
+                state = self._state_from_page_info(user_id, backend, result)
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_click
+Action: Clicked element with CSS selector '{selector}'
+Result: Timeout - {error}""",
+                    state=state,
+                )
 
-            # Structured response with clear identity, action, and result
-            tool_message = ToolMessage(
+            state = self._state_from_page_info(user_id, backend, result)
+            return self._tool_command(
+                runtime,
                 content=f"""Tool Identity: browser_click
 Action: Clicked element with CSS selector '{selector}'
 Result: Success - Page updated at '{result.url}' with title '{result.title}'. DOM state changed.""",
-                name="browser_action",
-                tool_call_id=runtime.tool_call_id,
-            )
-            
-            return Command(
-                update={
-                    "browser_session_state": {
-                        "url": result.url,
-                        "title": result.title,
-                        "viewport": DEFAULT_VIEWPORT,
-                        "is_loading": False,
-                        "last_action_status": "success",
-                        "error_message": None,
-                    },
-                    "messages": [tool_message],
-                }
+                state=state,
             )
 
         return StructuredTool.from_function(
@@ -372,47 +520,58 @@ Result: Success - Page updated at '{result.url}' with title '{result.title}'. DO
         )
 
     def _create_fill_tool(self) -> BaseTool:
-        """Create the fill tool - returns Command with state update on success."""
+        """Create the fill tool and refresh minimal browser state on every path."""
         async def async_fill(
             selector: Annotated[str, "CSS selector for the input field to fill."],
             text: Annotated[str, "Text to enter into the selected field."],
             runtime: ToolRuntime[None, BrowserMiddlewareState],
-        ) -> Command | str:
-            backend, runtime_key = self._backend_for_runtime(runtime)
-            
+        ) -> Command:
+            user_id, _ = self._resolve_runtime_key(runtime)
+            backend, _ = self._backend_for_runtime(runtime)
+
             try:
                 result = await backend.fill(selector, text)
-            except Exception as e:
+            except Exception:
                 logger.exception("fill failed with exception", exc_info=True)
-                return f"Error filling field with selector '{selector}': Unexpected error occurred. The element may not be an input field."
+                error = f"Error filling field with selector '{selector}': Unexpected error occurred. The element may not be an input field."
+                state = await self._state_from_backend(user_id, backend, last_action_status="fail", error_message=error)
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_fill
+Action: Filled input field with CSS selector '{selector}'
+Result: Error - {error}""",
+                    state=state,
+                )
 
             if result.last_action_status == "fail":
-                return f"Error filling field with selector '{selector}': {result.error_message or 'Unknown error'}. The element may not be an input field."
+                error = result.error_message or "Unknown error"
+                state = self._state_from_page_info(user_id, backend, result)
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_fill
+Action: Filled input field with CSS selector '{selector}'
+Result: Error - {error}. The element may not be an input field.""",
+                    state=state,
+                )
 
             if result.last_action_status == "timeout":
-                return f"Fill timed out. Element with selector '{selector}' may not be editable."
+                error = f"Fill timed out. Element with selector '{selector}' may not be editable."
+                state = self._state_from_page_info(user_id, backend, result)
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_fill
+Action: Filled input field with CSS selector '{selector}'
+Result: Timeout - {error}""",
+                    state=state,
+                )
 
-            # Structured response with clear identity, action, and result
-            tool_message = ToolMessage(
+            state = self._state_from_page_info(user_id, backend, result)
+            return self._tool_command(
+                runtime,
                 content=f"""Tool Identity: browser_fill
 Action: Filled input field with CSS selector '{selector}' with text '{text}'
 Result: Success - Field populated. Page updated at '{result.url}' with title '{result.title}'. DOM state changed.""",
-                name="browser_action",
-                tool_call_id=runtime.tool_call_id,
-            )
-            
-            return Command(
-                update={
-                    "browser_session_state": {
-                        "url": result.url,
-                        "title": result.title,
-                        "viewport": DEFAULT_VIEWPORT,
-                        "is_loading": False,
-                        "last_action_status": "success",
-                        "error_message": None,
-                    },
-                    "messages": [tool_message],
-                }
+                state=state,
             )
 
         return StructuredTool.from_function(
@@ -422,48 +581,58 @@ Result: Success - Field populated. Page updated at '{result.url}' with title '{r
         )
 
     def _create_scroll_tool(self) -> BaseTool:
-        """Create the scroll tool - returns Command with state update on success."""
+        """Create the scroll tool and refresh minimal browser state on every path."""
         async def async_scroll(
             direction: Annotated[str, "Scroll direction (up/down/left/right)."],
             distance: Annotated[int, "Scroll distance in pixels."],
             runtime: ToolRuntime[None, BrowserMiddlewareState],
-        ) -> Command | str:
-            backend, runtime_key = self._backend_for_runtime(runtime)
-            
+        ) -> Command:
+            user_id, _ = self._resolve_runtime_key(runtime)
+            backend, _ = self._backend_for_runtime(runtime)
+
             try:
                 result = await backend.scroll(direction, distance)
-            except Exception as e:
+            except Exception:
                 logger.exception("scroll failed with exception", exc_info=True)
-                return f"Error scrolling: Unexpected error occurred."
+                error = "Error scrolling: Unexpected error occurred."
+                state = await self._state_from_backend(user_id, backend, last_action_status="fail", error_message=error)
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_scroll
+Action: Scrolled viewport {direction} by {distance} pixels
+Result: Error - {error}""",
+                    state=state,
+                )
 
             if result.last_action_status == "fail":
-                return f"Error scrolling: {result.error_message or 'Unknown error'}."
+                error = result.error_message or "Unknown error"
+                state = self._state_from_page_info(user_id, backend, result)
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_scroll
+Action: Scrolled viewport {direction} by {distance} pixels
+Result: Error - {error}.""",
+                    state=state,
+                )
 
             if result.last_action_status == "timeout":
-                return f"Scroll timed out."
+                state = self._state_from_page_info(user_id, backend, result)
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_scroll
+Action: Scrolled viewport {direction} by {distance} pixels
+Result: Timeout - Scroll timed out.""",
+                    state=state,
+                )
 
-            # Structured response with clear identity, action, and result
             scroll_direction = "up" if direction.lower() in ["up", "backward"] else "down"
-            tool_message = ToolMessage(
+            state = self._state_from_page_info(user_id, backend, result)
+            return self._tool_command(
+                runtime,
                 content=f"""Tool Identity: browser_scroll
 Action: Scrolled viewport {scroll_direction} by {abs(distance)} pixels
 Result: Success - Viewport scrolled. Page updated at '{result.url}' with title '{result.title}'. DOM state changed.""",
-                name="browser_action",
-                tool_call_id=runtime.tool_call_id,
-            )
-            
-            return Command(
-                update={
-                    "browser_session_state": {
-                        "url": result.url,
-                        "title": result.title,
-                        "viewport": DEFAULT_VIEWPORT,
-                        "is_loading": False,
-                        "last_action_status": "success",
-                        "error_message": None,
-                    },
-                    "messages": [tool_message],
-                }
+                state=state,
             )
 
         return StructuredTool.from_function(
@@ -473,12 +642,25 @@ Result: Success - Viewport scrolled. Page updated at '{result.url}' with title '
         )
 
     def _create_extract_tool(self) -> BaseTool:
-        """Create the extract tool - returns only string (no state update needed)."""
-        async def async_extract(runtime: ToolRuntime[None, BrowserMiddlewareState]) -> str:
-            backend, runtime_key = self._backend_for_runtime(runtime)
-            page = await backend.ensure_page()
+        """Create the extract tool and refresh minimal browser state without storing page content."""
+        async def async_extract(runtime: ToolRuntime[None, BrowserMiddlewareState]) -> Command:
+            user_id, _ = self._resolve_runtime_key(runtime)
+            backend, _ = self._backend_for_runtime(runtime)
 
-            # Try OCR first if enabled
+            try:
+                page = await backend.ensure_page()
+            except Exception:
+                logger.exception("extract failed while ensuring page", exc_info=True)
+                error = "Unable to read page content. No active page is available."
+                state = await self._state_from_backend(user_id, backend, last_action_status="fail", error_message=error)
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_extract
+Action: Attempted to extract page content
+Result: Error - {error}""",
+                    state=state,
+                )
+
             if self.enable_ocr and self.ocr is not None:
                 try:
                     screenshot_path = await backend.get_screenshot()
@@ -494,27 +676,45 @@ Result: Success - Viewport scrolled. Page updated at '{result.url}' with title '
                                 )
                             ])
                             if ocr_text:
-                                return (
-                                    f"""Tool Identity: browser_extract
+                                text, truncated = self._truncate_content(str(ocr_text))
+                                state = await self._state_from_backend(user_id, backend, last_action_status="success")
+                                suffix = "\n[Content truncated]" if truncated else ""
+                                return self._tool_command(
+                                    runtime,
+                                    content=f"""Tool Identity: browser_extract
 Action: Extracted page content via OCR from screenshot at '{screenshot_path}'
-Result: Success - {ocr_text}""",
+Result: Success - {text}{suffix}""",
+                                    state=state,
                                 )
                 except Exception as e:
                     logger.debug("OCR extraction failed: %s", e)
 
-            # Fallback to DOM text extraction
             try:
-                content = await page.content()
-                return (
-                    f"""Tool Identity: browser_extract
+                try:
+                    content = await page.inner_text("body")
+                except Exception:
+                    content = await page.content()
+                text, truncated = self._truncate_content(content)
+                state = await self._state_from_backend(user_id, backend, last_action_status="success")
+                suffix = "\n[Content truncated]" if truncated else ""
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_extract
 Action: Extracted page content from DOM
-Result: Success - Extracted {len(content)} characters. Page URL: '{page.url}'. Content preview available.""",
+Result: Success - Page URL: '{page.url}'. Extracted content:\n{text}{suffix}""",
+                    state=state,
                 )
             except Exception as e:
                 logger.debug("DOM extraction failed: %s", e)
-                return """Tool Identity: browser_extract
+                error = "Unable to read page content. Check if page is loaded and accessible."
+                state = await self._state_from_backend(user_id, backend, last_action_status="fail", error_message=error)
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_extract
 Action: Attempted to extract page content
-Result: Error - Unable to read page content. Check if page is loaded and accessible."""
+Result: Error - {error}""",
+                    state=state,
+                )
 
         return StructuredTool.from_function(
             name="browser_extract",
@@ -523,44 +723,73 @@ Result: Error - Unable to read page content. Check if page is loaded and accessi
         )
 
     def _create_extract_ui_tool(self) -> BaseTool:
-        """Create the extract UI tool - returns full UI structure for LLM planning."""
+        """Create the extract UI tool and refresh minimal browser state without storing UI history."""
         async def async_extract_ui(
             runtime: ToolRuntime[None, BrowserMiddlewareState],
             limit: Annotated[int, "Maximum number of actionable elements to return (1-50)."] = 12,
-        ) -> str:
-            backend, runtime_key = self._backend_for_runtime(runtime)
-            
+        ) -> Command:
+            user_id, _ = self._resolve_runtime_key(runtime)
+            backend, _ = self._backend_for_runtime(runtime)
+
             try:
-                result = await backend.extract_ui(max(1, min(int(limit or 12), 50)))
-            except Exception as e:
-                logger.error("extract_ui failed: %s", e, exc_info=True)
-                return """Tool Identity: browser_extract_ui
+                normalized_limit = max(1, min(int(limit or 12), 50))
+                result = await backend.extract_ui(normalized_limit)
+            except Exception:
+                logger.error("extract_ui failed", exc_info=True)
+                error = "Unable to extract UI elements. Page may be empty or have no interactive elements."
+                state = await self._state_from_backend(user_id, backend, last_action_status="fail", error_message=error)
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_extract_ui
 Action: Attempted to extract UI structure from page
-Result: Error - Unable to extract UI elements. Page may be empty or have no interactive elements."""
+Result: Error - {error}""",
+                    state=state,
+                )
 
-            if not result or len(result) == 0:
-                return """Tool Identity: browser_extract_ui
+            state = await self._state_from_backend(user_id, backend, last_action_status="success")
+            if not result:
+                return self._tool_command(
+                    runtime,
+                    content="""Tool Identity: browser_extract_ui
 Action: Extracted UI structure from page
-Result: No actionable elements found. Page may be empty or have no interactive elements."""
+Result: No actionable elements found. Page may be empty or have no interactive elements.""",
+                    state=state,
+                )
 
             try:
-                # Return full UI structure with all element details for LLM planning
-                # result is a list of QueryMatch objects
-                url = result[0].url if result else ""
-                title = result[0].title if result else ""
-                
-                return (
-                    f"""Tool Identity: browser_extract_ui
-Action: Extracted UI structure from page with limit={limit}
-Result: Success - Found {len(result)} actionable elements. Page URL: '{url}', Title: '{title}'. Elements listed below."""
-                ) + "\n".join([f"- Element {i+1}: selector='{el.selector}', text='{el.text[:50]}...', type='{el.tag_name}'" for i, el in enumerate(result[:10])]) + (
-                    f"\n... and {len(result) - 10} more elements." if len(result) > 10 else ""
+                lines = []
+                for i, el in enumerate(result[:normalized_limit]):
+                    attrs = el.attributes or {}
+                    role = attrs.get("role") or attrs.get("aria-role") or ""
+                    disabled = attrs.get("disabled") or attrs.get("aria-disabled") or (not el.is_enabled)
+                    href = attrs.get("href") or ""
+                    placeholder = attrs.get("placeholder") or ""
+                    lines.append(
+                        f"- Element {i + 1}: selector='{el.selector}', type='{el.tag_name}', "
+                        f"role='{role}', text='{el.text[:80]}', placeholder='{placeholder}', "
+                        f"disabled='{disabled}', href='{href}'"
+                    )
+                return self._tool_command(
+                    runtime,
+                    content=(
+                        f"""Tool Identity: browser_extract_ui
+Action: Extracted UI structure from page with limit={normalized_limit}
+Result: Success - Found {len(result)} actionable elements. Current URL: '{state.get('url')}', Title: '{state.get('title')}'. Elements listed below.\n"""
+                        + "\n".join(lines)
+                    ),
+                    state=state,
                 )
-            except Exception as e:
-                logger.error("Failed to format extract_ui result: %s", e, exc_info=True)
-                return """Tool Identity: browser_extract_ui
+            except Exception:
+                logger.error("Failed to format extract_ui result", exc_info=True)
+                error = "Failed to format extracted elements. Try browser_extract instead."
+                state = await self._state_from_backend(user_id, backend, last_action_status="fail", error_message=error)
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_extract_ui
 Action: Extracted UI structure from page
-Result: Error - Failed to format extracted elements. Try browser_extract instead."""
+Result: Error - {error}""",
+                    state=state,
+                )
 
         return StructuredTool.from_function(
             name="browser_extract_ui",
@@ -569,24 +798,54 @@ Result: Error - Failed to format extracted elements. Try browser_extract instead
         )
 
     def _create_find_tool(self) -> BaseTool:
-        """Create the find tool - returns only string (no state update needed)."""
+        """Create the find tool and refresh minimal browser state without storing matches."""
         async def async_find(
             selector: Annotated[str, "CSS selector to query on the current page."],
             runtime: ToolRuntime[None, BrowserMiddlewareState],
-        ) -> str:
-            backend, runtime_key = self._backend_for_runtime(runtime)
-            matches = await backend.find_elements(selector)
+        ) -> Command:
+            user_id, _ = self._resolve_runtime_key(runtime)
+            backend, _ = self._backend_for_runtime(runtime)
 
-            if not matches:
-                return """Tool Identity: browser_find
+            try:
+                matches = await backend.find_elements(selector)
+            except Exception:
+                logger.exception("find failed with exception", exc_info=True)
+                error = f"Unexpected error occurred while searching for selector '{selector}'."
+                state = await self._state_from_backend(user_id, backend, last_action_status="fail", error_message=error)
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_find
 Action: Searched for elements with CSS selector '{selector}'
-Result: No elements found. Verify the selector is correct or use browser_extract_ui to discover available selectors."""
+Result: Error - {error}""",
+                    state=state,
+                )
 
-            # Rich response with actionable context for LLM
-            return (
-                f"""Tool Identity: browser_find
+            state = await self._state_from_backend(user_id, backend, last_action_status="success")
+            if not matches:
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_find
+Action: Searched for elements with CSS selector '{selector}'
+Result: No elements found. Verify the selector is correct or use browser_extract_ui to discover available selectors.""",
+                    state=state,
+                )
+
+            lines = []
+            for i, match in enumerate(matches):
+                lines.append(
+                    f"- Match {i + 1}: selector='{match.selector}', type='{match.tag_name}', "
+                    f"text='{match.text[:100]}', attributes={match.attributes}, "
+                    f"rect={match.rect}, visible={match.is_visible}, enabled={match.is_enabled}"
+                )
+            return self._tool_command(
+                runtime,
+                content=(
+                    f"""Tool Identity: browser_find
 Action: Found elements matching CSS selector '{selector}'
-Result: Success - Found {len(matches)} elements. Element details include text, attributes, and positions. Use this information to plan click/fill actions or verify element properties."""
+Result: Success - Found {len(matches)} elements. Element details:\n"""
+                    + "\n".join(lines)
+                ),
+                state=state,
             )
 
         return StructuredTool.from_function(
@@ -596,30 +855,57 @@ Result: Success - Found {len(matches)} elements. Element details include text, a
         )
 
     def _create_status_tool(self) -> BaseTool:
-        """Create the status tool - returns only string (no state update needed)."""
-        async def async_status(runtime: ToolRuntime[None, BrowserMiddlewareState]) -> str:
-            backend, runtime_key = self._backend_for_runtime(runtime)
+        """Create the status tool without creating a browser just to inspect state."""
+        async def async_status(runtime: ToolRuntime[None, BrowserMiddlewareState]) -> Command:
+            user_id, runtime_key = self._resolve_runtime_key(runtime)
+            backend = self._session_backends.get(runtime_key)
+
+            if backend is None:
+                state = self._empty_browser_state(user_id)
+                return self._tool_command(
+                    runtime,
+                    content="""Tool Identity: browser_status
+Action: Checked browser session status
+Result: No browser instance exists for this user. Use browser_navigate to create one and load a page.""",
+                    state=state,
+                )
 
             try:
                 page_info = await backend.get_state_snapshot()
-
+                state = self._state_from_page_info(user_id, backend, page_info)
                 if not page_info.url:
-                    return """Tool Identity: browser_status
+                    return self._tool_command(
+                        runtime,
+                        content="""Tool Identity: browser_status
 Action: Checked browser session status
-Result: No active browser session. Please navigate first using browser_navigate."""
+Result: Browser instance exists, but no active page is loaded. Please navigate first using browser_navigate.""",
+                        state=state,
+                    )
 
-                # Rich response with actionable context for LLM
                 title = page_info.title or "N/A"
-                return (
-                    f"""Tool Identity: browser_status
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_status
 Action: Retrieved current browser session status
-Result: Success - Browser is active. Current URL: '{page_info.url}', Title: '{title}'. Ready for interaction."""
+Result: Success - Browser is active. Current URL: '{page_info.url}', Title: '{title}'. Ready for interaction.""",
+                    state=state,
                 )
             except Exception as e:
                 logger.debug("Failed to get browser state snapshot: %s", e)
-                return """Tool Identity: browser_status
+                state = self._empty_browser_state(
+                    user_id,
+                    browser_exists=True,
+                    browser_open=False,
+                    last_action_status="fail",
+                    error_message=str(e),
+                )
+                return self._tool_command(
+                    runtime,
+                    content="""Tool Identity: browser_status
 Action: Checked browser session status
-Result: Error - No active browser session. Please navigate first using browser_navigate."""
+Result: Error - Browser instance exists, but current page state could not be read.""",
+                    state=state,
+                )
 
         return StructuredTool.from_function(
             name="browser_status",
@@ -628,38 +914,57 @@ Result: Error - No active browser session. Please navigate first using browser_n
         )
 
     def _create_probe_tool(self) -> BaseTool:
-        """Create the probe tool - returns only string (no state update needed)."""
+        """Create the probe tool and refresh minimal browser state without storing probe results."""
         async def async_probe(
             selector: Annotated[str, "CSS selector."],
             property_name: Annotated[str, "DOM property/attribute name to inspect."],
             runtime: ToolRuntime[None, BrowserMiddlewareState],
-        ) -> str:
-            backend, runtime_key = self._backend_for_runtime(runtime)
-            
+        ) -> Command:
+            user_id, _ = self._resolve_runtime_key(runtime)
+            backend, _ = self._backend_for_runtime(runtime)
+
             try:
                 result = await backend.inspect_element_property(selector, property_name)
-            except Exception as e:
+            except Exception:
                 logger.exception("probe failed with exception", exc_info=True)
-                return f"""Tool Identity: browser_probe
+                error = "Unexpected error occurred while inspecting element."
+                state = await self._state_from_backend(user_id, backend, last_action_status="fail", error_message=error)
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_probe
 Action: Inspected element property '{property_name}' for selector '{selector}'
-Result: Error - Unexpected error occurred while inspecting element."""
+Result: Error - {error}""",
+                    state=state,
+                )
 
             if result.get("error"):
-                return f"""Tool Identity: browser_probe
+                error = f"{result['error']}. The element may not exist or the property is not accessible."
+                state = await self._state_from_backend(user_id, backend, last_action_status="fail", error_message=error)
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_probe
 Action: Inspected element property '{property_name}' for selector '{selector}'
-Result: Error - {result['error']}. The element may not exist or the property is not accessible."""
+Result: Error - {error}""",
+                    state=state,
+                )
 
             value = result.get("value")
+            state = await self._state_from_backend(user_id, backend, last_action_status="success")
             if value is None:
-                return f"""Tool Identity: browser_probe
+                return self._tool_command(
+                    runtime,
+                    content=f"""Tool Identity: browser_probe
 Action: Inspected element property '{property_name}' for selector '{selector}'
-Result: Property not found. Verify the selector and property name."""
+Result: Property not found. Verify the selector and property name.""",
+                    state=state,
+                )
 
-            # Rich response with actionable context for LLM
-            return (
-                f"""Tool Identity: browser_probe
+            return self._tool_command(
+                runtime,
+                content=f"""Tool Identity: browser_probe
 Action: Inspected element property '{property_name}' for selector '{selector}'
-Result: Success - Property value is '{str(value)}'. Element is accessible. Use this information to determine if element is enabled, disabled, or has specific attributes."""
+Result: Success - Property value is '{str(value)}'. Element is accessible. Use this information to determine if element is enabled, disabled, or has specific attributes.""",
+                state=state,
             )
 
         return StructuredTool.from_function(
