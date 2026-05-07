@@ -15,6 +15,7 @@ import random
 import uuid
 from asyncio import Lock
 from pathlib import Path
+from textwrap import dedent
 from typing import Any, Dict, List, Optional
 from playwright.async_api import (
     Browser, BrowserContext, Page, TimeoutError as PlaywrightTimeoutError,
@@ -30,6 +31,197 @@ from .browser_protocal import AbstractBrowserBackend
 from .browser_state_persister import BrowserStatePersister
 
 logger = logging.getLogger(__name__)
+
+
+EXTRACT_UI_SCRIPT = dedent("""\
+({ limit }) => {
+
+function getText(el) {
+    return (
+        (el.innerText ||
+        el.value ||
+        el.getAttribute("aria-label") ||
+        el.placeholder ||
+        el.title ||
+        "")
+    ).trim();
+}
+
+function isVisible(el) {
+    const style = window.getComputedStyle(el);
+    return (
+        el.offsetParent !== null &&
+        style.visibility !== "hidden" &&
+        style.display !== "none"
+    );
+}
+
+function getSelector(el) {
+    if (el.id) return `#${el.id}`;
+    if (el.name) return `[name="${el.name}"]`;
+
+    const parent = el.parentElement;
+    if (parent) {
+        const siblings = Array.from(parent.children);
+        const index = siblings.indexOf(el) + 1;
+        return `${el.tagName.toLowerCase()}:nth-child(${index})`;
+    }
+    return el.tagName.toLowerCase();
+}
+
+function getRole(el) {
+    const role = el.getAttribute("role") || "";
+    if (role) return role;
+
+    const tag = el.tagName.toLowerCase();
+
+    if (tag === "a") return "link";
+    if (tag === "button") return "button";
+    if (tag === "input") {
+        if (el.type === "search") return "search";
+        if (el.type === "text") return "input";
+    }
+
+    return "";
+}
+
+function isDisabled(el) {
+    return Boolean(
+        el.disabled ||
+        el.getAttribute("aria-disabled") === "true" ||
+        el.getAttribute("aria-busy") === "true"
+    );
+}
+
+function isSearch(el) {
+    return (
+        el.tagName === "INPUT" &&
+        (
+            el.type === "search" ||
+            (el.placeholder || "").toLowerCase().includes("search")
+        )
+    );
+}
+
+function isNavLike(el) {
+    const tag = el.tagName.toLowerCase();
+    const role = el.getAttribute("role") || "";
+
+    return (
+        tag === "nav" ||
+        tag === "aside" ||
+        tag === "header" ||
+        role.includes("navigation") ||
+        role === "tablist"
+    );
+}
+
+function isTab(el) {
+    return (
+        el.getAttribute("role") === "tab" ||
+        el.getAttribute("aria-selected") !== null
+    );
+}
+
+function isLink(el) {
+    return el.tagName === "A" && el.href;
+}
+
+function isNavButton(el) {
+    const txt = getText(el).toLowerCase();
+    return (
+        el.tagName === "BUTTON" &&
+        (
+            txt.includes("login") ||
+            txt.includes("sign") ||
+            txt.includes("menu") ||
+            txt.includes("next") ||
+            txt.includes("back")
+        )
+    );
+}
+
+// ---- 主逻辑 ----
+
+const all = Array.from(document.querySelectorAll("*"));
+
+const candidates = all.filter(el => {
+    if (!isVisible(el)) return false;
+
+    return (
+        isSearch(el) ||
+        isTab(el) ||
+        isLink(el) ||
+        isNavButton(el) ||
+        isNavLike(el)
+    );
+});
+
+const raw = candidates.map(el => {
+    const rect = el.getBoundingClientRect();
+
+    return {
+        type: el.tagName.toLowerCase(),
+        role: getRole(el),
+        text: getText(el).slice(0, 60),
+        ariaLabel: (el.getAttribute("aria-label") || "").slice(0, 60),
+        placeholder: (el.placeholder || "").slice(0, 40),
+        selector: (getSelector(el) || "").slice(0, 80),
+        inputType: (el.type || "").slice(0, 20),
+        href: el.href || "",
+        disabled: isDisabled(el),
+        y: rect.top,
+        area: rect.width * rect.height
+    };
+})
+// 过滤垃圾
+.filter(el =>
+    el.selector &&
+    (
+        el.text.length > 0 ||
+        el.placeholder.length > 0 ||
+        el.href
+    )
+)
+// 排序：优先顶部 + 大区域（导航栏）
+.sort((a, b) => {
+    if (Math.abs(a.y - b.y) < 50) {
+        return b.area - a.area;
+    }
+    return a.y - b.y;
+})
+.slice(0, Number(limit) || 12);
+
+return {
+    title: document.title,
+    url: location.href,
+    elements: raw.map((el, i) => ({
+        id: i + 1,
+        type: el.type,
+        role: el.role,
+        text: el.text,
+        aria_label: el.ariaLabel,
+        placeholder: el.placeholder,
+        selector: el.selector,
+        input_type: el.inputType,
+        disabled: el.disabled,
+        href: el.href,
+        action: inferAction(el),
+        y: el.y
+    }))
+};
+
+// ---- 行为推断 ----
+function inferAction(el) {
+    if (el.role === "search") return "search";
+    if (el.role === "tab") return "switch_tab";
+    if (el.type === "a") return "navigate";
+    if (el.type === "button") return "click";
+    return "interact";
+}
+
+}
+""")
 
 
 class StatefulBrowserBackend(AbstractBrowserBackend):
@@ -558,193 +750,7 @@ class StatefulBrowserBackend(AbstractBrowserBackend):
 
     async def _extract_ui_from_page(self, page: Page, *, limit: int = 12) -> Dict[str, Any]:
         """Extract navigation-oriented actionable UI elements from a concrete page."""
-        return await page.evaluate(""" ({ limit }) => {
-
-            function getText(el) {
-                return (
-                    (el.innerText ||
-                    el.value ||
-                    el.getAttribute("aria-label") ||
-                    el.placeholder ||
-                    el.title ||
-                    "")
-                ).trim();
-            }
-
-            function isVisible(el) {
-                const style = window.getComputedStyle(el);
-                return (
-                    el.offsetParent !== null &&
-                    style.visibility !== "hidden" &&
-                    style.display !== "none"
-                );
-            }
-
-            function getSelector(el) {
-                if (el.id) return `#${el.id}`;
-                if (el.name) return `[name="${el.name}"]`;
-
-                const parent = el.parentElement;
-                if (parent) {
-                    const siblings = Array.from(parent.children);
-                    const index = siblings.indexOf(el) + 1;
-                    return `${el.tagName.toLowerCase()}:nth-child(${index})`;
-                }
-                return el.tagName.toLowerCase();
-            }
-
-            function getRole(el) {
-                const role = el.getAttribute("role") || "";
-                if (role) return role;
-
-                const tag = el.tagName.toLowerCase();
-
-                if (tag === "a") return "link";
-                if (tag === "button") return "button";
-                if (tag === "input") {
-                    if (el.type === "search") return "search";
-                    if (el.type === "text") return "input";
-                }
-
-                return "";
-            }
-
-            function isDisabled(el) {
-                return Boolean(
-                    el.disabled ||
-                    el.getAttribute("aria-disabled") === "true" ||
-                    el.getAttribute("aria-busy") === "true"
-                );
-            }
-
-            function isSearch(el) {
-                return (
-                    el.tagName === "INPUT" &&
-                    (
-                        el.type === "search" ||
-                        (el.placeholder || "").toLowerCase().includes("search")
-                    )
-                );
-            }
-
-            function isNavLike(el) {
-                const tag = el.tagName.toLowerCase();
-                const role = el.getAttribute("role") || "";
-
-                return (
-                    tag === "nav" ||
-                    tag === "aside" ||
-                    tag === "header" ||
-                    role.includes("navigation") ||
-                    role === "tablist"
-                );
-            }
-
-            function isTab(el) {
-                return (
-                    el.getAttribute("role") === "tab" ||
-                    el.getAttribute("aria-selected") !== null
-                );
-            }
-
-            function isLink(el) {
-                return el.tagName === "A" && el.href;
-            }
-
-            function isNavButton(el) {
-                const txt = getText(el).toLowerCase();
-                return (
-                    el.tagName === "BUTTON" &&
-                    (
-                        txt.includes("login") ||
-                        txt.includes("sign") ||
-                        txt.includes("menu") ||
-                        txt.includes("next") ||
-                        txt.includes("back")
-                    )
-                );
-            }
-
-            // ---- 主逻辑 ----
-
-            const all = Array.from(document.querySelectorAll("*"));
-
-            const candidates = all.filter(el => {
-                if (!isVisible(el)) return false;
-
-                return (
-                    isSearch(el) ||
-                    isTab(el) ||
-                    isLink(el) ||
-                    isNavButton(el) ||
-                    isNavLike(el)
-                );
-            });
-
-            const raw = candidates.map(el => {
-                const rect = el.getBoundingClientRect();
-
-                return {
-                    type: el.tagName.toLowerCase(),
-                    role: getRole(el),
-                    text: getText(el).slice(0, 60),
-                    ariaLabel: (el.getAttribute("aria-label") || "").slice(0, 60),
-                    placeholder: (el.placeholder || "").slice(0, 40),
-                    selector: (getSelector(el) || "").slice(0, 80),
-                    inputType: (el.type || "").slice(0, 20),
-                    href: el.href || "",
-                    disabled: isDisabled(el),
-                    y: rect.top,
-                    area: rect.width * rect.height
-                };
-            })
-            // 过滤垃圾
-            .filter(el =>
-                el.selector &&
-                (
-                    el.text.length > 0 ||
-                    el.placeholder.length > 0 ||
-                    el.href
-                )
-            )
-            // 排序：优先顶部 + 大区域（导航栏）
-            .sort((a, b) => {
-                if (Math.abs(a.y - b.y) < 50) {
-                    return b.area - a.area;
-                }
-                return a.y - b.y;
-            })
-            .slice(0, Number(limit) || 12);
-
-            return {
-                title: document.title,
-                url: location.href,
-                elements: raw.map((el, i) => ({
-                    id: i + 1,
-                    type: el.type,
-                    role: el.role,
-                    text: el.text,
-                    aria_label: el.ariaLabel,
-                    placeholder: el.placeholder,
-                    selector: el.selector,
-                    input_type: el.inputType,
-                    disabled: el.disabled,
-                    href: el.href,
-                    action: inferAction(el),
-                    y: el.y
-                }))
-            };
-
-            // ---- 行为推断 ----
-            function inferAction(el) {
-                if (el.role === "search") return "search";
-                if (el.role === "tab") return "switch_tab";
-                if (el.type === "a") return "navigate";
-                if (el.type === "button") return "click";
-                return "interact";
-            }
-
-        }""", {"limit": limit})
+        return await page.evaluate(EXTRACT_UI_SCRIPT, {"limit": limit})
 
     async def _take_screenshot(self, page: Page, *, prefix: str, full_page: bool = False) -> Path:
         """Take a screenshot and save to storage."""

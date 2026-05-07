@@ -399,58 +399,95 @@ class BrowserMiddleware(AgentMiddleware):
             return content, False
         return content[: self.content_limit], True
 
+    async def _run_page_action(
+        self,
+        runtime: ToolRuntime[None, BrowserMiddlewareState],
+        *,
+        tool_name: str,
+        action: str,
+        operation: Callable[[StatefulBrowserBackend], Awaitable[PageInfo]],
+        success_result: Callable[[PageInfo], str],
+        fail_result: Callable[[PageInfo], str],
+        timeout_result: Callable[[PageInfo], str],
+        exception_result: Callable[[Exception], str],
+    ) -> Command:
+        """Run a browser action that returns PageInfo and refresh minimal state.
+
+        This keeps mutate-style tools consistent: every success, failure,
+        timeout, and unexpected exception returns a Command with the current
+        browser_session_state.
+        """
+        user_id, _ = self._resolve_runtime_key(runtime)
+        backend, _ = self._backend_for_runtime(runtime)
+
+        try:
+            page_info = await operation(backend)
+        except Exception as exc:
+            logger.exception("%s failed with exception", tool_name, exc_info=True)
+            result = exception_result(exc)
+            state = await self._state_from_backend(user_id, backend, last_action_status="fail", error_message=result)
+            return self._tool_command(
+                runtime,
+                content=f"""Tool Identity: {tool_name}
+Action: {action}
+Result: Error - {result}""",
+                state=state,
+            )
+
+        state = self._state_from_page_info(user_id, backend, page_info)
+        if page_info.last_action_status == "fail":
+            result = fail_result(page_info)
+            return self._tool_command(
+                runtime,
+                content=f"""Tool Identity: {tool_name}
+Action: {action}
+Result: Error - {result}""",
+                state=state,
+            )
+
+        if page_info.last_action_status == "timeout":
+            result = timeout_result(page_info)
+            return self._tool_command(
+                runtime,
+                content=f"""Tool Identity: {tool_name}
+Action: {action}
+Result: Timeout - {result}""",
+                state=state,
+            )
+
+        return self._tool_command(
+            runtime,
+            content=f"""Tool Identity: {tool_name}
+Action: {action}
+Result: Success - {success_result(page_info)}""",
+            state=state,
+        )
+
     def _create_navigate_tool(self) -> BaseTool:
         """Create the navigate tool and refresh minimal browser state on every path."""
         async def async_navigate(
             url: Annotated[str, "URL to navigate to in the current browser session."],
             runtime: ToolRuntime[None, BrowserMiddlewareState],
         ) -> Command:
-            user_id, _ = self._resolve_runtime_key(runtime)
-            backend, _ = self._backend_for_runtime(runtime)
-
-            try:
-                result = await backend.navigate(url)
-            except Exception:
-                logger.exception("navigate failed with exception", exc_info=True)
-                error = f"Error navigating to {url}: Unexpected error occurred. Please check if the URL is correct and accessible."
-                state = await self._state_from_backend(user_id, backend, last_action_status="fail", error_message=error)
-                return self._tool_command(
-                    runtime,
-                    content=f"""Tool Identity: browser_navigate
-Action: Navigated to URL '{url}'
-Result: Error - {error}""",
-                    state=state,
-                )
-
-            if result.last_action_status == "fail":
-                error = result.error_message or "Unknown error"
-                state = self._state_from_page_info(user_id, backend, result)
-                return self._tool_command(
-                    runtime,
-                    content=f"""Tool Identity: browser_navigate
-Action: Navigated to URL '{url}'
-Result: Error - {error}. Please check if the URL is correct and accessible.""",
-                    state=state,
-                )
-
-            if result.last_action_status == "timeout":
-                error = f"Navigation timed out after waiting for network idle. URL: {url}. The page may be loading slowly or is unreachable."
-                state = self._state_from_page_info(user_id, backend, result)
-                return self._tool_command(
-                    runtime,
-                    content=f"""Tool Identity: browser_navigate
-Action: Navigated to URL '{url}'
-Result: Timeout - {error}""",
-                    state=state,
-                )
-
-            state = self._state_from_page_info(user_id, backend, result)
-            return self._tool_command(
+            return await self._run_page_action(
                 runtime,
-                content=f"""Tool Identity: browser_navigate
-Action: Navigated to URL '{url}'
-Result: Success - Page loaded at '{result.url}' with title '{result.title}'. Browser session updated.""",
-                state=state,
+                tool_name="browser_navigate",
+                action=f"Navigated to URL '{url}'",
+                operation=lambda backend: backend.navigate(url),
+                success_result=lambda page: (
+                    f"Page loaded at '{page.url}' with title '{page.title}'. Browser session updated."
+                ),
+                fail_result=lambda page: (
+                    f"{page.error_message or 'Unknown error'}. Please check if the URL is correct and accessible."
+                ),
+                timeout_result=lambda page: (
+                    f"Navigation timed out after waiting for network idle. URL: {url}. "
+                    "The page may be loading slowly or is unreachable."
+                ),
+                exception_result=lambda exc: (
+                    f"Error navigating to {url}: Unexpected error occurred. "
+                    "Please check if the URL is correct and accessible."
+                ),
             )
 
         return StructuredTool.from_function(
@@ -465,52 +502,24 @@ Result: Success - Page loaded at '{result.url}' with title '{result.title}'. Bro
             selector: Annotated[str, "CSS selector to click on the current page."],
             runtime: ToolRuntime[None, BrowserMiddlewareState],
         ) -> Command:
-            user_id, _ = self._resolve_runtime_key(runtime)
-            backend, _ = self._backend_for_runtime(runtime)
-
-            try:
-                result = await backend.click(selector)
-            except Exception:
-                logger.exception("click failed with exception", exc_info=True)
-                error = f"Error clicking element with selector '{selector}': Unexpected error occurred. The element may not be visible or clickable."
-                state = await self._state_from_backend(user_id, backend, last_action_status="fail", error_message=error)
-                return self._tool_command(
-                    runtime,
-                    content=f"""Tool Identity: browser_click
-Action: Clicked element with CSS selector '{selector}'
-Result: Error - {error}""",
-                    state=state,
-                )
-
-            if result.last_action_status == "fail":
-                error = result.error_message or "Unknown error"
-                state = self._state_from_page_info(user_id, backend, result)
-                return self._tool_command(
-                    runtime,
-                    content=f"""Tool Identity: browser_click
-Action: Clicked element with CSS selector '{selector}'
-Result: Error - {error}. The element may not be visible or clickable.""",
-                    state=state,
-                )
-
-            if result.last_action_status == "timeout":
-                error = f"Click timed out. Element with selector '{selector}' may not be visible or interactive."
-                state = self._state_from_page_info(user_id, backend, result)
-                return self._tool_command(
-                    runtime,
-                    content=f"""Tool Identity: browser_click
-Action: Clicked element with CSS selector '{selector}'
-Result: Timeout - {error}""",
-                    state=state,
-                )
-
-            state = self._state_from_page_info(user_id, backend, result)
-            return self._tool_command(
+            return await self._run_page_action(
                 runtime,
-                content=f"""Tool Identity: browser_click
-Action: Clicked element with CSS selector '{selector}'
-Result: Success - Page updated at '{result.url}' with title '{result.title}'. DOM state changed.""",
-                state=state,
+                tool_name="browser_click",
+                action=f"Clicked element with CSS selector '{selector}'",
+                operation=lambda backend: backend.click(selector),
+                success_result=lambda page: (
+                    f"Page updated at '{page.url}' with title '{page.title}'. DOM state changed."
+                ),
+                fail_result=lambda page: (
+                    f"{page.error_message or 'Unknown error'}. The element may not be visible or clickable."
+                ),
+                timeout_result=lambda page: (
+                    f"Click timed out. Element with selector '{selector}' may not be visible or interactive."
+                ),
+                exception_result=lambda exc: (
+                    f"Error clicking element with selector '{selector}': Unexpected error occurred. "
+                    "The element may not be visible or clickable."
+                ),
             )
 
         return StructuredTool.from_function(
@@ -526,52 +535,24 @@ Result: Success - Page updated at '{result.url}' with title '{result.title}'. DO
             text: Annotated[str, "Text to enter into the selected field."],
             runtime: ToolRuntime[None, BrowserMiddlewareState],
         ) -> Command:
-            user_id, _ = self._resolve_runtime_key(runtime)
-            backend, _ = self._backend_for_runtime(runtime)
-
-            try:
-                result = await backend.fill(selector, text)
-            except Exception:
-                logger.exception("fill failed with exception", exc_info=True)
-                error = f"Error filling field with selector '{selector}': Unexpected error occurred. The element may not be an input field."
-                state = await self._state_from_backend(user_id, backend, last_action_status="fail", error_message=error)
-                return self._tool_command(
-                    runtime,
-                    content=f"""Tool Identity: browser_fill
-Action: Filled input field with CSS selector '{selector}'
-Result: Error - {error}""",
-                    state=state,
-                )
-
-            if result.last_action_status == "fail":
-                error = result.error_message or "Unknown error"
-                state = self._state_from_page_info(user_id, backend, result)
-                return self._tool_command(
-                    runtime,
-                    content=f"""Tool Identity: browser_fill
-Action: Filled input field with CSS selector '{selector}'
-Result: Error - {error}. The element may not be an input field.""",
-                    state=state,
-                )
-
-            if result.last_action_status == "timeout":
-                error = f"Fill timed out. Element with selector '{selector}' may not be editable."
-                state = self._state_from_page_info(user_id, backend, result)
-                return self._tool_command(
-                    runtime,
-                    content=f"""Tool Identity: browser_fill
-Action: Filled input field with CSS selector '{selector}'
-Result: Timeout - {error}""",
-                    state=state,
-                )
-
-            state = self._state_from_page_info(user_id, backend, result)
-            return self._tool_command(
+            return await self._run_page_action(
                 runtime,
-                content=f"""Tool Identity: browser_fill
-Action: Filled input field with CSS selector '{selector}' with text '{text}'
-Result: Success - Field populated. Page updated at '{result.url}' with title '{result.title}'. DOM state changed.""",
-                state=state,
+                tool_name="browser_fill",
+                action=f"Filled input field with CSS selector '{selector}' with text '{text}'",
+                operation=lambda backend: backend.fill(selector, text),
+                success_result=lambda page: (
+                    f"Field populated. Page updated at '{page.url}' with title '{page.title}'. DOM state changed."
+                ),
+                fail_result=lambda page: (
+                    f"{page.error_message or 'Unknown error'}. The element may not be an input field."
+                ),
+                timeout_result=lambda page: (
+                    f"Fill timed out. Element with selector '{selector}' may not be editable."
+                ),
+                exception_result=lambda exc: (
+                    f"Error filling field with selector '{selector}': Unexpected error occurred. "
+                    "The element may not be an input field."
+                ),
             )
 
         return StructuredTool.from_function(
@@ -587,52 +568,18 @@ Result: Success - Field populated. Page updated at '{result.url}' with title '{r
             distance: Annotated[int, "Scroll distance in pixels."],
             runtime: ToolRuntime[None, BrowserMiddlewareState],
         ) -> Command:
-            user_id, _ = self._resolve_runtime_key(runtime)
-            backend, _ = self._backend_for_runtime(runtime)
-
-            try:
-                result = await backend.scroll(direction, distance)
-            except Exception:
-                logger.exception("scroll failed with exception", exc_info=True)
-                error = "Error scrolling: Unexpected error occurred."
-                state = await self._state_from_backend(user_id, backend, last_action_status="fail", error_message=error)
-                return self._tool_command(
-                    runtime,
-                    content=f"""Tool Identity: browser_scroll
-Action: Scrolled viewport {direction} by {distance} pixels
-Result: Error - {error}""",
-                    state=state,
-                )
-
-            if result.last_action_status == "fail":
-                error = result.error_message or "Unknown error"
-                state = self._state_from_page_info(user_id, backend, result)
-                return self._tool_command(
-                    runtime,
-                    content=f"""Tool Identity: browser_scroll
-Action: Scrolled viewport {direction} by {distance} pixels
-Result: Error - {error}.""",
-                    state=state,
-                )
-
-            if result.last_action_status == "timeout":
-                state = self._state_from_page_info(user_id, backend, result)
-                return self._tool_command(
-                    runtime,
-                    content=f"""Tool Identity: browser_scroll
-Action: Scrolled viewport {direction} by {distance} pixels
-Result: Timeout - Scroll timed out.""",
-                    state=state,
-                )
-
             scroll_direction = "up" if direction.lower() in ["up", "backward"] else "down"
-            state = self._state_from_page_info(user_id, backend, result)
-            return self._tool_command(
+            return await self._run_page_action(
                 runtime,
-                content=f"""Tool Identity: browser_scroll
-Action: Scrolled viewport {scroll_direction} by {abs(distance)} pixels
-Result: Success - Viewport scrolled. Page updated at '{result.url}' with title '{result.title}'. DOM state changed.""",
-                state=state,
+                tool_name="browser_scroll",
+                action=f"Scrolled viewport {scroll_direction} by {abs(distance)} pixels",
+                operation=lambda backend: backend.scroll(direction, distance),
+                success_result=lambda page: (
+                    f"Viewport scrolled. Page updated at '{page.url}' with title '{page.title}'. DOM state changed."
+                ),
+                fail_result=lambda page: f"{page.error_message or 'Unknown error'}.",
+                timeout_result=lambda page: "Scroll timed out.",
+                exception_result=lambda exc: "Error scrolling: Unexpected error occurred.",
             )
 
         return StructuredTool.from_function(
