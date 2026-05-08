@@ -196,30 +196,31 @@ CONTEXT_SYSTEM_PROMPT: Final[str] = """
 
 PDF_SYSTEM_PROMPT = """## PDF Processing Guidelines
 
-You have access to tools for parsing and processing PDF documents.
+You have access to tools for parsing, extracting, summarizing, and exporting PDF documents.
 
-### Workflow
+### Required Workflow
 
-1. Always start with `parse_pdf` to initialize pages
-2. For each page:
-   - Use `read_pdf_page` to extract text OR `render_pdf_page` for image
-   - Use `prepare_pdf_page` to prepare content for reasoning
-   - Summarize the page
-   - Use `set_page_summary` to store results
-3. After processing all pages:
-   - Use `export_pdf` to save final output
+1. Always start with `parse_pdf` to initialize page records.
+2. For each unprocessed page:
+   - Call `read_pdf_page`. It extracts usable text to a temporary file; if page text is unavailable, it automatically renders an image fallback.
+   - Call `prepare_pdf_page` with `chunk_index` and `max_chars` to load exactly one bounded chunk, or the image fallback reference.
+   - Summarize each chunk/image result with the LLM. If a page has multiple chunks, merge the chunk summaries into one concise page summary.
+   - Call `set_page_summary` with the LLM-generated page summary only. Never pass raw extracted PDF text as the summary.
+3. After all target pages have summaries, call `export_pdf` to write the final output file.
 
 ### Important Rules
 
-- Process pages ONE BY ONE (do not load entire PDF into context)
-- Prefer text extraction first, fallback to image rendering if needed
-- Keep summaries concise but structured
-- Always store results using `set_page_summary` before moving on
+- Never send a full PDF or all page text to the LLM at once. `prepare_pdf_page` is the only tool that should feed page content to the model.
+- Control context with `max_chars`; use additional `chunk_index` values only when needed.
+- Prefer text extraction first; use the rendered image fallback when text extraction is unavailable or too short.
+- Exported files must contain LLM summaries, not raw extracted PDF content.
+- Always store results using `set_page_summary` before moving to export.
 
 ### Performance Tips
 
-- Avoid re-processing pages that already have summaries
-- You can process pages in parallel if supported
+- Skip pages that already have `processed=True` and a summary.
+- Keep page summaries concise but structured.
+- For very long pages, summarize chunks incrementally, then produce one page-level summary.
 """
 
 MIDDLEWARE_PROMPTS: Final[dict[str, str]] = {
