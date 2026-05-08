@@ -157,7 +157,7 @@ memory_construct_subagent = {
 
 pdf_parser_subagent = {
     "name": "pdf-parser-subagent",
-    "description": "Specialized in pdf content parser.",
+    "description": "Specialized in pdf content parser task.",
     "system_prompt": '',
     "middleware": [
         PDFMiddleware(backend=make_backend),

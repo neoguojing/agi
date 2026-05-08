@@ -50,7 +50,7 @@ MODEL_PATH = get_env("MODEL_PATH", "/data/model")
 OLLAMA_API_BASE_URL = get_env("OLLAMA_API_BASE_URL", "http://localhost:11434")
 # OLLAMA_DEFAULT_MODE = get_env("OLLAMA_DEFAULT_MODE", "qwen3.5:9b")
 OLLAMA_DEFAULT_MODE = get_env("OLLAMA_DEFAULT_MODE", "gemma4:31b-cloud")
-
+OLLAMA_CONTEXT_SIZE = get_env("OLLAMA_CONTEXT_SIZE", 16384)
 
 OLLAMA_THINKING_MODE = get_env("OLLAMA_SMALL_MODE", "qwen3:4b-thinking")
 OPENAI_API_KEY = get_env("OPENAI_API_KEY", "xxx")
