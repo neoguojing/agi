@@ -13,7 +13,8 @@ buildin_agents = [
     browser_subagent,
     web_search_subagent,
     ffmpeg_subagent,
-    pdf_parser_subagent
+    pdf_parser_subagent,
+    stock_analyse_subagent,
 ]
         
 

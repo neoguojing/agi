@@ -43,8 +43,7 @@ def get_context_info():
     
 buildin_tools: List[BaseTool] = [
     get_context_info,
-    get_weather_info,
-    get_stock,
+    get_weather_info
 ]
 
 # 导出清单，方便其他模块调用

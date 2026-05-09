@@ -6,6 +6,7 @@ from .ffmpeg_middleware import FfmpegMiddleware
 from .common_middleware import MultimodalBase64Middleware
 from .memory_middleware import MemoryMiddleware
 from .pdf_middleware import PDFMiddleware
+from .stock_middleware import StockMiddleware
 from langchain.chat_models import BaseChatModel
 from deepagents.backends.protocol import BACKEND_TYPES
 from deepagents.middleware.summarization import SummarizationMiddleware
@@ -56,5 +57,6 @@ __all__ = [
            "FfmpegMiddleware",
            "MultimodalBase64Middleware",
            "MemoryMiddleware",
-           "PDFMiddleware"
+           "PDFMiddleware",
+           "StockMiddleware"
 ]

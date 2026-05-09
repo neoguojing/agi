@@ -1,7 +1,7 @@
 
 from agi.agent.middlewares.debug_middleware import DebugLLMContextMiddleware
 from agi.agent.tools import RemoteImageEditTool,RemoteImageGenTool,RemoteMultiModalTool,RemoteTranscriptionTool,RemoteTTSTool,search_web
-from agi.agent.middlewares import BrowserMiddleware,FfmpegMiddleware
+from agi.agent.middlewares import BrowserMiddleware,FfmpegMiddleware,StockMiddleware
 from agi.agent.models import ModelProvider
 from agi.agent.sandbox.docker import DockerSandbox
 from agi.agent.prompt import get_subagent_prompt
@@ -162,6 +162,16 @@ pdf_parser_subagent = {
     "middleware": [
         PDFMiddleware(backend=make_backend),
         DebugLLMContextMiddleware(name="pdf_parser_subagent")
+    ]
+}
+
+stock_analyse_subagent = {
+    "name": "stock-analyse-subagent",
+    "description": "Specialized in stock market analyse task.",
+    "system_prompt": '',
+    "middleware": [
+        StockMiddleware(backend=make_backend),
+        DebugLLMContextMiddleware(name="stock_analyse_subagent")
     ]
 }
 
