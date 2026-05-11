@@ -1,12 +1,13 @@
 """Middleware for providing stock and finance MCP tools to an agent.
 
-Exposes all MCP tools directly and proactively gathers resource context.
+Dynamically refreshes the tool set from the MCP session before each model call.
 Large content is written to backend files to avoid context bloat.
 Tracks task progress so the LLM can maintain awareness across turns.
 """
 
 import logging
 from collections.abc import Awaitable, Callable
+from contextlib import asynccontextmanager
 from typing import Any, NotRequired
 
 from deepagents.backends.protocol import BackendProtocol
@@ -25,6 +26,7 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.types import Command
 
 from agi.utils.common import append_to_system_message
+from agi.agent.prompt import get_middleware_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -36,22 +38,19 @@ MANAGEMENT_TOOL_NAMES = {
     "activate_category",
 }
 
-AUTO_INVOKED_TOOL_NAMES = {"available_categories"}
-
 INLINE_THRESHOLD = 500
-
-STOCK_SYSTEM_PROMPT = """## Stock & Finance Tools
-
-You have access to stock and finance tools powered by an MCP server.
-All tools are available directly — no activation needed."""
 
 
 class StockMiddlewareState(AgentState):
-    active_tools: NotRequired[list[str]]
     stock_task_progress: NotRequired[dict[str, Any]]
 
 
 class StockMiddleware(AgentMiddleware):
+    """Injects stock/finance MCP tools dynamically per model call.
+
+    Keeps a persistent MCP session so that after the LLM activates tools,
+    the next model call picks them up via ``session.list_tools()``.
+    """
     state_schema = StockMiddlewareState
 
     def __init__(
@@ -69,11 +68,39 @@ class StockMiddleware(AgentMiddleware):
         }
         self._custom_system_prompt = system_prompt
         self._client: MultiServerMCPClient | None = None
-        self._all_tools: list[BaseTool] = []
-        self._tool_map: dict[str, BaseTool] = {}
         self._backend = backend
-        self._context_file_path: str = ""
-        self._progress_file_path: str = ""
+        # Populated lazily on first model call
+        self._session: Any = None
+        self._current_tools: list[BaseTool] = []
+
+    # -- lifecycle -------------------------------------------------------
+
+    async def _ensure_session(self) -> None:
+        """Open the MCP client + persistent session on first use."""
+        if self._session is not None:
+            return
+        self._client = MultiServerMCPClient(self._server_config)
+        # `session()` is an async context manager; we manually enter it
+        # to keep it alive for the middleware's lifetime.
+        server_name = next(iter(self._server_config))
+        session_cm = self._client.session(server_name)
+        self._session = await session_cm.__aenter__()
+        await self._refresh_tools()
+
+    async def _refresh_tools(self) -> None:
+        """Pull the current tool set from the MCP session."""
+        result = await self._session.list_tools()
+        self._current_tools = result.tools
+
+    async def _close_session(self) -> None:
+        if self._session is not None:
+            try:
+                await self._session.__aexit__(None, None, None)
+            except Exception:
+                pass
+            self._session = None
+
+    # -- backend helpers -------------------------------------------------
 
     def _resolve_backend(self, runtime: Any) -> BackendProtocol | None:
         if callable(self._backend):
@@ -98,28 +125,28 @@ class StockMiddleware(AgentMiddleware):
             logger.debug("Failed to write %s: %s", file_path, e)
             return False
 
-    async def _ensure_initialized(self) -> None:
-        if self._client is None:
-            self._client = MultiServerMCPClient(self._server_config)
-            self._all_tools = await self._client.get_tools()
-            self._tool_map = {tool.name: tool for tool in self._all_tools}
+    # -- prompt building -------------------------------------------------
 
-    async def _gather_context(self) -> str:
-        """Proactively invoke discovery tools to gather available tool info."""
-        parts: list[str] = []
-        for tool_name in AUTO_INVOKED_TOOL_NAMES:
-            tool = self._tool_map.get(tool_name)
-            if tool:
-                try:
-                    result = await tool.ainvoke({})
-                    summary = str(result) if result else ""
-                    if summary:
-                        parts.append(f"--- {tool_name} ---\n{summary}")
-                except Exception as e:
-                    logger.debug("Failed to auto-invoke %s: %s", tool_name, e)
-        return "\n\n".join(parts)
+    @staticmethod
+    def _format_tools_list(tools: list[BaseTool]) -> str:
+        if not tools:
+            return ""
+        lines = []
+        for tool in tools:
+            desc = tool.description or ""
+            if desc:
+                lines.append(f"  - **{tool.name}**: {desc}")
+            else:
+                lines.append(f"  - **{tool.name}**")
+        return "\n".join(lines)
 
-    def _get_progress_from_state(self, request: ModelRequest[ContextT]) -> dict[str, Any]:
+    @staticmethod
+    def _is_management(name: str) -> bool:
+        return name in MANAGEMENT_TOOL_NAMES
+
+    def _get_progress_from_state(
+        self, request: ModelRequest[ContextT]
+    ) -> dict[str, Any]:
         state = getattr(request, "state", None)
         if isinstance(state, dict):
             progress = state.get("stock_task_progress", {})
@@ -128,14 +155,12 @@ class StockMiddleware(AgentMiddleware):
         return {}
 
     def _format_progress_inline(self, progress: dict[str, Any]) -> str:
-        """Short progress summary that fits in the prompt."""
         if not progress:
             return ""
         done = progress.get("completed_count", 0)
         total = progress.get("total_steps", 0)
         phase = progress.get("current_phase", "")
         last_tool = progress.get("last_tool", "")
-
         parts = [f"Task progress: {done}/{total} steps completed"]
         if phase:
             parts.append(f"Current phase: {phase}")
@@ -143,35 +168,19 @@ class StockMiddleware(AgentMiddleware):
             parts.append(f"Last tool: {last_tool}")
         return " | ".join(parts)
 
-    def _format_state_prompt(
-        self,
-        request: ModelRequest[ContextT],
-        context_file_path: str,
-        progress_file_path: str,
-    ) -> str:
-        parts = []
+    def _build_state_prompt(self, request: ModelRequest[ContextT]) -> str:
         progress = self._get_progress_from_state(request)
-        inline_progress = self._format_progress_inline(progress)
-        if inline_progress:
-            parts.append(inline_progress)
+        return self._format_progress_inline(progress)
 
-        file_refs: list[str] = []
-        if context_file_path:
-            file_refs.append(f"  - Available tools info: `{context_file_path}`")
-        if progress_file_path:
-            file_refs.append(f"  - Detailed progress: `{progress_file_path}`")
-        if file_refs:
-            parts.append("Refer to these files for details:\n" + "\n".join(file_refs))
-
-        return "\n\n".join(parts)
+    # -- model call hooks ------------------------------------------------
 
     def wrap_model_call(
         self,
         request: ModelRequest[ContextT],
         handler: Callable[[ModelRequest[ContextT]], ModelResponse[ResponseT]],
     ) -> ModelResponse[ResponseT]:
-        if self._all_tools:
-            request = request.override(tools=self._all_tools)
+        if self._current_tools:
+            request = request.override(tools=self._current_tools)
         return handler(request)
 
     async def awrap_model_call(
@@ -179,41 +188,36 @@ class StockMiddleware(AgentMiddleware):
         request: ModelRequest[ContextT],
         handler: Callable[[ModelRequest[ContextT]], Awaitable[ModelResponse[ResponseT]]],
     ) -> ModelResponse[ResponseT]:
-        await self._ensure_initialized()
+        # 1. Open session + refresh tool set (picks up activations)
+        await self._ensure_session()
+        await self._refresh_tools()
 
-        request = request.override(tools=self._all_tools)
+        current = self._current_tools
+        if not current:
+            return await handler(request)
 
-        context_data = await self._gather_context()
-        runtime = getattr(request, "runtime", None)
+        request = request.override(tools=current)
 
-        context_file_path = self._context_file_path
-        progress_file_path = self._progress_file_path
+        # 2. Build prompt with activated tool catalog
+        system_prompt = self._custom_system_prompt or get_middleware_prompt("stock")
+        state_prompt = self._build_state_prompt(request)
 
-        if context_data:
-            if self._has_backend() and len(context_data) > INLINE_THRESHOLD:
-                if self._resolve_backend(runtime):
-                    await self._write_to_backend(
-                        runtime, "/stock_context.txt", context_data
-                    )
-                    context_file_path = "/stock_context.txt"
-            # Small content kept inline — appended below
-
-        system_prompt = self._custom_system_prompt or STOCK_SYSTEM_PROMPT
-        state_prompt = self._format_state_prompt(
-            request, context_file_path, progress_file_path,
-        )
-
-        # Append small context inline when it fits
-        if context_data and len(context_data) <= INLINE_THRESHOLD:
-            state_prompt += "\n\n### Available Tools\n" + context_data
+        activated = [t for t in current if not self._is_management(t.name)]
+        tool_list = self._format_tools_list(activated)
+        if tool_list:
+            state_prompt += "\n\n### Activated Tools\n" + tool_list
 
         combined = "\n\n".join(p for p in [system_prompt, state_prompt] if p)
         if combined:
             request = request.override(
-                system_message=append_to_system_message(request.system_message, combined)
+                system_message=append_to_system_message(
+                    request.system_message, combined
+                )
             )
 
         return await handler(request)
+
+    # -- tool call hooks -------------------------------------------------
 
     def wrap_tool_call(
         self,
@@ -237,8 +241,13 @@ class StockMiddleware(AgentMiddleware):
         progress = self._build_progress_update(tool_name, tool_args, result)
         return self._wrap_result_with_progress(result, progress)
 
+    # -- progress tracking -----------------------------------------------
+
     def _build_progress_update(
-        self, tool_name: str, tool_args: dict[str, Any], result: ToolMessage | Command
+        self,
+        tool_name: str,
+        tool_args: dict[str, Any],
+        result: ToolMessage | Command,
     ) -> dict[str, Any]:
         existing = self._extract_progress_from_result(result)
         completed = existing.get("completed_steps", [])
@@ -279,10 +288,14 @@ class StockMiddleware(AgentMiddleware):
         return ""
 
     def _wrap_result_with_progress(
-        self, result: ToolMessage | Command, *, stock_task_progress: dict[str, Any]
+        self,
+        result: ToolMessage | Command,
+        stock_task_progress: dict[str, Any],
     ) -> Command:
-        if isinstance(result, Command) and result.update:
-            return Command(update={**result.update, "stock_task_progress": stock_task_progress})
+        if isinstance(result, Command):
+            update = dict(result.update) if result.update else {}
+            update["stock_task_progress"] = stock_task_progress
+            return Command(update=update)
         if isinstance(result, ToolMessage):
             return Command(update={
                 "stock_task_progress": stock_task_progress,

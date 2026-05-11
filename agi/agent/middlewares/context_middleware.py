@@ -122,7 +122,7 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         )
 
         # 4. 执行模型调用
-        self._log_debug_info(injected_context_str, len(request.messages))
+        # self._log_debug_info(injected_context_str, len(request.messages))
         response = await handler(request)
         
         return response

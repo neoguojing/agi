@@ -165,12 +165,15 @@ pdf_parser_subagent = {
     ]
 }
 
+stock_middleware = StockMiddleware(backend=make_backend)
+stock_tools = stock_middleware.get_tools()
 stock_analyse_subagent = {
     "name": "stock-analyse-subagent",
     "description": "Specialized in stock market analyse task.",
     "system_prompt": '',
+    "tools": stock_tools,
     "middleware": [
-        StockMiddleware(backend=make_backend),
+        stock_middleware,
         DebugLLMContextMiddleware(name="stock_analyse_subagent")
     ]
 }
