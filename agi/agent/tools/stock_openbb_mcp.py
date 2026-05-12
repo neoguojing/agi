@@ -2,6 +2,7 @@ import asyncio
 import json
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_mcp_adapters.tools import load_mcp_tools
 
 
 class MCPToolDiscoveryDemo:
@@ -40,10 +41,11 @@ class MCPToolDiscoveryDemo:
 
         print("\n正在从 session 获取 tools...\n")
 
-        result = await session.list_tools()
+        # result = await session.list_tools()
 
-        print(f"********************{result}")
-        tools = result.tools
+        # tools = result.tools
+        tools = await load_mcp_tools(session)
+        print(f"********************{tools}")
 
         self.tools = {
             tool.name: tool

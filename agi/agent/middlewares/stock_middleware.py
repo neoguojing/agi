@@ -1,14 +1,28 @@
 """Middleware for providing stock and finance MCP tools to an agent.
 
-Dynamically refreshes the tool set from the MCP session before each model call.
-Large content is written to backend files to avoid context bloat.
-Tracks task progress so the LLM can maintain awareness across turns.
+Each conversation gets an independent MCP session to avoid cross-session
+data leakage.
+
+Features:
+- Fully async-safe
+- Thread-safe / multi-concurrency safe
+- Persistent MCP session per conversation
+- Proper MCP session lifecycle management
+- Progress tracking
+- Dynamic tool injection
 """
 
+from __future__ import annotations
+
+import asyncio
 import logging
+import uuid
 from collections.abc import Awaitable, Callable
-from contextlib import asynccontextmanager
-from typing import Any, NotRequired
+from typing import Any,Annotated
+
+from mcp import ClientSession
+from mcp.client.streamable_http import streamable_http_client
+from typing_extensions import NotRequired
 
 from deepagents.backends.protocol import BackendProtocol
 from langchain.agents.middleware.types import (
@@ -22,11 +36,13 @@ from langchain.agents.middleware.types import (
 from langchain.tools.tool_node import ToolCallRequest
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import BaseTool
+from langchain_mcp_adapters.tools import load_mcp_tools
 from langchain_mcp_adapters.client import MultiServerMCPClient
+
 from langgraph.types import Command
 
-from agi.utils.common import append_to_system_message
 from agi.agent.prompt import get_middleware_prompt
+from agi.utils.common import append_to_system_message
 
 logger = logging.getLogger(__name__)
 
@@ -38,19 +54,54 @@ MANAGEMENT_TOOL_NAMES = {
     "activate_category",
 }
 
-INLINE_THRESHOLD = 500
+def merge_progress(
+    left: dict[str, Any] | None,
+    right: dict[str, Any] | None,
+) -> dict[str, Any]:
+
+    left = left or {}
+    right = right or {}
+
+    completed_left = list(
+        left.get("completed_steps", [])
+    )
+
+    completed_right = list(
+        right.get("completed_steps", [])
+    )
+
+    merged_completed = completed_left.copy()
+
+    for item in completed_right:
+        if item not in merged_completed:
+            merged_completed.append(item)
+
+    return {
+        **left,
+        **right,
+        "completed_steps": merged_completed,
+        "completed_count": len(merged_completed),
+    }
 
 
 class StockMiddlewareState(AgentState):
-    stock_task_progress: NotRequired[dict[str, Any]]
+    """State schema for stock middleware."""
+
+    stock_task_progress:  Annotated[
+        dict[str, Any],
+        merge_progress,
+    ]
 
 
 class StockMiddleware(AgentMiddleware):
-    """Injects stock/finance MCP tools dynamically per model call.
+    """Injects stock/finance MCP tools dynamically.
 
-    Keeps a persistent MCP session so that after the LLM activates tools,
-    the next model call picks them up via ``session.list_tools()``.
+    Design:
+    - One persistent MCP session per conversation
+    - Session survives multiple LLM/tool rounds
+    - Safe for async concurrent workloads
     """
+
     state_schema = StockMiddlewareState
 
     def __init__(
@@ -66,78 +117,150 @@ class StockMiddleware(AgentMiddleware):
                 "url": "http://localhost:8001/mcp",
             }
         }
+
         self._custom_system_prompt = system_prompt
-        self._client: MultiServerMCPClient | None = None
         self._backend = backend
-        # Populated lazily on first model call
-        self._session: Any = None
-        self._current_tools: list[BaseTool] = []
 
-    # -- lifecycle -------------------------------------------------------
+        # async-safe lock
+        self._lock = asyncio.Lock()
 
-    async def _ensure_session(self) -> None:
-        """Open the MCP client + persistent session on first use."""
-        if self._session is not None:
+        # session storage
+        #
+        # {
+        #   session_key: {
+        #       "ctx": async_context_manager,
+        #       "session": actual_session,
+        #   }
+        # }
+        self._sessions: dict[str, dict[str, Any]] = {}
+
+        self.client = MultiServerMCPClient(
+            {
+                "stock": {
+                    "url": "http://localhost:8001/mcp",
+                    "transport": "http",
+                }
+            }
+        )
+
+        self.tools = asyncio.run(
+            self.client.get_tools(server_name="stock")
+        )
+    
+
+    # ------------------------------------------------------------------
+    # session management
+    # ------------------------------------------------------------------
+
+    def _get_session_key(self, runtime: Any) -> str:
+        """Get stable session key.
+
+        Priority:
+        conversation_id > thread_id > session_id > user_id
+        """
+
+        if hasattr(runtime, "context"):
+            ctx = runtime.context
+
+            for field in [
+                "conversation_id",
+                "thread_id",
+                "session_id",
+                "user_id",
+            ]:
+                value = getattr(ctx, field, None)
+                if value:
+                    return str(value)
+
+        return str(uuid.uuid4())
+
+    async def _ensure_session(self, session_key: str) -> None:
+        """Ensure MCP session exists."""
+        async with self._lock:
+            if session_key in self._sessions:
+                return
+
+            server_config = self._server_config.get("stock", {})
+            url = server_config.get("url", "http://localhost:8001/mcp")
+
+            logger.info(
+                "Creating MCP session: session_key=%s url=%s",
+                session_key,
+                url,
+            )
+
+            # async context manager
+            ctx = streamable_http_client(url)
+
+            # actual MCP session
+            read_stream, write_stream, _ = await ctx.__aenter__()
+            session = ClientSession(read_stream, write_stream)
+            await session.initialize()
+
+            self._sessions[session_key] = {
+                "ctx": ctx,
+                "session": session,
+            }
+
+    def _get_session(self, session_key: str) -> Any | None:
+        data = self._sessions.get(session_key)
+        if not data:
+            return None
+        return data["session"]
+
+    async def _close_session(self, session_key: str) -> None:
+        """Close MCP session."""
+
+        async with self._lock:
+            data = self._sessions.pop(session_key, None)
+
+        if not data:
             return
-        self._client = MultiServerMCPClient(self._server_config)
-        # `session()` is an async context manager; we manually enter it
-        # to keep it alive for the middleware's lifetime.
-        server_name = next(iter(self._server_config))
-        session_cm = self._client.session(server_name)
-        self._session = await session_cm.__aenter__()
-        await self._refresh_tools()
 
-    async def _refresh_tools(self) -> None:
-        """Pull the current tool set from the MCP session."""
-        result = await self._session.list_tools()
-        self._current_tools = result.tools
+        logger.info("Closing MCP session: %s", session_key)
 
-    async def _close_session(self) -> None:
-        if self._session is not None:
-            try:
-                await self._session.__aexit__(None, None, None)
-            except Exception:
-                pass
-            self._session = None
+        ctx = data["ctx"]
 
-    # -- backend helpers -------------------------------------------------
-
-    def _resolve_backend(self, runtime: Any) -> BackendProtocol | None:
-        if callable(self._backend):
-            return self._backend(runtime)
-        if self._backend is not None:
-            return self._backend  # type: ignore[return-value]
-        return None
-
-    def _has_backend(self) -> bool:
-        return self._backend is not None
-
-    async def _write_to_backend(
-        self, runtime: Any, file_path: str, content: str
-    ) -> bool:
-        backend = self._resolve_backend(runtime)
-        if backend is None:
-            return False
         try:
-            await backend.awrite(file_path, content)
-            return True
-        except Exception as e:
-            logger.debug("Failed to write %s: %s", file_path, e)
-            return False
+            await ctx.__aexit__(None, None, None)
+        except Exception:
+            logger.exception(
+                "Failed to close MCP session: %s",
+                session_key,
+            )
 
-    # -- prompt building -------------------------------------------------
+    async def cleanup(self) -> None:
+        """Cleanup all sessions."""
+
+        async with self._lock:
+            session_keys = list(self._sessions.keys())
+
+        for session_key in session_keys:
+            await self._close_session(session_key)
+
+    # ------------------------------------------------------------------
+    # tool discovery
+    # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # prompt helpers
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _format_tools_list(tools: list[BaseTool]) -> str:
         if not tools:
             return ""
+
         lines = []
+
         for tool in tools:
             desc = tool.description or ""
+
             if desc:
                 lines.append(f"  - **{tool.name}**: {desc}")
             else:
                 lines.append(f"  - **{tool.name}**")
+
         return "\n".join(lines)
 
     @staticmethod
@@ -145,103 +268,201 @@ class StockMiddleware(AgentMiddleware):
         return name in MANAGEMENT_TOOL_NAMES
 
     def _get_progress_from_state(
-        self, request: ModelRequest[ContextT]
+        self,
+        request: ModelRequest[ContextT],
     ) -> dict[str, Any]:
         state = getattr(request, "state", None)
+
         if isinstance(state, dict):
             progress = state.get("stock_task_progress", {})
+
             if isinstance(progress, dict):
                 return progress
+
         return {}
 
-    def _format_progress_inline(self, progress: dict[str, Any]) -> str:
+    def _format_progress_inline(
+        self,
+        progress: dict[str, Any],
+    ) -> str:
         if not progress:
             return ""
+
         done = progress.get("completed_count", 0)
         total = progress.get("total_steps", 0)
         phase = progress.get("current_phase", "")
         last_tool = progress.get("last_tool", "")
-        parts = [f"Task progress: {done}/{total} steps completed"]
+
+        parts = [f"Task progress: {done}/{total}"]
+
         if phase:
             parts.append(f"Current phase: {phase}")
+
         if last_tool:
             parts.append(f"Last tool: {last_tool}")
+
         return " | ".join(parts)
 
-    def _build_state_prompt(self, request: ModelRequest[ContextT]) -> str:
+    def _build_state_prompt(
+        self,
+        request: ModelRequest[ContextT],
+    ) -> str:
         progress = self._get_progress_from_state(request)
         return self._format_progress_inline(progress)
 
-    # -- model call hooks ------------------------------------------------
+    # ------------------------------------------------------------------
+    # model hooks
+    # ------------------------------------------------------------------
 
     def wrap_model_call(
         self,
         request: ModelRequest[ContextT],
-        handler: Callable[[ModelRequest[ContextT]], ModelResponse[ResponseT]],
+        handler: Callable[
+            [ModelRequest[ContextT]],
+            Awaitable[ModelResponse[ResponseT]],
+        ],
     ) -> ModelResponse[ResponseT]:
-        if self._current_tools:
-            request = request.override(tools=self._current_tools)
-        return handler(request)
+        """Sync execution is not supported."""
+
+        raise RuntimeError(
+            "StockMiddleware only supports async execution. "
+            "Use awrap_model_call()."
+        )
 
     async def awrap_model_call(
         self,
         request: ModelRequest[ContextT],
-        handler: Callable[[ModelRequest[ContextT]], Awaitable[ModelResponse[ResponseT]]],
+        handler: Callable[
+            [ModelRequest[ContextT]],
+            Awaitable[ModelResponse[ResponseT]],
+        ],
     ) -> ModelResponse[ResponseT]:
-        # 1. Open session + refresh tool set (picks up activations)
-        await self._ensure_session()
-        await self._refresh_tools()
+        """Inject MCP tools before model call."""
+        session_key = self._get_session_key(request.runtime)
 
-        current = self._current_tools
-        if not current:
+        await self._ensure_session(session_key)
+
+        session = self._get_session(session_key)
+
+        if session is None:
             return await handler(request)
 
-        request = request.override(tools=current)
-
-        # 2. Build prompt with activated tool catalog
-        system_prompt = self._custom_system_prompt or get_middleware_prompt("stock")
-        state_prompt = self._build_state_prompt(request)
-
-        activated = [t for t in current if not self._is_management(t.name)]
-        tool_list = self._format_tools_list(activated)
-        if tool_list:
-            state_prompt += "\n\n### Activated Tools\n" + tool_list
-
-        combined = "\n\n".join(p for p in [system_prompt, state_prompt] if p)
-        if combined:
-            request = request.override(
-                system_message=append_to_system_message(
-                    request.system_message, combined
+        try:
+            current_tools = await load_mcp_tools(session)
+            print(f"***********************{current_tools}")
+            if current_tools:
+                request = request.override(tools=current_tools)
+                system_prompt = (
+                    self._custom_system_prompt
+                    or get_middleware_prompt("stock")
                 )
+
+                state_prompt = self._build_state_prompt(
+                    request,
+                )
+
+                activated_tools = [
+                    t
+                    for t in current_tools
+                    if not self._is_management(t.name)
+                ]
+
+                tool_list = self._format_tools_list(
+                    activated_tools,
+                )
+
+                if tool_list:
+                    state_prompt += (
+                        "\n\n### Activated Tools\n"
+                        + tool_list
+                    )
+
+                combined_prompt = "\n\n".join(
+                    p
+                    for p in [
+                        system_prompt,
+                        state_prompt,
+                    ]
+                    if p
+                )
+
+                if combined_prompt:
+                    request = request.override(
+                        system_message=append_to_system_message(
+                            request.system_message,
+                            combined_prompt,
+                        )
+                    )
+
+            return await handler(request)
+
+        except Exception:
+            logger.exception(
+                "awrap_model_call failed: session=%s",
+                session_key,
             )
+            raise
 
-        return await handler(request)
-
-    # -- tool call hooks -------------------------------------------------
+    # ------------------------------------------------------------------
+    # tool hooks
+    # ------------------------------------------------------------------
 
     def wrap_tool_call(
         self,
         request: ToolCallRequest,
-        handler: Callable[[ToolCallRequest], ToolMessage | Command],
+        handler: Callable[
+            [ToolCallRequest],
+            ToolMessage | Command,
+        ],
     ) -> ToolMessage | Command:
-        return handler(request)
+        """Sync execution is not supported."""
+
+        raise RuntimeError(
+            "StockMiddleware only supports async execution. "
+            "Use awrap_tool_call()."
+        )
 
     async def awrap_tool_call(
         self,
         request: ToolCallRequest,
-        handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command]],
+        handler: Callable[
+            [ToolCallRequest],
+            Awaitable[ToolMessage | Command],
+        ],
     ) -> ToolMessage | Command:
-        result = await handler(request)
-        tool_name = request.tool_call.get("name", "")
+        """Handle tool call."""
 
-        if tool_name in MANAGEMENT_TOOL_NAMES:
-            return result
+        session_key = self._get_session_key(request.runtime)
 
-        tool_args = request.tool_call.get("args", {})
-        progress = self._build_progress_update(tool_name, tool_args, result)
-        return self._wrap_result_with_progress(result, progress)
+        await self._ensure_session(session_key)
 
-    # -- progress tracking -----------------------------------------------
+        try:
+            result = await handler(request)
+
+            tool_name = request.tool_call["name"]
+            tool_args = request.tool_call.get("args", {})
+
+            progress = self._build_progress_update(
+                tool_name=tool_name,
+                tool_args=tool_args,
+                result=result,
+            )
+
+            return self._wrap_result_with_progress(
+                result=result,
+                stock_task_progress=progress,
+            )
+
+        except Exception:
+            logger.exception(
+                "awrap_tool_call failed: session=%s",
+                session_key,
+            )
+            raise
+
+    # ------------------------------------------------------------------
+    # progress tracking
+    # ------------------------------------------------------------------
 
     def _build_progress_update(
         self,
@@ -249,42 +470,96 @@ class StockMiddleware(AgentMiddleware):
         tool_args: dict[str, Any],
         result: ToolMessage | Command,
     ) -> dict[str, Any]:
-        existing = self._extract_progress_from_result(result)
-        completed = existing.get("completed_steps", [])
-        remaining = existing.get("remaining_steps", [])
-        current_phase = existing.get("current_phase", "")
-        total = existing.get("total_steps", 0)
+        existing = self._extract_progress_from_result(
+            result,
+        )
+
+        completed = existing.get(
+            "completed_steps",
+            [],
+        )
+
+        remaining = existing.get(
+            "remaining_steps",
+            [],
+        )
+
+        current_phase = existing.get(
+            "current_phase",
+            "",
+        )
+
+        total = existing.get(
+            "total_steps",
+            0,
+        )
 
         completed.append(f"{tool_name} called")
+
         return {
             "completed_steps": completed,
             "completed_count": len(completed),
             "remaining_steps": remaining,
-            "total_steps": max(total, len(completed)),
-            "current_phase": current_phase or tool_name,
+            "total_steps": max(
+                total,
+                len(completed),
+            ),
+            "current_phase": (
+                current_phase or tool_name
+            ),
             "last_tool": tool_name,
-            "last_result_summary": self._summary_result(result),
+            "last_tool_args": tool_args,
+            "last_result_summary": self._summary_result(
+                result
+            ),
         }
 
     def _extract_progress_from_result(
-        self, result: ToolMessage | Command
+        self,
+        result: ToolMessage | Command,
     ) -> dict[str, Any]:
-        if isinstance(result, Command) and result.update:
-            progress = result.update.get("stock_task_progress", {})
-            if isinstance(progress, dict):
-                return progress
+        if isinstance(result, Command):
+            if result.update:
+                progress = result.update.get(
+                    "stock_task_progress",
+                    {},
+                )
+
+                if isinstance(progress, dict):
+                    return progress
+
         return {}
 
     @staticmethod
-    def _summary_result(result: ToolMessage | Command) -> str:
+    def _summary_result(
+        result: ToolMessage | Command,
+    ) -> str:
         if isinstance(result, ToolMessage):
-            return (result.content)[:200] if result.content else ""
-        if isinstance(result, Command) and result.update:
-            msgs = result.update.get("messages", [])
-            if msgs:
-                msg = msgs[0]
-                if isinstance(msg, ToolMessage):
-                    return (msg.content)[:200] if msg.content else ""
+            content = result.content
+
+            if isinstance(content, str):
+                return content[:200]
+
+            return str(content)[:200]
+
+        if isinstance(result, Command):
+            if result.update:
+                messages = result.update.get(
+                    "messages",
+                    [],
+                )
+
+                if messages:
+                    msg = messages[0]
+
+                    if isinstance(msg, ToolMessage):
+                        content = msg.content
+
+                        if isinstance(content, str):
+                            return content[:200]
+
+                        return str(content)[:200]
+
         return ""
 
     def _wrap_result_with_progress(
@@ -292,13 +567,35 @@ class StockMiddleware(AgentMiddleware):
         result: ToolMessage | Command,
         stock_task_progress: dict[str, Any],
     ) -> Command:
+        """Merge progress into graph state."""
+
         if isinstance(result, Command):
-            update = dict(result.update) if result.update else {}
-            update["stock_task_progress"] = stock_task_progress
+            update = (
+                dict(result.update)
+                if result.update
+                else {}
+            )
+
+            update["stock_task_progress"] = (
+                stock_task_progress
+            )
+
             return Command(update=update)
+
         if isinstance(result, ToolMessage):
-            return Command(update={
-                "stock_task_progress": stock_task_progress,
-                "messages": [result],
-            })
-        return Command(update={"stock_task_progress": stock_task_progress})
+            return Command(
+                update={
+                    "stock_task_progress": (
+                        stock_task_progress
+                    ),
+                    "messages": [result],
+                }
+            )
+
+        return Command(
+            update={
+                "stock_task_progress": (
+                    stock_task_progress
+                )
+            }
+        )
