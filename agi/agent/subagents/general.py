@@ -174,7 +174,7 @@ stock_analyse_subagent = {
     # "tools": stock_tools,
     "middleware": [
         stock_middleware,
-        DebugLLMContextMiddleware(name="stock_analyse_subagent")
+        # DebugLLMContextMiddleware(name="stock_analyse_subagent")
     ]
 }
 

@@ -124,16 +124,6 @@ class StockMiddleware(AgentMiddleware):
         # async-safe lock
         self._lock = asyncio.Lock()
 
-        # session storage
-        #
-        # {
-        #   session_key: {
-        #       "ctx": async_context_manager,
-        #       "session": actual_session,
-        #   }
-        # }
-        self._sessions: dict[str, dict[str, Any]] = {}
-
         self.client = MultiServerMCPClient(
             {
                 "stock": {
@@ -173,75 +163,6 @@ class StockMiddleware(AgentMiddleware):
                     return str(value)
 
         return str(uuid.uuid4())
-
-    async def _ensure_session(self, session_key: str) -> None:
-        """Ensure MCP session exists."""
-        async with self._lock:
-            if session_key in self._sessions:
-                return
-
-            server_config = self._server_config.get("stock", {})
-            url = server_config.get("url", "http://localhost:8001/mcp")
-
-            logger.info(
-                "Creating MCP session: session_key=%s url=%s",
-                session_key,
-                url,
-            )
-
-            # async context manager
-            ctx = streamable_http_client(url)
-
-            # actual MCP session
-            read_stream, write_stream, _ = await ctx.__aenter__()
-            session = ClientSession(read_stream, write_stream)
-            await session.initialize()
-
-            self._sessions[session_key] = {
-                "ctx": ctx,
-                "session": session,
-            }
-
-    def _get_session(self, session_key: str) -> Any | None:
-        data = self._sessions.get(session_key)
-        if not data:
-            return None
-        return data["session"]
-
-    async def _close_session(self, session_key: str) -> None:
-        """Close MCP session."""
-
-        async with self._lock:
-            data = self._sessions.pop(session_key, None)
-
-        if not data:
-            return
-
-        logger.info("Closing MCP session: %s", session_key)
-
-        ctx = data["ctx"]
-
-        try:
-            await ctx.__aexit__(None, None, None)
-        except Exception:
-            logger.exception(
-                "Failed to close MCP session: %s",
-                session_key,
-            )
-
-    async def cleanup(self) -> None:
-        """Cleanup all sessions."""
-
-        async with self._lock:
-            session_keys = list(self._sessions.keys())
-
-        for session_key in session_keys:
-            await self._close_session(session_key)
-
-    # ------------------------------------------------------------------
-    # tool discovery
-    # ------------------------------------------------------------------
-
     # ------------------------------------------------------------------
     # prompt helpers
     # ------------------------------------------------------------------
@@ -338,69 +259,59 @@ class StockMiddleware(AgentMiddleware):
         ],
     ) -> ModelResponse[ResponseT]:
         """Inject MCP tools before model call."""
-        session_key = self._get_session_key(request.runtime)
-
-        await self._ensure_session(session_key)
-
-        session = self._get_session(session_key)
-
-        if session is None:
-            return await handler(request)
 
         try:
-            current_tools = await load_mcp_tools(session)
-            print(f"***********************{current_tools}")
-            if current_tools:
-                request = request.override(tools=current_tools)
-                system_prompt = (
-                    self._custom_system_prompt
-                    or get_middleware_prompt("stock")
-                )
+            system_prompt = (
+                self._custom_system_prompt
+                or get_middleware_prompt("stock")
+            )
 
-                state_prompt = self._build_state_prompt(
-                    request,
-                )
+            state_prompt = self._build_state_prompt(
+                request,
+            )
 
-                activated_tools = [
-                    t
-                    for t in current_tools
-                    if not self._is_management(t.name)
+            combined_prompt = "\n\n".join(
+                p
+                for p in [
+                    system_prompt,
+                    state_prompt,
                 ]
+                if p
+            )
 
-                tool_list = self._format_tools_list(
-                    activated_tools,
+            if combined_prompt:
+                request = request.override(
+                    system_message=append_to_system_message(
+                        request.system_message,
+                        combined_prompt,
+                    )
                 )
 
-                if tool_list:
-                    state_prompt += (
-                        "\n\n### Activated Tools\n"
-                        + tool_list
-                    )
+            async with self.client.session(server_name="stock") as session:
+                # =================================================
+                # 3. 加载当前可用 tools（admin tools）
+                # =================================================
 
-                combined_prompt = "\n\n".join(
-                    p
-                    for p in [
-                        system_prompt,
-                        state_prompt,
-                    ]
-                    if p
+                # =================================================
+                # 5. 重新获取 tools
+                # =================================================
+                tools = await load_mcp_tools(session)
+
+                tool_map = {
+                    tool.name: tool
+                    for tool in tools
+                }
+
+                logger.info(
+                    "Successfully activated tool: %s",
+                    tool_map,
                 )
-
-                if combined_prompt:
-                    request = request.override(
-                        system_message=append_to_system_message(
-                            request.system_message,
-                            combined_prompt,
-                        )
-                    )
-
-            return await handler(request)
+                request = request.override(tools=tools)
+                return await handler(request)
 
         except Exception:
             logger.exception(
-                "awrap_model_call failed: session=%s",
-                session_key,
-            )
+                "awrap_model_call failed !")
             raise
 
     # ------------------------------------------------------------------
@@ -432,14 +343,93 @@ class StockMiddleware(AgentMiddleware):
     ) -> ToolMessage | Command:
         """Handle tool call."""
 
-        session_key = self._get_session_key(request.runtime)
-
-        await self._ensure_session(session_key)
+        tool_name = request.tool_call["name"]
 
         try:
-            result = await handler(request)
+            # =========================================================
+            # 1. 检查当前 runtime 是否已有 tool
+            # =========================================================
+            runtime_tool_names = {
+                tool.name
+                for tool in self.tools
+            }
 
-            tool_name = request.tool_call["name"]
+            result = None
+            if tool_name not in runtime_tool_names and request.tool is None:
+                logger.info(
+                    "Tool %s not active, activating via MCP",
+                    tool_name,
+                )
+
+                # # =====================================================
+                # # 2. 创建 MCP session
+                # # =====================================================
+                # async with self.client.session(server_name="stock") as session:
+                #     # =================================================
+                #     # 3. 加载当前可用 tools（admin tools）
+                #     # =================================================
+                #     tools = await load_mcp_tools(session)
+
+                #     tool_map = {
+                #         tool.name: tool
+                #         for tool in tools
+                #     }
+
+                #     activate_tool = tool_map.get("activate_tools")
+
+                #     if activate_tool is None:
+                #         raise RuntimeError(
+                #             "activate_tools not found in MCP tools"
+                #         )
+
+                #     # =================================================
+                #     # 4. 激活目标 tool
+                #     # =================================================
+                #     logger.info(
+                #         "Activating tool: %s",
+                #         tool_name,
+                #     )
+
+                #     await activate_tool.ainvoke(
+                #         {
+                #             "tool_names": [tool_name],
+                #         }
+                #     )
+
+                #     # =================================================
+                #     # 5. 重新获取 tools
+                #     # =================================================
+                #     refreshed_tools = await load_mcp_tools(session)
+
+                #     refreshed_tool_map = {
+                #         tool.name: tool
+                #         for tool in refreshed_tools
+                #     }
+
+                #     target_tool = refreshed_tool_map.get(tool_name)
+
+                #     if target_tool is None:
+                #         raise RuntimeError(
+                #             f"Tool '{tool_name}' still not available "
+                #             "after activation"
+                #         )
+
+                #     logger.info(
+                #         "Successfully activated tool: %s",
+                #         tool_name,
+                #     )
+
+                #     # =================================================
+                #     # 6. 仅覆盖当前调用 tool
+                #     # =================================================
+                #     request = request.override(
+                #         tool=target_tool,
+                #     )
+                #     result = await handler(request)
+
+            else:
+                result = await handler(request)
+
             tool_args = request.tool_call.get("args", {})
 
             progress = self._build_progress_update(
@@ -455,8 +445,9 @@ class StockMiddleware(AgentMiddleware):
 
         except Exception:
             logger.exception(
-                "awrap_tool_call failed: session=%s",
-                session_key,
+                "awrap_tool_call failed: "
+                "tool=%s",
+                tool_name
             )
             raise
 
