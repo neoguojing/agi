@@ -35,7 +35,7 @@ from langchain.agents.middleware.types import (
 )
 from langchain.tools.tool_node import ToolCallRequest
 from langchain_core.messages import ToolMessage
-from langchain_core.tools import BaseTool
+from langchain_core.tools import BaseTool, StructuredTool
 from langchain_mcp_adapters.tools import load_mcp_tools
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
@@ -133,10 +133,139 @@ class StockMiddleware(AgentMiddleware):
             }
         )
 
-        self.tools = asyncio.run(
-            self.client.get_tools(server_name="stock")
+        self._session = None
+        self._session_ctx = None
+
+        self.tools = [
+            self._create_available_categories_tool(),
+            self._create_available_tools_tool(),
+            self._create_activate_tools_tool(),
+            self._create_deactivate_tools_tool(),
+            self._create_activate_category_tool(),
+        ]
+
+        # asyncio.run(self.get_session())
+
+
+
+    # ------------------------------------------------------------------
+    # management tools
+    # ------------------------------------------------------------------
+
+    def _create_available_categories_tool(self) -> BaseTool:
+        """Create the available_categories tool."""
+        description = "List available tool categories and subcategories with tool counts."
+
+        async def async_available_categories(
+            runtime: Any,
+        ) -> str:
+            session = await self.get_session()
+            result = await session.call_tool("available_categories", {})
+            return str(result.content)
+
+        def sync_available_categories(runtime: Any) -> str:
+            raise RuntimeError("StockMiddleware only supports async execution.")
+
+        return StructuredTool.from_function(
+            name="available_categories",
+            description=description,
+            func=sync_available_categories,
+            coroutine=async_available_categories,
         )
-    
+
+    def _create_available_tools_tool(self) -> BaseTool:
+        """Create the available_tools tool."""
+        description = "List tools in a specific category and subcategory."
+
+        async def async_available_tools(
+            runtime: Any,
+            category: Annotated[str, "The category of tools to list"],
+            subcategory: Annotated[str | None, "Optional subcategory to filter by. Use 'general' for tools directly under the category."] = None,
+        ) -> str:
+            session = await self.get_session()
+            result = await session.call_tool("available_tools", {"category": category, "subcategory": subcategory})
+            return str(result.content)
+
+        def sync_available_tools(
+            runtime: Any,
+            category: str,
+            subcategory: str | None = None,
+        ) -> str:
+            raise RuntimeError("StockMiddleware only supports async execution.")
+
+        return StructuredTool.from_function(
+            name="available_tools",
+            description=description,
+            func=sync_available_tools,
+            coroutine=async_available_tools,
+        )
+
+    def _create_activate_tools_tool(self) -> BaseTool:
+        """Create the activate_tools tool."""
+        description = "Activate one or more tools for this session."
+
+        async def async_activate_tools(
+            runtime: Any,
+            tool_names: Annotated[list[str], "Names of tools to activate"],
+        ) -> str:
+            session = await self.get_session()
+            result = await session.call_tool("activate_tools", {"tool_names": tool_names})
+            return str(result.content)
+
+        def sync_activate_tools(runtime: Any, tool_names: list[str]) -> str:
+            raise RuntimeError("StockMiddleware only supports async execution.")
+
+        return StructuredTool.from_function(
+            name="activate_tools",
+            description=description,
+            func=sync_activate_tools,
+            coroutine=async_activate_tools,
+        )
+
+    def _create_deactivate_tools_tool(self) -> BaseTool:
+        """Create the deactivate_tools tool."""
+        description = "Deactivate one or more tools for this session."
+
+        async def async_deactivate_tools(
+            runtime: Any,
+            tool_names: Annotated[list[str], "Names of tools to deactivate"],
+        ) -> str:
+            session = await self.get_session()
+            result = await session.call_tool("deactivate_tools", {"tool_names": tool_names})
+            return str(result.content)
+
+        def sync_deactivate_tools(runtime: Any, tool_names: list[str]) -> str:
+            raise RuntimeError("StockMiddleware only supports async execution.")
+
+        return StructuredTool.from_function(
+            name="deactivate_tools",
+            description=description,
+            func=sync_deactivate_tools,
+            coroutine=async_deactivate_tools,
+        )
+
+    def _create_activate_category_tool(self) -> BaseTool:
+        """Create the activate_category tool."""
+        description = "Activate all tools in a category (or subcategory) for this session."
+
+        async def async_activate_category(
+            runtime: Any,
+            category: Annotated[str, "Category name to activate all tools for"],
+            subcategory: Annotated[str | None, "Optional subcategory to narrow activation"] = None,
+        ) -> str:
+            session = await self.get_session()
+            result = await session.call_tool("activate_category", {"category": category, "subcategory": subcategory})
+            return str(result.content)
+
+        def sync_activate_category(runtime: Any, category: str, subcategory: str | None = None) -> str:
+            raise RuntimeError("StockMiddleware only supports async execution.")
+
+        return StructuredTool.from_function(
+            name="activate_category",
+            description=description,
+            func=sync_activate_category,
+            coroutine=async_activate_category,
+        )
 
     # ------------------------------------------------------------------
     # session management
@@ -163,6 +292,26 @@ class StockMiddleware(AgentMiddleware):
                     return str(value)
 
         return str(uuid.uuid4())
+    
+    async def get_session(self):
+
+        async with self._lock:
+
+            if self._session is not None:
+                self.tools = await load_mcp_tools(self._session)
+                return self._session
+
+            # 注意：
+            # 不需要 await
+            self._session_ctx = self.client.session(
+                server_name="stock"
+            )
+
+            # 真正 await 的是 __aenter__
+            self._session = await self._session_ctx.__aenter__()
+
+            self.tools = await load_mcp_tools(self._session)
+            return self._session
     # ------------------------------------------------------------------
     # prompt helpers
     # ------------------------------------------------------------------
@@ -287,33 +436,14 @@ class StockMiddleware(AgentMiddleware):
                     )
                 )
 
-            async with self.client.session(server_name="stock") as session:
-                # =================================================
-                # 3. 加载当前可用 tools（admin tools）
-                # =================================================
-
-                # =================================================
-                # 5. 重新获取 tools
-                # =================================================
-                tools = await load_mcp_tools(session)
-
-                tool_map = {
-                    tool.name: tool
-                    for tool in tools
-                }
-
-                logger.info(
-                    "Successfully activated tool: %s",
-                    tool_map,
-                )
-                request = request.override(tools=tools)
-                return await handler(request)
-
-        except Exception:
+            await self.get_session()
+            request = request.override(tools=self.tools)
+        except Exception as e:
             logger.exception(
-                "awrap_model_call failed !")
-            raise
+                "StockMiddleware.awrap_model_call setup failed: %s", e
+            )
 
+        return await handler(request)
     # ------------------------------------------------------------------
     # tool hooks
     # ------------------------------------------------------------------
@@ -343,98 +473,39 @@ class StockMiddleware(AgentMiddleware):
     ) -> ToolMessage | Command:
         """Handle tool call."""
 
+        logger.info(
+            "*******************\n" +
+            "\n".join(
+                tool.name for tool in self.tools
+            )
+        )
         tool_name = request.tool_call["name"]
+        tool_args = request.tool_call["args"]
+        logger.info(f"tool call :{tool_name},{tool_args}")
 
         try:
-            # =========================================================
-            # 1. 检查当前 runtime 是否已有 tool
-            # =========================================================
-            runtime_tool_names = {
-                tool.name
-                for tool in self.tools
-            }
-
-            result = None
-            if tool_name not in runtime_tool_names and request.tool is None:
-                logger.info(
-                    "Tool %s not active, activating via MCP",
-                    tool_name,
+            if request.tool is None:
+                target_tool = next(
+                    (
+                        tool
+                        for tool in self.tools
+                        if tool.name == tool_name
+                    ),
+                    None
                 )
+                request = request.override(tool=target_tool)
 
-                # # =====================================================
-                # # 2. 创建 MCP session
-                # # =====================================================
-                # async with self.client.session(server_name="stock") as session:
-                #     # =================================================
-                #     # 3. 加载当前可用 tools（admin tools）
-                #     # =================================================
-                #     tools = await load_mcp_tools(session)
+            
+            result = await handler(request)
+            
 
-                #     tool_map = {
-                #         tool.name: tool
-                #         for tool in tools
-                #     }
+            logger.info(f"tool result :{result}")
 
-                #     activate_tool = tool_map.get("activate_tools")
-
-                #     if activate_tool is None:
-                #         raise RuntimeError(
-                #             "activate_tools not found in MCP tools"
-                #         )
-
-                #     # =================================================
-                #     # 4. 激活目标 tool
-                #     # =================================================
-                #     logger.info(
-                #         "Activating tool: %s",
-                #         tool_name,
-                #     )
-
-                #     await activate_tool.ainvoke(
-                #         {
-                #             "tool_names": [tool_name],
-                #         }
-                #     )
-
-                #     # =================================================
-                #     # 5. 重新获取 tools
-                #     # =================================================
-                #     refreshed_tools = await load_mcp_tools(session)
-
-                #     refreshed_tool_map = {
-                #         tool.name: tool
-                #         for tool in refreshed_tools
-                #     }
-
-                #     target_tool = refreshed_tool_map.get(tool_name)
-
-                #     if target_tool is None:
-                #         raise RuntimeError(
-                #             f"Tool '{tool_name}' still not available "
-                #             "after activation"
-                #         )
-
-                #     logger.info(
-                #         "Successfully activated tool: %s",
-                #         tool_name,
-                #     )
-
-                #     # =================================================
-                #     # 6. 仅覆盖当前调用 tool
-                #     # =================================================
-                #     request = request.override(
-                #         tool=target_tool,
-                #     )
-                #     result = await handler(request)
-
-            else:
-                result = await handler(request)
-
-            tool_args = request.tool_call.get("args", {})
+            tool_args_current = request.tool_call.get("args", {})
 
             progress = self._build_progress_update(
                 tool_name=tool_name,
-                tool_args=tool_args,
+                tool_args=tool_args_current,
                 result=result,
             )
 
@@ -443,13 +514,13 @@ class StockMiddleware(AgentMiddleware):
                 stock_task_progress=progress,
             )
 
-        except Exception:
-            logger.exception(
-                "awrap_tool_call failed: "
-                "tool=%s",
-                tool_name
+        except Exception as e:
+            logger.exception("StockMiddleware.awrap_tool_call wrapping failed: %s", e)
+            tool_call_id = request.tool_call.get("id", "unknown")
+            return ToolMessage(
+                content=f"Internal middleware error during tool call {tool_name}: {str(e)}",
+                tool_call_id=tool_call_id,
             )
-            raise
 
     # ------------------------------------------------------------------
     # progress tracking

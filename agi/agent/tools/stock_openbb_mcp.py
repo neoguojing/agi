@@ -2,14 +2,20 @@ import asyncio
 import json
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain_mcp_adapters.tools import load_mcp_tools
 
 
-class MCPToolDiscoveryDemo:
+class MCPNonSessionDiscoveryDemo:
 
     def __init__(self):
 
-        self.tools = {}
+        self.client = MultiServerMCPClient(
+            {
+                "stock": {
+                    "transport": "http",
+                    "url": "http://localhost:8001/mcp",
+                }
+            }
+        )
 
     # ============================================================
     # Pretty Print
@@ -34,44 +40,45 @@ class MCPToolDiscoveryDemo:
             print(data)
 
     # ============================================================
-    # Load Tools From Session
+    # Non-session Tool Loading
     # ============================================================
 
-    async def load_tools(self, session):
+    async def load_tools(self):
 
-        print("\n正在从 session 获取 tools...\n")
+        print("\n")
+        print("=" * 80)
+        print("LOAD TOOLS (NON-SESSION)")
+        print("=" * 80)
 
-        # result = await session.list_tools()
+        tools = await self.client.get_tools(
+            server_name="stock"
+        )
 
-        # tools = result.tools
-        tools = await load_mcp_tools(session)
-        print(f"********************{tools}")
+        print(f"\n当前工具数量: {len(tools)}\n")
 
-        self.tools = {
-            tool.name: tool
-            for tool in tools
-        }
-
-        print(f"当前 session 可用工具数量: {len(tools)}\n")
+        tool_names = []
 
         for idx, tool in enumerate(tools, 1):
+
+            tool_names.append(tool.name)
 
             print(f"[{idx}] {tool.name}")
 
             if tool.description:
-                print(tool.description[:150])
+                print(tool.description[:120])
 
             print("-" * 80)
 
+        return tool_names
+
     # ============================================================
-    # Call Tool Helper
+    # Call Tool Through Temporary Session
     # ============================================================
 
     async def call_tool(
-            self,
-            session,
-            tool_name,
-            arguments=None
+        self,
+        tool_name,
+        arguments=None
     ):
 
         if arguments is None:
@@ -85,10 +92,12 @@ class MCPToolDiscoveryDemo:
         print("\nArguments:")
         print(json.dumps(arguments, indent=2, ensure_ascii=False))
 
-        result = await session.call_tool(
-            tool_name,
-            arguments
-        )
+        async with self.client.session("stock") as session:
+
+            result = await session.call_tool(
+                tool_name,
+                arguments
+            )
 
         await self.print_json(
             f"RESULT: {tool_name}",
@@ -97,75 +106,6 @@ class MCPToolDiscoveryDemo:
 
         return result
 
-    # ============================================================
-    # Parse MCP Text Result
-    # ============================================================
-
-    def parse_text_result(self, result):
-
-        content = getattr(result, "content", None)
-
-        if not content:
-            return ""
-
-        texts = []
-
-        for item in content:
-
-            text = getattr(item, "text", None)
-
-            if text:
-                texts.append(text)
-
-        return "\n".join(texts)
-
-    # ============================================================
-    # Verify Active Tool
-    # ============================================================
-
-    async def verify_equity_tools(self, session):
-
-        result = await self.call_tool(
-            session,
-            "available_tools",
-            {
-                "category": "equity"
-            }
-        )
-
-        raw_text = self.parse_text_result(result)
-
-        if not raw_text:
-            print("\n没有返回文本内容")
-            return
-
-        try:
-
-            parsed = json.loads(raw_text)
-
-            print("\n")
-            print("=" * 80)
-            print("ACTIVE EQUITY TOOLS")
-            print("=" * 80)
-
-            active_tools = []
-
-            for item in parsed:
-
-                if item.get("active") is True:
-
-                    active_tools.append(item["name"])
-
-            print(f"\n激活工具数量: {len(active_tools)}\n")
-
-            for tool_name in active_tools:
-                print("✓", tool_name)
-
-        except Exception as e:
-
-            print("\n解析 available_tools 返回失败:")
-            print(e)
-
 
 # ============================================================
 # MAIN
@@ -173,90 +113,98 @@ class MCPToolDiscoveryDemo:
 
 async def main():
 
-    client = MultiServerMCPClient(
+    runtime = MCPNonSessionDiscoveryDemo()
+
+    # --------------------------------------------------------
+    # 1. 初始工具列表
+    # --------------------------------------------------------
+
+    before_tools = await runtime.load_tools()
+
+    # --------------------------------------------------------
+    # 2. 检查目标工具是否存在
+    # --------------------------------------------------------
+
+    target_tool = "equity_calendar_dividend"
+
+    print("\n")
+    print("=" * 80)
+    print("BEFORE ACTIVATION")
+    print("=" * 80)
+
+    if target_tool in before_tools:
+
+        print(f"✓ 已存在工具: {target_tool}")
+
+    else:
+
+        print(f"✗ 工具不存在: {target_tool}")
+
+    # --------------------------------------------------------
+    # 3. 激活工具
+    # --------------------------------------------------------
+
+    await runtime.call_tool(
+        "activate_tools",
         {
-            "stock": {
-                "transport": "http",
-                "url": "http://localhost:8001/mcp",
-            }
+            "tool_names": [
+                target_tool
+            ]
         }
     )
 
-    runtime = MCPToolDiscoveryDemo()
+    # --------------------------------------------------------
+    # 4. 再次获取 tools
+    # --------------------------------------------------------
 
-    # ============================================================
-    # Explicit Session
-    # ============================================================
+    print("\n")
+    print("=" * 80)
+    print("RELOAD TOOLS AFTER ACTIVATION")
+    print("=" * 80)
 
-    async with client.session("stock") as session:
+    after_tools = await runtime.load_tools()
 
-        print("\n")
-        print("=" * 80)
-        print("MCP SESSION STARTED")
-        print("=" * 80)
+    # --------------------------------------------------------
+    # 5. 验证工具是否出现
+    # --------------------------------------------------------
 
-        # --------------------------------------------------------
-        # 1. 获取当前 session tools
-        # --------------------------------------------------------
+    print("\n")
+    print("=" * 80)
+    print("AFTER ACTIVATION")
+    print("=" * 80)
 
-        await runtime.load_tools(session)
+    if target_tool in after_tools:
 
-        # --------------------------------------------------------
-        # 2. 获取 category
-        # --------------------------------------------------------
+        print(f"✓ 激活后已发现工具: {target_tool}")
 
-        await runtime.call_tool(
-            session,
-            "available_categories"
-        )
+    else:
 
-        # --------------------------------------------------------
-        # 3. 查看 equity tools
-        # --------------------------------------------------------
+        print(f"✗ 激活后仍未发现工具: {target_tool}")
 
-        await runtime.call_tool(
-            session,
-            "available_tools",
-            {
-                "category": "equity"
-            }
-        )
+    # --------------------------------------------------------
+    # 6. diff
+    # --------------------------------------------------------
 
-        # --------------------------------------------------------
-        # 4. 激活 equity_calendar_dividend
-        # --------------------------------------------------------
+    new_tools = sorted(
+        set(after_tools) - set(before_tools)
+    )
 
-        await runtime.call_tool(
-            session,
-            "activate_tools",
-            {
-                "tool_names": [
-                    "equity_calendar_dividend"
-                ]
-            }
-        )
+    print("\n")
+    print("=" * 80)
+    print("NEWLY DISCOVERED TOOLS")
+    print("=" * 80)
 
-        # --------------------------------------------------------
-        # 5. 再次从 session 获取 tools
-        # --------------------------------------------------------
+    if not new_tools:
 
-        print("\n")
-        print("=" * 80)
-        print("REFRESH SESSION TOOLS")
-        print("=" * 80)
+        print("\n没有新增工具")
 
-        await runtime.load_tools(session)
+    else:
 
-        # --------------------------------------------------------
-        # 6. 验证 equity tool 状态
-        # --------------------------------------------------------
+        print(f"\n新增工具数量: {len(new_tools)}\n")
 
-        await runtime.verify_equity_tools(session)
+        for tool in new_tools:
 
-        print("\n")
-        print("=" * 80)
-        print("MCP SESSION FINISHED")
-        print("=" * 80)
+            print("✓", tool)
 
 
 if __name__ == "__main__":

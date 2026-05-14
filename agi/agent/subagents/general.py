@@ -1,4 +1,5 @@
 
+import asyncio
 from agi.agent.middlewares.debug_middleware import DebugLLMContextMiddleware
 from agi.agent.tools import RemoteImageEditTool,RemoteImageGenTool,RemoteMultiModalTool,RemoteTranscriptionTool,RemoteTTSTool,search_web
 from agi.agent.middlewares import BrowserMiddleware,FfmpegMiddleware,StockMiddleware
@@ -166,7 +167,7 @@ pdf_parser_subagent = {
 }
 
 stock_middleware = StockMiddleware(backend=make_backend)
-# stock_tools = stock_middleware.list_tools()
+
 stock_analyse_subagent = {
     "name": "stock-analyse-subagent",
     "description": "Specialized in stock market analyse task.",
