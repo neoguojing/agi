@@ -19,6 +19,14 @@ import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any,Annotated
+from contextlib import suppress
+
+from anyio import (
+    BrokenResourceError,
+    ClosedResourceError,
+    EndOfStream,
+)
+
 
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
@@ -297,20 +305,56 @@ class StockMiddleware(AgentMiddleware):
 
         async with self._lock:
 
+            # session 已存在 -> 先检查是否还活着
             if self._session is not None:
-                self.tools = await load_mcp_tools(self._session)
-                return self._session
 
-            # 注意：
-            # 不需要 await
+                try:
+                    await self._session.send_ping()
+
+                    self.tools = await load_mcp_tools(
+                        self._session
+                    )
+
+                    return self._session
+
+                except (
+                    BrokenPipeError,
+                    ConnectionResetError,
+                    BrokenResourceError,
+                    ClosedResourceError,
+                    EndOfStream,
+                    TimeoutError,
+                    EOFError,
+                ):
+
+                    logger.warning(
+                        "MCP session disconnected, recreating..."
+                    )
+
+                    # 清理旧 session
+                    if self._session_ctx is not None:
+
+                        with suppress(Exception):
+                            await self._session_ctx.__aexit__(
+                                None,
+                                None,
+                                None,
+                            )
+
+                    self._session = None
+                    self._session_ctx = None
+
+            # 创建新 session
             self._session_ctx = self.client.session(
                 server_name="stock"
             )
 
-            # 真正 await 的是 __aenter__
             self._session = await self._session_ctx.__aenter__()
 
-            self.tools = await load_mcp_tools(self._session)
+            self.tools = await load_mcp_tools(
+                self._session
+            )
+
             return self._session
     # ------------------------------------------------------------------
     # prompt helpers

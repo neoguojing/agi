@@ -10,6 +10,39 @@ from deepagents.backends.protocol import BackendProtocol
 from agi.utils.common import append_to_system_message, extract_messages_content
 from agi.agent.context.checkpoint import checkpoint_to_state
 
+"""
+记忆类型：
+1. Profile Memory（稳定人格/偏好）： 结构化存储，KV cache
+2. Episodic Memory（事件记忆）：时间性强 ，会过期 
+3. Semantic Memory（知识抽象）： 这是从 episodic 中提炼出的规律，长期保留；类似人脑 consolidation。推荐知识图谱化
+
+记忆整理：
+不要一直加 memory。
+要周期性“重写 memory”。
+1. 去重（Dedup）
+2. 冲突检测
+3. 重要度衰减：很多 memory 应该 decay。
+4. Episodic → Semantic 抽象
+
+核心原则：
+
+1. Hierarchical Memory： 分层抽象
+2. Graph Memory：知识图谱画
+3. Self-healing Memory：周期性：
+
+contradiction detection
+confidence recalculation
+stale pruning
+4. Memory as Dataset
+
+未来趋势：
+
+memory 不再是 prompt。
+
+而是：
+
+可训练数据集
+"""
 logger = logging.getLogger(__name__)
 
 
@@ -23,10 +56,6 @@ class MemoryMiddleware(AgentMiddleware):
     上下文工程中间件：
     1. 动态注入模型 Prompt
     2. 异步更新用户画像
-    3. 消息压缩策略：
-       - 保护 SystemMessage 和最新 10 条消息
-       - 单条消息超过阈值则压缩
-       - 文件保存为 .txt 纯文本格式
     """
     def __init__(
         self, 
