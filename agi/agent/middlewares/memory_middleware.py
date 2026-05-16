@@ -13,7 +13,7 @@ from agi.agent.context.checkpoint import checkpoint_to_state
 """
 记忆类型：
 1. Profile Memory（稳定人格/偏好）： 结构化存储，KV cache
-2. Episodic Memory（事件记忆）：时间性强 ，会过期 
+2. Episodic Memory（事件记忆）：时间性强 ，会过期
 3. Semantic Memory（知识抽象）： 这是从 episodic 中提炼出的规律，长期保留；类似人脑 consolidation。推荐知识图谱化
 
 记忆整理：
@@ -58,7 +58,7 @@ class MemoryMiddleware(AgentMiddleware):
     2. 异步更新用户画像
     """
     def __init__(
-        self, 
+        self,
         backend = None,
         checkpointer = None,
         channels = None,
@@ -130,7 +130,7 @@ class MemoryMiddleware(AgentMiddleware):
                 contents[path] = content
             except Exception as e:
                 logger.error(f"Failed to read memory file {path}: {e}")
-                contents[path] = None   
+                contents[path] = None
         sections = [f"{path}\n{contents[path]}" for path in self.memory_paths if contents.get(path)]
 
         if not sections:
@@ -138,7 +138,7 @@ class MemoryMiddleware(AgentMiddleware):
 
         memory_body = "\n\n".join(sections)
         return memory_body
-    
+
     def _format_messages(self, messages: List[BaseMessage]) -> str:
         lines = []
         for msg in messages:
@@ -151,7 +151,7 @@ class MemoryMiddleware(AgentMiddleware):
     async def awrap_model_call(
         self,
         request: ModelRequest,
-        handler: Callable[[ModelRequest], Awaitable[ModelResponse]], 
+        handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse:
         try:
             state = await self.load_state_from_outside()
@@ -163,7 +163,7 @@ class MemoryMiddleware(AgentMiddleware):
             agent_memory = self._format_agent_memory(request.runtime)
 
             target_memory_prompt = MEMORY_SYSTEM_PROMPT.format(agent_memory=agent_memory)
-            
+
             # 3. 注入系统 Prompt
             request = request.override(
                 system_message=append_to_system_message(request.system_message, target_memory_prompt)
@@ -182,6 +182,3 @@ class MemoryMiddleware(AgentMiddleware):
             import traceback
             traceback.print_exc()
             logger.error(e)
-        
-        
-    
