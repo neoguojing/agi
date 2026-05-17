@@ -199,7 +199,7 @@ class BackendMemoryStore:
                 records = [record for record in records if record.get("id") != operation.target_id]
                 changed = changed or len(records) != before
             elif operation.op == "deprecate":
-                changed = self._deprecate_record(records, operation, patch.created_at) own changed
+                changed = self._deprecate_record(records, operation, patch.created_at) or changed
 
         if changed:
             self.replace_jsonl(path, records)
