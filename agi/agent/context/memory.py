@@ -194,6 +194,28 @@ async def run_memory_maintenance(
     
     return results, new_state.to_iso_dict()
 
+def read_memory(
+    backend: Any,
+    target: MemoryTarget,
+    as_jsonl: bool = True,
+) -> list[dict[str, Any]] | str:
+    """
+    High-level entry point to read memory for a specific target.
+    
+    Encapsulates MemoryStore creation.
+    
+    Args:
+        backend: The backend protocol implementation.
+        target: The memory target to read ('profile', 'episodic', or 'semantic').
+        as_jsonl: If True, returns a list of records. If False, returns raw text.
+    """
+    store = BackendMemoryStore(backend)
+    path = DEFAULT_MEMORY_TARGET_PATHS.get(target, "")
+    
+    if as_jsonl:
+        return store.read_jsonl(path)
+    return store.read_text(path)
+
 __all__ = [
     "MemoryTarget",
     "MemoryOperationType",
@@ -227,4 +249,5 @@ __all__ = [
     "EpisodicMemoryTask",
     "SemanticMemoryTask",
     "run_memory_maintenance",
+    "read_memory",
 ]
