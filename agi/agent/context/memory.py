@@ -111,7 +111,22 @@ class BaseMemoryExtractionTask(MemoryTask):
 
         # 5. Parse and convert to patches
         extraction = parse_memory_extraction_result(llm_payload)
-        patches = extraction.to_patches(reason=f"Automatic {self.target} memory extraction")
+        
+        # Filter records by min_confidence before converting to patches
+        filtered_profile = [m for m in extraction.profile_memories if m.confidence >= self.config.min_confidence]
+        filtered_episodic = [m for m in extraction.episodic_memories if m.confidence >= self.config.min_confidence]
+        filtered_semantic = [m for m in extraction.semantic_memories if m.confidence >= self.config.min_confidence]
+        
+        # Create a new extraction result with filtered records to generate patches
+        filtered_extraction = MemoryExtractionResult(
+            profile_memories=tuple(filtered_profile),
+            episodic_memories=tuple(filtered_episodic),
+            semantic_memories=tuple(filtered_semantic),
+            rejected_candidates=extraction.rejected_candidates,
+            notes=extraction.notes
+        )
+        
+        patches = filtered_extraction.to_patches(reason=f"Automatic {self.target} memory extraction")
         
         # Filter patches to only include the target this task is responsible for
         target_patches = tuple(p for p in patches if p.target == self.target)
@@ -119,7 +134,7 @@ class BaseMemoryExtractionTask(MemoryTask):
         return MemoryTaskResult(
             task_name=self.name,
             changed=bool(target_patches),
-            summary=f"Extracted {len(target_patches)} patches for {self.target} memory.",
+            summary=f"Extracted {len(target_patches)} patches for {self.target} memory (confidence >= {self.config.min_confidence}).",
             patches=target_patches
         )
 
