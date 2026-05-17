@@ -145,7 +145,6 @@ class SemanticMemoryTask(BaseMemoryExtractionTask):
         )
 
 async def run_memory_maintenance(
-    store: MemoryStore,
     llm: Any,
     backend: Any,
     messages: Sequence[Any],
@@ -157,8 +156,8 @@ async def run_memory_maintenance(
     """
     High-level entry point to run due memory maintenance tasks.
     
-    Encapsulates the creation of MemoryTaskContext and MemoryTaskScheduleState
-    to avoid exposing internal task-system classes to the caller.
+    Encapsulates the creation of MemoryStore, MemoryTaskContext, and 
+    MemoryTaskScheduleState to avoid exposing internal task-system classes to the caller.
     """
     m_config = config or MemoryMaintenanceConfig()
 
@@ -168,6 +167,9 @@ async def run_memory_maintenance(
             EpisodicMemoryTask(m_config.episodic),
             SemanticMemoryTask(m_config.semantic),
         ]
+    
+    # Internalize the store creation
+    store = BackendMemoryStore(backend)
     
     # Internalize the context creation
     context = MemoryTaskContext(
