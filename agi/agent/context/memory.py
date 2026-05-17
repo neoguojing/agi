@@ -145,15 +145,19 @@ class SemanticMemoryTask(BaseMemoryExtractionTask):
         )
 
 async def run_memory_maintenance(
-    context: MemoryTaskContext,
-    state: MemoryTaskScheduleState | None = None,
+    store: MemoryStore,
+    llm: Any,
+    backend: Any,
+    messages: Sequence[Any],
+    schedule_state_dict: dict[str, str] | None = None,
     tasks: Sequence[MemoryTask] | None = None,
     apply_patches: bool = True,
-) -> tuple[list[MemoryTaskResult], MemoryTaskScheduleState]:
+) -> tuple[list[MemoryTaskResult], dict[str, str]]:
     """
     High-level entry point to run due memory maintenance tasks.
     
-    If no tasks are provided, it defaults to the standard set of extraction tasks.
+    Encapsulates the creation of MemoryTaskContext and MemoryTaskScheduleState
+    to avoid exposing internal task-system classes to the caller.
     """
     if tasks is None:
         tasks = [
@@ -162,13 +166,28 @@ async def run_memory_maintenance(
             SemanticMemoryTask(),
         ]
     
+    # Internalize the context creation
+    context = MemoryTaskContext(
+        store=store,
+        backend=backend,
+        llm=llm,
+        messages=list(messages),
+    )
+    
+    # Internalize the state management
+    state = None
+    if schedule_state_dict is not None:
+        state = MemoryTaskScheduleState.from_iso_dict(schedule_state_dict)
+    
     scheduler = MemoryTaskScheduler()
-    return await scheduler.run_due_tasks(
+    results, new_state = await scheduler.run_due_tasks(
         tasks=tasks,
         context=context,
         state=state,
         apply_patches=apply_patches
     )
+    
+    return results, new_state.to_iso_dict()
 
 __all__ = [
     "MemoryTarget",
