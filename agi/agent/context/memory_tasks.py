@@ -25,11 +25,13 @@ from agi.agent.context.memory_store import  DEFAULT_MEMORY_TARGET_PATHS
 
 if TYPE_CHECKING:
     from langchain_core.messages import AnyMessage
+    from langchain_core.language_models.chat_models import BaseChatModel
 
     from agi.agent.context.memory_store import MemoryStore
     from deepagents.backends.protocol import BackendProtocol
 else:
     AnyMessage = Any
+    BaseChatModel = Any
     BackendProtocol = Any
     MemoryStore = Any
 
@@ -61,7 +63,7 @@ class MemoryTaskContext:
 
     store: MemoryStore
     backend: BackendProtocol
-    llm: Any
+    llm: BaseChatModel
     messages: list[AnyMessage] = field(default_factory=list)
     now: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     runtime: Any | None = None
