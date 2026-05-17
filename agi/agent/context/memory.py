@@ -57,7 +57,13 @@ from agi.agent.context.memory_tasks import (
 logger = logging.getLogger(__name__)
 
 class BaseMemoryExtractionTask(MemoryTask):
-    """Base class for tasks that use an LLM to extract memories."""
+    """Base class for tasks that use an LLM to extract memories.
+    
+    Implements the core logic of:
+    1. Preparing the prompt with conversation and existing memory.
+    2. Calling the LLM for structured output.
+    3. Parsing the output into patches.
+    """
     
     def __init__(self, name: str, target: MemoryTarget, config: MemoryTaskConfig):
         self.name = name
@@ -65,13 +71,12 @@ class BaseMemoryExtractionTask(MemoryTask):
         self.config = config
 
     def should_run(self, context: MemoryTaskContext) -> bool:
+        """Determines if the task should run based on config and message presence."""
         # Basic check: run if enabled and messages are present
         return self.config.enabled and len(context.messages) > 0
 
     async def _call_llm_for_extraction(self, context: MemoryTaskContext, prompt: str) -> Any:
-        """
-        Helper to interact with the LLM. 
-        """
+        """Helper to interact with the LLM using structured output."""
         if context.llm:
             # Use the explicit LLM provided in the context
             llm_with_struct = context.llm.with_structured_output(
@@ -85,6 +90,7 @@ class BaseMemoryExtractionTask(MemoryTask):
         return None
 
     async def run(self, context: MemoryTaskContext) -> MemoryTaskResult:
+        """Executes the memory extraction process for the target memory type."""
         # 1. Prepare conversation history as string
         conversation_text = "\n".join([str(m.content) for m in context.messages])
         
@@ -158,6 +164,15 @@ async def run_memory_maintenance(
     
     Encapsulates the creation of MemoryStore, MemoryTaskContext, and 
     MemoryTaskScheduleState to avoid exposing internal task-system classes to the caller.
+    
+    Args:
+        llm: The LLM model to use for extraction.
+        backend: The storage backend protocol.
+        messages: The conversation history to analyze.
+        schedule_state_dict: A dictionary of task names to ISO timestamps.
+        tasks: Optional list of custom tasks to run.
+        config: Optional configuration for task intervals and confidence.
+        apply_patches: Whether to automatically write changes to the store.
     """
     m_config = config or MemoryMaintenanceConfig()
 
@@ -223,6 +238,9 @@ def format_memory_for_llm(
     """
     Reads memory for a target and formats it as a human-readable string 
     suitable for LLM context injection.
+    
+    Converts structured JSONL records into a clean text format that the 
+    LLM can easily parse as context.
     """
     records = read_memory(backend, target, as_jsonl=True)
     if not records:

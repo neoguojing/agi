@@ -24,8 +24,11 @@ from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal
 
+# Target identifiers for different memory types
 MemoryTarget = Literal["profile", "episodic", "semantic"]
+# Types of operations allowed in a memory patch
 MemoryOperationType = Literal["add", "update", "delete", "merge", "deprecate"]
+# Valid sources for memory extraction
 MemorySourceKind = Literal[
     "user_explicit",
     "conversation",
@@ -38,7 +41,11 @@ MemorySourceKind = Literal[
 
 @dataclass(frozen=True)
 class MemoryOperation:
-    """A single storage-neutral mutation inside a memory patch."""
+    """A single storage-neutral mutation inside a memory patch.
+    
+    Represents a specific change to a memory record, such as adding a new 
+    fact or updating an existing one.
+    """
 
     op: MemoryOperationType
     value: dict[str, Any] = field(default_factory=dict)
@@ -48,7 +55,11 @@ class MemoryOperation:
 
 @dataclass(frozen=True)
 class MemoryPatch:
-    """Auditable memory changes emitted by tasks instead of direct writes."""
+    """Auditable memory changes emitted by tasks instead of direct writes.
+    
+    A patch groups multiple operations for a specific memory target. 
+    This allows for atomic updates and provides an audit trail (reason, confidence).
+    """
 
     target: MemoryTarget
     operations: tuple[MemoryOperation, ...] = ()
@@ -59,16 +70,22 @@ class MemoryPatch:
 
     @property
     def is_empty(self) -> bool:
+        """Returns True if the patch contains no operations."""
         return not self.operations
 
     @classmethod
     def empty(cls, target: MemoryTarget, *, reason: str = "") -> "MemoryPatch":
+        """Creates an empty patch for a specific target."""
         return cls(target=target, reason=reason, operations=())
 
 
 @dataclass(frozen=True)
 class MemoryEvidence:
-    """Evidence attached to model-extracted memory records."""
+    """Evidence attached to model-extracted memory records.
+    
+    Provides the 'why' behind a memory, linking it back to a specific 
+    message or source for verification.
+    """
 
     source: MemorySourceKind = "conversation"
     content: str = ""
@@ -78,12 +95,16 @@ class MemoryEvidence:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_record(self) -> dict[str, Any]:
+        """Converts the evidence dataclass to a JSON-ready dictionary."""
         return json_ready(asdict(self))
 
 
 @dataclass(frozen=True)
 class ProfileMemoryRecord:
-    """Structured model output for stable profile/preference memory."""
+    """Structured model output for stable profile/preference memory.
+    
+    Used for long-term user attributes (e.g., 'user.language': 'English').
+    """
 
     id: str = ""
     key: str = ""
@@ -98,17 +119,23 @@ class ProfileMemoryRecord:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_record(self) -> dict[str, Any]:
+        """Converts the record to a JSON-ready dictionary with a type marker."""
         record = json_ready(asdict(self))
         record["type"] = "profile"
         return record
 
     def to_operation(self, op: MemoryOperationType = "add") -> MemoryOperation:
+        """Converts this record into a MemoryOperation for use in a patch."""
         return MemoryOperation(op=op, target_id=self.id or None, value=self.to_record())
 
 
 @dataclass(frozen=True)
 class EpisodicMemoryRecord:
-    """Structured model output for time-bound event memory."""
+    """Structured model output for time-bound event memory.
+    
+    Used for specific occurrences or experiences (e.g., 'User mentioned they 
+    started a new project on 2023-10-01').
+    """
 
     id: str = ""
     summary: str = ""
@@ -127,17 +154,22 @@ class EpisodicMemoryRecord:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_record(self) -> dict[str, Any]:
+        """Converts the record to a JSON-ready dictionary with a type marker."""
         record = json_ready(asdict(self))
         record["type"] = "episodic"
         return record
 
     def to_operation(self, op: MemoryOperationType = "add") -> MemoryOperation:
+        """Converts this record into a MemoryOperation for use in a patch."""
         return MemoryOperation(op=op, target_id=self.id or None, value=self.to_record())
 
 
 @dataclass(frozen=True)
 class SemanticEntity:
-    """Graph-ready node reference used by semantic memory triples."""
+    """Graph-ready node reference used by semantic memory triples.
+    
+    Represents a concept, person, or object in a knowledge graph.
+    """
 
     id: str = ""
     kind: str = "concept"
@@ -145,12 +177,16 @@ class SemanticEntity:
     properties: dict[str, Any] = field(default_factory=dict)
 
     def to_record(self) -> dict[str, Any]:
+        """Converts the entity to a JSON-ready dictionary."""
         return json_ready(asdict(self))
 
 
 @dataclass(frozen=True)
 class SemanticObject:
-    """Graph-ready object value or node reference for semantic memory."""
+    """Graph-ready object value or node reference for semantic memory.
+    
+    The target of a predicate in a semantic triple.
+    """
 
     id: str | None = None
     kind: str = "value"
@@ -159,12 +195,16 @@ class SemanticObject:
     properties: dict[str, Any] = field(default_factory=dict)
 
     def to_record(self) -> dict[str, Any]:
+        """Converts the object to a JSON-ready dictionary."""
         return json_ready(asdict(self))
 
 
 @dataclass(frozen=True)
 class SemanticMemoryRecord:
-    """Structured model output for graph-ready long-term knowledge."""
+    """Structured model output for graph-ready long-term knowledge.
+    
+    Represents a triple: Subject -> Predicate -> Object.
+    """
 
     id: str = ""
     subject: SemanticEntity = field(default_factory=SemanticEntity)
@@ -180,17 +220,23 @@ class SemanticMemoryRecord:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_record(self) -> dict[str, Any]:
+        """Converts the record to a JSON-ready dictionary with a type marker."""
         record = json_ready(asdict(self))
         record["type"] = "semantic"
         return record
 
     def to_operation(self, op: MemoryOperationType = "add") -> MemoryOperation:
+        """Converts this record into a MemoryOperation for use in a patch."""
         return MemoryOperation(op=op, target_id=self.id or None, value=self.to_record())
 
 
 @dataclass(frozen=True)
 class MemoryExtractionResult:
-    """Top-level structured return for an LLM memory-extraction call."""
+    """Top-level structured return for an LLM memory-extraction call.
+    
+    Aggregates all candidates extracted across different memory types from a 
+    single conversation window.
+    """
 
     profile_memories: tuple[ProfileMemoryRecord, ...] = ()
     episodic_memories: tuple[EpisodicMemoryRecord, ...] = ()
@@ -199,6 +245,7 @@ class MemoryExtractionResult:
     notes: str = ""
 
     def to_patches(self, *, reason: str = "model structured memory extraction") -> tuple[MemoryPatch, ...]:
+        """Converts the extraction results into a set of MemoryPatches, one per target."""
         patches: list[MemoryPatch] = []
         if self.profile_memories:
             patches.append(MemoryPatch(target="profile", reason=reason, operations=tuple(m.to_operation() for m in self.profile_memories)))
@@ -209,6 +256,7 @@ class MemoryExtractionResult:
         return tuple(patches)
 
     def to_record(self) -> dict[str, Any]:
+        """Converts the result to a JSON-ready dictionary."""
         return json_ready(asdict(self))
 
     @classmethod
@@ -221,7 +269,11 @@ class MemoryExtractionResult:
 
 
 def json_ready(value: Any) -> Any:
-    """Convert memory dataclasses into JSON-compatible primitives."""
+    """Convert memory dataclasses and datetimes into JSON-compatible primitives.
+    
+    Recursively handles dataclasses, lists, and dictionaries to ensure 
+    all types are serializable to JSON.
+    """
 
     if isinstance(value, datetime):
         return value.isoformat()

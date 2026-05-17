@@ -40,7 +40,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class MemoryTaskConfig:
-    """Independent scheduling and quality gates for one memory task."""
+    """Independent scheduling and quality gates for one memory task.
+    
+    Defines how often a task should run and the minimum confidence 
+    required for a memory to be accepted.
+    """
 
     enabled: bool = True
     interval_seconds: int = 3600
@@ -49,7 +53,11 @@ class MemoryTaskConfig:
 
 @dataclass(frozen=True)
 class MemoryMaintenanceConfig:
-    """Configuration shared by background memory processing."""
+    """Configuration shared by background memory processing.
+    
+    Provides a centralized way to configure the intervals and confidence 
+    thresholds for all standard memory tasks.
+    """
 
     target_paths: dict[MemoryTarget, str] = field(default_factory=lambda: dict(DEFAULT_MEMORY_TARGET_PATHS))
     profile: MemoryTaskConfig = field(default_factory=lambda: MemoryTaskConfig(interval_seconds=24 * 3600, min_confidence=0.75))
@@ -59,7 +67,11 @@ class MemoryMaintenanceConfig:
 
 @dataclass
 class MemoryTaskContext:
-    """Runtime inputs passed to memory maintenance tasks."""
+    """Runtime inputs passed to memory maintenance tasks.
+    
+    Contains all dependencies required by a task to perform its work, 
+    including the store, the LLM, and the current conversation history.
+    """
 
     store: MemoryStore
     backend: BackendProtocol
@@ -72,7 +84,11 @@ class MemoryTaskContext:
 
 @dataclass(frozen=True)
 class MemoryTaskResult:
-    """Result returned by a memory task."""
+    """Result returned by a memory task.
+    
+    Contains the outcome of a task execution, including any 
+    MemoryPatches that should be applied to the store.
+    """
 
     task_name: str
     changed: bool = False
@@ -83,12 +99,17 @@ class MemoryTaskResult:
 
 @dataclass
 class MemoryTaskScheduleState:
-    """Serializable bookkeeping used by MemoryTaskScheduler."""
+    """Serializable bookkeeping used by MemoryTaskScheduler.
+    
+    Tracks when each task was last executed to determine if it is due 
+    based on its `interval_seconds`.
+    """
 
     last_run_at: dict[str, datetime] = field(default_factory=dict)
 
     @classmethod
     def from_iso_dict(cls, values: dict[str, str]) -> "MemoryTaskScheduleState":
+        """Creates a state object from a dictionary of ISO timestamps."""
         parsed: dict[str, datetime] = {}
         for task_name, value in values.items():
             try:
@@ -98,12 +119,17 @@ class MemoryTaskScheduleState:
         return cls(last_run_at=parsed)
 
     def to_iso_dict(self) -> dict[str, str]:
+        """Converts the state object to a dictionary of ISO timestamps for serialization."""
         return {task_name: timestamp.isoformat() for task_name, timestamp in self.last_run_at.items()}
 
 
 @runtime_checkable
 class MemoryTask(Protocol):
-    """Independent memory maintenance unit."""
+    """Independent memory maintenance unit.
+    
+    A protocol that defines the interface for any task that wants to 
+    be managed by the `MemoryTaskScheduler`.
+    """
 
     name: str
     target: MemoryTarget
@@ -119,7 +145,11 @@ class MemoryTask(Protocol):
 
 
 class MemoryTaskScheduler:
-    """Small interval scheduler for independently configured memory tasks."""
+    """Small interval scheduler for independently configured memory tasks.
+    
+    Manages the execution timing of tasks and ensures that patches 
+    emitted by tasks are applied to the store.
+    """
 
     def due_tasks(
         self,
@@ -127,6 +157,7 @@ class MemoryTaskScheduler:
         context: MemoryTaskContext,
         state: MemoryTaskScheduleState | None = None,
     ) -> list[MemoryTask]:
+        """Identifies which tasks are due to run based on their configuration and last run time."""
         schedule_state = state or MemoryTaskScheduleState()
         due: list[MemoryTask] = []
         for task in tasks:
@@ -150,6 +181,7 @@ class MemoryTaskScheduler:
         context: MemoryTaskContext,
         state: MemoryTaskScheduleState | None = None,
     ) -> MemoryTaskScheduleState:
+        """Updates the schedule state to mark the provided tasks as having run at the current time."""
         schedule_state = state or MemoryTaskScheduleState()
         for task in tasks:
             schedule_state.last_run_at[task.name] = context.now
@@ -163,6 +195,11 @@ class MemoryTaskScheduler:
         *,
         apply_patches: bool = True,
     ) -> tuple[list[MemoryTaskResult], MemoryTaskScheduleState]:
+        """
+        Executes all due tasks and optionally applies their patches to the store.
+        
+        Returns a list of results and the updated schedule state.
+        """
         due = self.due_tasks(tasks, context, state)
         results: list[MemoryTaskResult] = []
         for task in due:

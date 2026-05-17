@@ -29,6 +29,7 @@ else:
 
 logger = logging.getLogger(__name__)
 
+# Default filesystem paths for the different memory types.
 DEFAULT_MEMORY_TARGET_PATHS: dict[MemoryTarget, str] = {
     "profile": "/memories/profile.jsonl",
     "episodic": "/memories/episodic.jsonl",
@@ -40,7 +41,11 @@ DEFAULT_MEMORY_TARGET_PATHS: dict[MemoryTarget, str] = {
 
 @runtime_checkable
 class MemoryStore(Protocol):
-    """Minimal storage contract for memory maintenance."""
+    """Minimal storage contract for memory maintenance.
+    
+    Defines the required interface for any store that manages memory 
+    persistence, whether it's file-based, database-based, or in-memory.
+    """
 
     target_paths: dict[MemoryTarget, str]
 
@@ -74,7 +79,11 @@ class MemoryStore(Protocol):
 
 
 class BackendMemoryStore:
-    """File-backed MemoryStore adapter over the existing BackendProtocol."""
+    """File-backed MemoryStore adapter over the existing BackendProtocol.
+    
+    This class translates high-level memory operations (like applying a patch) 
+    into low-level backend file operations (read, write, edit).
+    """
 
     def __init__(
         self,
@@ -86,6 +95,7 @@ class BackendMemoryStore:
         self.target_paths = dict(target_paths or DEFAULT_MEMORY_TARGET_PATHS)
 
     def read_text(self, path: str) -> str:
+        """Reads raw text from the backend, handling potential errors and stripping line numbers."""
         try:
             responses = self.backend.download_files([path])
             if responses and responses[0].content is not None and responses[0].error is None:
@@ -108,6 +118,7 @@ class BackendMemoryStore:
         return _strip_line_numbers(content)
 
     def write_text(self, path: str, content: str) -> None:
+        """Writes raw text to the backend, using upload or edit depending on existence."""
         encoded = content.encode("utf-8")
         try:
             responses = self.backend.upload_files([(path, encoded)])
@@ -128,6 +139,7 @@ class BackendMemoryStore:
             raise RuntimeError(result.error)
 
     def read_jsonl(self, path: str) -> list[dict[str, Any]]:
+        """Reads a file and parses each line as a JSON object."""
         content = self.read_text(path)
         records: list[dict[str, Any]] = []
         for line_number, line in enumerate(content.splitlines(), start=1):
@@ -146,10 +158,12 @@ class BackendMemoryStore:
         return records
 
     def replace_jsonl(self, path: str, records: Sequence[dict[str, Any]]) -> None:
+        """Overwrites a file with a new set of JSONL records."""
         content = "".join(f"{json.dumps(record, ensure_ascii=False, sort_keys=True)}\n" for record in records)
         self.write_text(path, content)
 
     def append_jsonl(self, path: str, records: Sequence[dict[str, Any]]) -> None:
+        """Appends new JSONL records to an existing file."""
         if not records:
             return
         existing = self.read_text(path)
@@ -158,6 +172,12 @@ class BackendMemoryStore:
         self.write_text(path, f"{existing}{separator}{addition}")
 
     def apply_patch(self, patch: MemoryPatch) -> None:
+        """
+        Applies a MemoryPatch to the store.
+        
+        Reads the current records for the target, iterates through the operations 
+        (add, update, delete, deprecate), and writes the updated list back to the backend.
+        """
         if patch.is_empty:
             return
 
@@ -179,12 +199,13 @@ class BackendMemoryStore:
                 records = [record for record in records if record.get("id") != operation.target_id]
                 changed = changed or len(records) != before
             elif operation.op == "deprecate":
-                changed = self._deprecate_record(records, operation, patch.created_at) or changed
+                changed = self._deprecate_record(records, operation, patch.created_at) own changed
 
         if changed:
             self.replace_jsonl(path, records)
 
     def _update_record(self, records: list[dict[str, Any]], operation: MemoryOperation, timestamp) -> bool:
+        """Internal helper to find and update a specific record by ID."""
         for record in records:
             if record.get("id") == operation.target_id:
                 record.update(operation.value)
@@ -193,6 +214,7 @@ class BackendMemoryStore:
         return False
 
     def _deprecate_record(self, records: list[dict[str, Any]], operation: MemoryOperation, timestamp) -> bool:
+        """Internal helper to mark a record as deprecated without deleting it."""
         for record in records:
             if record.get("id") == operation.target_id:
                 record["deprecated_at"] = timestamp.isoformat()
@@ -203,7 +225,11 @@ class BackendMemoryStore:
 
 
 def _strip_line_numbers(content: str) -> str:
-    """Best-effort conversion from backend read() output to raw text."""
+    """Best-effort conversion from backend read() output to raw text.
+    
+    Removes line number prefixes (e.g., '  1\tContent') that some backends 
+    add to their output.
+    """
 
     lines: list[str] = []
     for line in content.splitlines():

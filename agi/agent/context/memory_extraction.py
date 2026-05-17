@@ -31,6 +31,8 @@ from agi.agent.context.memory_models import (
 
 logger = logging.getLogger(__name__)
 
+# JSON Schema used to constrain the LLM's structured output.
+# It defines the exact shape of profile, episodic, and semantic memory records.
 MEMORY_EXTRACTION_JSON_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
@@ -135,6 +137,7 @@ MEMORY_EXTRACTION_JSON_SCHEMA: dict[str, Any] = {
     },
 }
 
+# System instructions provided to the LLM to guide the extraction process.
 MEMORY_EXTRACTION_INSTRUCTIONS = """Extract memory candidates from the conversation and return ONLY JSON matching MEMORY_EXTRACTION_JSON_SCHEMA.
 Rules:
 - Use profile_memories only for stable user identity, preferences, durable settings, and long-lived facts.
@@ -147,7 +150,11 @@ Rules:
 
 
 def build_memory_extraction_prompt(*, conversation: str, existing_memory: str = "") -> str:
-    """Build an LLM-facing prompt for structured memory extraction."""
+    """Build an LLM-facing prompt for structured memory extraction.
+    
+    Combines the system instructions, the JSON schema, the current state of 
+    memory (to avoid duplicates), and the conversation history.
+    """
 
     return (
         f"{MEMORY_EXTRACTION_INSTRUCTIONS}\n\n"
@@ -158,7 +165,11 @@ def build_memory_extraction_prompt(*, conversation: str, existing_memory: str = 
 
 
 def parse_memory_extraction_result(payload: str | dict[str, Any]) -> MemoryExtractionResult:
-    """Parse JSON returned by an LLM into typed memory extraction records."""
+    """Parse JSON returned by an LLM into typed memory extraction records.
+    
+    This function handles the coercion of raw JSON dictionaries into the 
+    strongly-typed dataclasses defined in `memory_models`.
+    """
 
     data = json.loads(payload) if isinstance(payload, str) else payload
     if not isinstance(data, dict):
@@ -174,6 +185,7 @@ def parse_memory_extraction_result(payload: str | dict[str, Any]) -> MemoryExtra
 
 
 def _coerce_profile_memory(value: Any) -> ProfileMemoryRecord:
+    """Internal helper to coerce raw data into a ProfileMemoryRecord."""
     data = _as_dict(value)
     return ProfileMemoryRecord(
         id=str(data.get("id") or ""),
@@ -191,6 +203,7 @@ def _coerce_profile_memory(value: Any) -> ProfileMemoryRecord:
 
 
 def _coerce_episodic_memory(value: Any) -> EpisodicMemoryRecord:
+    """Internal helper to coerce raw data into an EpisodicMemoryRecord."""
     data = _as_dict(value)
     ttl_days = data.get("ttl_days")
     return EpisodicMemoryRecord(
@@ -213,6 +226,7 @@ def _coerce_episodic_memory(value: Any) -> EpisodicMemoryRecord:
 
 
 def _coerce_semantic_memory(value: Any) -> SemanticMemoryRecord:
+    """Internal helper to coerce raw data into a SemanticMemoryRecord."""
     data = _as_dict(value)
     return SemanticMemoryRecord(
         id=str(data.get("id") or ""),
@@ -231,6 +245,7 @@ def _coerce_semantic_memory(value: Any) -> SemanticMemoryRecord:
 
 
 def _coerce_evidence(value: Any) -> MemoryEvidence:
+    """Internal helper to coerce raw data into a MemoryEvidence record."""
     data = _as_dict(value)
     return MemoryEvidence(
         source=_as_source(data.get("source"), default="conversation"),
@@ -243,6 +258,7 @@ def _coerce_evidence(value: Any) -> MemoryEvidence:
 
 
 def _coerce_semantic_entity(value: Any) -> SemanticEntity:
+    """Internal helper to coerce raw data into a SemanticEntity."""
     data = _as_dict(value)
     return SemanticEntity(
         id=str(data.get("id") or ""),
@@ -253,6 +269,7 @@ def _coerce_semantic_entity(value: Any) -> SemanticEntity:
 
 
 def _coerce_semantic_object(value: Any) -> SemanticObject:
+    """Internal helper to coerce raw data into a SemanticObject."""
     data = _as_dict(value)
     return SemanticObject(
         id=str(data["id"]) if data.get("id") is not None else None,
@@ -264,6 +281,7 @@ def _coerce_semantic_object(value: Any) -> SemanticObject:
 
 
 def _as_list(value: Any) -> list[Any]:
+    """Ensures the value is returned as a list, regardless of input type."""
     if value is None:
         return []
     if isinstance(value, list):
@@ -274,6 +292,7 @@ def _as_list(value: Any) -> list[Any]:
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
+    """Ensures the value is returned as a dictionary."""
     if value is None:
         return {}
     if is_dataclass(value) and not isinstance(value, type):
@@ -284,6 +303,7 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 
 def _as_float(value: Any, default: float = 0.0) -> float:
+    """Safely converts a value to a float."""
     try:
         return float(value)
     except (TypeError, ValueError):
@@ -291,6 +311,7 @@ def _as_float(value: Any, default: float = 0.0) -> float:
 
 
 def _as_datetime(value: Any) -> datetime | None:
+    """Safely converts a value to a datetime object from ISO format."""
     if value is None or isinstance(value, datetime):
         return value
     if isinstance(value, str):
@@ -302,6 +323,7 @@ def _as_datetime(value: Any) -> datetime | None:
 
 
 def _as_source(value: Any, *, default: MemorySourceKind) -> MemorySourceKind:
+    """Validates and coerces a value into a valid MemorySourceKind."""
     allowed = {"user_explicit", "conversation", "inferred", "legacy_memory", "system", "tool"}
     if isinstance(value, str) and value in allowed:
         return value  # type: ignore[return-value]
