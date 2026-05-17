@@ -74,11 +74,13 @@ class BaseMemoryExtractionTask:
         """
         if context.llm:
             # Use the explicit LLM provided in the context
-            return await context.llm.generate_structured(
-                prompt=prompt, 
+            llm_with_struct = context.llm.with_structured_output(
                 schema=MEMORY_EXTRACTION_JSON_SCHEMA
             )
-        
+            
+            struct_result = await llm_with_struct.invoke(prompt)
+            return struct_result
+
         logger.error(f"Task {self.name} failed: No LLM provided in MemoryTaskContext.")
         return None
 
