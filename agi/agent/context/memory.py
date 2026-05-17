@@ -15,7 +15,7 @@ Usage:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Sequence
 
 from agi.agent.context.memory_extraction import (
     MEMORY_EXTRACTION_INSTRUCTIONS,
@@ -71,16 +71,15 @@ class BaseMemoryExtractionTask:
     async def _call_llm_for_extraction(self, context: MemoryTaskContext, prompt: str) -> Any:
         """
         Helper to interact with the LLM. 
-        In a real implementation, this would use context.runtime or a model provider.
         """
-        if context.runtime and hasattr(context.runtime, "llm"):
-            # This is a hypothetical call to the agent's LLM
-            return await context.runtime.llm.generate_structured(
+        if context.llm:
+            # Use the explicit LLM provided in the context
+            return await context.llm.generate_structured(
                 prompt=prompt, 
                 schema=MEMORY_EXTRACTION_JSON_SCHEMA
             )
         
-        logger.error(f"Task {self.name} failed: No LLM runtime available in context.")
+        logger.error(f"Task {self.name} failed: No LLM provided in MemoryTaskContext.")
         return None
 
     async def run(self, context: MemoryTaskContext) -> MemoryTaskResult:
@@ -143,6 +142,32 @@ class SemanticMemoryTask(BaseMemoryExtractionTask):
             config=MemoryTaskConfig(interval_seconds=24 * 3600, min_confidence=0.65)
         )
 
+async def run_memory_maintenance(
+    context: MemoryTaskContext,
+    state: MemoryTaskScheduleState | None = None,
+    tasks: Sequence[MemoryTask] | None = None,
+    apply_patches: bool = True,
+) -> tuple[list[MemoryTaskResult], MemoryTaskScheduleState]:
+    """
+    High-level entry point to run due memory maintenance tasks.
+    
+    If no tasks are provided, it defaults to the standard set of extraction tasks.
+    """
+    if tasks is None:
+        tasks = [
+            ProfileMemoryTask(),
+            EpisodicMemoryTask(),
+            SemanticMemoryTask(),
+        ]
+    
+    scheduler = MemoryTaskScheduler()
+    return await scheduler.run_due_tasks(
+        tasks=tasks,
+        context=context,
+        state=state,
+        apply_patches=apply_patches
+    )
+
 __all__ = [
     "MemoryTarget",
     "MemoryOperationType",
@@ -175,4 +200,5 @@ __all__ = [
     "ProfileMemoryTask",
     "EpisodicMemoryTask",
     "SemanticMemoryTask",
+    "run_memory_maintenance",
 ]

@@ -61,6 +61,7 @@ class MemoryTaskContext:
 
     store: MemoryStore
     backend: BackendProtocol
+    llm: Any
     messages: list[AnyMessage] = field(default_factory=list)
     now: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     runtime: Any | None = None
