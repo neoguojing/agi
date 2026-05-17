@@ -119,29 +119,29 @@ class BaseMemoryExtractionTask(MemoryTask):
 
 class ProfileMemoryTask(BaseMemoryExtractionTask):
     """Task dedicated to extracting stable user profile and preferences."""
-    def __init__(self):
+    def __init__(self, config: MemoryTaskConfig):
         super().__init__(
             name="profile_extraction_task",
             target="profile",
-            config=MemoryTaskConfig(interval_seconds=24 * 3600, min_confidence=0.75)
+            config=config
         )
 
 class EpisodicMemoryTask(BaseMemoryExtractionTask):
     """Task dedicated to extracting time-bound events and experiences."""
-    def __init__(self):
+    def __init__(self, config: MemoryTaskConfig):
         super().__init__(
             name="episodic_extraction_task",
             target="episodic",
-            config=MemoryTaskConfig(interval_seconds=3600, min_confidence=0.45)
+            config=config
         )
 
 class SemanticMemoryTask(BaseMemoryExtractionTask):
     """Task dedicated to extracting graph-ready long-term knowledge."""
-    def __init__(self):
+    def __init__(self, config: MemoryTaskConfig):
         super().__init__(
             name="semantic_extraction_task",
             target="semantic",
-            config=MemoryTaskConfig(interval_seconds=24 * 3600, min_confidence=0.65)
+            config=config
         )
 
 async def run_memory_maintenance(
@@ -151,6 +151,7 @@ async def run_memory_maintenance(
     messages: Sequence[Any],
     schedule_state_dict: dict[str, str] | None = None,
     tasks: Sequence[MemoryTask] | None = None,
+    config: MemoryMaintenanceConfig | None = None,
     apply_patches: bool = True,
 ) -> tuple[list[MemoryTaskResult], dict[str, str]]:
     """
@@ -159,11 +160,13 @@ async def run_memory_maintenance(
     Encapsulates the creation of MemoryTaskContext and MemoryTaskScheduleState
     to avoid exposing internal task-system classes to the caller.
     """
+    m_config = config or MemoryMaintenanceConfig()
+
     if tasks is None:
         tasks = [
-            ProfileMemoryTask(),
-            EpisodicMemoryTask(),
-            SemanticMemoryTask(),
+            ProfileMemoryTask(m_config.profile),
+            EpisodicMemoryTask(m_config.episodic),
+            SemanticMemoryTask(m_config.semantic),
         ]
     
     # Internalize the context creation
