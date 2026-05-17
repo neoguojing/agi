@@ -47,10 +47,10 @@ class MemoryOperation:
     fact or updating an existing one.
     """
 
-    op: MemoryOperationType
-    value: dict[str, Any] = field(default_factory=dict)
-    target_id: str | None = None
-    reason: str | None = None
+    op: MemoryOperationType  # The type of operation (e.g., 'add', 'update')
+    value: dict[str, Any] = field(default_factory=dict)  # The record data to be written
+    target_id: str | None = None  # Unique identifier of the record being targeted
+    reason: str | None = None  # Justification for this specific operation
 
 
 @dataclass(frozen=True)
@@ -61,12 +61,12 @@ class MemoryPatch:
     This allows for atomic updates and provides an audit trail (reason, confidence).
     """
 
-    target: MemoryTarget
-    operations: tuple[MemoryOperation, ...] = ()
-    target_path: str | None = None
-    reason: str = ""
-    confidence: float = 1.0
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    target: MemoryTarget  # Which memory store this patch applies to
+    operations: tuple[MemoryOperation, ...] = ()  # Sequence of mutations to perform
+    target_path: str | None = None  # Optional override for the storage path
+    reason: str = ""  # Overall reason for this patch (e.g., 'Automatic extraction')
+    confidence: float = 1.0  # Model's confidence in the correctness of these changes
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))  # Timestamp of patch creation
 
     @property
     def is_empty(self) -> bool:
@@ -87,12 +87,12 @@ class MemoryEvidence:
     message or source for verification.
     """
 
-    source: MemorySourceKind = "conversation"
-    content: str = ""
-    message_id: str | None = None
-    memory_id: str | None = None
-    created_at: datetime | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    source: MemorySourceKind = "conversation"  # Where the information came from
+    content: str = ""  # The actual quote or snippet from the source
+    message_id: str | None = None  # ID of the message if source is 'conversation'
+    memory_id: str | None = None  # ID of the existing memory if source is 'legacy_memory'
+    created_at: datetime | None = None  # When the evidence was captured
+    metadata: dict[str, Any] = field(default_factory=dict)  # Additional context (e.g., tool output)
 
     def to_record(self) -> dict[str, Any]:
         """Converts the evidence dataclass to a JSON-ready dictionary."""
@@ -106,17 +106,17 @@ class ProfileMemoryRecord:
     Used for long-term user attributes (e.g., 'user.language': 'English').
     """
 
-    id: str = ""
-    key: str = ""
-    value: Any | None = None
-    confidence: float = 0.0
-    importance: float = 0.0
-    source: MemorySourceKind = "inferred"
-    evidence: tuple[MemoryEvidence, ...] = ()
-    tags: tuple[str, ...] = ()
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    id: str = ""  # Unique identifier for the profile record
+    key: str = ""  # The attribute name (e.g., 'preferences.theme')
+    value: Any | None = None  # The value of the attribute
+    confidence: float = 0.0  # Model's confidence in this fact
+    importance: float = 0.0  # Relative importance of this fact to the user
+    source: MemorySourceKind = "inferred"  # How this fact was discovered
+    evidence: tuple[MemoryEvidence, ...] = ()  # Supporting evidence
+    tags: tuple[str, ...] = ()  # Categorization tags
+    created_at: datetime | None = None  # Initial creation timestamp
+    updated_at: datetime | None = None  # Last modification timestamp
+    metadata: dict[str, Any] = field(default_factory=dict)  # Extra unstructured data
 
     def to_record(self) -> dict[str, Any]:
         """Converts the record to a JSON-ready dictionary with a type marker."""
@@ -137,21 +137,21 @@ class EpisodicMemoryRecord:
     started a new project on 2023-10-01').
     """
 
-    id: str = ""
-    summary: str = ""
-    event_time: datetime | None = None
-    participants: tuple[str, ...] = ()
-    outcome: str | None = None
-    context: dict[str, Any] = field(default_factory=dict)
-    confidence: float = 0.0
-    importance: float = 0.0
-    ttl_days: int | None = None
-    expires_at: datetime | None = None
-    evidence: tuple[MemoryEvidence, ...] = ()
-    tags: tuple[str, ...] = ()
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    id: str = ""  # Unique identifier for the episode
+    summary: str = ""  # Concise description of the event
+    event_time: datetime | None = None  # When the event actually occurred
+    participants: tuple[str, ...] = ()  # Entities involved in the event
+    outcome: str | None = None  # The result or conclusion of the event
+    context: dict[str, Any] = field(default_factory=dict)  # Surrounding circumstances
+    confidence: float = 0.0  # Model's confidence in the event's accuracy
+    importance: float = 0.0  # How significant this event is
+    ttl_days: int | None = None  # Time-to-live in days before the memory expires
+    expires_at: datetime | None = None  # Absolute expiration timestamp
+    evidence: tuple[MemoryEvidence, ...] = ()  # Supporting evidence
+    tags: tuple[str, ...] = ()  # Categorization tags
+    created_at: datetime | None = None  # When the record was created
+    updated_at: datetime | None = None  # When the record was last updated
+    metadata: dict[str, Any] = field(default_factory=dict)  # Extra unstructured data
 
     def to_record(self) -> dict[str, Any]:
         """Converts the record to a JSON-ready dictionary with a type marker."""
@@ -171,10 +171,10 @@ class SemanticEntity:
     Represents a concept, person, or object in a knowledge graph.
     """
 
-    id: str = ""
-    kind: str = "concept"
-    label: str | None = None
-    properties: dict[str, Any] = field(default_factory=dict)
+    id: str = ""  # Unique identifier for the entity (e.g., 'person:123')
+    kind: str = "concept"  # Type of entity (e.g., 'person', 'location', 'concept')
+    label: str | None = None  # Human-readable name of the entity
+    properties: dict[str, Any] = field(default_factory=dict)  # Key-value attributes of the entity
 
     def to_record(self) -> dict[str, Any]:
         """Converts the entity to a JSON-ready dictionary."""
@@ -188,11 +188,11 @@ class SemanticObject:
     The target of a predicate in a semantic triple.
     """
 
-    id: str | None = None
-    kind: str = "value"
-    value: Any | None = None
-    label: str | None = None
-    properties: dict[str, Any] = field(default_factory=dict)
+    id: str | None = None  # ID if the object is another entity; None if it's a literal value
+    kind: str = "value"  # 'entity' if it refers to a node, 'value' if it's a literal
+    value: Any | None = None  # The literal value if kind is 'value'
+    label: str | None = None  # Human-readable label for the object
+    properties: dict[str, Any] = field(default_factory=dict)  # Extra attributes
 
     def to_record(self) -> dict[str, Any]:
         """Converts the object to a JSON-ready dictionary."""
@@ -206,18 +206,18 @@ class SemanticMemoryRecord:
     Represents a triple: Subject -> Predicate -> Object.
     """
 
-    id: str = ""
-    subject: SemanticEntity = field(default_factory=SemanticEntity)
-    predicate: str = ""
-    object: SemanticObject = field(default_factory=SemanticObject)
-    qualifiers: dict[str, Any] = field(default_factory=dict)
-    confidence: float = 0.0
-    importance: float = 0.0
-    evidence: tuple[MemoryEvidence, ...] = ()
-    tags: tuple[str, ...] = ()
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    id: str = ""  # Unique identifier for the triple
+    subject: SemanticEntity = field(default_factory=SemanticEntity)  # The entity the fact is about
+    predicate: str = ""  # The relationship or property (e.g., 'works_at', 'is_a')
+    object: SemanticObject = field(default_factory=SemanticObject)  # The value or entity the subject is linked to
+    qualifiers: dict[str, Any] = field(default_factory=dict)  # Contextual modifiers (e.g., 'since': '2020')
+    confidence: float = 0.0  # Model's confidence in this relationship
+    importance: float = 0.0  # Relative importance of this knowledge
+    evidence: tuple[MemoryEvidence, ...] = ()  # Supporting evidence
+    tags: tuple[str, ...] = ()  # Categorization tags
+    created_at: datetime | None = None  # When the record was created
+    updated_at: datetime | None = None  # When the record was last updated
+    metadata: dict[str, Any] = field(default_factory=dict)  # Extra unstructured data
 
     def to_record(self) -> dict[str, Any]:
         """Converts the record to a JSON-ready dictionary with a type marker."""
@@ -238,11 +238,11 @@ class MemoryExtractionResult:
     single conversation window.
     """
 
-    profile_memories: tuple[ProfileMemoryRecord, ...] = ()
-    episodic_memories: tuple[EpisodicMemoryRecord, ...] = ()
-    semantic_memories: tuple[SemanticMemoryRecord, ...] = ()
-    rejected_candidates: tuple[str, ...] = ()
-    notes: str = ""
+    profile_memories: tuple[ProfileMemoryRecord, ...] = ()  # Extracted profile facts
+    episodic_memories: tuple[EpisodicMemoryRecord, ...] = ()  # Extracted events
+    semantic_memories: tuple[SemanticMemoryRecord, ...] = ()  # Extracted knowledge triples
+    rejected_candidates: tuple[str, ...] = ()  # Facts the model considered but decided to reject
+    notes: str = ""  # General model commentary on the extraction process
 
     def to_patches(self, *, reason: str = "model structured memory extraction") -> tuple[MemoryPatch, ...]:
         """Converts the extraction results into a set of MemoryPatches, one per target."""
