@@ -14,6 +14,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Sequence
 
@@ -189,40 +190,70 @@ async def run_memory_maintenance(
         config: Optional configuration for task intervals and confidence.
         apply_patches: Whether to automatically write changes to the store.
     """
-    m_config = config or MemoryMaintenanceConfig()
+    try:
+        m_config = config or MemoryMaintenanceConfig()
 
-    if tasks is None:
-        tasks = [
-            ProfileMemoryTask(m_config.profile),
-            EpisodicMemoryTask(m_config.episodic),
-            SemanticMemoryTask(m_config.semantic),
-        ]
+        if tasks is None:
+            tasks = [
+                ProfileMemoryTask(m_config.profile),
+                EpisodicMemoryTask(m_config.episodic),
+                SemanticMemoryTask(m_config.semantic),
+            ]
+        
+        # Internalize the store creation
+        store = BackendMemoryStore(backend)
+        
+        # Internalize the context creation
+        context = MemoryTaskContext(
+            store=store,
+            backend=backend,
+            llm=llm,
+            messages=list(messages),
+        )
+        
+        # Internalize the state management
+        state = None
+        if schedule_state_dict is not None:
+            state = MemoryTaskScheduleState.from_iso_dict(schedule_state_dict)
+        
+        scheduler = MemoryTaskScheduler()
+        results, new_state = await scheduler.run_due_tasks(
+            tasks=tasks,
+            context=context,
+            state=state,
+            apply_patches=apply_patches
+        )
+        
+        return results, new_state.to_iso_dict()
+    except Exception as e:
+        logger.exception("Error during memory maintenance execution")
+        return [], schedule_state_dict or {}
+
+def schedule_memory_maintenance(
+    llm: Any,
+    backend: Any,
+    messages: Sequence[Any],
+    schedule_state_dict: dict[str, str] | None = None,
+    tasks: Sequence[MemoryTask] | None = None,
+    config: MemoryMaintenanceConfig | None = None,
+    apply_patches: bool = True,
+) -> None:
+    """
+    Schedules memory maintenance to run in the background without blocking the main flow.
     
-    # Internalize the store creation
-    store = BackendMemoryStore(backend)
-    
-    # Internalize the context creation
-    context = MemoryTaskContext(
-        store=store,
-        backend=backend,
-        llm=llm,
-        messages=list(messages),
+    This function creates an asyncio task and returns immediately.
+    """
+    asyncio.create_task(
+        run_memory_maintenance(
+            llm=llm,
+            backend=backend,
+            messages=messages,
+            schedule_state_dict=schedule_state_dict,
+            tasks=tasks,
+            config=config,
+            apply_patches=apply_patches
+        )
     )
-    
-    # Internalize the state management
-    state = None
-    if schedule_state_dict is not None:
-        state = MemoryTaskScheduleState.from_iso_dict(schedule_state_dict)
-    
-    scheduler = MemoryTaskScheduler()
-    results, new_state = await scheduler.run_due_tasks(
-        tasks=tasks,
-        context=context,
-        state=state,
-        apply_patches=apply_patches
-    )
-    
-    return results, new_state.to_iso_dict()
 
 def read_memory(
     backend: Any,
@@ -313,6 +344,7 @@ __all__ = [
     "EpisodicMemoryTask",
     "SemanticMemoryTask",
     "run_memory_maintenance",
+    "schedule_memory_maintenance",
     "read_memory",
     "format_memory_for_llm",
 ]
