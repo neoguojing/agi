@@ -216,6 +216,37 @@ def read_memory(
         return store.read_jsonl(path)
     return store.read_text(path)
 
+def format_memory_for_llm(
+    backend: Any,
+    target: MemoryTarget,
+) -> str:
+    """
+    Reads memory for a target and formats it as a human-readable string 
+    suitable for LLM context injection.
+    """
+    records = read_memory(backend, target, as_jsonl=True)
+    if not records:
+        return f"No {target} memory available."
+
+    lines = [f"--- {target.upper()} MEMORY ---"]
+    
+    for rec in records:
+        if target == "profile":
+            key = rec.get("key", "unknown")
+            val = rec.get("value", "unknown")
+            lines.append(f"- {key}: {val}")
+        elif target == "episodic":
+            summary = rec.get("summary", "No summary")
+            time = rec.get("event_time", "Unknown time")
+            lines.append(f"- [{time}] {summary}")
+        elif target == "semantic":
+            subj = rec.get("subject", {}).get("label") or rec.get("subject", {}).get("id", "Unknown")
+            pred = rec.get("predicate", "is")
+            obj = rec.get("object", {}).get("value") or rec.get("object", {}).get("label") or "Unknown"
+            lines.append(f"- {subj} {pred} {obj}")
+    
+    return "\n".join(lines)
+
 __all__ = [
     "MemoryTarget",
     "MemoryOperationType",
@@ -250,4 +281,5 @@ __all__ = [
     "SemanticMemoryTask",
     "run_memory_maintenance",
     "read_memory",
+    "format_memory_for_llm",
 ]
