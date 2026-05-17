@@ -56,7 +56,7 @@ from agi.agent.context.memory_tasks import (
 
 logger = logging.getLogger(__name__)
 
-class BaseMemoryExtractionTask:
+class BaseMemoryExtractionTask(MemoryTask):
     """Base class for tasks that use an LLM to extract memories."""
     
     def __init__(self, name: str, target: MemoryTarget, config: MemoryTaskConfig):
