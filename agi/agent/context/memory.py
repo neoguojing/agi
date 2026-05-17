@@ -40,7 +40,6 @@ from agi.agent.context.memory_store import (
     MemoryStore,
 )
 from agi.agent.context.memory_tasks import (
-    LegacyMemoryInspectionTask,
     MemoryMaintenanceConfig,
     MemoryTask,
     MemoryTaskConfig,
@@ -79,5 +78,4 @@ __all__ = [
     "MemoryTaskScheduleState",
     "MemoryTask",
     "MemoryTaskScheduler",
-    "LegacyMemoryInspectionTask",
 ]

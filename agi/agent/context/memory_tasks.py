@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Protocol, Sequence, runtime_checkable
 
 from agi.agent.context.memory_models import MemoryPatch, MemoryTarget
-from agi.agent.context.memory_store import DEFAULT_LEGACY_MEMORY_PATHS, DEFAULT_MEMORY_TARGET_PATHS
+from agi.agent.context.memory_store import  DEFAULT_MEMORY_TARGET_PATHS
 
 if TYPE_CHECKING:
     from langchain_core.messages import AnyMessage
@@ -49,7 +49,6 @@ class MemoryTaskConfig:
 class MemoryMaintenanceConfig:
     """Configuration shared by background memory processing."""
 
-    legacy_paths: tuple[str, ...] = DEFAULT_LEGACY_MEMORY_PATHS
     target_paths: dict[MemoryTarget, str] = field(default_factory=lambda: dict(DEFAULT_MEMORY_TARGET_PATHS))
     profile: MemoryTaskConfig = field(default_factory=lambda: MemoryTaskConfig(interval_seconds=24 * 3600, min_confidence=0.75))
     episodic: MemoryTaskConfig = field(default_factory=lambda: MemoryTaskConfig(interval_seconds=3600, min_confidence=0.45))
@@ -63,7 +62,6 @@ class MemoryTaskContext:
     store: MemoryStore
     backend: BackendProtocol
     messages: list[AnyMessage] = field(default_factory=list)
-    legacy_memory: dict[str, str] = field(default_factory=dict)
     now: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     runtime: Any | None = None
     state: dict[str, Any] = field(default_factory=dict)
@@ -172,24 +170,3 @@ class MemoryTaskScheduler:
             results.append(result)
 
         return results, self.mark_completed(due, context, state)
-
-
-class LegacyMemoryInspectionTask:
-    """No-op task that proves the MemoryTask contract without rewriting memory."""
-
-    name = "legacy_memory_inspection"
-    target: MemoryTarget = "episodic"
-
-    def __init__(self, config: MemoryTaskConfig | None = None) -> None:
-        self.config = config or MemoryTaskConfig(enabled=True, interval_seconds=3600)
-
-    def should_run(self, context: MemoryTaskContext) -> bool:
-        return self.config.enabled
-
-    async def run(self, context: MemoryTaskContext) -> MemoryTaskResult:
-        return MemoryTaskResult(
-            task_name=self.name,
-            changed=False,
-            summary=f"Loaded {len(context.legacy_memory)} legacy memory files for inspection.",
-            metadata={"legacy_paths": sorted(context.legacy_memory)},
-        )

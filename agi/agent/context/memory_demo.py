@@ -151,14 +151,13 @@ class DemoSemanticTask:
         self.config = MemoryTaskConfig(enabled=True, interval_seconds=24 * 3600, min_confidence=0.65)
 
     def should_run(self, context: MemoryTaskContext) -> bool:
-        return bool(context.legacy_memory)
+        return True
 
     async def run(self, context: MemoryTaskContext) -> MemoryTaskResult:
         # In production this prompt would be sent to an LLM with structured output.
         # The simulated JSON below demonstrates the expected LLM return shape.
         _prompt = build_memory_extraction_prompt(
             conversation="User prefers structured memory abstractions.",
-            existing_memory="\n".join(context.legacy_memory.values()),
         )
         simulated_llm_json = {
             "semantic_memories": [
@@ -194,7 +193,6 @@ async def run_demo() -> dict[str, Any]:
     context = MemoryTaskContext(
         store=store,
         backend=backend,  # type: ignore[arg-type]
-        legacy_memory=store.load_legacy_memory(),
         now=datetime.now(timezone.utc),
     )
 

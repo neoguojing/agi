@@ -29,12 +29,6 @@ else:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_LEGACY_MEMORY_PATHS: tuple[str, ...] = (
-    "/memories/facts.md",
-    "/memories/preferences.md",
-    "/memories/lessons.md",
-)
-
 DEFAULT_MEMORY_TARGET_PATHS: dict[MemoryTarget, str] = {
     "profile": "/memories/profile.jsonl",
     "episodic": "/memories/episodic.jsonl",
@@ -48,7 +42,6 @@ DEFAULT_MEMORY_TARGET_PATHS: dict[MemoryTarget, str] = {
 class MemoryStore(Protocol):
     """Minimal storage contract for memory maintenance."""
 
-    legacy_paths: tuple[str, ...]
     target_paths: dict[MemoryTarget, str]
 
     def read_text(self, path: str) -> str:
@@ -87,11 +80,9 @@ class BackendMemoryStore:
         self,
         backend: BackendProtocol,
         *,
-        legacy_paths: Sequence[str] = DEFAULT_LEGACY_MEMORY_PATHS,
         target_paths: dict[MemoryTarget, str] | None = None,
     ) -> None:
         self.backend = backend
-        self.legacy_paths = tuple(legacy_paths)
         self.target_paths = dict(target_paths or DEFAULT_MEMORY_TARGET_PATHS)
 
     def read_text(self, path: str) -> str:
@@ -135,9 +126,6 @@ class BackendMemoryStore:
         result = self.backend.write(path, content)
         if getattr(result, "error", None):
             raise RuntimeError(result.error)
-
-    def load_legacy_memory(self) -> dict[str, str]:
-        return {path: content for path in self.legacy_paths if (content := self.read_text(path))}
 
     def read_jsonl(self, path: str) -> list[dict[str, Any]]:
         content = self.read_text(path)

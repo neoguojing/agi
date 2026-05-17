@@ -36,5 +36,4 @@ __all__ = [
     "MemoryTaskScheduler",
     "MemoryTaskScheduleState",
     "BackendMemoryStore",
-    "LegacyMemoryInspectionTask",
 ]
