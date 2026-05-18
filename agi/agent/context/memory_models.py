@@ -7,7 +7,7 @@ Usage:
     - storage backends
 
     The schema is optimized for:
-    - structured LLM output
+    - structured LLM output (Flat and Simple)
     - JSON serialization
     - patch-based memory updates
     - graph/vector memory systems
@@ -46,7 +46,7 @@ MemorySourceKind = Literal[
 
 
 # =========================================================
-# Patch Layer
+# Patch Layer (System Internal - Not for LLM Extraction)
 # =========================================================
 
 class MemoryOperation(BaseModel):
@@ -149,9 +149,9 @@ class MemoryEvidence(BaseModel):
         description="Referenced existing memory identifier."
     )
 
-    created_at: datetime | None = Field(
+    created_at: str | None = Field(
         default=None,
-        description="Evidence creation timestamp."
+        description="Evidence creation timestamp (ISO string)."
     )
 
     metadata: dict[str, Any] = Field(
@@ -161,7 +161,7 @@ class MemoryEvidence(BaseModel):
 
 
 # =========================================================
-# Profile Memory
+# Profile Memory (Simplified for LLM)
 # =========================================================
 
 class ProfileMemoryRecord(BaseModel):
@@ -174,22 +174,22 @@ class ProfileMemoryRecord(BaseModel):
 
     key: str = Field(
         default="",
-        description="Profile attribute key."
+        description="Profile attribute key (e.g., 'favorite_color')."
     )
 
-    value: Any | None = Field(
-        default=None,
+    value: str = Field(
+        default="",
         description="Profile attribute value."
     )
 
     confidence: float = Field(
         default=0.0,
-        description="Confidence score."
+        description="Confidence score (0.0 to 1.0)."
     )
 
     importance: float = Field(
         default=0.0,
-        description="Importance score."
+        description="Importance score (0.0 to 1.0)."
     )
 
     source: MemorySourceKind = Field(
@@ -197,40 +197,25 @@ class ProfileMemoryRecord(BaseModel):
         description="Memory source."
     )
 
-    evidence: tuple[MemoryEvidence, ...] = Field(
-        default_factory=tuple,
-        description="Supporting evidence."
-    )
-
-    tags: tuple[str, ...] = Field(
-        default_factory=tuple,
+    tags: list[str] = Field(
+        default_factory=list,
         description="Categorization tags."
     )
 
-    created_at: datetime | None = Field(
+    created_at: str | None = Field(
         default=None,
-        description="Creation timestamp."
+        description="Creation timestamp (ISO string)."
     )
 
-    updated_at: datetime | None = Field(
+    updated_at: str | None = Field(
         default=None,
-        description="Last update timestamp."
+        description="Last update timestamp (ISO string)."
     )
 
     metadata: dict[str, Any] = Field(
         default_factory=dict,
         description="Additional metadata."
     )
-
-    def to_operation(
-        self,
-        op: MemoryOperationType = "add",
-    ) -> MemoryOperation:
-        return MemoryOperation(
-            op=op,
-            target_id=self.id or None,
-            value=self.model_dump(mode="json"),
-        )
 
 class ProfileMemoryList(BaseModel):
     profile_memories: list[ProfileMemoryRecord] = Field(
@@ -239,7 +224,7 @@ class ProfileMemoryList(BaseModel):
 
 
 # =========================================================
-# Episodic Memory
+# Episodic Memory (Simplified for LLM)
 # =========================================================
 
 class EpisodicMemoryRecord(BaseModel):
@@ -255,13 +240,13 @@ class EpisodicMemoryRecord(BaseModel):
         description="Summary of the event."
     )
 
-    event_time: datetime | None = Field(
+    event_time: str | None = Field(
         default=None,
-        description="Time when the event occurred."
+        description="Time when the event occurred (ISO string)."
     )
 
-    participants: tuple[str, ...] = Field(
-        default_factory=tuple,
+    participants: list[str] = Field(
+        default_factory=list,
         description="Entities involved in the event."
     )
 
@@ -270,19 +255,14 @@ class EpisodicMemoryRecord(BaseModel):
         description="Event outcome."
     )
 
-    context: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Event context."
-    )
-
     confidence: float = Field(
         default=0.0,
-        description="Confidence score."
+        description="Confidence score (0.0 to 1.0)."
     )
 
     importance: float = Field(
         default=0.0,
-        description="Importance score."
+        description="Importance score (0.0 to 1.0)."
     )
 
     ttl_days: int | None = Field(
@@ -290,29 +270,24 @@ class EpisodicMemoryRecord(BaseModel):
         description="Memory TTL in days."
     )
 
-    expires_at: datetime | None = Field(
+    expires_at: str | None = Field(
         default=None,
-        description="Expiration timestamp."
+        description="Expiration timestamp (ISO string)."
     )
 
-    evidence: tuple[MemoryEvidence, ...] = Field(
-        default_factory=tuple,
-        description="Supporting evidence."
-    )
-
-    tags: tuple[str, ...] = Field(
-        default_factory=tuple,
+    tags: list[str] = Field(
+        default_factory=list,
         description="Categorization tags."
     )
 
-    created_at: datetime | None = Field(
+    created_at: str | None = Field(
         default=None,
-        description="Creation timestamp."
+        description="Creation timestamp (ISO string)."
     )
 
-    updated_at: datetime | None = Field(
+    updated_at: str | None = Field(
         default=None,
-        description="Last update timestamp."
+        description="Last update timestamp (ISO string)."
     )
 
     metadata: dict[str, Any] = Field(
@@ -320,77 +295,14 @@ class EpisodicMemoryRecord(BaseModel):
         description="Additional metadata."
     )
 
-    def to_operation(
-        self,
-        op: MemoryOperationType = "add",
-    ) -> MemoryOperation:
-        return MemoryOperation(
-            op=op,
-            target_id=self.id or None,
-            value=self.model_dump(mode="json"),
-        )
-
 class EpisodicMemoryList(BaseModel):
     episodic_memories: list[EpisodicMemoryRecord] = Field(
         description="List of episodic"
     )
 
 # =========================================================
-# Semantic Memory
+# Semantic Memory (Simplified for LLM)
 # =========================================================
-
-class SemanticEntity(BaseModel):
-    """Graph entity node."""
-
-    id: str = Field(
-        default="",
-        description="Entity identifier."
-    )
-
-    kind: str = Field(
-        default="concept",
-        description="Entity type."
-    )
-
-    label: str | None = Field(
-        default=None,
-        description="Human-readable label."
-    )
-
-    properties: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Entity properties."
-    )
-
-
-class SemanticObject(BaseModel):
-    """Semantic triple object."""
-
-    id: str | None = Field(
-        default=None,
-        description="Object entity identifier."
-    )
-
-    kind: str = Field(
-        default="value",
-        description="Object kind."
-    )
-
-    value: Any | None = Field(
-        default=None,
-        description="Literal value."
-    )
-
-    label: str | None = Field(
-        default=None,
-        description="Human-readable label."
-    )
-
-    properties: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Object properties."
-    )
-
 
 class SemanticMemoryRecord(BaseModel):
     """Graph-ready semantic memory triple."""
@@ -400,70 +312,50 @@ class SemanticMemoryRecord(BaseModel):
         description="Unique semantic memory identifier."
     )
 
-    subject: SemanticEntity = Field(
-        default_factory=SemanticEntity,
-        description="Triple subject."
+    subject: str = Field(
+        default="",
+        description="The entity the memory is about."
     )
 
     predicate: str = Field(
         default="",
-        description="Relationship predicate."
+        description="The relationship or property (e.g., 'works_at', 'is_a')."
     )
 
-    object: SemanticObject = Field(
-        default_factory=SemanticObject,
-        description="Triple object."
-    )
-
-    qualifiers: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Contextual qualifiers."
+    object: str = Field(
+        default="",
+        description="The value or target entity of the relationship."
     )
 
     confidence: float = Field(
         default=0.0,
-        description="Confidence score."
+        description="Confidence score (0.0 to 1.0)."
     )
 
     importance: float = Field(
         default=0.0,
-        description="Importance score."
+        description="Importance score (0.0 to 1.0)."
     )
 
-    evidence: tuple[MemoryEvidence, ...] = Field(
-        default_factory=tuple,
-        description="Supporting evidence."
-    )
-
-    tags: tuple[str, ...] = Field(
-        default_factory=tuple,
+    tags: list[str] = Field(
+        default_factory=list,
         description="Categorization tags."
     )
 
-    created_at: datetime | None = Field(
+    created_at: str | None = Field(
         default=None,
-        description="Creation timestamp."
+        description="Creation timestamp (ISO string)."
     )
 
-    updated_at: datetime | None = Field(
+    updated_at: str | None = Field(
         default=None,
-        description="Last update timestamp."
+        description="Last update timestamp (ISO string)."
     )
 
     metadata: dict[str, Any] = Field(
         default_factory=dict,
         description="Additional metadata."
     )
-
-    def to_operation(
-        self,
-        op: MemoryOperationType = "add",
-    ) -> MemoryOperation:
-        return MemoryOperation(
-            op=op,
-            target_id=self.id or None,
-            value=self.model_dump(mode="json"),
-        )
 
 class SemanticMemoryList(BaseModel):
     semantic_memories: list[SemanticMemoryRecord] = Field(
@@ -516,8 +408,12 @@ class MemoryExtractionResult(BaseModel):
                     target="profile",
                     reason=reason,
                     operations=tuple(
-                        memory.to_operation()
-                        for memory in self.profile_memories
+                        MemoryOperation(
+                            op="add",
+                            target_id=m.id or None,
+                            value=m.model_dump(mode="json")
+                        )
+                        for m in self.profile_memories
                     ),
                 )
             )
@@ -528,8 +424,12 @@ class MemoryExtractionResult(BaseModel):
                     target="episodic",
                     reason=reason,
                     operations=tuple(
-                        memory.to_operation()
-                        for memory in self.episodic_memories
+                        MemoryOperation(
+                            op="add",
+                            target_id=m.id or None,
+                            value=m.model_dump(mode="json")
+                        )
+                        for m in self.episodic_memories
                     ),
                 )
             )
@@ -540,8 +440,12 @@ class MemoryExtractionResult(BaseModel):
                     target="semantic",
                     reason=reason,
                     operations=tuple(
-                        memory.to_operation()
-                        for memory in self.semantic_memories
+                        MemoryOperation(
+                            op="add",
+                            target_id=m.id or None,
+                            value=m.model_dump(mode="json")
+                        )
+                        for m in self.semantic_memories
                     ),
                 )
             )
