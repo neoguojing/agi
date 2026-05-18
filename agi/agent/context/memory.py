@@ -34,9 +34,7 @@ from agi.agent.context.memory_models import (
     MemorySourceKind,
     MemoryTarget,
     ProfileMemoryRecord,
-    SemanticEntity,
     SemanticMemoryRecord,
-    SemanticObject,
     ProfileMemoryList,
     EpisodicMemoryList,
     SemanticMemoryList,
@@ -126,25 +124,14 @@ class BaseMemoryExtractionTask(MemoryTask):
             return MemoryTaskResult(task_name=self.name, changed=False, summary="LLM call failed")
 
         # 5. Parse and convert to patches
-        print(f"***************{llm_payload}")
-        
         filtered_extraction = MemoryExtractionResult()
-        # if isinstance(llm_payload,ProfileMemoryList):
-        #     filtered_extraction.profile_memories = [m for m in llm_payload.profile_memories if m.confidence >= self.config.min_confidence]
-        # if isinstance(llm_payload,EpisodicMemoryList):
-        #     filtered_extraction.episodic_memories = [m for m in llm_payload.episodic_memories if m.confidence >= self.config.min_confidence]
-        # if isinstance(llm_payload,SemanticMemoryList):
-        #     filtered_extraction.semantic_memories = [m for m in llm_payload.semantic_memories if m.confidence >= self.config.min_confidence]
         
-        if isinstance(llm_payload,ProfileMemoryList):
-            filtered_extraction.profile_memories = [m for m in llm_payload.profile_memories]
-        if isinstance(llm_payload,EpisodicMemoryList):
-            filtered_extraction.episodic_memories = [m for m in llm_payload.episodic_memories]
-        if isinstance(llm_payload,SemanticMemoryList):
-            filtered_extraction.semantic_memories = [m for m in llm_payload.semantic_memories]
-        
-        # Create a new extraction result with filtered records to generate patches
-        
+        if isinstance(llm_payload, ProfileMemoryList):
+            filtered_extraction.profile_memories = llm_payload.profile_memories
+        elif isinstance(llm_payload, EpisodicMemoryList):
+            filtered_extraction.episodic_memories = llm_payload.episodic_memories
+        elif isinstance(llm_payload, SemanticMemoryList):
+            filtered_extraction.semantic_memories = llm_payload.semantic_memories
         
         patches = filtered_extraction.to_patches(reason=f"Automatic {self.target} memory extraction")
         
@@ -156,7 +143,7 @@ class BaseMemoryExtractionTask(MemoryTask):
         return MemoryTaskResult(
             task_name=self.name,
             changed=bool(target_patches),
-            summary=f"Extracted {len(target_patches)} patches for {self.target} memory (confidence >= {self.config.min_confidence}).",
+            summary=f"Extracted {len(target_patches)} patches for {self.target} memory.",
             patches=target_patches
         )
 
@@ -401,9 +388,9 @@ def format_memory_for_llm(
             time = rec.get("event_time", "Unknown time")
             lines.append(f"- [{time}] {summary}")
         elif target == "semantic":
-            subj = rec.get("subject", {}).get("label") or rec.get("subject", {}).get("id", "Unknown")
+            subj = rec.get("subject", "Unknown")
             pred = rec.get("predicate", "is")
-            obj = rec.get("object", {}).get("value") or rec.get("object", {}).get("label") or "Unknown"
+            obj = rec.get("object", "Unknown")
             lines.append(f"- {subj} {pred} {obj}")
     
     return "\n".join(lines)
@@ -417,8 +404,6 @@ __all__ = [
     "MemoryEvidence",
     "ProfileMemoryRecord",
     "EpisodicMemoryRecord",
-    "SemanticEntity",
-    "SemanticObject",
     "SemanticMemoryRecord",
     "MemoryExtractionResult",
     "MEMORY_EXTRACTION_INSTRUCTIONS",
