@@ -163,3 +163,7 @@ agent:
 .PHONY: cli
 cli:
 	python -m agi.cli
+
+.PHONY: openbb
+openbb:
+	openbb-mcp --default-categories admin --tool-discovery
