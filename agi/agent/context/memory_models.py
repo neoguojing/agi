@@ -404,12 +404,31 @@ class MemoryExtractionResult(BaseModel):
         now_iso = datetime.now(timezone.utc).isoformat()
 
         def prepare_record(record: BaseModel) -> dict[str, Any]:
-            """Helper to dump record and fill in missing system timestamps."""
+            """Helper to dump record and fill in missing system defaults."""
             data = record.model_dump(mode="json")
+            
+            # 1. Timestamps
             if not data.get("created_at"):
                 data["created_at"] = now_iso
             if not data.get("updated_at"):
                 data["updated_at"] = now_iso
+            
+            # 2. Quality Metrics (Default to 0.5 if 0.0 or missing, as 0.0 is often a default)
+            if data.get("confidence") == 0.0:
+                data["confidence"] = 0.5
+            if data.get("importance") == 0.0:
+                data["importance"] = 0.5
+                
+            # 3. Source
+            if not data.get("source"):
+                data["source"] = "conversation"
+                
+            # 4. Collections
+            if data.get("tags") is None:
+                data["tags"] = []
+            if data.get("metadata") is None:
+                data["metadata"] = {}
+                
             return data
 
         if self.profile_memories:
