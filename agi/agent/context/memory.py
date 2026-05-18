@@ -372,6 +372,9 @@ def format_memory_for_llm(
         target: The memory target to read.
         **kwargs: Passed to `read_memory` to support selective or batch retrieval.
     """
+    if target is None:
+        return "No memory target specified."
+
     records = read_memory(backend, target, as_jsonl=True, **kwargs)
     if not records:
         return f"No {target} memory available."
@@ -379,19 +382,25 @@ def format_memory_for_llm(
     lines = [f"--- {target.upper()} MEMORY ---"]
     
     for rec in records:
+        if not isinstance(rec, dict):
+            continue
+            
         if target == "profile":
-            key = rec.get("key", "unknown")
-            val = rec.get("value", "unknown")
+            key = rec.get("key", "unknown_key")
+            val = rec.get("value", "unknown_value")
             lines.append(f"- {key}: {val}")
         elif target == "episodic":
-            summary = rec.get("summary", "No summary")
+            summary = rec.get("summary", "No summary available")
             time = rec.get("event_time", "Unknown time")
             lines.append(f"- [{time}] {summary}")
         elif target == "semantic":
-            subj = rec.get("subject", "Unknown")
+            subj = rec.get("subject", "Unknown subject")
             pred = rec.get("predicate", "is")
-            obj = rec.get("object", "Unknown")
+            obj = rec.get("object", "Unknown object")
             lines.append(f"- {subj} {pred} {obj}")
+        else:
+            # Fallback for unknown targets to ensure something is returned
+            lines.append(f"- {str(rec)}")
     
     return "\n".join(lines)
 
