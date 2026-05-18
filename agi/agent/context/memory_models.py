@@ -401,6 +401,16 @@ class MemoryExtractionResult(BaseModel):
     ) -> tuple[MemoryPatch, ...]:
 
         patches: list[MemoryPatch] = []
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        def prepare_record(record: BaseModel) -> dict[str, Any]:
+            """Helper to dump record and fill in missing system timestamps."""
+            data = record.model_dump(mode="json")
+            if not data.get("created_at"):
+                data["created_at"] = now_iso
+            if not data.get("updated_at"):
+                data["updated_at"] = now_iso
+            return data
 
         if self.profile_memories:
             patches.append(
@@ -411,7 +421,7 @@ class MemoryExtractionResult(BaseModel):
                         MemoryOperation(
                             op="add",
                             target_id=m.id or None,
-                            value=m.model_dump(mode="json")
+                            value=prepare_record(m)
                         )
                         for m in self.profile_memories
                     ),
@@ -427,7 +437,7 @@ class MemoryExtractionResult(BaseModel):
                         MemoryOperation(
                             op="add",
                             target_id=m.id or None,
-                            value=m.model_dump(mode="json")
+                            value=prepare_record(m)
                         )
                         for m in self.episodic_memories
                     ),
@@ -443,7 +453,7 @@ class MemoryExtractionResult(BaseModel):
                         MemoryOperation(
                             op="add",
                             target_id=m.id or None,
-                            value=m.model_dump(mode="json")
+                            value=prepare_record(m)
                         )
                         for m in self.semantic_memories
                     ),
