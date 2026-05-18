@@ -40,7 +40,6 @@ from agi.agent.context.memory_models import (
     json_ready,
 )
 from agi.agent.context.memory_store import (
-    DEFAULT_LEGACY_MEMORY_PATHS,
     DEFAULT_MEMORY_TARGET_PATHS,
     BackendMemoryStore,
     MemoryStore,
@@ -53,6 +52,7 @@ from agi.agent.context.memory_tasks import (
     MemoryTaskResult,
     MemoryTaskScheduleState,
     MemoryTaskScheduler,
+    MessageProvider,
 )
 
 logger = logging.getLogger(__name__)
@@ -93,8 +93,8 @@ class BaseMemoryExtractionTask(MemoryTask):
     async def run(self, context: MemoryTaskContext) -> MemoryTaskResult:
         """Executes the memory extraction process for the target memory type."""
         # 1. Prepare conversation history as string
-        conversation_text = "\n".join([str(m.content) for m in context.messages])
-        
+        conversation_text = "\n".join([str(m.content) for m in context.get_messages()])
+
         # 2. Load existing memory for the target to provide context to the LLM
         path = DEFAULT_MEMORY_TARGET_PATHS.get(self.target, "")
         existing_mem_text = context.store.read_text(path)
@@ -169,7 +169,7 @@ class SemanticMemoryTask(BaseMemoryExtractionTask):
 async def run_memory_maintenance(
     llm: Any,
     backend: Any,
-    messages: Sequence[Any],
+    messages: Sequence[Any] | MessageProvider,
     schedule_state_dict: dict[str, str] | None = None,
     tasks: Sequence[MemoryTask] | None = None,
     config: MemoryMaintenanceConfig | None = None,
@@ -177,14 +177,14 @@ async def run_memory_maintenance(
 ) -> tuple[list[MemoryTaskResult], dict[str, str]]:
     """
     High-level entry point to run due memory maintenance tasks.
-    
-    Encapsulates the creation of MemoryStore, MemoryTaskContext, and 
+
+    Encapsulates the creation of MemoryStore, MemoryTaskContext, and
     MemoryTaskScheduleState to avoid exposing internal task-system classes to the caller.
-    
+
     Args:
         llm: The LLM model to use for extraction.
         backend: The storage backend protocol.
-        messages: The conversation history to analyze.
+        messages: The conversation history to analyze, or a provider to retrieve it.
         schedule_state_dict: A dictionary of task names to ISO timestamps.
         tasks: Optional list of custom tasks to run.
         config: Optional configuration for task intervals and confidence.
@@ -199,23 +199,31 @@ async def run_memory_maintenance(
                 EpisodicMemoryTask(m_config.episodic),
                 SemanticMemoryTask(m_config.semantic),
             ]
-        
+
         # Internalize the store creation
         store = BackendMemoryStore(backend)
-        
+
         # Internalize the context creation
-        context = MemoryTaskContext(
-            store=store,
-            backend=backend,
-            llm=llm,
-            messages=list(messages),
-        )
-        
+        if isinstance(messages, MessageProvider):
+            context = MemoryTaskContext(
+                store=store,
+                backend=backend,
+                llm=llm,
+                message_provider=messages,
+            )
+        else:
+            context = MemoryTaskContext(
+                store=store,
+                backend=backend,
+                llm=llm,
+                messages=list(messages),
+            )
+
         # Internalize the state management
         state = None
         if schedule_state_dict is not None:
             state = MemoryTaskScheduleState.from_iso_dict(schedule_state_dict)
-        
+
         scheduler = MemoryTaskScheduler()
         results, new_state = await scheduler.run_due_tasks(
             tasks=tasks,
@@ -223,25 +231,105 @@ async def run_memory_maintenance(
             state=state,
             apply_patches=apply_patches
         )
-        
+
         return results, new_state.to_iso_dict()
     except Exception as e:
         logger.exception("Error during memory maintenance execution")
         return [], schedule_state_dict or {}
 
+class MemoryMaintenanceManager:
+    """Manager for the background memory maintenance loop.
+
+    Handles the lifecycle of the background task that periodically
+    executes due memory maintenance tasks.
+    """
+    def __init__(
+        self,
+        llm: Any,
+        backend: Any,
+        messages: Sequence[Any] | MessageProvider,
+        config: MemoryMaintenanceConfig | None = None,
+        initial_state: dict[str, str] | None = None,
+        tasks: Sequence[MemoryTask] | None = None,
+        apply_patches: bool = True,
+        tick_interval: int = 60
+    ):
+        self.llm = llm
+        self.backend = backend
+        self.messages = messages
+        self.config = config
+        self.initial_state = initial_state
+        self.tasks = tasks
+        self.apply_patches = apply_patches
+        self.tick_interval = tick_interval
+
+        self._loop_task: asyncio.Task | None = None
+        self._stopped = False
+
+    async def start(self):
+        """Starts the background maintenance loop."""
+        if self._loop_task and not self._loop_task.done():
+            logger.warning("Memory maintenance loop is already running.")
+            return
+
+        self._stopped = False
+        self._loop_task = asyncio.create_task(self._run_loop())
+        logger.info("Started background memory maintenance loop.")
+
+    async def stop(self):
+        """Stops the background maintenance loop."""
+        self._stopped = True
+        if self._loop_task:
+            self._loop_task.cancel()
+            try:
+                await self._loop_task
+            except asyncio.CancelledError:
+                pass
+            self._loop_task = None
+        logger.info("Stopped background memory maintenance loop.")
+
+    async def _run_loop(self):
+        """Internal loop that periodically checks for due tasks."""
+        state_dict = self.initial_state
+        try:
+            while not self._stopped:
+                # run_memory_maintenance handles identifying due tasks and applying patches
+                results, state_dict = await run_memory_maintenance(
+                    llm=self.llm,
+                    backend=self.backend,
+                    messages=self.messages,
+                    schedule_state_dict=state_dict,
+                    tasks=self.tasks,
+                    config=self.config,
+                    apply_patches=self.apply_patches
+                )
+
+                # Optional: log if something was changed
+                changed_count = sum(1 for r in results if r.changed)
+                if changed_count > 0:
+                    logger.info(f"Memory maintenance tick completed: {changed_count} tasks made changes.")
+
+                await asyncio.sleep(self.tick_interval)
+        except asyncio.CancelledError:
+            # Expected on stop()
+            pass
+        except Exception as e:
+            logger.exception("Critical error in memory maintenance loop")
+            raise e
+
 def schedule_memory_maintenance(
     llm: Any,
     backend: Any,
-    messages: Sequence[Any],
+    messages: Sequence[Any] | MessageProvider,
     schedule_state_dict: dict[str, str] | None = None,
     tasks: Sequence[MemoryTask] | None = None,
     config: MemoryMaintenanceConfig | None = None,
     apply_patches: bool = True,
 ) -> None:
     """
-    Schedules memory maintenance to run in the background without blocking the main flow.
-    
-    This function creates an asyncio task and returns immediately.
+    Schedules a single-shot memory maintenance run in the background.
+
+    For continuous periodic maintenance, use MemoryMaintenanceManager.
     """
     asyncio.create_task(
         run_memory_maintenance(
@@ -259,36 +347,50 @@ def read_memory(
     backend: Any,
     target: MemoryTarget,
     as_jsonl: bool = True,
+    **kwargs: Any,
 ) -> list[dict[str, Any]] | str:
     """
     High-level entry point to read memory for a specific target.
-    
+
     Encapsulates MemoryStore creation.
-    
+
     Args:
         backend: The backend protocol implementation.
         target: The memory target to read ('profile', 'episodic', or 'semantic').
         as_jsonl: If True, returns a list of records. If False, returns raw text.
+        **kwargs: Reserved for future retrieval options such as:
+            - `limit`: Max number of records to return.
+            - `offset`: Number of records to skip.
+            - `filter_func`: A predicate to filter records.
+            - `sort_by`: Field to sort records by.
     """
     store = BackendMemoryStore(backend)
     path = DEFAULT_MEMORY_TARGET_PATHS.get(target, "")
-    
+
     if as_jsonl:
+        # For now, read all records. kwargs are reserved for future
+        # implementation of selective/batch retrieval in BackendMemoryStore.
         return store.read_jsonl(path)
     return store.read_text(path)
 
 def format_memory_for_llm(
     backend: Any,
-    target: MemoryTarget,
+    target: MemoryTarget | None = None,
+    **kwargs: Any,
 ) -> str:
     """
-    Reads memory for a target and formats it as a human-readable string 
+    Reads memory for a target and formats it as a human-readable string
     suitable for LLM context injection.
-    
-    Converts structured JSONL records into a clean text format that the 
+
+    Converts structured JSONL records into a clean text format that the
     LLM can easily parse as context.
+
+    Args:
+        backend: The backend protocol implementation.
+        target: The memory target to read.
+        **kwargs: Passed to `read_memory` to support selective or batch retrieval.
     """
-    records = read_memory(backend, target, as_jsonl=True)
+    records = read_memory(backend, target, as_jsonl=True, **kwargs)
     if not records:
         return f"No {target} memory available."
 
@@ -345,6 +447,7 @@ __all__ = [
     "SemanticMemoryTask",
     "run_memory_maintenance",
     "schedule_memory_maintenance",
+    "MemoryMaintenanceManager",
     "read_memory",
     "format_memory_for_llm",
 ]

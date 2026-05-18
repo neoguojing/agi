@@ -9,7 +9,7 @@ from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResp
 from deepagents.backends.protocol import BackendProtocol
 from agi.agent.prompt import get_middleware_prompt
 from agi.utils.common import append_to_system_message
-
+from agi.agent.context.memory import schedule_memory_maintenance,format_memory_for_llm
 class ContextEngineeringMiddleware(AgentMiddleware):
     """
     上下文工程中间件：

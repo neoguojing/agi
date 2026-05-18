@@ -319,7 +319,7 @@ async def invoke_agent_async(state: Dict, config: Dict = None, context: Context 
 
 async def stream_agent_async(state: Dict, config: Dict = None, context: Context = None, **kwargs) -> AsyncGenerator:
     agent = await agent_manager.get_async_agent()
-    await agent_manager.get_background_agent(config,context)
+    # await agent_manager.get_background_agent(config,context)
     async for part in agent.astream(
         state,
         config=_prepare_config(config, state),

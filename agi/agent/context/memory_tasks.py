@@ -68,8 +68,8 @@ class MemoryMaintenanceConfig:
 @dataclass
 class MemoryTaskContext:
     """Runtime inputs passed to memory maintenance tasks.
-    
-    Contains all dependencies required by a task to perform its work, 
+
+    Contains all dependencies required by a task to perform its work,
     including the store, the LLM, and the current conversation history.
     """
 
@@ -77,9 +77,16 @@ class MemoryTaskContext:
     backend: BackendProtocol
     llm: BaseChatModel
     messages: list[AnyMessage] = field(default_factory=list)
+    message_provider: MessageProvider | None = None
     now: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     runtime: Any | None = None
     state: dict[str, Any] = field(default_factory=dict)
+
+    def get_messages(self) -> list[AnyMessage]:
+        """Returns the current messages, preferring the provider if available."""
+        if self.message_provider:
+            return self.message_provider.get_messages()
+        return self.messages
 
 
 @dataclass(frozen=True)
@@ -124,10 +131,17 @@ class MemoryTaskScheduleState:
 
 
 @runtime_checkable
+class MessageProvider(Protocol):
+    """Interface for dynamically retrieving the current conversation history."""
+    def get_messages(self) -> list[AnyMessage]:
+        ...
+
+
+@runtime_checkable
 class MemoryTask(Protocol):
     """Independent memory maintenance unit.
-    
-    A protocol that defines the interface for any task that wants to 
+
+    A protocol that defines the interface for any task that wants to
     be managed by the `MemoryTaskScheduler`.
     """
 
