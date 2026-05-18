@@ -95,7 +95,7 @@ class AgentMiddlewareFactory:
         return [
             ContextEngineeringMiddleware(backend=make_backend,llm=fallback_llm),
             ModelFallbackMiddleware(llm, fallback_llm),
-            # DebugLLMContextMiddleware(),
+            DebugLLMContextMiddleware(),
             MultimodalBase64Middleware(),
             *extra_middlewares,
         ]
