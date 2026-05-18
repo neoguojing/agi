@@ -100,13 +100,6 @@ class AgentMiddlewareFactory:
             *extra_middlewares,
         ]
 
-    @classmethod
-    def build_background(cls, llm: Any, extra_middlewares: list[Any]) -> list[Any]:
-        return [
-            FilesystemMiddleware(backend=make_backend),
-            *extra_middlewares,
-        ]
-
 
 class DeepAgentBuilder:
     """Responsible for agent-level configuration only (no runtime resources)."""
@@ -153,42 +146,21 @@ class DeepAgentBuilder:
             "context_schema": Context,
         }
 
-    def _build_options(self, profile: str = "main") -> Dict[str, Any]:
-        if profile == "main":
-            return {
-                **self._build_base_options(),
-                "model": self.llm,
-                "fallback_model": self.fallback_llm,
-                "backend": self.backend,
-                "tools": self.tools,
-                "system_prompt": self.system_prompt,
-                "subagents": self.subagents,
-                "middleware": AgentMiddlewareFactory.build_main(
-                    llm=self.llm,
-                    fallback_llm=self.fallback_llm,
-                    extra_middlewares=self.middlewares,
-                ),
-            }
-
-        if profile == "background":
-            return {
-                **self._build_base_options(),
-                "name": "backgroud",
-                "model": self.fallback_llm,
-                "system_prompt": self.system_prompt,
-                "middleware": AgentMiddlewareFactory.build_background(
-                    llm=self.llm,
-                    extra_middlewares=self.middlewares,
-                ),
-            }
-
-        raise ValueError(f"Unsupported profile: {profile}")
-
     def build_options(self) -> Dict[str, Any]:
-        return self._build_options("main")
-
-    def build_options_for_background(self) -> Dict[str, Any]:
-        return self._build_options("background")
+        return {
+            **self._build_base_options(),
+            "model": self.llm,
+            "fallback_model": self.fallback_llm,
+            "backend": self.backend,
+            "tools": self.tools,
+            "system_prompt": self.system_prompt,
+            "subagents": self.subagents,
+            "middleware": AgentMiddlewareFactory.build_main(
+                llm=self.llm,
+                fallback_llm=self.fallback_llm,
+                extra_middlewares=self.middlewares,
+            ),
+        }
 
 
 class DeepAgentManager:
@@ -200,11 +172,8 @@ class DeepAgentManager:
 
         self._sync_agent = None
         self._async_agent = None
-        self._async_backgroud_agent = None
 
         self._async_connections: list[aiosqlite.Connection] = []
-        self._bg_task: Optional[asyncio.Task] = None
-        self._bg_running = False
 
     def get_sync_agent(self):
         if self._sync_agent is None:
@@ -230,70 +199,10 @@ class DeepAgentManager:
             await self._init_async_agent()
         return self._async_agent
 
-    async def get_background_agent(self, config: Optional[Dict],context, interval: int = 60*15):
-        if self._async_backgroud_agent is not None:
-            return self._async_backgroud_agent
-
-        main_agent = await self.get_async_agent()
-        bg_builder = (
-            self.builder.clone()
-            .with_system_prompt(BACKGROUD_SYSTEM_PROMPT)
-            .with_middleware([
-                MemoryMiddleware(
-                    backend=make_backend,
-                    checkpointer=main_agent.checkpointer,
-                    channels=main_agent.channels,
-                    config=config,
-                ),
-                # DebugLLMContextMiddleware("backgroud")
-            ])
-        )
-
-        self._async_backgroud_agent = create_agent(
-            **bg_builder.build_options_for_background(),
-            checkpointer=InMemorySaver(),
-            store=InMemoryStore(),
-        )
-
-        self._bg_running = True
-        bg_config = config or {"configurable": {"thread_id": uuid.uuid4().hex}}
-        logger.info("[BG] Background agent initialized. Starting loop...")
-        self._bg_task = asyncio.create_task(self._run_background_loop(bg_config,context, interval))
-        return self._async_backgroud_agent
-
-    async def _run_background_loop(self, bg_config: Dict[str, Any],context, interval: int):
-        while self._bg_running:
-            try:
-                trigger_input = {
-                    "messages": [
-                        {
-                            "type": "human",
-                            "content": "Background maintenance tick: analyze memory needs.",
-                        }
-                    ]
-                }
-                result = await self._async_backgroud_agent.ainvoke(trigger_input, config=bg_config,context=context)
-                # logger.info(f"[BG] Tick result: {result}")
-            except Exception as exc:  # noqa: BLE001
-                traceback.print_exc()
-                logger.error(f"[BG] error: {exc}")
-
-            await asyncio.sleep(interval)
-
     async def close(self):
-        self._bg_running = False
-        if self._bg_task is not None:
-            self._bg_task.cancel()
-            try:
-                await self._bg_task
-            except asyncio.CancelledError:
-                pass
-            self._bg_task = None
-
         await self.persistence_factory.close_async_connections(self._async_connections)
         self._async_connections = []
         self._async_agent = None
-        self._async_backgroud_agent = None
 
 
 agent_manager = DeepAgentManager(DeepAgentBuilder())
@@ -319,7 +228,6 @@ async def invoke_agent_async(state: Dict, config: Dict = None, context: Context 
 
 async def stream_agent_async(state: Dict, config: Dict = None, context: Context = None, **kwargs) -> AsyncGenerator:
     agent = await agent_manager.get_async_agent()
-    # await agent_manager.get_background_agent(config,context)
     async for part in agent.astream(
         state,
         config=_prepare_config(config, state),
