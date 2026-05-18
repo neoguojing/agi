@@ -129,12 +129,19 @@ class BaseMemoryExtractionTask(MemoryTask):
         print(f"***************{llm_payload}")
         
         filtered_extraction = MemoryExtractionResult()
+        # if isinstance(llm_payload,ProfileMemoryList):
+        #     filtered_extraction.profile_memories = [m for m in llm_payload.profile_memories if m.confidence >= self.config.min_confidence]
+        # if isinstance(llm_payload,EpisodicMemoryList):
+        #     filtered_extraction.episodic_memories = [m for m in llm_payload.episodic_memories if m.confidence >= self.config.min_confidence]
+        # if isinstance(llm_payload,SemanticMemoryList):
+        #     filtered_extraction.semantic_memories = [m for m in llm_payload.semantic_memories if m.confidence >= self.config.min_confidence]
+        
         if isinstance(llm_payload,ProfileMemoryList):
-            filtered_extraction.profile_memories = [m for m in llm_payload.profile_memories if m.confidence >= self.config.min_confidence]
+            filtered_extraction.profile_memories = [m for m in llm_payload.profile_memories]
         if isinstance(llm_payload,EpisodicMemoryList):
-            filtered_extraction.episodic_memories = [m for m in llm_payload.episodic_memories if m.confidence >= self.config.min_confidence]
+            filtered_extraction.episodic_memories = [m for m in llm_payload.episodic_memories]
         if isinstance(llm_payload,SemanticMemoryList):
-            filtered_extraction.semantic_memories = [m for m in llm_payload.semantic_memories if m.confidence >= self.config.min_confidence]
+            filtered_extraction.semantic_memories = [m for m in llm_payload.semantic_memories]
         
         # Create a new extraction result with filtered records to generate patches
         
