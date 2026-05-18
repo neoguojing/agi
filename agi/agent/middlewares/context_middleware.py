@@ -38,8 +38,10 @@ class ContextEngineeringMiddleware(AgentMiddleware):
     def __init__(
         self,
         backend = None,
+        llm = None
     ):
         self.backend = backend
+        self.llm = llm
         self.memory_manager = None
         self.message_provider = MiddlewareMessageProvider()
 
@@ -92,19 +94,15 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         self.message_provider.update_messages(request.messages)
 
         # 2. 确保后台记忆维护任务已启动
-        if self.memory_manager is None:
+        if self.memory_manager is None and self.llm is not None:
             # 这里的 llm 假设从 runtime 获取，如果 runtime 没有则尝试从 request 获取
-            llm = getattr(runtime, "llm", None) or getattr(request, "llm", None)
-            if llm:
-                self.memory_manager = MemoryMaintenanceManager(
-                    llm=llm,
-                    backend=backend,
-                    messages=self.message_provider
-                )
-                await self.memory_manager.start()
-            else:
-                logger.warning("Could not start MemoryMaintenanceManager: No LLM found in runtime/request")
-
+            self.memory_manager = MemoryMaintenanceManager(
+                llm=self.llm,
+                backend=backend,
+                messages=self.message_provider
+            )
+            await self.memory_manager.start()
+         
         # 3. 获取当前最新的记忆快照并格式化
         # 调用 format_memory_for_llm 默认读取所有类型的记忆 (profile, episodic, semantic)
         memory_body = format_memory_for_llm(backend)
