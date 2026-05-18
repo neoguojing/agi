@@ -93,9 +93,9 @@ class AgentMiddlewareFactory:
     @staticmethod
     def build_main(llm: Any, fallback_llm: Any, extra_middlewares: list[Any]) -> list[Any]:
         return [
-            ContextEngineeringMiddleware(backend=make_backend),
+            ContextEngineeringMiddleware(backend=make_backend,llm=fallback_llm),
             ModelFallbackMiddleware(llm, fallback_llm),
-            DebugLLMContextMiddleware(),
+            # DebugLLMContextMiddleware(),
             MultimodalBase64Middleware(),
             *extra_middlewares,
         ]
@@ -114,7 +114,7 @@ class DeepAgentBuilder:
     def __init__(self, name: str = "main"):
         self.name = name
         self.llm = ModelProvider.get_chat_model(provider="ollama", model_name=OLLAMA_DEFAULT_MODE)
-        self.fallback_llm = ModelProvider.get_chat_model(provider="ollama", model_name="gemma4:31b-cloud")
+        self.fallback_llm = ModelProvider.get_chat_model(provider="ollama", model_name="qwen3.5:9b")
         self.embd = ModelProvider.get_embeddings(provider="ollama", model_name="embeddinggemma:latest")
 
         self.system_prompt = ""

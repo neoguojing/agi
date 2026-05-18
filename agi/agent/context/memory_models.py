@@ -1,34 +1,40 @@
 """Typed memory records and patch primitives.
 
 Usage:
-    These classes are the stable data contract between an LLM memory extractor,
-    memory maintenance tasks, and storage backends. An LLM extraction result is
-    parsed into `MemoryExtractionResult`; callers then convert it to auditable
-    `MemoryPatch` objects and apply those patches through a `MemoryStore`.
+    These classes define the structured contract between:
+    - LLM memory extraction
+    - memory maintenance tasks
+    - storage backends
 
-    Example:
-        extraction = MemoryExtractionResult(
-            semantic_memories=(SemanticMemoryRecord(...),),
-        )
-        patches = extraction.to_patches()
-
-Design notes:
-    - Profile memory stores stable key/value user profile and preferences.
-    - Episodic memory stores time-bound events that can decay or expire.
-    - Semantic memory is graph-ready and shaped as subject/predicate/object.
+    The schema is optimized for:
+    - structured LLM output
+    - JSON serialization
+    - patch-based memory updates
+    - graph/vector memory systems
 """
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-# Target identifiers for different memory types
+from pydantic import BaseModel, Field
+
+
+# =========================================================
+# Type Aliases
+# =========================================================
+
 MemoryTarget = Literal["profile", "episodic", "semantic"]
-# Types of operations allowed in a memory patch
-MemoryOperationType = Literal["add", "update", "delete", "merge", "deprecate"]
-# Valid sources for memory extraction
+
+MemoryOperationType = Literal[
+    "add",
+    "update",
+    "delete",
+    "merge",
+    "deprecate",
+]
+
 MemorySourceKind = Literal[
     "user_explicit",
     "conversation",
@@ -39,248 +45,492 @@ MemorySourceKind = Literal[
 ]
 
 
-@dataclass(frozen=True)
-class MemoryOperation:
-    """A single storage-neutral mutation inside a memory patch.
-    
-    Represents a specific change to a memory record, such as adding a new 
-    fact or updating an existing one.
-    """
+# =========================================================
+# Patch Layer
+# =========================================================
 
-    op: MemoryOperationType  # The type of operation (e.g., 'add', 'update')
-    value: dict[str, Any] = field(default_factory=dict)  # The record data to be written
-    target_id: str | None = None  # Unique identifier of the record being targeted
-    reason: str | None = None  # Justification for this specific operation
+class MemoryOperation(BaseModel):
+    """A storage-neutral mutation operation."""
+
+    op: MemoryOperationType = Field(
+        description="Type of mutation operation."
+    )
+
+    value: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Serialized memory payload."
+    )
+
+    target_id: str | None = Field(
+        default=None,
+        description="Target memory record identifier."
+    )
+
+    reason: str | None = Field(
+        default=None,
+        description="Reason for this operation."
+    )
 
 
-@dataclass(frozen=True)
-class MemoryPatch:
-    """Auditable memory changes emitted by tasks instead of direct writes.
-    
-    A patch groups multiple operations for a specific memory target. 
-    This allows for atomic updates and provides an audit trail (reason, confidence).
-    """
+class MemoryPatch(BaseModel):
+    """Auditable memory patch containing multiple operations."""
 
-    target: MemoryTarget  # Which memory store this patch applies to
-    operations: tuple[MemoryOperation, ...] = ()  # Sequence of mutations to perform
-    target_path: str | None = None  # Optional override for the storage path
-    reason: str = ""  # Overall reason for this patch (e.g., 'Automatic extraction')
-    confidence: float = 1.0  # Model's confidence in the correctness of these changes
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))  # Timestamp of patch creation
+    target: MemoryTarget = Field(
+        description="Target memory collection."
+    )
+
+    operations: tuple[MemoryOperation, ...] = Field(
+        default_factory=tuple,
+        description="Operations included in this patch."
+    )
+
+    target_path: str | None = Field(
+        default=None,
+        description="Optional backend-specific storage path."
+    )
+
+    reason: str = Field(
+        default="",
+        description="Reason for this patch."
+    )
+
+    confidence: float = Field(
+        default=1.0,
+        description="Confidence score for this patch."
+    )
+
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Patch creation timestamp."
+    )
 
     @property
     def is_empty(self) -> bool:
-        """Returns True if the patch contains no operations."""
         return not self.operations
 
     @classmethod
-    def empty(cls, target: MemoryTarget, *, reason: str = "") -> "MemoryPatch":
-        """Creates an empty patch for a specific target."""
-        return cls(target=target, reason=reason, operations=())
+    def empty(
+        cls,
+        target: MemoryTarget,
+        *,
+        reason: str = "",
+    ) -> "MemoryPatch":
+        return cls(
+            target=target,
+            reason=reason,
+            operations=(),
+        )
 
 
-@dataclass(frozen=True)
-class MemoryEvidence:
-    """Evidence attached to model-extracted memory records.
-    
-    Provides the 'why' behind a memory, linking it back to a specific 
-    message or source for verification.
-    """
+# =========================================================
+# Evidence
+# =========================================================
 
-    source: MemorySourceKind = "conversation"  # Where the information came from
-    content: str = ""  # The actual quote or snippet from the source
-    message_id: str | None = None  # ID of the message if source is 'conversation'
-    memory_id: str | None = None  # ID of the existing memory if source is 'legacy_memory'
-    created_at: datetime | None = None  # When the evidence was captured
-    metadata: dict[str, Any] = field(default_factory=dict)  # Additional context (e.g., tool output)
+class MemoryEvidence(BaseModel):
+    """Supporting evidence attached to extracted memory."""
 
-    def to_record(self) -> dict[str, Any]:
-        """Converts the evidence dataclass to a JSON-ready dictionary."""
-        return json_ready(asdict(self))
+    source: MemorySourceKind = Field(
+        default="conversation",
+        description="Origin of the evidence."
+    )
 
+    content: str = Field(
+        default="",
+        description="Evidence text or source snippet."
+    )
 
-@dataclass(frozen=True)
-class ProfileMemoryRecord:
-    """Structured model output for stable profile/preference memory.
-    
-    Used for long-term user attributes (e.g., 'user.language': 'English').
-    """
+    message_id: str | None = Field(
+        default=None,
+        description="Conversation message identifier."
+    )
 
-    id: str = ""  # Unique identifier for the profile record
-    key: str = ""  # The attribute name (e.g., 'preferences.theme')
-    value: Any | None = None  # The value of the attribute
-    confidence: float = 0.0  # Model's confidence in this fact
-    importance: float = 0.0  # Relative importance of this fact to the user
-    source: MemorySourceKind = "inferred"  # How this fact was discovered
-    evidence: tuple[MemoryEvidence, ...] = ()  # Supporting evidence
-    tags: tuple[str, ...] = ()  # Categorization tags
-    created_at: datetime | None = None  # Initial creation timestamp
-    updated_at: datetime | None = None  # Last modification timestamp
-    metadata: dict[str, Any] = field(default_factory=dict)  # Extra unstructured data
+    memory_id: str | None = Field(
+        default=None,
+        description="Referenced existing memory identifier."
+    )
 
-    def to_record(self) -> dict[str, Any]:
-        """Converts the record to a JSON-ready dictionary with a type marker."""
-        record = json_ready(asdict(self))
-        record["type"] = "profile"
-        return record
+    created_at: datetime | None = Field(
+        default=None,
+        description="Evidence creation timestamp."
+    )
 
-    def to_operation(self, op: MemoryOperationType = "add") -> MemoryOperation:
-        """Converts this record into a MemoryOperation for use in a patch."""
-        return MemoryOperation(op=op, target_id=self.id or None, value=self.to_record())
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional evidence metadata."
+    )
 
 
-@dataclass(frozen=True)
-class EpisodicMemoryRecord:
-    """Structured model output for time-bound event memory.
-    
-    Used for specific occurrences or experiences (e.g., 'User mentioned they 
-    started a new project on 2023-10-01').
-    """
+# =========================================================
+# Profile Memory
+# =========================================================
 
-    id: str = ""  # Unique identifier for the episode
-    summary: str = ""  # Concise description of the event
-    event_time: datetime | None = None  # When the event actually occurred
-    participants: tuple[str, ...] = ()  # Entities involved in the event
-    outcome: str | None = None  # The result or conclusion of the event
-    context: dict[str, Any] = field(default_factory=dict)  # Surrounding circumstances
-    confidence: float = 0.0  # Model's confidence in the event's accuracy
-    importance: float = 0.0  # How significant this event is
-    ttl_days: int | None = None  # Time-to-live in days before the memory expires
-    expires_at: datetime | None = None  # Absolute expiration timestamp
-    evidence: tuple[MemoryEvidence, ...] = ()  # Supporting evidence
-    tags: tuple[str, ...] = ()  # Categorization tags
-    created_at: datetime | None = None  # When the record was created
-    updated_at: datetime | None = None  # When the record was last updated
-    metadata: dict[str, Any] = field(default_factory=dict)  # Extra unstructured data
+class ProfileMemoryRecord(BaseModel):
+    """Stable long-term profile or preference memory."""
 
-    def to_record(self) -> dict[str, Any]:
-        """Converts the record to a JSON-ready dictionary with a type marker."""
-        record = json_ready(asdict(self))
-        record["type"] = "episodic"
-        return record
+    id: str = Field(
+        default="",
+        description="Unique memory identifier."
+    )
 
-    def to_operation(self, op: MemoryOperationType = "add") -> MemoryOperation:
-        """Converts this record into a MemoryOperation for use in a patch."""
-        return MemoryOperation(op=op, target_id=self.id or None, value=self.to_record())
+    key: str = Field(
+        default="",
+        description="Profile attribute key."
+    )
 
+    value: Any | None = Field(
+        default=None,
+        description="Profile attribute value."
+    )
 
-@dataclass(frozen=True)
-class SemanticEntity:
-    """Graph-ready node reference used by semantic memory triples.
-    
-    Represents a concept, person, or object in a knowledge graph.
-    """
+    confidence: float = Field(
+        default=0.0,
+        description="Confidence score."
+    )
 
-    id: str = ""  # Unique identifier for the entity (e.g., 'person:123')
-    kind: str = "concept"  # Type of entity (e.g., 'person', 'location', 'concept')
-    label: str | None = None  # Human-readable name of the entity
-    properties: dict[str, Any] = field(default_factory=dict)  # Key-value attributes of the entity
+    importance: float = Field(
+        default=0.0,
+        description="Importance score."
+    )
 
-    def to_record(self) -> dict[str, Any]:
-        """Converts the entity to a JSON-ready dictionary."""
-        return json_ready(asdict(self))
+    source: MemorySourceKind = Field(
+        default="inferred",
+        description="Memory source."
+    )
 
+    evidence: tuple[MemoryEvidence, ...] = Field(
+        default_factory=tuple,
+        description="Supporting evidence."
+    )
 
-@dataclass(frozen=True)
-class SemanticObject:
-    """Graph-ready object value or node reference for semantic memory.
-    
-    The target of a predicate in a semantic triple.
-    """
+    tags: tuple[str, ...] = Field(
+        default_factory=tuple,
+        description="Categorization tags."
+    )
 
-    id: str | None = None  # ID if the object is another entity; None if it's a literal value
-    kind: str = "value"  # 'entity' if it refers to a node, 'value' if it's a literal
-    value: Any | None = None  # The literal value if kind is 'value'
-    label: str | None = None  # Human-readable label for the object
-    properties: dict[str, Any] = field(default_factory=dict)  # Extra attributes
+    created_at: datetime | None = Field(
+        default=None,
+        description="Creation timestamp."
+    )
 
-    def to_record(self) -> dict[str, Any]:
-        """Converts the object to a JSON-ready dictionary."""
-        return json_ready(asdict(self))
+    updated_at: datetime | None = Field(
+        default=None,
+        description="Last update timestamp."
+    )
 
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional metadata."
+    )
 
-@dataclass(frozen=True)
-class SemanticMemoryRecord:
-    """Structured model output for graph-ready long-term knowledge.
-    
-    Represents a triple: Subject -> Predicate -> Object.
-    """
-
-    id: str = ""  # Unique identifier for the triple
-    subject: SemanticEntity = field(default_factory=SemanticEntity)  # The entity the fact is about
-    predicate: str = ""  # The relationship or property (e.g., 'works_at', 'is_a')
-    object: SemanticObject = field(default_factory=SemanticObject)  # The value or entity the subject is linked to
-    qualifiers: dict[str, Any] = field(default_factory=dict)  # Contextual modifiers (e.g., 'since': '2020')
-    confidence: float = 0.0  # Model's confidence in this relationship
-    importance: float = 0.0  # Relative importance of this knowledge
-    evidence: tuple[MemoryEvidence, ...] = ()  # Supporting evidence
-    tags: tuple[str, ...] = ()  # Categorization tags
-    created_at: datetime | None = None  # When the record was created
-    updated_at: datetime | None = None  # When the record was last updated
-    metadata: dict[str, Any] = field(default_factory=dict)  # Extra unstructured data
-
-    def to_record(self) -> dict[str, Any]:
-        """Converts the record to a JSON-ready dictionary with a type marker."""
-        record = json_ready(asdict(self))
-        record["type"] = "semantic"
-        return record
-
-    def to_operation(self, op: MemoryOperationType = "add") -> MemoryOperation:
-        """Converts this record into a MemoryOperation for use in a patch."""
-        return MemoryOperation(op=op, target_id=self.id or None, value=self.to_record())
+    def to_operation(
+        self,
+        op: MemoryOperationType = "add",
+    ) -> MemoryOperation:
+        return MemoryOperation(
+            op=op,
+            target_id=self.id or None,
+            value=self.model_dump(mode="json"),
+        )
 
 
-@dataclass(frozen=True)
-class MemoryExtractionResult:
-    """Top-level structured return for an LLM memory-extraction call.
-    
-    Aggregates all candidates extracted across different memory types from a 
-    single conversation window.
-    """
+# =========================================================
+# Episodic Memory
+# =========================================================
 
-    profile_memories: tuple[ProfileMemoryRecord, ...] = ()  # Extracted profile facts
-    episodic_memories: tuple[EpisodicMemoryRecord, ...] = ()  # Extracted events
-    semantic_memories: tuple[SemanticMemoryRecord, ...] = ()  # Extracted knowledge triples
-    rejected_candidates: tuple[str, ...] = ()  # Facts the model considered but decided to reject
-    notes: str = ""  # General model commentary on the extraction process
+class EpisodicMemoryRecord(BaseModel):
+    """Time-bound event or experience memory."""
 
-    def to_patches(self, *, reason: str = "model structured memory extraction") -> tuple[MemoryPatch, ...]:
-        """Converts the extraction results into a set of MemoryPatches, one per target."""
+    id: str = Field(
+        default="",
+        description="Unique episodic memory identifier."
+    )
+
+    summary: str = Field(
+        default="",
+        description="Summary of the event."
+    )
+
+    event_time: datetime | None = Field(
+        default=None,
+        description="Time when the event occurred."
+    )
+
+    participants: tuple[str, ...] = Field(
+        default_factory=tuple,
+        description="Entities involved in the event."
+    )
+
+    outcome: str | None = Field(
+        default=None,
+        description="Event outcome."
+    )
+
+    context: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Event context."
+    )
+
+    confidence: float = Field(
+        default=0.0,
+        description="Confidence score."
+    )
+
+    importance: float = Field(
+        default=0.0,
+        description="Importance score."
+    )
+
+    ttl_days: int | None = Field(
+        default=None,
+        description="Memory TTL in days."
+    )
+
+    expires_at: datetime | None = Field(
+        default=None,
+        description="Expiration timestamp."
+    )
+
+    evidence: tuple[MemoryEvidence, ...] = Field(
+        default_factory=tuple,
+        description="Supporting evidence."
+    )
+
+    tags: tuple[str, ...] = Field(
+        default_factory=tuple,
+        description="Categorization tags."
+    )
+
+    created_at: datetime | None = Field(
+        default=None,
+        description="Creation timestamp."
+    )
+
+    updated_at: datetime | None = Field(
+        default=None,
+        description="Last update timestamp."
+    )
+
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional metadata."
+    )
+
+    def to_operation(
+        self,
+        op: MemoryOperationType = "add",
+    ) -> MemoryOperation:
+        return MemoryOperation(
+            op=op,
+            target_id=self.id or None,
+            value=self.model_dump(mode="json"),
+        )
+
+
+# =========================================================
+# Semantic Memory
+# =========================================================
+
+class SemanticEntity(BaseModel):
+    """Graph entity node."""
+
+    id: str = Field(
+        default="",
+        description="Entity identifier."
+    )
+
+    kind: str = Field(
+        default="concept",
+        description="Entity type."
+    )
+
+    label: str | None = Field(
+        default=None,
+        description="Human-readable label."
+    )
+
+    properties: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Entity properties."
+    )
+
+
+class SemanticObject(BaseModel):
+    """Semantic triple object."""
+
+    id: str | None = Field(
+        default=None,
+        description="Object entity identifier."
+    )
+
+    kind: str = Field(
+        default="value",
+        description="Object kind."
+    )
+
+    value: Any | None = Field(
+        default=None,
+        description="Literal value."
+    )
+
+    label: str | None = Field(
+        default=None,
+        description="Human-readable label."
+    )
+
+    properties: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Object properties."
+    )
+
+
+class SemanticMemoryRecord(BaseModel):
+    """Graph-ready semantic memory triple."""
+
+    id: str = Field(
+        default="",
+        description="Unique semantic memory identifier."
+    )
+
+    subject: SemanticEntity = Field(
+        default_factory=SemanticEntity,
+        description="Triple subject."
+    )
+
+    predicate: str = Field(
+        default="",
+        description="Relationship predicate."
+    )
+
+    object: SemanticObject = Field(
+        default_factory=SemanticObject,
+        description="Triple object."
+    )
+
+    qualifiers: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Contextual qualifiers."
+    )
+
+    confidence: float = Field(
+        default=0.0,
+        description="Confidence score."
+    )
+
+    importance: float = Field(
+        default=0.0,
+        description="Importance score."
+    )
+
+    evidence: tuple[MemoryEvidence, ...] = Field(
+        default_factory=tuple,
+        description="Supporting evidence."
+    )
+
+    tags: tuple[str, ...] = Field(
+        default_factory=tuple,
+        description="Categorization tags."
+    )
+
+    created_at: datetime | None = Field(
+        default=None,
+        description="Creation timestamp."
+    )
+
+    updated_at: datetime | None = Field(
+        default=None,
+        description="Last update timestamp."
+    )
+
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional metadata."
+    )
+
+    def to_operation(
+        self,
+        op: MemoryOperationType = "add",
+    ) -> MemoryOperation:
+        return MemoryOperation(
+            op=op,
+            target_id=self.id or None,
+            value=self.model_dump(mode="json"),
+        )
+
+
+# =========================================================
+# Extraction Result
+# =========================================================
+
+class MemoryExtractionResult(BaseModel):
+    """Structured output returned from LLM memory extraction."""
+
+    profile_memories: list[ProfileMemoryRecord] = Field(
+        default_factory=list,
+        description="Extracted profile memories."
+    )
+
+    episodic_memories: list[EpisodicMemoryRecord] = Field(
+        default_factory=list,
+        description="Extracted episodic memories."
+    )
+
+    semantic_memories: list[SemanticMemoryRecord] = Field(
+        default_factory=list,
+        description="Extracted semantic memories."
+    )
+
+    rejected_candidates: list[str] = Field(
+        default_factory=list,
+        description="Rejected memory candidates."
+    )
+
+    notes: str = Field(
+        default="",
+        description="Additional extraction notes."
+    )
+
+    def to_patches(
+        self,
+        *,
+        reason: str = "model structured memory extraction",
+    ) -> tuple[MemoryPatch, ...]:
+
         patches: list[MemoryPatch] = []
+
         if self.profile_memories:
-            patches.append(MemoryPatch(target="profile", reason=reason, operations=tuple(m.to_operation() for m in self.profile_memories)))
+            patches.append(
+                MemoryPatch(
+                    target="profile",
+                    reason=reason,
+                    operations=tuple(
+                        memory.to_operation()
+                        for memory in self.profile_memories
+                    ),
+                )
+            )
+
         if self.episodic_memories:
-            patches.append(MemoryPatch(target="episodic", reason=reason, operations=tuple(m.to_operation() for m in self.episodic_memories)))
+            patches.append(
+                MemoryPatch(
+                    target="episodic",
+                    reason=reason,
+                    operations=tuple(
+                        memory.to_operation()
+                        for memory in self.episodic_memories
+                    ),
+                )
+            )
+
         if self.semantic_memories:
-            patches.append(MemoryPatch(target="semantic", reason=reason, operations=tuple(m.to_operation() for m in self.semantic_memories)))
+            patches.append(
+                MemoryPatch(
+                    target="semantic",
+                    reason=reason,
+                    operations=tuple(
+                        memory.to_operation()
+                        for memory in self.semantic_memories
+                    ),
+                )
+            )
+
         return tuple(patches)
-
-    def to_record(self) -> dict[str, Any]:
-        """Converts the result to a JSON-ready dictionary."""
-        return json_ready(asdict(self))
-
-    @classmethod
-    def from_record(cls, payload: dict[str, Any]) -> "MemoryExtractionResult":
-        """Coerce an LLM JSON object into typed memory extraction records."""
-
-        from agi.agent.context.memory_extraction import parse_memory_extraction_result
-
-        return parse_memory_extraction_result(payload)
-
-
-def json_ready(value: Any) -> Any:
-    """Convert memory dataclasses and datetimes into JSON-compatible primitives.
-    
-    Recursively handles dataclasses, lists, and dictionaries to ensure 
-    all types are serializable to JSON.
-    """
-
-    if isinstance(value, datetime):
-        return value.isoformat()
-    if is_dataclass(value) and not isinstance(value, type):
-        return json_ready(asdict(value))
-    if isinstance(value, dict):
-        return {key: json_ready(item) for key, item in value.items() if item is not None}
-    if isinstance(value, (list, tuple)):
-        return [json_ready(item) for item in value]
-    return value

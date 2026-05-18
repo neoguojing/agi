@@ -175,7 +175,7 @@ class MemoryTaskScheduler:
         schedule_state = state or MemoryTaskScheduleState()
         due: list[MemoryTask] = []
         for task in tasks:
-            if not task.config.enabled or not task.should_run(context):
+            if not task.should_run(context):
                 continue
 
             last_run_at = schedule_state.last_run_at.get(task.name)

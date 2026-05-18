@@ -20,10 +20,10 @@ from typing import Any, Sequence
 
 from agi.agent.context.memory_extraction import (
     MEMORY_EXTRACTION_INSTRUCTIONS,
-    MEMORY_EXTRACTION_JSON_SCHEMA,
     build_memory_extraction_prompt,
-    parse_memory_extraction_result,
 )
+
+
 from agi.agent.context.memory_models import (
     EpisodicMemoryRecord,
     MemoryEvidence,
@@ -37,7 +37,6 @@ from agi.agent.context.memory_models import (
     SemanticEntity,
     SemanticMemoryRecord,
     SemanticObject,
-    json_ready,
 )
 from agi.agent.context.memory_store import (
     DEFAULT_MEMORY_TARGET_PATHS,
@@ -57,6 +56,13 @@ from agi.agent.context.memory_tasks import (
 
 logger = logging.getLogger(__name__)
 
+
+TARGET_SCHEMA_MAP = {
+    "profile": ProfileMemoryRecord,
+    "episodic": EpisodicMemoryRecord,
+    "semantic": SemanticMemoryRecord,
+}
+
 class BaseMemoryExtractionTask(MemoryTask):
     """Base class for tasks that use an LLM to extract memories.
     
@@ -74,24 +80,31 @@ class BaseMemoryExtractionTask(MemoryTask):
     def should_run(self, context: MemoryTaskContext) -> bool:
         """Determines if the task should run based on config and message presence."""
         # Basic check: run if enabled and messages are present
-        return self.config.enabled and len(context.messages) > 0
+        return self.config.enabled and len(context.get_messages()) > 0
 
     async def _call_llm_for_extraction(self, context: MemoryTaskContext, prompt: str) -> Any:
         """Helper to interact with the LLM using structured output."""
         if context.llm:
-            # Use the explicit LLM provided in the context
-            llm_with_struct = context.llm.with_structured_output(
-                schema=MEMORY_EXTRACTION_JSON_SCHEMA
-            )
-            
-            struct_result = await llm_with_struct.invoke(prompt)
-            return struct_result
+            try:
+
+                # Use the explicit LLM provided in the context
+                schema = TARGET_SCHEMA_MAP.get(self.target)
+                llm_with_struct = context.llm.with_structured_output(schema)
+                
+                struct_result = await llm_with_struct.invoke(prompt)
+                import pdb;pdb.set_trace()
+
+                return struct_result
+
+            except Exception as e:
+                logger.error(e)
 
         logger.error(f"Task {self.name} failed: No LLM provided in MemoryTaskContext.")
         return None
 
     async def run(self, context: MemoryTaskContext) -> MemoryTaskResult:
         """Executes the memory extraction process for the target memory type."""
+        logger.info(f"Executing memory task: {self.name} for target: {self.target}")
         # 1. Prepare conversation history as string
         conversation_text = "\n".join([str(m.content) for m in context.get_messages()])
 
@@ -102,16 +115,17 @@ class BaseMemoryExtractionTask(MemoryTask):
         # 3. Build prompt
         prompt = build_memory_extraction_prompt(
             conversation=conversation_text,
-            existing_memory=existing_mem_text
+            existing_memory=existing_mem_text,
         )
         
         # 4. Get LLM result
         llm_payload = await self._call_llm_for_extraction(context, prompt)
         if not llm_payload:
+            logger.error(f"Task {self.name} failed: LLM returned no result")
             return MemoryTaskResult(task_name=self.name, changed=False, summary="LLM call failed")
 
         # 5. Parse and convert to patches
-        extraction = parse_memory_extraction_result(llm_payload)
+        extraction = llm_payload
         
         # Filter records by min_confidence before converting to patches
         filtered_profile = [m for m in extraction.profile_memories if m.confidence >= self.config.min_confidence]
@@ -131,7 +145,9 @@ class BaseMemoryExtractionTask(MemoryTask):
         
         # Filter patches to only include the target this task is responsible for
         target_patches = tuple(p for p in patches if p.target == self.target)
-        
+
+        logger.info(f"Task {self.name} completed: extracted {len(target_patches)} patches for {self.target}")
+
         return MemoryTaskResult(
             task_name=self.name,
             changed=bool(target_patches),
@@ -317,32 +333,6 @@ class MemoryMaintenanceManager:
             logger.exception("Critical error in memory maintenance loop")
             raise e
 
-def schedule_memory_maintenance(
-    llm: Any,
-    backend: Any,
-    messages: Sequence[Any] | MessageProvider,
-    schedule_state_dict: dict[str, str] | None = None,
-    tasks: Sequence[MemoryTask] | None = None,
-    config: MemoryMaintenanceConfig | None = None,
-    apply_patches: bool = True,
-) -> None:
-    """
-    Schedules a single-shot memory maintenance run in the background.
-
-    For continuous periodic maintenance, use MemoryMaintenanceManager.
-    """
-    asyncio.create_task(
-        run_memory_maintenance(
-            llm=llm,
-            backend=backend,
-            messages=messages,
-            schedule_state_dict=schedule_state_dict,
-            tasks=tasks,
-            config=config,
-            apply_patches=apply_patches
-        )
-    )
-
 def read_memory(
     backend: Any,
     target: MemoryTarget,
@@ -426,12 +416,8 @@ __all__ = [
     "SemanticObject",
     "SemanticMemoryRecord",
     "MemoryExtractionResult",
-    "json_ready",
-    "MEMORY_EXTRACTION_JSON_SCHEMA",
     "MEMORY_EXTRACTION_INSTRUCTIONS",
     "build_memory_extraction_prompt",
-    "parse_memory_extraction_result",
-    "DEFAULT_LEGACY_MEMORY_PATHS",
     "DEFAULT_MEMORY_TARGET_PATHS",
     "MemoryStore",
     "BackendMemoryStore",
@@ -446,7 +432,6 @@ __all__ = [
     "EpisodicMemoryTask",
     "SemanticMemoryTask",
     "run_memory_maintenance",
-    "schedule_memory_maintenance",
     "MemoryMaintenanceManager",
     "read_memory",
     "format_memory_for_llm",
