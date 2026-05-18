@@ -232,6 +232,11 @@ class ProfileMemoryRecord(BaseModel):
             value=self.model_dump(mode="json"),
         )
 
+class ProfileMemoryList(BaseModel):
+    profile_memories: list[ProfileMemoryRecord] = Field(
+        description="List of profiles"
+    )
+
 
 # =========================================================
 # Episodic Memory
@@ -325,6 +330,10 @@ class EpisodicMemoryRecord(BaseModel):
             value=self.model_dump(mode="json"),
         )
 
+class EpisodicMemoryList(BaseModel):
+    episodic_memories: list[EpisodicMemoryRecord] = Field(
+        description="List of episodic"
+    )
 
 # =========================================================
 # Semantic Memory
@@ -456,6 +465,10 @@ class SemanticMemoryRecord(BaseModel):
             value=self.model_dump(mode="json"),
         )
 
+class SemanticMemoryList(BaseModel):
+    semantic_memories: list[SemanticMemoryRecord] = Field(
+        description="List of semantic"
+    )
 
 # =========================================================
 # Extraction Result

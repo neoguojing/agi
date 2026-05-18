@@ -37,6 +37,9 @@ from agi.agent.context.memory_models import (
     SemanticEntity,
     SemanticMemoryRecord,
     SemanticObject,
+    ProfileMemoryList,
+    EpisodicMemoryList,
+    SemanticMemoryList,
 )
 from agi.agent.context.memory_store import (
     DEFAULT_MEMORY_TARGET_PATHS,
@@ -58,9 +61,9 @@ logger = logging.getLogger(__name__)
 
 
 TARGET_SCHEMA_MAP = {
-    "profile": ProfileMemoryRecord,
-    "episodic": EpisodicMemoryRecord,
-    "semantic": SemanticMemoryRecord,
+    "profile": ProfileMemoryList,
+    "episodic": EpisodicMemoryList,
+    "semantic": SemanticMemoryList,
 }
 
 class BaseMemoryExtractionTask(MemoryTask):
@@ -90,10 +93,7 @@ class BaseMemoryExtractionTask(MemoryTask):
                 # Use the explicit LLM provided in the context
                 schema = TARGET_SCHEMA_MAP.get(self.target)
                 llm_with_struct = context.llm.with_structured_output(schema)
-                
-                struct_result = await llm_with_struct.invoke(prompt)
-                import pdb;pdb.set_trace()
-
+                struct_result = await llm_with_struct.ainvoke(prompt)
                 return struct_result
 
             except Exception as e:
@@ -111,7 +111,7 @@ class BaseMemoryExtractionTask(MemoryTask):
         # 2. Load existing memory for the target to provide context to the LLM
         path = DEFAULT_MEMORY_TARGET_PATHS.get(self.target, "")
         existing_mem_text = context.store.read_text(path)
-        
+
         # 3. Build prompt
         prompt = build_memory_extraction_prompt(
             conversation=conversation_text,
@@ -120,26 +120,24 @@ class BaseMemoryExtractionTask(MemoryTask):
         
         # 4. Get LLM result
         llm_payload = await self._call_llm_for_extraction(context, prompt)
+
         if not llm_payload:
             logger.error(f"Task {self.name} failed: LLM returned no result")
             return MemoryTaskResult(task_name=self.name, changed=False, summary="LLM call failed")
 
         # 5. Parse and convert to patches
-        extraction = llm_payload
+        print(f"***************{llm_payload}")
         
-        # Filter records by min_confidence before converting to patches
-        filtered_profile = [m for m in extraction.profile_memories if m.confidence >= self.config.min_confidence]
-        filtered_episodic = [m for m in extraction.episodic_memories if m.confidence >= self.config.min_confidence]
-        filtered_semantic = [m for m in extraction.semantic_memories if m.confidence >= self.config.min_confidence]
+        filtered_extraction = MemoryExtractionResult()
+        if isinstance(llm_payload,ProfileMemoryList):
+            filtered_extraction.profile_memories = [m for m in llm_payload.profile_memories if m.confidence >= self.config.min_confidence]
+        if isinstance(llm_payload,EpisodicMemoryList):
+            filtered_extraction.episodic_memories = [m for m in llm_payload.episodic_memories if m.confidence >= self.config.min_confidence]
+        if isinstance(llm_payload,SemanticMemoryList):
+            filtered_extraction.semantic_memories = [m for m in llm_payload.semantic_memories if m.confidence >= self.config.min_confidence]
         
         # Create a new extraction result with filtered records to generate patches
-        filtered_extraction = MemoryExtractionResult(
-            profile_memories=tuple(filtered_profile),
-            episodic_memories=tuple(filtered_episodic),
-            semantic_memories=tuple(filtered_semantic),
-            rejected_candidates=extraction.rejected_candidates,
-            notes=extraction.notes
-        )
+        
         
         patches = filtered_extraction.to_patches(reason=f"Automatic {self.target} memory extraction")
         
