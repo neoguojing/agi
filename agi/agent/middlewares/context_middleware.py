@@ -2,39 +2,51 @@ import json
 import platform
 import datetime
 import os
-from typing import Callable, List, Awaitable
+import asyncio
+from typing import Callable, List, Awaitable, Any
 from venv import logger
 from langchain_core.messages import SystemMessage, BaseMessage
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from deepagents.backends.protocol import BackendProtocol
 from agi.agent.prompt import get_middleware_prompt
 from agi.utils.common import append_to_system_message
-from agi.agent.context.memory import schedule_memory_maintenance,format_memory_for_llm
+from agi.agent.context.memory import (
+    MemoryMaintenanceManager,
+    format_memory_for_llm,
+    MessageProvider
+)
+
+class MiddlewareMessageProvider(MessageProvider):
+    """Dynamic message provider that can be updated by the middleware."""
+    def __init__(self):
+        self._messages = []
+
+    def update_messages(self, messages: List[BaseMessage]):
+        self._messages = messages
+
+    def get_messages(self) -> List[BaseMessage]:
+        return self._messages
+
 class ContextEngineeringMiddleware(AgentMiddleware):
     """
     上下文工程中间件：
     1. 动态注入模型 Prompt
-    2. 异步更新用户画像
-    3. 消息压缩策略：
-       - 保护 SystemMessage 和最新 10 条消息
-       - 单条消息超过阈值则压缩
-       - 文件保存为 .txt 纯文本格式
+    2. 后台异步执行记忆提取 (MemoryMaintenanceManager)
+    3. 动态注入最新记忆 (format_memory_for_llm)
+    4. 消息压缩策略（保留）
     """
     def __init__(
-        self, 
+        self,
         backend = None,
-        memory_paths: List[str] = ["/memories/facts.md","/memories/preferences.md","/memories/lessons.md"]
-
     ):
         self.backend = backend
-        self.memory_paths = memory_paths
-        self.is_file_inited = False
+        self.memory_manager = None
+        self.message_provider = MiddlewareMessageProvider()
 
     def _get_backend(self, runtime) -> BackendProtocol:
         if callable(self.backend):
             return self.backend(runtime)
         return self.backend
-    
 
     def _format_environment_context(self, runtime) -> str:
         try:
@@ -45,7 +57,7 @@ class ContextEngineeringMiddleware(AgentMiddleware):
                 "timezone": "UTC",
                 "os": platform.system(),
                 "os_version": platform.version(),
-                "python_version": platform.python_version()            
+                "python_version": platform.python_version()
             }
 
             # runtime 可选扩展
@@ -66,49 +78,40 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         except Exception as e:
             logger.error(f"Failed to build environment context: {e}")
             return "<environment>(failed to load)</environment>"
-    
-    def create_files(self,backend):
-        for path in self.memory_paths:
-            file_info = backend.ls_info(path)
-            if not file_info:
-                backend.upload_files([(path,b"")])
-        
-        self.is_file_inited = True
 
-
-    def _format_agent_memory(self,runtime) -> str:
-        if not self.memory_paths:
-            return get_middleware_prompt("context").format(agent_memory="(No memory loaded)")
-        
-        backend = self._get_backend(runtime)  # 这里传 None，因为我们只需要读取文件内容
-        # if not self.is_file_inited:
-        #     self.create_files(backend)
-
-        contents = {}
-        for path in self.memory_paths:
-            try:
-                content = backend.read(path)
-                contents[path] = content
-            except Exception as e:
-                logger.error(f"Failed to read memory file {path}: {e}")
-                contents[path] = None   
-
-        sections = [f"{path}\n{contents[path]}" for path in self.memory_paths if contents.get(path)]
-        if not sections:
-            return get_middleware_prompt("context").format(agent_memory="(No memory loaded)")
-
-        memory_body = "\n\n".join(sections)
-        return get_middleware_prompt("context").format(agent_memory=memory_body)
-    
     async def awrap_model_call(
         self,
         request: ModelRequest,
-        handler: Callable[[ModelRequest], Awaitable[ModelResponse]], 
+        handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse:
-        
-        env_context_str = self._format_environment_context(request.runtime)
-        # 1. 获取上下文信息
-        memory_context_str = self._format_agent_memory(request.runtime)
+
+        runtime = request.runtime
+        backend = self._get_backend(runtime)
+
+        # 1. 更新动态消息 Provider
+        self.message_provider.update_messages(request.messages)
+
+        # 2. 确保后台记忆维护任务已启动
+        if self.memory_manager is None:
+            # 这里的 llm 假设从 runtime 获取，如果 runtime 没有则尝试从 request 获取
+            llm = getattr(runtime, "llm", None) or getattr(request, "llm", None)
+            if llm:
+                self.memory_manager = MemoryMaintenanceManager(
+                    llm=llm,
+                    backend=backend,
+                    messages=self.message_provider
+                )
+                await self.memory_manager.start()
+            else:
+                logger.warning("Could not start MemoryMaintenanceManager: No LLM found in runtime/request")
+
+        # 3. 获取当前最新的记忆快照并格式化
+        # 调用 format_memory_for_llm 默认读取所有类型的记忆 (profile, episodic, semantic)
+        memory_body = format_memory_for_llm(backend)
+        memory_context_str = get_middleware_prompt("context").format(agent_memory=memory_body)
+
+        # 4. 构建环境上下文
+        env_context_str = self._format_environment_context(runtime)
 
         injected_context_str = f"""
         {env_context_str}
@@ -116,15 +119,14 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         {memory_context_str}
         """.strip()
 
-        # 3. 注入系统 Prompt
+        # 5. 注入系统 Prompt
         request = request.override(
             system_message=append_to_system_message(request.system_message, injected_context_str)
         )
 
-        # 4. 执行模型调用
-        # self._log_debug_info(injected_context_str, len(request.messages))
+        # 6. 执行模型调用
         response = await handler(request)
-        
+
         return response
 
     def _log_debug_info(self, ctx_data: str, total_count: int):
