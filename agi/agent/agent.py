@@ -106,8 +106,8 @@ class DeepAgentBuilder:
 
     def __init__(self, name: str = "main"):
         self.name = name
-        self.llm = ModelProvider.get_chat_model(provider="ollama", model_name=OLLAMA_DEFAULT_MODE)
-        self.fallback_llm = ModelProvider.get_chat_model(provider="ollama", model_name="qwen3.5:9b")
+        self.llm = ModelProvider.get_chat_model()
+        self.fallback_llm = ModelProvider.get_falback_model()
         self.embd = ModelProvider.get_embeddings(provider="ollama", model_name="embeddinggemma:latest")
 
         self.system_prompt = ""
@@ -129,7 +129,7 @@ class DeepAgentBuilder:
         return new
 
     def with_model(self, provider: str, name: str) -> "DeepAgentBuilder":
-        self.llm = ModelProvider.get_chat_model(provider, name)
+        self.llm = ModelProvider.get_chat_model()
         return self
 
     def with_system_prompt(self, prompt: str) -> "DeepAgentBuilder":

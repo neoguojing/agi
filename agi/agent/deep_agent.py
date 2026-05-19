@@ -95,7 +95,7 @@ def resolve_model(model: str | BaseChatModel) -> BaseChatModel:
     """
     if isinstance(model, BaseChatModel):
         return model
-    if model.startswith("openai:"):
+    if hasattr(model, "startswith") and model.startswith("openai:"):
         # Use Responses API by default. To use chat completions, use
         # `model=init_chat_model("openai:...")`
         # To disable data retention with the Responses API, use

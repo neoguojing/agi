@@ -280,7 +280,7 @@ class MemoryMaintenanceManager:
             return
 
         self._stopped = False
-        self._loop_task = asyncio.create_task(self._run_loop())
+        self._loop_task = asyncio.to_thread(self._run_loop())
         logger.info("Started background memory maintenance loop.")
 
     async def stop(self):

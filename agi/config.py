@@ -51,10 +51,15 @@ OLLAMA_API_BASE_URL = get_env("OLLAMA_API_BASE_URL", "http://localhost:11434")
 # OLLAMA_DEFAULT_MODE = get_env("OLLAMA_DEFAULT_MODE", "qwen3.5:9b")
 OLLAMA_DEFAULT_MODE = get_env("OLLAMA_DEFAULT_MODE", "gemma4:31b-cloud")
 OLLAMA_CONTEXT_SIZE = get_env("OLLAMA_CONTEXT_SIZE", 16384)
-
 OLLAMA_THINKING_MODE = get_env("OLLAMA_SMALL_MODE", "qwen3:4b-thinking")
-OPENAI_API_KEY = get_env("OPENAI_API_KEY", "xxx")
 LLM_WITH_NO_THINKING = get_env("LLM_WITH_NO_THINKING", "/no_think")
+
+OPENAI_API_KEY = get_env("OPENAI_API_KEY", "xxx")
+GOOGLE_API_KEY = get_env("GOOGLE_API_KEY", "xxx")
+GOOGLE_CLOUD_PROJECT = get_env("GOOGLE_API_KEY", "xxx")
+OPENROUTER_API_KEY = get_env("OPENROUTER_API_KEY", "xxx")
+
+
 
 # Embedding
 RAG_EMBEDDING_MODEL = get_env("RAG_EMBEDDING_MODEL", "bge")
