@@ -26,7 +26,6 @@ from agi.agent.context.memory_extraction import (
 
 from agi.agent.context.memory_models import (
     EpisodicMemoryRecord,
-    MemoryEvidence,
     MemoryExtractionResult,
     MemoryOperation,
     MemoryOperationType,
@@ -361,48 +360,108 @@ def format_memory_for_llm(
     **kwargs: Any,
 ) -> str:
     """
-    Reads memory for a target and formats it as a human-readable string
+    Read memory and format it into a human-readable string
     suitable for LLM context injection.
 
-    Converts structured JSONL records into a clean text format that the
-    LLM can easily parse as context.
+    Behavior:
+    - If target is provided:
+        read only that memory target
+    - If target is None:
+        read ALL memory targets
 
     Args:
-        backend: The backend protocol implementation.
-        target: The memory target to read.
-        **kwargs: Passed to `read_memory` to support selective or batch retrieval.
+        backend: Backend protocol implementation.
+        target: Optional memory target.
+        **kwargs: Forwarded to read_memory().
     """
+
+    targets: list[MemoryTarget]
+
     if target is None:
-        return "No memory target specified."
+        targets = [
+            "profile",
+            "episodic",
+            "semantic",
+        ]
+    else:
+        targets = [target]
 
-    records = read_memory(backend, target, as_jsonl=True, **kwargs)
-    if not records:
-        return f"No {target} memory available."
+    sections: list[str] = []
 
-    lines = [f"--- {target.upper()} MEMORY ---"]
-    
-    for rec in records:
-        if not isinstance(rec, dict):
+    for current_target in targets:
+
+        records = read_memory(
+            backend,
+            current_target,
+            as_jsonl=True,
+            **kwargs,
+        )
+
+        if not records:
             continue
-            
-        if target == "profile":
-            key = rec.get("key", "unknown_key")
-            val = rec.get("value", "unknown_value")
-            lines.append(f"- {key}: {val}")
-        elif target == "episodic":
-            summary = rec.get("summary", "No summary available")
-            time = rec.get("event_time", "Unknown time")
-            lines.append(f"- [{time}] {summary}")
-        elif target == "semantic":
-            subj = rec.get("subject", "Unknown subject")
-            pred = rec.get("predicate", "is")
-            obj = rec.get("object", "Unknown object")
-            lines.append(f"- {subj} {pred} {obj}")
-        else:
-            # Fallback for unknown targets to ensure something is returned
-            lines.append(f"- {str(rec)}")
-    
-    return "\n".join(lines)
+
+        lines = [
+            f"--- {current_target.upper()} MEMORY ---"
+        ]
+
+        for rec in records:
+
+            if not isinstance(rec, dict):
+                continue
+
+            if current_target == "profile":
+
+                key = rec.get("key", "unknown_key")
+                value = rec.get("value", "unknown_value")
+
+                lines.append(
+                    f"- {key}: {value}"
+                )
+
+            elif current_target == "episodic":
+
+                summary = rec.get(
+                    "summary",
+                    "No summary",
+                )
+
+                event_time = rec.get(
+                    "event_time",
+                    "Unknown time",
+                )
+
+                lines.append(
+                    f"- [{event_time}] {summary}"
+                )
+
+            elif current_target == "semantic":
+
+                subject = rec.get(
+                    "subject",
+                    "Unknown subject",
+                )
+
+                predicate = rec.get(
+                    "predicate",
+                    "related_to",
+                )
+
+                object_ = rec.get(
+                    "object",
+                    "Unknown object",
+                )
+
+                lines.append(
+                    f"- {subject} {predicate} {object_}"
+                )
+
+        if len(lines) > 1:
+            sections.append("\n".join(lines))
+
+    if not sections:
+        return "No memory available."
+
+    return "\n\n".join(sections)
 
 __all__ = [
     "MemoryTarget",
@@ -410,7 +469,6 @@ __all__ = [
     "MemorySourceKind",
     "MemoryOperation",
     "MemoryPatch",
-    "MemoryEvidence",
     "ProfileMemoryRecord",
     "EpisodicMemoryRecord",
     "SemanticMemoryRecord",

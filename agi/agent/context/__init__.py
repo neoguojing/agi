@@ -15,7 +15,6 @@ __all__ = [
     "MemoryTask",
     "MemoryPatch",
     "MemoryOperation",
-    "MemoryEvidence",
     "ProfileMemoryRecord",
     "EpisodicMemoryRecord",
     "SemanticEntity",
