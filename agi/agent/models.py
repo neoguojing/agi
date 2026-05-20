@@ -11,7 +11,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from agi.config import OLLAMA_API_BASE_URL,GOOGLE_API_KEY,GOOGLE_CLOUD_PROJECT,OPENROUTER_API_KEY
+from agi.config import OLLAMA_API_BASE_URL,GOOGLE_API_KEY,GOOGLE_CLOUD_PROJECT,OPENROUTER_API_KEY,OLLAMA_CONTEXT_SIZE
 
 # 初始化日志
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -175,7 +175,7 @@ my_model_pool = [
     ModelNode(
         provider="openrouter",
         model_name="google/gemma-4-31b-it:free",
-        priority=4,
+        priority=3,
         api_key=OPENROUTER_API_KEY,
         extra_params={"temperature": 0.2,"base_url": "https://openrouter.ai/api/v1"}
     ),
@@ -183,7 +183,7 @@ my_model_pool = [
     ModelNode(
         provider="ollama",
         model_name="gemma4:31b-cloud",
-        priority=3,
+        priority=4,
         api_key="",
 
         extra_params={"base_url": OLLAMA_API_BASE_URL, "temperature": 0.2}
@@ -194,7 +194,7 @@ my_model_pool = [
         model_name="qwen3.5:9b",
         priority=6,
         api_key="",
-        extra_params={"base_url": OLLAMA_API_BASE_URL, "temperature": 0.2}
+        extra_params={"base_url": OLLAMA_API_BASE_URL, "temperature": 0.2,'num_ctx': OLLAMA_CONTEXT_SIZE}
     ),
     
     

@@ -25,7 +25,6 @@ Rules:
 - Use profile_memories only for stable user identity, preferences, durable settings, and long-lived facts.
 - Use episodic_memories for time-bound events, lessons, task outcomes, or experiences that can decay.
 - Use semantic_memories for long-term abstract knowledge as graph-ready subject/predicate/object records.
-- Include evidence for every accepted memory.
 - Reject transient, low-value, or ambiguous candidates in rejected_candidates instead of forcing a memory.
 - Do not write files directly; the caller converts this structured result into MemoryPatch objects.
 """

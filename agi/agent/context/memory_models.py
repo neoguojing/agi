@@ -126,6 +126,44 @@ class MemoryPatch(BaseModel):
 # =========================================================
 
 class ProfileMemoryRecord(BaseModel):
+
+    id: str = Field(
+        default_factory=lambda: str(uuid4()),
+        description=(
+            "System-generated unique memory identifier."
+        )
+    )
+
+    key: str = Field(
+        ...,
+        min_length=1,
+        description=(
+            "REQUIRED. Profile attribute key "
+            "(example: 'favorite_language', 'job_title'). "
+            "Must not be empty."
+        )
+    )
+
+    value: str = Field(
+        ...,
+        min_length=1,
+        description=(
+            "REQUIRED. Profile attribute value. "
+            "Must not be empty."
+        )
+    )
+
+    confidence: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "REQUIRED. Confidence score between "
+            "0.0 and 1.0."
+        )
+    )
+
+class ProfileMemoryList(BaseModel):
     """
     Structured long-term profile memory representing stable
     user attributes, preferences, habits, identities,
@@ -196,49 +234,15 @@ class ProfileMemoryRecord(BaseModel):
 
     Example:
     {
-        "key": "favorite_language",
-        "value": "Python",
-        "confidence": 0.96
+        profile_memories: [
+            {
+                "key": "favorite_language",
+                "value": "Python",
+                "confidence": 0.96
+            }
+        ]
     }
     """
-
-    id: str = Field(
-        default_factory=lambda: str(uuid4()),
-        description=(
-            "System-generated unique memory identifier."
-        )
-    )
-
-    key: str = Field(
-        ...,
-        min_length=1,
-        description=(
-            "REQUIRED. Profile attribute key "
-            "(example: 'favorite_language', 'job_title'). "
-            "Must not be empty."
-        )
-    )
-
-    value: str = Field(
-        ...,
-        min_length=1,
-        description=(
-            "REQUIRED. Profile attribute value. "
-            "Must not be empty."
-        )
-    )
-
-    confidence: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description=(
-            "REQUIRED. Confidence score between "
-            "0.0 and 1.0."
-        )
-    )
-
-class ProfileMemoryList(BaseModel):
     profile_memories: list[ProfileMemoryRecord] = Field(
         description="List of profiles"
     )
@@ -249,60 +253,6 @@ class ProfileMemoryList(BaseModel):
 # =========================================================
 
 class EpisodicMemoryRecord(BaseModel):
-    """
-    Structured episodic memory representing a specific event,
-    activity, interaction, or experience that occurred at a
-    particular time.
-
-    Purpose:
-    - Capture time-bound experiences and interactions
-    - Preserve conversational events as retrievable memories
-    - Store meaningful user activities, milestones, decisions,
-      meetings, plans, achievements, or incidents
-    - Support timeline reconstruction and temporal reasoning
-
-    Extraction Guidelines for LLM:
-    - Extract ONLY concrete events or experiences
-    - Each memory should represent ONE atomic event
-    - The event should be meaningful and retrievable later
-    - Avoid vague or generic summaries
-    - Avoid duplicating semantic/profile memories
-    - Prefer concise factual summaries
-
-    Good Examples:
-    - "User started a new job at OpenAI"
-    - "User traveled to Tokyo for a conference"
-    - "User completed migration from Cassandra to ClickHouse"
-    - "User discussed long-term memory architecture design"
-
-    Bad Examples:
-    - "User likes Python"                -> profile memory
-    - "Python is a programming language" -> semantic memory
-    - "User talked about something"      -> too vague
-
-    Field Rules:
-    - ALL fields are REQUIRED
-    - ALL string fields MUST be non-empty
-    - participants list MUST NOT be empty
-    - participants items MUST NOT be empty
-    - confidence MUST be between 0.0 and 1.0
-    - event_time MUST use ISO datetime string format
-    - do NOT generate placeholder values
-    - do NOT generate empty strings
-
-    Time Rules:
-    - Use the actual event occurrence time when available
-    - If exact time is unknown, infer the best approximate time
-    - Always use ISO-8601 datetime format
-
-    Example:
-    {
-        "summary": "User started a new job at OpenAI",
-        "event_time": "2026-05-19T10:30:00Z",
-        "participants": ["User", "OpenAI"],
-        "confidence": 0.93
-    }
-    """
 
     id: str = Field(
         default_factory=lambda: str(uuid4()),
@@ -353,6 +303,65 @@ class EpisodicMemoryRecord(BaseModel):
     )
 
 class EpisodicMemoryList(BaseModel):
+    """
+    Structured episodic memory representing a specific event,
+    activity, interaction, or experience that occurred at a
+    particular time.
+
+    Purpose:
+    - Capture time-bound experiences and interactions
+    - Preserve conversational events as retrievable memories
+    - Store meaningful user activities, milestones, decisions,
+      meetings, plans, achievements, or incidents
+    - Support timeline reconstruction and temporal reasoning
+
+    Extraction Guidelines for LLM:
+    - Extract ONLY concrete events or experiences
+    - Each memory should represent ONE atomic event
+    - The event should be meaningful and retrievable later
+    - Avoid vague or generic summaries
+    - Avoid duplicating semantic/profile memories
+    - Prefer concise factual summaries
+
+    Good Examples:
+    - "User started a new job at OpenAI"
+    - "User traveled to Tokyo for a conference"
+    - "User completed migration from Cassandra to ClickHouse"
+    - "User discussed long-term memory architecture design"
+
+    Bad Examples:
+    - "User likes Python"                -> profile memory
+    - "Python is a programming language" -> semantic memory
+    - "User talked about something"      -> too vague
+
+    Field Rules:
+    - ALL fields are REQUIRED
+    - ALL string fields MUST be non-empty
+    - participants list MUST NOT be empty
+    - participants items MUST NOT be empty
+    - confidence MUST be between 0.0 and 1.0
+    - event_time MUST use ISO datetime string format
+    - do NOT generate placeholder values
+    - do NOT generate empty strings
+
+    Time Rules:
+    - Use the actual event occurrence time when available
+    - If exact time is unknown, infer the best approximate time
+    - Always use ISO-8601 datetime format
+
+    Example:
+    {
+        "episodic_memories": [
+            {
+                "summary": "User started a new job at OpenAI",
+                "event_time": "2026-05-19T10:30:00Z",
+                "participants": ["User", "OpenAI"],
+                "confidence": 0.93
+            }
+        ]
+    }
+    
+    """
     episodic_memories: list[EpisodicMemoryRecord] = Field(
         description="List of episodic"
     )
@@ -362,36 +371,6 @@ class EpisodicMemoryList(BaseModel):
 # =========================================================
 
 class SemanticMemoryRecord(BaseModel):
-    """
-    Structured semantic relationship memory.
-
-    Purpose:
-    - Extract stable factual relationships
-    - Represent knowledge as semantic triples
-    - Keep relationships atomic and graph-friendly
-
-    Extraction Rules for LLM:
-    - ALL fields are REQUIRED
-    - ALL string fields MUST be non-empty
-    - subject MUST be a concrete entity
-    - predicate MUST be a short normalized relation
-    - object MUST be a concrete value or target entity
-    - confidence MUST be between 0.0 and 1.0
-    - use concise normalized predicates:
-        GOOD: works_at, likes, lives_in, uses
-        BAD: "is currently working at"
-    - each memory should contain ONLY ONE fact
-    - do NOT generate placeholder values
-    - do NOT generate empty strings
-
-    Example:
-    {
-        "subject": "Alice",
-        "predicate": "works_at",
-        "object": "OpenAI",
-        "confidence": 0.92
-    }
-    """
 
     id: str = Field(
         default_factory=lambda: str(uuid4()),
@@ -440,6 +419,41 @@ class SemanticMemoryRecord(BaseModel):
     )
 
 class SemanticMemoryList(BaseModel):
+    """
+    Structured semantic relationship memory.
+
+    Purpose:
+    - Extract stable factual relationships
+    - Represent knowledge as semantic triples
+    - Keep relationships atomic and graph-friendly
+
+    Extraction Rules for LLM:
+    - ALL fields are REQUIRED
+    - ALL string fields MUST be non-empty
+    - subject MUST be a concrete entity
+    - predicate MUST be a short normalized relation
+    - object MUST be a concrete value or target entity
+    - confidence MUST be between 0.0 and 1.0
+    - use concise normalized predicates:
+        GOOD: works_at, likes, lives_in, uses
+        BAD: "is currently working at"
+    - each memory should contain ONLY ONE fact
+    - do NOT generate placeholder values
+    - do NOT generate empty strings
+
+    Example:
+    {
+        "semantic_memories": [
+            {
+                "subject": "Alice",
+                "predicate": "works_at",
+                "object": "OpenAI",
+                "confidence": 0.92
+            }
+        ]
+    }
+    
+    """
     semantic_memories: list[SemanticMemoryRecord] = Field(
         description="List of semantic"
     )

@@ -92,11 +92,16 @@ class BaseMemoryExtractionTask(MemoryTask):
                 schema = TARGET_SCHEMA_MAP.get(self.target)
                 llm_with_struct = context.llm.with_structured_output(schema)
                 struct_result = await llm_with_struct.ainvoke(prompt)
+                # struct_result = llm_with_struct.invoke(prompt)
+
                 logger.info("struct result=%s", struct_result)
                 return struct_result
 
             except Exception as e:
-                logger.error(e)
+                logger.exception(
+                    "LLM extraction failed"
+                )
+                raise
 
         logger.error(f"Task {self.name} failed: No LLM provided in MemoryTaskContext.")
         return None
@@ -255,14 +260,15 @@ class MemoryMaintenanceManager:
 
         Executes all due tasks and updates internal schedule state.
         """
-
+        results = []
         try:
             
             results, self.state = await self.scheduler.run_due_tasks(
-            tasks=self.tasks, 
-            context=self.context, 
-            state=self.state, 
-            apply_patches=self.apply_patches)
+                tasks=self.tasks, 
+                context=self.context, 
+                state=self.state, 
+                apply_patches=self.apply_patches
+            )
             
         except Exception:
             logger.exception(
