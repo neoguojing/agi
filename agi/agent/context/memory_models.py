@@ -154,11 +154,9 @@ class ProfileMemoryRecord(BaseModel):
     )
 
     confidence: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
+        default=0.5,
         description=(
-            "REQUIRED. Confidence score between "
+            "OPTION. Confidence score between "
             "0.0 and 1.0."
         )
     )
@@ -231,17 +229,6 @@ class ProfileMemoryList(BaseModel):
     - confidence MUST be between 0.0 and 1.0
     - do NOT generate placeholder values
     - do NOT generate empty strings
-
-    Example:
-    {
-        profile_memories: [
-            {
-                "key": "favorite_language",
-                "value": "Python",
-                "confidence": 0.96
-            }
-        ]
-    }
     """
     profile_memories: list[ProfileMemoryRecord] = Field(
         description="List of profiles"
@@ -273,10 +260,9 @@ class EpisodicMemoryRecord(BaseModel):
     )
 
     event_time: str = Field(
-        ...,
-        min_length=1,
+        default="",
         description=(
-            "REQUIRED. Event occurrence time "
+            "Option. Event occurrence time "
             "in ISO datetime string format. "
             "Must not be empty."
         )
@@ -498,6 +484,8 @@ class MemoryExtractionResult(BaseModel):
                 data["created_at"] = now_iso
             if not data.get("updated_at"):
                 data["updated_at"] = now_iso
+            if not data.get("event_time"):
+                data["event_time"] = now_iso
             
             # 2. Quality Metrics (Default to 0.5 if 0.0 or missing, as 0.0 is often a default)
             if data.get("confidence") == 0.0:
