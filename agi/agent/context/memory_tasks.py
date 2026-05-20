@@ -214,6 +214,7 @@ class MemoryTaskScheduler:
         
         Returns a list of results and the updated schedule state.
         """
+        import pdb;pdb.set_trace()
         due = self.due_tasks(tasks, context, state)
         results: list[MemoryTaskResult] = []
         for task in due:
