@@ -60,9 +60,9 @@ class MemoryMaintenanceConfig:
     """
 
     target_paths: dict[MemoryTarget, str] = field(default_factory=lambda: dict(DEFAULT_MEMORY_TARGET_PATHS))
-    profile: MemoryTaskConfig = field(default_factory=lambda: MemoryTaskConfig(interval_seconds=24 * 3600, min_confidence=0.75))
-    episodic: MemoryTaskConfig = field(default_factory=lambda: MemoryTaskConfig(interval_seconds=3600, min_confidence=0.45))
-    semantic: MemoryTaskConfig = field(default_factory=lambda: MemoryTaskConfig(interval_seconds=24 * 3600, min_confidence=0.65))
+    profile: MemoryTaskConfig = field(default_factory=lambda: MemoryTaskConfig(interval_seconds=60, min_confidence=0.75))
+    episodic: MemoryTaskConfig = field(default_factory=lambda: MemoryTaskConfig(interval_seconds=30, min_confidence=0.45))
+    semantic: MemoryTaskConfig = field(default_factory=lambda: MemoryTaskConfig(interval_seconds=60, min_confidence=0.65))
 
 
 @dataclass

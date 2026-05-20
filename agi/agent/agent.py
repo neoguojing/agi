@@ -94,7 +94,7 @@ class AgentMiddlewareFactory:
     def build_main(llm: Any, fallback_llm: Any, extra_middlewares: list[Any]) -> list[Any]:
         return [
             ContextEngineeringMiddleware(backend=make_backend,llm=fallback_llm),
-            ModelFallbackMiddleware(llm, fallback_llm),
+            ModelFallbackMiddleware(llm,*ModelProvider.get_chat_models()),
             DebugLLMContextMiddleware(),
             MultimodalBase64Middleware(),
             *extra_middlewares,

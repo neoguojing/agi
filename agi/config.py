@@ -56,7 +56,7 @@ LLM_WITH_NO_THINKING = get_env("LLM_WITH_NO_THINKING", "/no_think")
 
 OPENAI_API_KEY = get_env("OPENAI_API_KEY", "xxx")
 GOOGLE_API_KEY = get_env("GOOGLE_API_KEY", "xxx")
-GOOGLE_CLOUD_PROJECT = get_env("GOOGLE_API_KEY", "xxx")
+GOOGLE_CLOUD_PROJECT = get_env("GOOGLE_CLOUD_PROJECT", "xxx")
 OPENROUTER_API_KEY = get_env("OPENROUTER_API_KEY", "xxx")
 
 
@@ -154,5 +154,3 @@ def init_logger() -> logging.Logger:
 # -----------------------------
 log = init_logger()
 init_langchain_debug()
-
-print(f"{OLLAMA_API_BASE_URL}-{OLLAMA_DEFAULT_MODE}")
