@@ -86,11 +86,13 @@ class BaseMemoryExtractionTask(MemoryTask):
         """Helper to interact with the LLM using structured output."""
         if context.llm:
             try:
+                # import pdb;pdb.set_trace()
 
                 # Use the explicit LLM provided in the context
                 schema = TARGET_SCHEMA_MAP.get(self.target)
                 llm_with_struct = context.llm.with_structured_output(schema)
                 struct_result = await llm_with_struct.ainvoke(prompt)
+                logger.info("struct result=%s", struct_result)
                 return struct_result
 
             except Exception as e:
