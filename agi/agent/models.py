@@ -189,13 +189,13 @@ my_model_pool = [
         extra_params={"base_url": OLLAMA_API_BASE_URL, "temperature": 0.2}
     ),
 
-    # ModelNode(
-    #     provider="ollama",
-    #     model_name="qwen3.5:9b",
-    #     priority=6,
-    #     api_key="",
-    #     extra_params={"base_url": OLLAMA_API_BASE_URL, "temperature": 0.2,'num_ctx': OLLAMA_CONTEXT_SIZE}
-    # ),
+    ModelNode(
+        provider="ollama",
+        model_name="qwen3.5:9b",
+        priority=6,
+        api_key="",
+        extra_params={"base_url": OLLAMA_API_BASE_URL, "temperature": 0.2,'num_ctx': OLLAMA_CONTEXT_SIZE}
+    ),
     
     
 ]
@@ -204,19 +204,19 @@ my_model_pool = [
 ModelProvider = DynamicModelRouter(nodes=my_model_pool)
 
 
-if __name__ == "__main__":
-    # 3. 产生具有智能容错能力的终极 model 对象
-    model = ModelProvider.get_chat_model()
+# if __name__ == "__main__":
+#     # 3. 产生具有智能容错能力的终极 model 对象
+#     model = ModelProvider.get_chat_model()
 
-    print(GOOGLE_API_KEY,GOOGLE_CLOUD_PROJECT)
-    # 4. 业务层正常使用
-    print("\n================ 业务请求开始 ================")
-    try:
-        # 如果此时 本地 Ollama 挂了或报额度不足，系统会自动向 Gemini 发起请求；
-        # 如果 Gemini 也因为密钥过期报错，系统会自动向 OpenRouter 的 Claude 发起请求。
-        response = model.invoke("请问什么是大模型的责任链路由模式？")
-        print("💡 最终胜出模型的回答是:", response.content)
+#     print(GOOGLE_API_KEY,GOOGLE_CLOUD_PROJECT)
+#     # 4. 业务层正常使用
+#     print("\n================ 业务请求开始 ================")
+#     try:
+#         # 如果此时 本地 Ollama 挂了或报额度不足，系统会自动向 Gemini 发起请求；
+#         # 如果 Gemini 也因为密钥过期报错，系统会自动向 OpenRouter 的 Claude 发起请求。
+#         response = model.invoke("请问什么是大模型的责任链路由模式？")
+#         print("💡 最终胜出模型的回答是:", response.content)
         
-    except Exception as total_failure_exception:
-        # 只有当 1、2、3 号模型全部都彻底崩溃、扣款失败时，才会走到这一步
-        print("🚨 灾难性警报：所有后备渠道已全部沦陷！具体错误:", total_failure_exception)
+#     except Exception as total_failure_exception:
+#         # 只有当 1、2、3 号模型全部都彻底崩溃、扣款失败时，才会走到这一步
+#         print("🚨 灾难性警报：所有后备渠道已全部沦陷！具体错误:", total_failure_exception)

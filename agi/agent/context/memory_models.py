@@ -230,7 +230,7 @@ class ProfileMemoryList(BaseModel):
     - do NOT generate placeholder values
     - do NOT generate empty strings
     """
-    profile_memories: list[ProfileMemoryRecord] = Field(
+    items: list[ProfileMemoryRecord] = Field(
         description="List of profiles"
     )
 
@@ -333,22 +333,9 @@ class EpisodicMemoryList(BaseModel):
     Time Rules:
     - Use the actual event occurrence time when available
     - If exact time is unknown, infer the best approximate time
-    - Always use ISO-8601 datetime format
-
-    Example:
-    {
-        "episodic_memories": [
-            {
-                "summary": "User started a new job at OpenAI",
-                "event_time": "2026-05-19T10:30:00Z",
-                "participants": ["User", "OpenAI"],
-                "confidence": 0.93
-            }
-        ]
-    }
-    
+    - Always use ISO-8601 datetime format    
     """
-    episodic_memories: list[EpisodicMemoryRecord] = Field(
+    items: list[EpisodicMemoryRecord] = Field(
         description="List of episodic"
     )
 
@@ -426,21 +413,8 @@ class SemanticMemoryList(BaseModel):
     - each memory should contain ONLY ONE fact
     - do NOT generate placeholder values
     - do NOT generate empty strings
-
-    Example:
-    {
-        "semantic_memories": [
-            {
-                "subject": "Alice",
-                "predicate": "works_at",
-                "object": "OpenAI",
-                "confidence": 0.92
-            }
-        ]
-    }
-    
     """
-    semantic_memories: list[SemanticMemoryRecord] = Field(
+    items: list[SemanticMemoryRecord] = Field(
         description="List of semantic"
     )
 

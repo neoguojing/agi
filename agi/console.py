@@ -86,7 +86,7 @@ class DeepAgentCLI:
         async for part in stream_agent_async(self.state, config=config, context=context, stream_mode=["messages"]):
             # 实时计算已经过去的时间
             current_elapsed = time.time() - start_time
-            
+            print(f"88888888888888\n{part}")
             # --- 过滤 lc_source 为 summarization 的消息 ---
             if isinstance(part, dict) and part.get("type") == "messages":
                 data = part.get("data")

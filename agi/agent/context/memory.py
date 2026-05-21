@@ -133,11 +133,11 @@ class BaseMemoryExtractionTask(MemoryTask):
         filtered_extraction = MemoryExtractionResult()
         
         if isinstance(llm_payload, ProfileMemoryList):
-            filtered_extraction.profile_memories = llm_payload.profile_memories
+            filtered_extraction.profile_memories = llm_payload.items
         elif isinstance(llm_payload, EpisodicMemoryList):
-            filtered_extraction.episodic_memories = llm_payload.episodic_memories
+            filtered_extraction.episodic_memories = llm_payload.items
         elif isinstance(llm_payload, SemanticMemoryList):
-            filtered_extraction.semantic_memories = llm_payload.semantic_memories
+            filtered_extraction.semantic_memories = llm_payload.items
         
         patches = filtered_extraction.to_patches(reason=f"Automatic {self.target} memory extraction")
         
