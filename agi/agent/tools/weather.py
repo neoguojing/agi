@@ -8,6 +8,7 @@ import difflib
 from agi.config import CACHE_DIR
 import jieba.posseg as pseg
 from langchain.tools import tool
+from pydantic import Field
 
 class WeatherAPIError(Exception):
     """自定义异常：天气接口调用或解析失败"""
@@ -173,7 +174,7 @@ def get_nmc_weather(station_id: str, timeout: float = 5.0) -> Dict[str, Any]:
 
 # 主函数：根据城市名获取代码和天气预报 URL
 @tool("Weather", return_direct=False)
-def get_weather_info(city_name):
+def get_weather_info( city_name: str = Field(description="城市名称，例如：北京")):
     """Utility to fetch real-time weather conditions for specified locations.
     Input should be a city name in Chinese."""
     try:

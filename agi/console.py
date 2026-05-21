@@ -24,6 +24,7 @@ from agi.agent.context import Context
 from agi.apps.common import MessageContent, ImageURL, FileObject
 from agi.api.media import process_multimodal_content
 from langgraph.graph.message import add_messages
+from langgraph.types import Overwrite
 # --- 配置 ---
 STATE_CACHE = ".cli_session.json"
 
@@ -73,6 +74,17 @@ class DeepAgentCLI:
 
     async def handle_stream(self, live):
         full_response = ""
+        trace_markdown = []
+
+        def add_trace(text=""):
+            trace_markdown.append(text)
+
+        def add_section(title):
+            trace_markdown.append(f"\n## {title}\n")
+
+        def add_code(content, lang="python"):
+            trace_markdown.append(f"```{lang}\n{content}\n```")
+
         config = {"configurable": {"thread_id": self.thread_id}}
         context = Context(user_id=self.user_id, conversation_id=self.conversation_id)
         
@@ -83,10 +95,9 @@ class DeepAgentCLI:
         
         stats_info = {"model": "N/A", "tokens": "In: 0 | Out: 0", "node": "N/A", "tps": 0.0}
 
-        async for part in stream_agent_async(self.state, config=config, context=context, stream_mode=["messages"]):
+        async for part in stream_agent_async(self.state, config=config, context=context, stream_mode=["updates"]):
             # 实时计算已经过去的时间
             current_elapsed = time.time() - start_time
-            print(f"88888888888888\n{part}")
             # --- 过滤 lc_source 为 summarization 的消息 ---
             if isinstance(part, dict) and part.get("type") == "messages":
                 data = part.get("data")
@@ -115,6 +126,13 @@ class DeepAgentCLI:
                     
                     # 提取正文并处理特殊符号兼容性
                     content = getattr(chunk, "content", "")
+                    if len(content) == 0:
+                        continue
+
+                    if isinstance(content,list):
+                        for item in content:
+                            if item.get("type") == 'text':
+                                content = item.get("text")
                     full_response += str(content).replace("→", "->")
                     
                     # 提取模型名称
@@ -130,6 +148,162 @@ class DeepAgentCLI:
                         stats_info["tokens"] = f"In: {in_t} | Out: {out_t}"
                         if out_t > 0 and current_elapsed > 0:
                             stats_info["tps"] = out_t / current_elapsed
+ 
+            elif isinstance(part, dict) and part.get("type") == "updates":
+
+                updates = part.get("data", {})
+
+                def short_content(msg, limit=300):
+                    try:
+                        content = getattr(msg, "content", "")
+
+                        if isinstance(content, list):
+                            texts = []
+                            for x in content:
+                                if isinstance(x, dict):
+                                    if x.get("type") == "text":
+                                        texts.append(x.get("text", ""))
+
+                            content = "\n".join(texts)
+
+                        content = str(content)
+
+                        if len(content) > limit:
+                            content = content[:limit] + "..."
+
+                        return content.strip()
+
+                    except Exception:
+                        return "<parse failed>"
+
+                def walk(obj, path=None):
+
+                    if path is None:
+                        path = []
+
+                    if not isinstance(obj, dict):
+                        return
+
+                    for k, v in obj.items():
+
+                        current_path = path + [k]
+                        path_str = " -> ".join(current_path)
+
+                        # ========= messages =========
+
+                        if isinstance(v, dict) and "messages" in v:
+
+                            msgs = v.get("messages", [])
+
+                            add_section(f"Node: `{path_str}`")
+                            if isinstance(msgs,Overwrite):
+                                continue
+                            for msg in msgs:
+
+                                msg_type = type(msg).__name__
+
+                                # ---------------- AI ----------------
+
+                                if msg_type == "AIMessage":
+
+                                    add_trace("### AIMessage\n")
+
+                                    content = short_content(msg)
+
+                                    if content:
+                                        add_trace(content)
+                                        add_trace("")
+
+                                    tool_calls = getattr(msg, "tool_calls", None)
+
+                                    if tool_calls:
+
+                                        add_trace("#### Tool Calls\n")
+
+                                        for tc in tool_calls:
+
+                                            name = tc.get("name", "unknown")
+
+                                            args = tc.get("args", {})
+
+                                            add_code(
+                                                f"{name}({args})",
+                                                "python"
+                                            )
+
+                                    usage = getattr(
+                                        msg,
+                                        "usage_metadata",
+                                        {}
+                                    ) or {}
+
+                                    if usage:
+
+                                        add_trace(
+                                            f"**Tokens:** "
+                                            f"In `{usage.get('input_tokens',0)}` | "
+                                            f"Out `{usage.get('output_tokens',0)}` | "
+                                            f"Total `{usage.get('total_tokens',0)}`"
+                                        )
+
+                                    response_metadata = getattr(
+                                        msg,
+                                        "response_metadata",
+                                        {}
+                                    ) or {}
+
+                                    if response_metadata.get("model_name"):
+
+                                        add_trace(
+                                            f"**Model:** `{response_metadata['model_name']}`"
+                                        )
+
+                                # ---------------- TOOL RESULT ----------------
+
+                                elif msg_type == "ToolMessage":
+
+                                    tool_name = getattr(msg, "name", "tool")
+
+                                    add_trace(
+                                        f"### Tool Result: `{tool_name}`\n"
+                                    )
+
+                                    content = short_content(msg)
+
+                                    add_code(content, "text")
+
+                                # ---------------- HUMAN ----------------
+
+                                elif msg_type == "HumanMessage":
+
+                                    add_trace("### HumanMessage\n")
+
+                                    content = short_content(msg)
+
+                                    add_trace(content)
+
+                        # ========= summarization =========
+
+                        if isinstance(v, dict) and "_summarization_event" in v:
+
+                            summary = v["_summarization_event"]
+
+                            add_section("Summarization")
+
+                            add_trace(
+                                f"- cutoff_index: `{summary.get('cutoff_index')}`"
+                            )
+
+                            add_trace(
+                                f"- file_path: `{summary.get('file_path')}`"
+                            )
+
+                        # ========= recurse =========
+
+                        if isinstance(v, dict):
+                            walk(v, current_path)
+
+                walk(updates)
 
             # --- 2. 处理节点更新 (Graph Node) ---
             elif isinstance(part, dict) and "langgraph_node" in str(part):
@@ -153,7 +327,11 @@ class DeepAgentCLI:
                 
                 live.update(
                     Panel(
-                        Markdown(full_response), 
+                        Markdown(
+                            "\n".join(trace_markdown) +
+                            "\n\n---\n\n# Final Response\n\n" +
+                            full_response
+                        ),
                         title="[bold blue]Agent Response[/bold blue]",
                         subtitle=subtitle,
                         subtitle_align="right",
@@ -167,7 +345,11 @@ class DeepAgentCLI:
         final_duration = time.time() - start_time
         live.update(
             Panel(
-                Markdown(full_response), 
+                Markdown(
+                    "\n".join(trace_markdown) +
+                    "\n\n---\n\n# Final Response\n\n" +
+                    full_response
+                ),
                 title="[bold green]Response Finished[/bold green]",
                 subtitle=f"[bold white]Total: {final_duration:.2f}s[/bold white] | {stats_info['tokens']} | Avg: {stats_info['tps']:.1f} t/s",
                 subtitle_align="right",
