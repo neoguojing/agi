@@ -190,8 +190,7 @@ class BackendMemoryStore:
                 record = dict(operation.value)
                 record.setdefault("created_at", patch.created_at.isoformat())
                 record.setdefault("updated_at", patch.created_at.isoformat())
-                records.append(record)
-                changed = True
+                changed = self._add_or_merge_record(records, patch.target, record, patch.created_at) or changed
             elif operation.op in {"update", "merge"}:
                 changed = self._update_record(records, operation, patch.created_at) or changed
             elif operation.op == "delete":
@@ -201,8 +200,32 @@ class BackendMemoryStore:
             elif operation.op == "deprecate":
                 changed = self._deprecate_record(records, operation, patch.created_at) or changed
 
+        records, dedup_changed = self._deduplicate_records(records, patch.target, patch.created_at)
+        changed = changed or dedup_changed
+
         if changed:
             self.replace_jsonl(path, records)
+
+    def _add_or_merge_record(self, records: list[dict[str, Any]], target: MemoryTarget, record: dict[str, Any], timestamp) -> bool:
+        """Add record unless a semantic duplicate already exists; merge when duplicate found."""
+        candidate = _record_dedup_key(target, record)
+        if not candidate:
+            records.append(record)
+            return True
+
+        for existing in records:
+            if _record_dedup_key(target, existing) != candidate:
+                continue
+            # Keep existing id/created_at; refresh mutable fields to reduce stale duplicates.
+            for key, value in record.items():
+                if key in {"id", "created_at"}:
+                    continue
+                existing[key] = value
+            existing["updated_at"] = timestamp.isoformat()
+            return True
+
+        records.append(record)
+        return True
 
     def _update_record(self, records: list[dict[str, Any]], operation: MemoryOperation, timestamp) -> bool:
         """Internal helper to find and update a specific record by ID."""
@@ -223,6 +246,42 @@ class BackendMemoryStore:
                 return True
         return False
 
+    def _deduplicate_records(self, records: list[dict[str, Any]], target: MemoryTarget, timestamp) -> tuple[list[dict[str, Any]], bool]:
+        """Compact an entire memory collection by semantic keys.
+
+        This cleans up historical duplicates that were already persisted before
+        de-dup-on-add was introduced.
+        """
+        deduped: list[dict[str, Any]] = []
+        index_by_key: dict[tuple[Any, ...], int] = {}
+        changed = False
+
+        for record in records:
+            key = _record_dedup_key(target, record)
+            if not key:
+                deduped.append(record)
+                continue
+
+            existing_idx = index_by_key.get(key)
+            if existing_idx is None:
+                index_by_key[key] = len(deduped)
+                deduped.append(record)
+                continue
+
+            existing = deduped[existing_idx]
+            # Merge duplicate into the first-seen record.
+            for field, value in record.items():
+                if field in {"id", "created_at"}:
+                    continue
+                existing[field] = value
+            existing["updated_at"] = timestamp.isoformat()
+            changed = True
+
+        if len(deduped) != len(records):
+            changed = True
+
+        return deduped, changed
+
 
 def _strip_line_numbers(content: str) -> str:
     """Best-effort conversion from backend read() output to raw text.
@@ -240,3 +299,42 @@ def _strip_line_numbers(content: str) -> str:
                 continue
         lines.append(line)
     return "\n".join(lines)
+
+
+def _normalize_text(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return " ".join(value.strip().lower().split())
+
+
+def _normalize_participants(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    normalized = [_normalize_text(v) for v in value if isinstance(v, str) and _normalize_text(v)]
+    return tuple(sorted(set(normalized)))
+
+
+def _record_dedup_key(target: MemoryTarget, record: dict[str, Any]) -> tuple[Any, ...] | None:
+    """Best-effort semantic key used to collapse duplicate memories."""
+    if target == "profile":
+        key = _normalize_text(record.get("key"))
+        value = _normalize_text(record.get("value"))
+        return ("profile", key, value) if key and value else None
+
+    if target == "episodic":
+        summary = _normalize_text(record.get("summary"))
+        participants = _normalize_participants(record.get("participants"))
+        event_time = _normalize_text(record.get("event_time"))
+        if not summary:
+            return None
+        # Event time often drifts; ignore it for matching to reduce repeated
+        # extraction duplicates for the same event.
+        return ("episodic", summary, participants, event_time[:10] if event_time else "")
+
+    if target == "semantic":
+        subject = _normalize_text(record.get("subject"))
+        predicate = _normalize_text(record.get("predicate"))
+        obj = _normalize_text(record.get("object"))
+        return ("semantic", subject, predicate, obj) if subject and predicate and obj else None
+
+    return None
