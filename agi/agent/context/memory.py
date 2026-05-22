@@ -91,7 +91,7 @@ class BaseMemoryExtractionTask(MemoryTask):
                 # Use the explicit LLM provided in the context
                 schema = TARGET_SCHEMA_MAP.get(self.target)
                 llm_with_struct = context.llm.with_structured_output(schema)
-                struct_result = await llm_with_struct.ainvoke(prompt)
+                struct_result = await llm_with_struct.ainvoke(prompt,config= {"configurable": {"thread_id": str(self.target)}})
                 # struct_result = llm_with_struct.invoke(prompt)
 
                 logger.info("struct result=%s", struct_result)

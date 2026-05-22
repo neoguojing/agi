@@ -472,7 +472,7 @@ class DeepAgentCLI:
             "tps": 0.0,
         }
 
-        async for part in stream_agent_async(self.state, config=config, context=context, stream_mode=["updates"]):
+        async for part in stream_agent_async(self.state, config=config, context=context, stream_mode=["messages"]):
             if isinstance(part, dict) and part.get("type") == "messages":
                 msg_data, event_meta = self._parse_messages_event(part)
                 if msg_data:
