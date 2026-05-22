@@ -172,6 +172,10 @@ class BaseMemoryExtractionTask(MemoryTask):
         
         patches = filtered_extraction.to_patches(reason=f"Automatic {self.target} memory extraction")
         patches = self._filter_and_deduplicate_patches(patches, context.store.read_jsonl(path))
+        patches = tuple(
+            patch.model_copy(update={"strategy": "replace"})
+            for patch in patches
+        )
         
         # Filter patches to only include the target this task is responsible for
         target_patches = tuple(p for p in patches if p.target == self.target)
@@ -193,7 +197,7 @@ class BaseMemoryExtractionTask(MemoryTask):
         """Filter low-confidence and duplicate operations before persistence."""
         updated: list[MemoryPatch] = []
         seen_keys: set[tuple[Any, ...]] = set()
-        existing_keys = {_task_dedup_key(self.target, r) for r in existing_records}
+        _ = existing_records
 
         for patch in patches:
             operations: list[MemoryOperation] = []
@@ -207,7 +211,10 @@ class BaseMemoryExtractionTask(MemoryTask):
                     continue
 
                 key = _task_dedup_key(self.target, op.value)
-                if key and (key in existing_keys or key in seen_keys):
+                # In replace mode we still remove duplicates inside the current
+                # extraction batch, but do not force retention of historical
+                # records from existing store.
+                if key and key in seen_keys:
                     continue
                 if key:
                     seen_keys.add(key)

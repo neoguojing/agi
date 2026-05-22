@@ -183,6 +183,21 @@ class BackendMemoryStore:
 
         path = patch.target_path or self.target_paths[patch.target]
         records = self.read_jsonl(path)
+
+        if patch.strategy == "replace":
+            incoming: list[dict[str, Any]] = []
+            for operation in patch.operations:
+                if operation.op != "add":
+                    continue
+                record = dict(operation.value)
+                record.setdefault("created_at", patch.created_at.isoformat())
+                record.setdefault("updated_at", patch.created_at.isoformat())
+                incoming.append(record)
+
+            incoming, _ = self._deduplicate_records(incoming, patch.target, patch.created_at)
+            self.replace_jsonl(path, incoming)
+            return
+
         changed = False
 
         for operation in patch.operations:

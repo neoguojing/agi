@@ -104,6 +104,11 @@ class MemoryPatch(BaseModel):
         description="Patch creation timestamp."
     )
 
+    strategy: Literal["merge", "replace"] = Field(
+        default="merge",
+        description="How to apply operations: merge into existing records or replace collection."
+    )
+
     @property
     def is_empty(self) -> bool:
         return not self.operations
