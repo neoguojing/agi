@@ -3,7 +3,7 @@ import time
 import traceback
 from typing import Callable, Awaitable, List, Any, Optional, Union, Generator
 from langchain.agents.middleware.types import AgentMiddleware, ModelRequest, ModelResponse
-from langchain_core.messages import BaseMessage, ToolMessage
+from langchain_core.messages import BaseMessage, ToolMessage, AIMessage
 from langgraph.types import Command
 from langchain.tools.tool_node import ToolCallRequest
 
@@ -120,7 +120,14 @@ class DebugLLMContextMiddleware(AgentMiddleware):
         lines.append(f"{self.c1}>>> [{self.namespace}] END CALL <<<{self.reset}\n")
         print("\n".join(lines))
 
-        return await handler(request)
+        try:
+            return await handler(request)
+        except Exception as e:
+            print(f"❌ [{self.namespace}] MODEL FAILED: {type(e).__name__}")
+            traceback.print_exc()
+            return ModelResponse(result=[AIMessage(content=(
+                f"Model call failed in middleware '{self.namespace}': {type(e).__name__}: {e}"
+            ))])
 
     async def awrap_tool_call(
         self,
@@ -154,4 +161,12 @@ class DebugLLMContextMiddleware(AgentMiddleware):
         except Exception as e:
             print(f"❌ [{self.namespace}] FAILED: {type(e).__name__}")
             traceback.print_exc()
-            raise e
+            tool_call_id = tool_call.get("id", "unknown")
+            return ToolMessage(
+                content=(
+                    f"Tool call failed in middleware '{self.namespace}' for '{t_name}': "
+                    f"{type(e).__name__}: {e}"
+                ),
+                tool_call_id=tool_call_id,
+                name=t_name,
+            )

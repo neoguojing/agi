@@ -42,7 +42,7 @@ from langchain.agents.middleware.types import (
     ResponseT,
 )
 from langchain.tools.tool_node import ToolCallRequest
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import ToolMessage, AIMessage
 from langchain_core.tools import BaseTool, StructuredTool
 from langchain_mcp_adapters.tools import load_mcp_tools
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -486,8 +486,17 @@ class StockMiddleware(AgentMiddleware):
             logger.exception(
                 "StockMiddleware.awrap_model_call setup failed: %s", e
             )
+            return ModelResponse(
+                result=[AIMessage(content=f"Stock middleware setup failed: {type(e).__name__}: {e}")]
+            )
 
-        return await handler(request)
+        try:
+            return await handler(request)
+        except Exception as e:
+            logger.exception("StockMiddleware.awrap_model_call handler failed: %s", e)
+            return ModelResponse(
+                result=[AIMessage(content=f"Stock middleware model call failed: {type(e).__name__}: {e}")]
+            )
     # ------------------------------------------------------------------
     # tool hooks
     # ------------------------------------------------------------------

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Annotated, Any
@@ -12,7 +13,7 @@ from typing_extensions import TypedDict, NotRequired
 from langchain.agents.middleware.types import AgentMiddleware, AgentState, ContextT, ResponseT, ModelRequest, ModelResponse
 from langchain.tools import ToolRuntime
 from langchain_core.tools import StructuredTool, BaseTool
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import ToolMessage, AIMessage
 from langgraph.types import Command
 
 from deepagents.backends import StateBackend
@@ -21,6 +22,8 @@ from deepagents.backends.utils import validate_path
 from deepagents.middleware._utils import append_to_system_message
 
 from agi.agent.prompt import get_middleware_prompt
+
+logger = logging.getLogger(__name__)
 
 
 PDF_TEXT_MIN_CHARS = 40
@@ -818,4 +821,10 @@ class PDFMiddleware(AgentMiddleware[PDFState, ContextT, ResponseT]):
             )
             request = request.override(system_message=new_system_message)
 
-        return await handler(request)
+        try:
+            return await handler(request)
+        except Exception as exc:
+            logger.exception("PDFMiddleware model call failed: %s", exc)
+            return ModelResponse(
+                result=[AIMessage(content=f"PDF middleware model call failed: {type(exc).__name__}: {exc}")]
+            )
