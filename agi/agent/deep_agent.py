@@ -265,7 +265,8 @@ def create_deep_agent(  # noqa: C901, PLR0912  # Complex graph assembly logic wi
             processed_subagents.append(processed_spec)
 
     # Combine GP with processed user-provided subagents
-    all_subagents: list[SubAgent | CompiledSubAgent] = [general_purpose_spec, *processed_subagents]
+    # all_subagents: list[SubAgent | CompiledSubAgent] = [general_purpose_spec, *processed_subagents]
+    all_subagents: list[SubAgent | CompiledSubAgent] = [*processed_subagents]
 
     # Build main agent middleware stack
     deepagent_middleware: list[AgentMiddleware[Any, Any, Any]] = [
