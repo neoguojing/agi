@@ -458,8 +458,6 @@ class MemoryExtractionResult(BaseModel):
                 data["created_at"] = now_iso
             if not data.get("updated_at"):
                 data["updated_at"] = now_iso
-            if not data.get("event_time"):
-                data["event_time"] = now_iso
             
             # 2. Quality Metrics (Default to 0.5 if 0.0 or missing, as 0.0 is often a default)
             if data.get("confidence") == 0.0:

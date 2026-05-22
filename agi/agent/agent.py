@@ -95,7 +95,7 @@ class AgentMiddlewareFactory:
         return [
             ContextEngineeringMiddleware(backend=make_backend,llm=fallback_llm),
             ModelFallbackMiddleware(llm,*ModelProvider.get_chat_models()[1:]),
-            DebugLLMContextMiddleware(),
+            # DebugLLMContextMiddleware(),
             MultimodalBase64Middleware(),
             *extra_middlewares,
         ]

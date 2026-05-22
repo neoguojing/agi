@@ -354,6 +354,7 @@ class DeepAgentCLI:
 
             elif isinstance(part, dict) and part.get("type") == "updates":
                 updates = part.get("data", {})
+                print(f"*************{updates}")
                 if isinstance(updates, dict):
                     for k, v in updates.items():
                         if isinstance(v, dict) and "messages" in v:
@@ -374,7 +375,7 @@ class DeepAgentCLI:
                                         else:
                                             normalized.append(str(item))
                                     msg_content = "\n".join(x for x in normalized if x).strip()
-                                preview = str(msg_content)[:200]
+                                preview = str(msg_content)
                                 trace_markdown.append(f"- {type(m).__name__}: {preview}")
 
             now = time.time()
