@@ -172,8 +172,9 @@ class BaseMemoryExtractionTask(MemoryTask):
         
         patches = filtered_extraction.to_patches(reason=f"Automatic {self.target} memory extraction")
         patches = self._filter_and_deduplicate_patches(patches, context.store.read_jsonl(path))
+        patch_strategy = "replace" if self.target == "profile" else "merge"
         patches = tuple(
-            patch.model_copy(update={"strategy": "replace"})
+            patch.model_copy(update={"strategy": patch_strategy})
             for patch in patches
         )
         
