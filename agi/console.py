@@ -10,7 +10,7 @@ import traceback
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from langgraph.graph.message import add_messages
 from langgraph.types import Overwrite
@@ -307,6 +307,135 @@ class DeepAgentCLI:
         flush_text()
         return contents
 
+
+
+    def _extract_text_from_content_blocks(self, content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: List[str] = []
+            for item in content:
+                if isinstance(item, dict):
+                    if item.get("type") == "text":
+                        txt = item.get("text", "")
+                        if txt:
+                            parts.append(str(txt))
+                    else:
+                        parts.append(str(item))
+                else:
+                    parts.append(str(item))
+            return "\n".join(x for x in parts if x).strip()
+        if isinstance(content, dict):
+            if content.get("type") == "text":
+                return str(content.get("text", "")).strip()
+            return str(content)
+        return str(content or "").strip()
+
+    def _message_to_dict(self, msg: Any) -> Dict[str, Any]:
+        if isinstance(msg, dict):
+            return msg
+        result: Dict[str, Any] = {
+            "type": type(msg).__name__,
+            "content": getattr(msg, "content", ""),
+            "response_metadata": getattr(msg, "response_metadata", {}) or {},
+            "usage_metadata": getattr(msg, "usage_metadata", {}) or {},
+            "additional_kwargs": getattr(msg, "additional_kwargs", {}) or {},
+            "name": getattr(msg, "name", None),
+            "id": getattr(msg, "id", None),
+            "tool_calls": getattr(msg, "tool_calls", None),
+            "invalid_tool_calls": getattr(msg, "invalid_tool_calls", None),
+        }
+        return result
+
+    def _message_type_name(self, msg_data: Dict[str, Any]) -> str:
+        raw_type = str(msg_data.get("type") or "Message")
+        if "|" in raw_type:
+            raw_type = raw_type.split("|")[0].strip()
+        return raw_type
+
+    def _parse_messages_event(self, part: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        data = part.get("data")
+        if isinstance(data, tuple) and data:
+            msg = data[0]
+            meta = data[1] if len(data) > 1 and isinstance(data[1], dict) else {}
+            return self._message_to_dict(msg), meta
+        if isinstance(data, list) and data:
+            msg = data[0]
+            meta = data[1] if len(data) > 1 and isinstance(data[1], dict) else {}
+            return self._message_to_dict(msg), meta
+        if isinstance(data, dict):
+            msg = data.get("message") or data.get("chunk") or data.get("data")
+            meta = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+            if msg is not None:
+                return self._message_to_dict(msg), meta
+        return {}, {}
+
+    def _update_stats_from_message(self, msg_data: Dict[str, Any], stats_info: Dict[str, Any], start_time: float):
+        metadata = msg_data.get("response_metadata") or {}
+        usage = msg_data.get("usage_metadata") or {}
+        additional = msg_data.get("additional_kwargs") or {}
+
+        model_name = metadata.get("model_name") or metadata.get("model") or additional.get("model_name")
+        if model_name:
+            stats_info["model"] = str(model_name)
+
+        in_t = usage.get("input_tokens")
+        out_t = usage.get("output_tokens")
+        total_t = usage.get("total_tokens")
+
+        if isinstance(in_t, int):
+            stats_info["input_tokens"] = max(stats_info.get("input_tokens", 0), in_t)
+        if isinstance(out_t, int):
+            stats_info["output_tokens"] = stats_info.get("output_tokens", 0) + max(out_t, 0)
+        if isinstance(total_t, int):
+            stats_info["total_tokens"] = max(
+                stats_info.get("total_tokens", 0),
+                total_t,
+                stats_info.get("input_tokens", 0) + stats_info.get("output_tokens", 0),
+            )
+        else:
+            stats_info["total_tokens"] = max(
+                stats_info.get("total_tokens", 0),
+                stats_info.get("input_tokens", 0) + stats_info.get("output_tokens", 0),
+            )
+
+        stats_info["tokens"] = (
+            f"In: {stats_info.get('input_tokens', 0)} | "
+            f"Out: {stats_info.get('output_tokens', 0)} | "
+            f"Total: {stats_info.get('total_tokens', 0)}"
+        )
+
+        elapsed = max(time.time() - start_time, 1e-6)
+        out_total = stats_info.get("output_tokens", 0)
+        stats_info["tps"] = out_total / elapsed if out_total else 0.0
+
+    def _format_message_preview(self, msg_data: Dict[str, Any], max_len: int = 1000) -> str:
+        msg_type = self._message_type_name(msg_data)
+        content = self._extract_text_from_content_blocks(msg_data.get("content", ""))
+        preview = content if content else "(empty)"
+        if len(preview) > max_len:
+            preview = preview[:max_len] + "..."
+        line = f"- **{msg_type}**: {preview}"
+
+        usage = msg_data.get("usage_metadata") or {}
+        in_t = usage.get("input_tokens")
+        out_t = usage.get("output_tokens")
+        total_t = usage.get("total_tokens")
+        if any(isinstance(x, int) for x in (in_t, out_t, total_t)):
+            line += f"\n  - tokens: in={in_t or 0}, out={out_t or 0}, total={total_t or 0}"
+
+        meta = msg_data.get("response_metadata") or {}
+        model = meta.get("model_name")
+        finish_reason = meta.get("finish_reason")
+        provider = meta.get("model_provider")
+        if model or finish_reason or provider:
+            line += (
+                f"\n  - meta: model={model or 'N/A'}, provider={provider or 'N/A'}, "
+                f"finish_reason={finish_reason or 'N/A'}"
+            )
+
+        return line
+
     def _normalize_message_content(self, msg_content: Any) -> str:
         if isinstance(msg_content, list):
             normalized = []
@@ -324,62 +453,85 @@ class DeepAgentCLI:
 
     async def handle_stream(self, live):
         full_response = ""
-        trace_markdown = []
+        seen_messages: Set[Tuple[str, str]] = set()
+        latest_ai_message = ""
+        updates_trace: List[str] = []
+        max_updates_trace = 30
+
         config = {"configurable": {"thread_id": self.thread_id}}
         context = Context(user_id=self.user_id, conversation_id=self.conversation_id)
         start_time = time.time()
-        last_update_time = 0
-        stats_info = {"model": "N/A", "tokens": "In: 0 | Out: 0", "node": "N/A", "tps": 0.0}
+        last_update_time = 0.0
+        stats_info: Dict[str, Any] = {
+            "model": "N/A",
+            "tokens": "In: 0 | Out: 0 | Total: 0",
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "node": "N/A",
+            "tps": 0.0,
+        }
 
         async for part in stream_agent_async(self.state, config=config, context=context, stream_mode=["updates"]):
-            elapsed = time.time() - start_time
             if isinstance(part, dict) and part.get("type") == "messages":
-                data = part.get("data") or []
-                if data:
-                    chunk = data[0]
-                    content = getattr(chunk, "content", "")
-                    if isinstance(content, list):
-                        content = "\n".join(x.get("text", "") for x in content if isinstance(x, dict) and x.get("type") == "text")
+                msg_data, event_meta = self._parse_messages_event(part)
+                if msg_data:
+                    msg_type = self._message_type_name(msg_data)
+                    content = self._extract_text_from_content_blocks(msg_data.get("content", ""))
+                    stream_node = event_meta.get("langgraph_node") or event_meta.get("lc_agent_name")
+                    if stream_node:
+                        stats_info["node"] = str(stream_node)
                     if content:
                         full_response += str(content).replace("→", "->")
-
-                    metadata = getattr(chunk, "response_metadata", {}) or {}
-                    usage = getattr(chunk, "usage_metadata", {}) or {}
-                    if metadata.get("model_name"):
-                        stats_info["model"] = metadata["model_name"]
-                    in_t, out_t = usage.get("input_tokens", 0), usage.get("output_tokens", 0)
-                    stats_info["tokens"] = f"In: {in_t} | Out: {out_t}"
-                    if out_t and elapsed > 0:
-                        stats_info["tps"] = out_t / elapsed
+                    if "AIMessage" in msg_type and content:
+                        latest_ai_message = (latest_ai_message + content) if "Chunk" in msg_type else content
+                    self._update_stats_from_message(msg_data, stats_info, start_time)
 
             elif isinstance(part, dict) and part.get("type") == "updates":
                 updates = part.get("data", {})
-                print(f"*************{updates}")
                 if isinstance(updates, dict):
-                    for k, v in updates.items():
-                        if isinstance(v, dict) and "messages" in v:
-                            msgs = v.get("messages", [])
-                            if isinstance(msgs, Overwrite):
+                    for node_name, node_payload in updates.items():
+                        if not isinstance(node_payload, dict) or "messages" not in node_payload:
+                            continue
+                        stats_info["node"] = str(node_name)
+                        msgs = node_payload.get("messages", [])
+                        if isinstance(msgs, Overwrite):
+                            continue
+                        if not isinstance(msgs, list):
+                            continue
+
+                        for raw_msg in msgs:
+                            msg_data = self._message_to_dict(raw_msg)
+                            msg_type = self._message_type_name(msg_data)
+                            content = self._extract_text_from_content_blocks(msg_data.get("content", ""))
+                            msg_key = (str(node_name), f"{msg_type}|{content}|{msg_data.get('id')}")
+                            if msg_key in seen_messages:
                                 continue
-                            trace_markdown.append(f"## Node: `{k}`")
-                            for m in msgs:
-                                msg_content = getattr(m, "content", "")
-                                if isinstance(msg_content, list):
-                                    normalized = []
-                                    for item in msg_content:
-                                        if isinstance(item, dict):
-                                            if item.get("type") == "text":
-                                                normalized.append(str(item.get("text", "")))
-                                            else:
-                                                normalized.append(str(item))
-                                        else:
-                                            normalized.append(str(item))
-                                    msg_content = "\n".join(x for x in normalized if x).strip()
-                                preview = str(msg_content)
-                                trace_markdown.append(f"- {type(m).__name__}: {preview}")
+                            seen_messages.add(msg_key)
+
+                            self._update_stats_from_message(msg_data, stats_info, start_time)
+                            if msg_type == "AIMessage" and content:
+                                latest_ai_message = content
+                            preview = self._format_message_preview(msg_data, max_len=400)
+                            updates_trace.append(f"### Node `{node_name}`\n{preview}")
+                            if len(updates_trace) > max_updates_trace:
+                                updates_trace = updates_trace[-max_updates_trace:]
 
             now = time.time()
             if now - last_update_time > 0.05:
+                elapsed = now - start_time
+                sections: List[str] = []
+                if updates_trace:
+                    sections.append("## Updates Trace")
+                    sections.extend(updates_trace[-10:])
+                if latest_ai_message:
+                    sections.append("\n---\n\n## Latest AIMessage\n" + latest_ai_message)
+                elif full_response:
+                    sections.append("\n---\n\n## Streamed Response\n" + full_response)
+                body = "\n\n".join(sections).strip()
+                if not body:
+                    body = "(waiting for updates...)"
+
                 subtitle = (
                     f"[bold cyan]{elapsed:.1f}s[/bold cyan] | {stats_info['model']} | "
                     f"Node: [yellow]{stats_info['node']}[/yellow] | {stats_info['tokens']} | "
@@ -387,7 +539,7 @@ class DeepAgentCLI:
                 )
                 live.update(
                     Panel(
-                        Markdown("\n".join(trace_markdown) + "\n\n---\n\n# Final Response\n\n" + full_response),
+                        Markdown(body),
                         title="[bold blue]Agent Response[/bold blue]",
                         subtitle=subtitle,
                         subtitle_align="right",
@@ -396,7 +548,7 @@ class DeepAgentCLI:
                 )
                 last_update_time = now
 
-        return full_response
+        return latest_ai_message or full_response
 
     async def run(self):
         self._save_session()
