@@ -63,6 +63,37 @@ TARGET_SCHEMA_MAP = {
     "semantic": SemanticMemoryList,
 }
 
+
+def _norm_text(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return " ".join(value.strip().lower().split())
+
+
+def _task_dedup_key(target: MemoryTarget, record: dict[str, Any]) -> tuple[Any, ...] | None:
+    if target == "profile":
+        k = _norm_text(record.get("key"))
+        v = _norm_text(record.get("value"))
+        return ("profile", k, v) if k and v else None
+
+    if target == "semantic":
+        s = _norm_text(record.get("subject"))
+        p = _norm_text(record.get("predicate"))
+        o = _norm_text(record.get("object"))
+        return ("semantic", s, p, o) if s and p and o else None
+
+    if target == "episodic":
+        summary = _norm_text(record.get("summary"))
+        participants = tuple(sorted(_norm_text(v) for v in record.get("participants", []) if _norm_text(v)))
+        day = _norm_text(record.get("event_time"))[:10]
+        if not summary:
+            return None
+        # Fuzzy bucket to reduce near-duplicate summaries.
+        signature = summary[:80]
+        return ("episodic", signature, participants, day)
+
+    return None
+
 class BaseMemoryExtractionTask(MemoryTask):
     """Base class for tasks that use an LLM to extract memories.
     
@@ -140,6 +171,7 @@ class BaseMemoryExtractionTask(MemoryTask):
             filtered_extraction.semantic_memories = llm_payload.items
         
         patches = filtered_extraction.to_patches(reason=f"Automatic {self.target} memory extraction")
+        patches = self._filter_and_deduplicate_patches(patches, context.store.read_jsonl(path))
         
         # Filter patches to only include the target this task is responsible for
         target_patches = tuple(p for p in patches if p.target == self.target)
@@ -152,6 +184,40 @@ class BaseMemoryExtractionTask(MemoryTask):
             summary=f"Extracted {len(target_patches)} patches for {self.target} memory.",
             patches=target_patches
         )
+
+    def _filter_and_deduplicate_patches(
+        self,
+        patches: tuple[MemoryPatch, ...],
+        existing_records: list[dict[str, Any]],
+    ) -> tuple[MemoryPatch, ...]:
+        """Filter low-confidence and duplicate operations before persistence."""
+        updated: list[MemoryPatch] = []
+        seen_keys: set[tuple[Any, ...]] = set()
+        existing_keys = {_task_dedup_key(self.target, r) for r in existing_records}
+
+        for patch in patches:
+            operations: list[MemoryOperation] = []
+            for op in patch.operations:
+                if op.op != "add":
+                    operations.append(op)
+                    continue
+
+                confidence = float(op.value.get("confidence", 0.5) or 0.0)
+                if confidence < self.config.min_confidence:
+                    continue
+
+                key = _task_dedup_key(self.target, op.value)
+                if key and (key in existing_keys or key in seen_keys):
+                    continue
+                if key:
+                    seen_keys.add(key)
+
+                operations.append(op)
+
+            if operations:
+                updated.append(patch.model_copy(update={"operations": tuple(operations)}))
+
+        return tuple(updated)
 
 class ProfileMemoryTask(BaseMemoryExtractionTask):
     """Task dedicated to extracting stable user profile and preferences."""
