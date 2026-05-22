@@ -16,7 +16,7 @@ from langchain.agents.middleware.types import (
     ModelResponse,
 )
 from langchain.tools import ToolRuntime
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import ToolMessage, AIMessage
 from langchain_core.tools import StructuredTool
 from langgraph.types import Command
 from typing_extensions import NotRequired, TypedDict
@@ -962,4 +962,10 @@ class FfmpegMiddleware(AgentMiddleware[FfmpegState, Any, Any]):
     async def awrap_model_call(self, request: ModelRequest, handler):
         """Async version of wrap_model_call."""
         modified_request = self.wrap_model_call(request, lambda r: r)
-        return await handler(modified_request)
+        try:
+            return await handler(modified_request)
+        except Exception as exc:
+            logger.exception("FFmpegMiddleware model call failed: %s", exc)
+            return ModelResponse(
+                result=[AIMessage(content=f"FFmpeg middleware model call failed: {type(exc).__name__}: {exc}")]
+            )
