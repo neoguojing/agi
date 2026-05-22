@@ -453,7 +453,6 @@ class DeepAgentCLI:
 
     async def handle_stream(self, live):
         full_response = ""
-        trace_markdown: List[str] = []
         seen_messages: Set[Tuple[str, str]] = set()
         latest_ai_message = ""
 
@@ -485,16 +484,6 @@ class DeepAgentCLI:
                     if "AIMessage" in msg_type and content:
                         latest_ai_message = (latest_ai_message + content) if "Chunk" in msg_type else content
                     self._update_stats_from_message(msg_data, stats_info, start_time)
-                    trace_line = self._format_message_preview(msg_data)
-                    if event_meta:
-                        trace_line += (
-                            "\n  - event: "
-                            f"node={event_meta.get('langgraph_node', 'N/A')}, "
-                            f"step={event_meta.get('langgraph_step', 'N/A')}, "
-                            f"model={event_meta.get('ls_model_name', 'N/A')}"
-                        )
-                    trace_markdown.append("## Stream Event: `messages`")
-                    trace_markdown.append(trace_line)
 
             elif isinstance(part, dict) and part.get("type") == "updates":
                 updates = part.get("data", {})
@@ -509,7 +498,6 @@ class DeepAgentCLI:
                         if not isinstance(msgs, list):
                             continue
 
-                        node_lines: List[str] = []
                         for raw_msg in msgs:
                             msg_data = self._message_to_dict(raw_msg)
                             msg_type = self._message_type_name(msg_data)
@@ -519,23 +507,17 @@ class DeepAgentCLI:
                                 continue
                             seen_messages.add(msg_key)
 
-                            node_lines.append(self._format_message_preview(msg_data))
                             self._update_stats_from_message(msg_data, stats_info, start_time)
                             if msg_type == "AIMessage" and content:
                                 latest_ai_message = content
 
-                        if node_lines:
-                            trace_markdown.append(f"## Node: `{node_name}`")
-                            trace_markdown.extend(node_lines)
-
             now = time.time()
             if now - last_update_time > 0.05:
                 elapsed = now - start_time
-                body = "\n".join(trace_markdown).strip()
                 if latest_ai_message:
-                    body += "\n\n---\n\n# Final AIMessage\n\n" + latest_ai_message
+                    body = latest_ai_message
                 elif full_response:
-                    body += "\n\n---\n\n# Final Response\n\n" + full_response
+                    body = full_response
                 if not body:
                     body = "(waiting for updates...)"
 
