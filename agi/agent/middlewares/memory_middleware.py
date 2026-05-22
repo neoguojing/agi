@@ -4,7 +4,7 @@ import time
 import json
 from typing import Callable, List, Awaitable
 import logging
-from langchain_core.messages import SystemMessage, BaseMessage,AnyMessage,HumanMessage
+from langchain_core.messages import SystemMessage, BaseMessage,AnyMessage,HumanMessage,AIMessage
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from deepagents.backends.protocol import BackendProtocol
 from agi.utils.common import append_to_system_message, extract_messages_content
@@ -179,6 +179,5 @@ class MemoryMiddleware(AgentMiddleware):
 
             return response
         except Exception as e:
-            import traceback
-            traceback.print_exc()
-            logger.error(e)
+            logger.exception("MemoryMiddleware model call failed: %s", e)
+            return ModelResponse(result=[AIMessage(content=f"Memory middleware failed: {type(e).__name__}: {e}")])
