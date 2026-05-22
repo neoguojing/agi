@@ -5,7 +5,7 @@ import os
 import asyncio
 from typing import Callable, List, Awaitable, Any
 from venv import logger
-from langchain_core.messages import SystemMessage, BaseMessage
+from langchain_core.messages import SystemMessage, BaseMessage, AIMessage
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from deepagents.backends.protocol import BackendProtocol
 from agi.agent.prompt import get_middleware_prompt
@@ -123,9 +123,12 @@ class ContextEngineeringMiddleware(AgentMiddleware):
         )
 
         # 6. 执行模型调用
-        response = await handler(request)
-
-        return response
+        try:
+            response = await handler(request)
+            return response
+        except Exception as e:
+            logger.exception("ContextEngineeringMiddleware model call failed: %s", e)
+            return ModelResponse(result=[AIMessage(content=f"Model call failed: {type(e).__name__}: {e}")])
 
     def _log_debug_info(self, ctx_data: str, total_count: int):
         print(f"--- [Context Engine] 注入数据: {ctx_data} | 消息流长度: {total_count} ---")
