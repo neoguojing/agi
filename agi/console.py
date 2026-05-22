@@ -32,6 +32,8 @@ from agi.apps.common import FileObject, ImageURL, MessageContent
 
 STATE_CACHE = ".cli_session.json"
 HISTORY_CACHE = ".cli_prompt_history"
+MAX_INLINE_DOC_CHARS = 20000
+TEXT_EXTENSIONS = {".txt", ".md", ".markdown", ".py", ".json", ".yaml", ".yml", ".csv", ".log", ".xml", ".html", ".rst"}
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 console = Console()
@@ -120,6 +122,7 @@ class DeepAgentCLI:
     def _cmd_help(self, _: str) -> bool:
         lines = [f"{k:<10} {v.help_text}" for k, v in self.command_map.items()]
         lines.append("\n提示: ↑/↓ 浏览输入历史, Tab 自动补全路径与命令。")
+        lines.append("多模态输入: img:<path|url> file:<path> doc:<path> audio:<path> video:<path>")
         console.print(Panel("\n".join(lines), title="Commands", border_style="cyan"))
         return True
 
@@ -201,6 +204,22 @@ class DeepAgentCLI:
             return True
         return handler.handler(arg)
 
+    def _resolve_path(self, raw_path: str) -> Path:
+        return (self.cwd / raw_path).expanduser().resolve()
+
+    def _read_document_for_prompt(self, path: Path) -> str:
+        if not path.exists() or not path.is_file():
+            return f"[文档不存在: {path}]"
+        if path.suffix.lower() not in TEXT_EXTENSIONS:
+            return f"[暂不支持直接读取该文档类型，请使用 file: 附件方式传入: {path}]"
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            return f"[文档非 UTF-8 编码，无法直接读取: {path}]"
+        if len(text) > MAX_INLINE_DOC_CHARS:
+            text = text[:MAX_INLINE_DOC_CHARS] + "\n...\n[文档过长，已截断]"
+        return f"\n[DOC_BEGIN: {path}]\n{text}\n[DOC_END]\n"
+
     def _smart_parse(self, text: str):
         tokens = text.split()
         contents = []
@@ -214,17 +233,25 @@ class DeepAgentCLI:
         for t in tokens:
             if t.startswith("img:"):
                 flush_text()
-                contents.append(MessageContent(type="image_url", image_url=ImageURL(url=t[4:])))
-            elif t.startswith("file:"):
+                source = t[4:]
+                if source and not source.startswith(("http://", "https://", "data:")):
+                    source = str(self._resolve_path(source))
+                contents.append(MessageContent(type="image_url", image_url=ImageURL(url=source)))
+            elif t.startswith(("file:", "audio:", "video:")):
                 flush_text()
-                path = str((self.cwd / t[5:]).expanduser().resolve())
+                prefix, raw = t.split(":", 1)
+                path = str(self._resolve_path(raw))
                 mime, _ = mimetypes.guess_type(path)
-                contents.append(
-                    MessageContent(
-                        type="file",
-                        file=FileObject(file_id=path, mime_type=mime or "application/octet-stream"),
-                    )
-                )
+                if prefix == "audio" and not (mime and mime.startswith("audio/")):
+                    mime = mime or "audio/wav"
+                elif prefix == "video" and not (mime and mime.startswith("video/")):
+                    mime = mime or "video/mp4"
+                contents.append(MessageContent(type="file", file=FileObject(file_id=path, mime_type=mime or "application/octet-stream")))
+            elif t.startswith("doc:"):
+                flush_text()
+                doc_path = self._resolve_path(t[4:])
+                doc_content = self._read_document_for_prompt(doc_path)
+                contents.append(MessageContent(type="text", text=doc_content))
             else:
                 text_buffer.append(t)
         flush_text()
