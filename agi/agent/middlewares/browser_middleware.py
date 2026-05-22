@@ -14,7 +14,7 @@ from langchain.agents.middleware.types import (
     ResponseT,
 )
 from langchain.tools import ToolRuntime
-from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.messages import HumanMessage, ToolMessage, AIMessage
 from langchain_core.messages.content import create_image_block
 from langchain_core.tools import BaseTool, StructuredTool
 from langchain.tools.tool_node import ToolCallRequest
@@ -225,7 +225,11 @@ class BrowserMiddleware(AgentMiddleware):
         combined_prompt = "\n\n".join(part for part in [system_prompt, browser_state_prompt] if part)
         if combined_prompt:
             request = request.override(system_message=append_to_system_message(request.system_message, combined_prompt))
-        return await handler(request)
+        try:
+            return await handler(request)
+        except Exception as exc:
+            logger.exception("BrowserMiddleware model call failed: %s", exc)
+            return ModelResponse(result=[AIMessage(content=f"Browser middleware model call failed: {type(exc).__name__}: {exc}")])
 
     def wrap_tool_call(
         self,
@@ -241,7 +245,17 @@ class BrowserMiddleware(AgentMiddleware):
         handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command]],
     ) -> ToolMessage | Command:
         """(async)Check the size of the tool call result and evict to filesystem if too large."""
-        return await handler(request)
+        try:
+            return await handler(request)
+        except Exception as exc:
+            logger.exception("BrowserMiddleware tool call failed: %s", exc)
+            tool_name = request.tool_call.get("name", "unknown")
+            tool_call_id = request.tool_call.get("id", "unknown")
+            return ToolMessage(
+                content=f"Browser middleware tool call failed for '{tool_name}': {type(exc).__name__}: {exc}",
+                tool_call_id=tool_call_id,
+                name=tool_name,
+            )
 
 
     def _resolve_user_id(self, runtime: ToolRuntime[None, BrowserMiddlewareState] | None = None) -> str:
