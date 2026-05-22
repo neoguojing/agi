@@ -353,11 +353,29 @@ class DeepAgentCLI:
             raw_type = raw_type.split("|")[0].strip()
         return raw_type
 
+    def _parse_messages_event(self, part: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        data = part.get("data")
+        if isinstance(data, tuple) and data:
+            msg = data[0]
+            meta = data[1] if len(data) > 1 and isinstance(data[1], dict) else {}
+            return self._message_to_dict(msg), meta
+        if isinstance(data, list) and data:
+            msg = data[0]
+            meta = data[1] if len(data) > 1 and isinstance(data[1], dict) else {}
+            return self._message_to_dict(msg), meta
+        if isinstance(data, dict):
+            msg = data.get("message") or data.get("chunk") or data.get("data")
+            meta = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+            if msg is not None:
+                return self._message_to_dict(msg), meta
+        return {}, {}
+
     def _update_stats_from_message(self, msg_data: Dict[str, Any], stats_info: Dict[str, Any], start_time: float):
         metadata = msg_data.get("response_metadata") or {}
         usage = msg_data.get("usage_metadata") or {}
+        additional = msg_data.get("additional_kwargs") or {}
 
-        model_name = metadata.get("model_name") or metadata.get("model")
+        model_name = metadata.get("model_name") or metadata.get("model") or additional.get("model_name")
         if model_name:
             stats_info["model"] = str(model_name)
 
@@ -368,9 +386,18 @@ class DeepAgentCLI:
         if isinstance(in_t, int):
             stats_info["input_tokens"] = max(stats_info.get("input_tokens", 0), in_t)
         if isinstance(out_t, int):
-            stats_info["output_tokens"] = max(stats_info.get("output_tokens", 0), out_t)
+            stats_info["output_tokens"] = stats_info.get("output_tokens", 0) + max(out_t, 0)
         if isinstance(total_t, int):
-            stats_info["total_tokens"] = max(stats_info.get("total_tokens", 0), total_t)
+            stats_info["total_tokens"] = max(
+                stats_info.get("total_tokens", 0),
+                total_t,
+                stats_info.get("input_tokens", 0) + stats_info.get("output_tokens", 0),
+            )
+        else:
+            stats_info["total_tokens"] = max(
+                stats_info.get("total_tokens", 0),
+                stats_info.get("input_tokens", 0) + stats_info.get("output_tokens", 0),
+            )
 
         stats_info["tokens"] = (
             f"In: {stats_info.get('input_tokens', 0)} | "
@@ -400,8 +427,12 @@ class DeepAgentCLI:
         meta = msg_data.get("response_metadata") or {}
         model = meta.get("model_name")
         finish_reason = meta.get("finish_reason")
-        if model or finish_reason:
-            line += f"\n  - meta: model={model or 'N/A'}, finish_reason={finish_reason or 'N/A'}"
+        provider = meta.get("model_provider")
+        if model or finish_reason or provider:
+            line += (
+                f"\n  - meta: model={model or 'N/A'}, provider={provider or 'N/A'}, "
+                f"finish_reason={finish_reason or 'N/A'}"
+            )
 
         return line
 
@@ -442,16 +473,28 @@ class DeepAgentCLI:
 
         async for part in stream_agent_async(self.state, config=config, context=context, stream_mode=["updates"]):
             if isinstance(part, dict) and part.get("type") == "messages":
-                data = part.get("data") or []
-                if data:
-                    msg_data = self._message_to_dict(data[0])
+                msg_data, event_meta = self._parse_messages_event(part)
+                if msg_data:
                     msg_type = self._message_type_name(msg_data)
                     content = self._extract_text_from_content_blocks(msg_data.get("content", ""))
+                    stream_node = event_meta.get("langgraph_node") or event_meta.get("lc_agent_name")
+                    if stream_node:
+                        stats_info["node"] = str(stream_node)
                     if content:
                         full_response += str(content).replace("→", "->")
-                    if msg_type == "AIMessage" and content:
-                        latest_ai_message = content
+                    if "AIMessage" in msg_type and content:
+                        latest_ai_message = (latest_ai_message + content) if "Chunk" in msg_type else content
                     self._update_stats_from_message(msg_data, stats_info, start_time)
+                    trace_line = self._format_message_preview(msg_data)
+                    if event_meta:
+                        trace_line += (
+                            "\n  - event: "
+                            f"node={event_meta.get('langgraph_node', 'N/A')}, "
+                            f"step={event_meta.get('langgraph_step', 'N/A')}, "
+                            f"model={event_meta.get('ls_model_name', 'N/A')}"
+                        )
+                    trace_markdown.append("## Stream Event: `messages`")
+                    trace_markdown.append(trace_line)
 
             elif isinstance(part, dict) and part.get("type") == "updates":
                 updates = part.get("data", {})
