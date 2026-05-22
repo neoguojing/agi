@@ -200,6 +200,9 @@ class BackendMemoryStore:
             elif operation.op == "deprecate":
                 changed = self._deprecate_record(records, operation, patch.created_at) or changed
 
+        records, dedup_changed = self._deduplicate_records(records, patch.target, patch.created_at)
+        changed = changed or dedup_changed
+
         if changed:
             self.replace_jsonl(path, records)
 
@@ -242,6 +245,42 @@ class BackendMemoryStore:
                     record["deprecated_reason"] = operation.reason
                 return True
         return False
+
+    def _deduplicate_records(self, records: list[dict[str, Any]], target: MemoryTarget, timestamp) -> tuple[list[dict[str, Any]], bool]:
+        """Compact an entire memory collection by semantic keys.
+
+        This cleans up historical duplicates that were already persisted before
+        de-dup-on-add was introduced.
+        """
+        deduped: list[dict[str, Any]] = []
+        index_by_key: dict[tuple[Any, ...], int] = {}
+        changed = False
+
+        for record in records:
+            key = _record_dedup_key(target, record)
+            if not key:
+                deduped.append(record)
+                continue
+
+            existing_idx = index_by_key.get(key)
+            if existing_idx is None:
+                index_by_key[key] = len(deduped)
+                deduped.append(record)
+                continue
+
+            existing = deduped[existing_idx]
+            # Merge duplicate into the first-seen record.
+            for field, value in record.items():
+                if field in {"id", "created_at"}:
+                    continue
+                existing[field] = value
+            existing["updated_at"] = timestamp.isoformat()
+            changed = True
+
+        if len(deduped) != len(records):
+            changed = True
+
+        return deduped, changed
 
 
 def _strip_line_numbers(content: str) -> str:
@@ -288,8 +327,9 @@ def _record_dedup_key(target: MemoryTarget, record: dict[str, Any]) -> tuple[Any
         event_time = _normalize_text(record.get("event_time"))
         if not summary:
             return None
-        # Event time often drifts; use summary + participants as primary dedup key.
-        return ("episodic", summary, participants, event_time)
+        # Event time often drifts; ignore it for matching to reduce repeated
+        # extraction duplicates for the same event.
+        return ("episodic", summary, participants, event_time[:10] if event_time else "")
 
     if target == "semantic":
         subject = _normalize_text(record.get("subject"))
