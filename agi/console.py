@@ -307,6 +307,21 @@ class DeepAgentCLI:
         flush_text()
         return contents
 
+    def _normalize_message_content(self, msg_content: Any) -> str:
+        if isinstance(msg_content, list):
+            normalized = []
+            for item in msg_content:
+                if isinstance(item, dict):
+                    if item.get("type") == "text":
+                        normalized.append(str(item.get("text", "")))
+                    else:
+                        normalized.append(str(item))
+                else:
+                    normalized.append(str(item))
+            return "\n".join(x for x in normalized if x).strip()
+
+        return str(msg_content or "").strip()
+
     async def handle_stream(self, live):
         full_response = ""
         trace_markdown = []
