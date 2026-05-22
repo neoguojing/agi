@@ -455,6 +455,8 @@ class DeepAgentCLI:
         full_response = ""
         seen_messages: Set[Tuple[str, str]] = set()
         latest_ai_message = ""
+        updates_trace: List[str] = []
+        max_updates_trace = 30
 
         config = {"configurable": {"thread_id": self.thread_id}}
         context = Context(user_id=self.user_id, conversation_id=self.conversation_id)
@@ -510,14 +512,23 @@ class DeepAgentCLI:
                             self._update_stats_from_message(msg_data, stats_info, start_time)
                             if msg_type == "AIMessage" and content:
                                 latest_ai_message = content
+                            preview = self._format_message_preview(msg_data, max_len=400)
+                            updates_trace.append(f"### Node `{node_name}`\n{preview}")
+                            if len(updates_trace) > max_updates_trace:
+                                updates_trace = updates_trace[-max_updates_trace:]
 
             now = time.time()
             if now - last_update_time > 0.05:
                 elapsed = now - start_time
+                sections: List[str] = []
+                if updates_trace:
+                    sections.append("## Updates Trace")
+                    sections.extend(updates_trace[-10:])
                 if latest_ai_message:
-                    body = latest_ai_message
+                    sections.append("\n---\n\n## Latest AIMessage\n" + latest_ai_message)
                 elif full_response:
-                    body = full_response
+                    sections.append("\n---\n\n## Streamed Response\n" + full_response)
+                body = "\n\n".join(sections).strip()
                 if not body:
                     body = "(waiting for updates...)"
 
