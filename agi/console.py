@@ -48,12 +48,16 @@ class CLICommand:
 
 class HybridCompleter(Completer):
     def __init__(self, command_words: List[str]):
+        self.command_words = set(command_words)
         self.command_completer = WordCompleter(command_words, ignore_case=True)
         self.path_completer = PathCompleter(expanduser=True)
 
     def get_completions(self, document, complete_event):
-        text = document.text_before_cursor.strip()
-        if text.startswith("/"):
+        text = document.text_before_cursor
+        stripped = text.lstrip()
+        first = stripped.split(maxsplit=1)[0] if stripped else ""
+        is_command_context = first.startswith("/") and first in self.command_words
+        if is_command_context:
             yield from self.command_completer.get_completions(document, complete_event)
         yield from self.path_completer.get_completions(document, complete_event)
 
@@ -123,6 +127,7 @@ class DeepAgentCLI:
         lines = [f"{k:<10} {v.help_text}" for k, v in self.command_map.items()]
         lines.append("\n提示: ↑/↓ 浏览输入历史, Tab 自动补全路径与命令。")
         lines.append("多模态输入: img:<path|url> file:<path> doc:<path> audio:<path> video:<path>")
+        lines.append("也支持直接输入存在的文件路径（如 /aaa/bbb/a.txt）自动作为输入传给 Agent。")
         console.print(Panel("\n".join(lines), title="Commands", border_style="cyan"))
         return True
 
@@ -193,15 +198,17 @@ class DeepAgentCLI:
         return True
 
     def _parse_command(self, user_input: str) -> Optional[bool]:
-        if not user_input.startswith("/"):
+        stripped = user_input.lstrip()
+        if not stripped.startswith("/"):
             return None
-        parts = shlex.split(user_input)
+        parts = shlex.split(stripped)
+        if not parts:
+            return None
         cmd = parts[0].lower()
-        arg = " ".join(parts[1:]) if len(parts) > 1 else ""
         handler = self.command_map.get(cmd)
         if not handler:
-            console.print(f"[yellow]未知命令: {cmd}，输入 /help 查看帮助[/yellow]")
-            return True
+            return None
+        arg = " ".join(parts[1:]) if len(parts) > 1 else ""
         return handler.handler(arg)
 
     def _resolve_path(self, raw_path: str) -> Path:
@@ -219,6 +226,42 @@ class DeepAgentCLI:
         if len(text) > MAX_INLINE_DOC_CHARS:
             text = text[:MAX_INLINE_DOC_CHARS] + "\n...\n[文档过长，已截断]"
         return f"\n[DOC_BEGIN: {path}]\n{text}\n[DOC_END]\n"
+
+    def _looks_like_existing_path(self, token: str) -> Optional[Path]:
+        if not token or token.startswith(("http://", "https://", "data:")):
+            return None
+        candidate = self._resolve_path(token)
+        if candidate.exists():
+            return candidate
+        return None
+
+    def _directory_snapshot_for_prompt(self, path: Path) -> str:
+        try:
+            entries = sorted(path.iterdir(), key=lambda x: (x.is_file(), x.name.lower()))
+        except Exception as exc:
+            return f"[目录读取失败: {path}, error={exc}]"
+
+        preview = []
+        for item in entries[:200]:
+            prefix = "DIR" if item.is_dir() else "FILE"
+            preview.append(f"- {prefix}: {item.name}")
+        if len(entries) > 200:
+            preview.append("- ... [目录内容过多，已截断]")
+        return f"\n[DIR_BEGIN: {path}]\n" + "\n".join(preview) + "\n[DIR_END]\n"
+
+    def _append_file_content(self, path: Path, contents: List[MessageContent]):
+        mime, _ = mimetypes.guess_type(str(path))
+        mime = mime or "application/octet-stream"
+        if path.suffix.lower() in TEXT_EXTENSIONS:
+            doc_content = self._read_document_for_prompt(path)
+            contents.append(MessageContent(type="text", text=doc_content))
+            return
+        contents.append(
+            MessageContent(
+                type="file",
+                file=FileObject(file_id=str(path), mime_type=mime),
+            )
+        )
 
     def _smart_parse(self, text: str):
         tokens = text.split()
@@ -239,21 +282,28 @@ class DeepAgentCLI:
                 contents.append(MessageContent(type="image_url", image_url=ImageURL(url=source)))
             elif t.startswith(("file:", "audio:", "video:")):
                 flush_text()
-                prefix, raw = t.split(":", 1)
-                path = str(self._resolve_path(raw))
-                mime, _ = mimetypes.guess_type(path)
-                if prefix == "audio" and not (mime and mime.startswith("audio/")):
-                    mime = mime or "audio/wav"
-                elif prefix == "video" and not (mime and mime.startswith("video/")):
-                    mime = mime or "video/mp4"
-                contents.append(MessageContent(type="file", file=FileObject(file_id=path, mime_type=mime or "application/octet-stream")))
+                _, raw = t.split(":", 1)
+                self._append_file_content(self._resolve_path(raw), contents)
             elif t.startswith("doc:"):
                 flush_text()
                 doc_path = self._resolve_path(t[4:])
                 doc_content = self._read_document_for_prompt(doc_path)
                 contents.append(MessageContent(type="text", text=doc_content))
             else:
-                text_buffer.append(t)
+                maybe_path = self._looks_like_existing_path(t)
+                if maybe_path is not None:
+                    flush_text()
+                    if maybe_path.is_dir():
+                        contents.append(
+                            MessageContent(
+                                type="text",
+                                text=self._directory_snapshot_for_prompt(maybe_path),
+                            )
+                        )
+                    else:
+                        self._append_file_content(maybe_path, contents)
+                else:
+                    text_buffer.append(t)
         flush_text()
         return contents
 
