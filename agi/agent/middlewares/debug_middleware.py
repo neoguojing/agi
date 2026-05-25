@@ -143,6 +143,31 @@ class DebugLLMContextMiddleware(AgentMiddleware):
                 else:
                     lines.append(f"{'':10} | {line}")  # 统一对齐
 
+    def _append_tool_call_details(self, lines: List[str], msg: AIMessage):
+        tool_calls = getattr(msg, "tool_calls", []) or []
+        if not tool_calls:
+            return
+
+        lines.append(f"{'':10} | ├─ 🔧 Tool Calls ({len(tool_calls)})")
+        for idx, call in enumerate(tool_calls, start=1):
+            call_id = str(call.get("id") or "unknown")
+            call_name = str(call.get("name") or "unknown")
+            call_args = self._json_preview(call.get("args", {}), limit=1200)
+            lines.append(f"{'':10} | │  [{idx}] name={call_name}")
+            lines.append(f"{'':10} | │      id={call_id}")
+            lines.append(f"{'':10} | │      args={call_args}")
+
+    def _append_tool_result_details(self, lines: List[str], msg: ToolMessage):
+        tool_call_id = str(getattr(msg, "tool_call_id", "") or "unknown")
+        tool_name = str(getattr(msg, "name", "") or "unknown")
+        artifact = getattr(msg, "artifact", None)
+
+        lines.append(f"{'':10} | ├─ 🧰 Tool Result")
+        lines.append(f"{'':10} | │    name={tool_name}")
+        lines.append(f"{'':10} | │    tool_call_id={tool_call_id}")
+        if artifact is not None:
+            lines.append(f"{'':10} | │    artifact={self._json_preview(artifact, limit=800)}")
+
     async def awrap_model_call(
         self,
         request: ModelRequest,
@@ -187,6 +212,10 @@ class DebugLLMContextMiddleware(AgentMiddleware):
                 role_map = {"human": ("👤", "USER"), "ai": ("🤖", "ASSIST"), "tool": ("🛠️", "TOOL")}
                 icon, role_name = role_map.get(str(msg.type), ("📝", str(msg.type).upper()))
                 self._append_log_line(lines, icon, role_name, msg.content, getattr(msg, 'id', None))
+                if isinstance(msg, AIMessage):
+                    self._append_tool_call_details(lines, msg)
+                elif isinstance(msg, ToolMessage):
+                    self._append_tool_result_details(lines, msg)
 
         lines.append(f"{self.c1}╚═ [{self.namespace}] END CALL{self.reset}\n")
         print("\n".join(lines))
