@@ -115,6 +115,7 @@ class BaseMemoryExtractionTask(MemoryTask):
 
     async def _call_llm_for_extraction(self, context: MemoryTaskContext, prompt: str) -> Any:
         """Helper to interact with the LLM using structured output."""
+        struct_result = None
         if context.llm:
             try:
                 # import pdb;pdb.set_trace()
@@ -129,13 +130,10 @@ class BaseMemoryExtractionTask(MemoryTask):
                 return struct_result
 
             except Exception as e:
-                logger.exception(
-                    "LLM extraction failed"
-                )
-                raise
+                logger.error(f"Task {self.name} failed: {e}.")
 
-        logger.error(f"Task {self.name} failed: No LLM provided in MemoryTaskContext.")
-        return None
+            finally:
+                return struct_result
 
     async def run(self, context: MemoryTaskContext) -> MemoryTaskResult:
         """Executes the memory extraction process for the target memory type."""
