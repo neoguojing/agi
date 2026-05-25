@@ -10,6 +10,7 @@ from agi.agent.middlewares.memory_middleware import MemoryMiddleware
 from agi.agent.middlewares.pdf_middleware import PDFMiddleware
 from pathlib import Path
 from deepagents.backends import CompositeBackend,StateBackend,FilesystemBackend
+from deepagents import AsyncSubAgent
 from agi.config import CACHE_DIR
 
 image_gen_tool = RemoteImageGenTool()

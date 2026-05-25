@@ -150,7 +150,7 @@ class DeepAgentBuilder:
         return {
             **self._build_base_options(),
             "model": self.llm,
-            "fallback_model": self.fallback_llm,
+            # "fallback_model": self.fallback_llm,
             "backend": self.backend,
             "tools": self.tools,
             "system_prompt": self.system_prompt,
