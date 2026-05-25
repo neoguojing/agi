@@ -2,7 +2,7 @@
 
 # 定义变量
 PYTHON = python3
-PIP = pip3
+PIP = uv pip install
 TEST_DIR = tests
 TEST_LLMS = tests/llms
 TEST_TASKS = tests/tasks

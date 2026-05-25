@@ -1,0 +1,36 @@
+[project]
+name = "agi"
+version = "0.1.0"
+description = "A simple example module"
+readme = "README.md"
+requires-python = "==3.11.*"
+authors = [
+    { name = "neo", email = "guojingneo1988@gmail.com" },
+]
+dependencies = [
+    "torch==2.6.0",
+    "torchvision==0.21.0",
+    "uvicorn[standard]==0.30.6",
+    "fastapi==0.115.9",
+    "python-multipart==0.0.20",
+    "numpy==1.26.4",
+    "python-magic",
+    "Pillow>=8.0,<11.0",
+    "jieba==0.42.1",
+    "scipy==1.15.2",
+    "nltk==3.9.1",
+    "fsspec",
+    "s3fs",
+    "prompt_toolkit==3.0.52",
+    "wcwidth==0.6.0",
+    "matcha-tts @ file:///home/SENSETIME/guoerjun/workspace/src/agi/depend/matcha_tts-0.0.5.1-cp311-cp311-manylinux1_x86_64.whl",
+    "cosyvoice-tts @ file:///home/SENSETIME/guoerjun/workspace/src/agi/depend/cosyvoice_tts-0.0.3.0-py3-none-any.whl",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+[tool.uv.extra-build-dependencies]
+flash-attn = ["torch"]

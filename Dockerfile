@@ -4,13 +4,21 @@ FROM guojingneo/agi-fastapi-app:base
 # 设置工作目录
 WORKDIR /agi
 
+# 安装 uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# 将 pyproject.toml 和 uv.lock 拷贝到容器中
+COPY pyproject.toml uv.lock ./
+
+# 安装核心依赖
+RUN uv sync --frozen && rm -rf /root/.cache /tmp/* /var/tmp/*
+
 # 将 requirements.txt 拷贝到容器中，并安装 Python 依赖
 COPY requirements/ ./requirements/
-
-RUN pip install --no-cache-dir -r ./requirements/langchain.txt && rm -rf /root/.cache /tmp/* /var/tmp/*
-RUN pip install --no-cache-dir -r ./requirements/common.txt && rm -rf /root/.cache /tmp/* /var/tmp/*
-RUN pip install --no-cache-dir -r ./requirements/extra.txt && rm -rf /root/.cache /tmp/* /var/tmp/*
-RUN pip install --no-cache-dir -r ./requirements/rag.txt && rm -rf /root/.cache /tmp/* /var/tmp/*
+RUN uv pip install --no-cache-dir -r ./requirements/langchain.txt && rm -rf /root/.cache /tmp/* /var/tmp/*
+RUN uv pip install --no-cache-dir -r ./requirements/common.txt && rm -rf /root/.cache /tmp/* /var/tmp/*
+RUN uv pip install --no-cache-dir -r ./requirements/extra.txt && rm -rf /root/.cache /tmp/* /var/tmp/*
+RUN uv pip install --no-cache-dir -r ./requirements/rag.txt && rm -rf /root/.cache /tmp/* /var/tmp/*
 
 RUN python -m nltk.downloader stopwords punkt punkt_tab
 RUN python -m spacy download en_core_web_sm
