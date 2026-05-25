@@ -29,6 +29,59 @@ class DebugLLMContextMiddleware(AgentMiddleware):
         self.c1 = color_header
         self.reset = color_reset
 
+    def _divider(self, title: str = "", width: int = 80) -> str:
+        if not title:
+            return "─" * width
+        label = f" {title} "
+        side = max((width - len(label)) // 2, 1)
+        return f"{'─' * side}{label}{'─' * side}"
+
+    def _json_preview(self, data: Any, limit: int = 2000) -> str:
+        try:
+            rendered = json.dumps(data, ensure_ascii=False, default=str)
+        except Exception:
+            rendered = str(data)
+
+        if len(rendered) <= limit:
+            return rendered
+        omitted = len(rendered) - limit
+        return f"{rendered[:limit]} ... [omitted {omitted} chars]"
+
+    def _analyze_tool_pairing(self, messages: List[BaseMessage]) -> dict[str, Any]:
+        declared_calls: List[dict[str, str]] = []
+        tool_results: List[dict[str, str]] = []
+
+        for msg in messages:
+            if isinstance(msg, AIMessage):
+                for call in getattr(msg, "tool_calls", []) or []:
+                    declared_calls.append(
+                        {
+                            "id": str(call.get("id") or ""),
+                            "name": str(call.get("name") or "unknown"),
+                        }
+                    )
+            elif isinstance(msg, ToolMessage):
+                tool_results.append(
+                    {
+                        "id": str(getattr(msg, "tool_call_id", "") or ""),
+                        "name": str(getattr(msg, "name", "") or "unknown"),
+                    }
+                )
+
+        declared_ids = {c["id"] for c in declared_calls if c["id"]}
+        result_ids = {r["id"] for r in tool_results if r["id"]}
+
+        missing_results = [c for c in declared_calls if c["id"] and c["id"] not in result_ids]
+        orphan_results = [r for r in tool_results if r["id"] and r["id"] not in declared_ids]
+
+        return {
+            "declared_calls": declared_calls,
+            "tool_results": tool_results,
+            "missing_results": missing_results,
+            "orphan_results": orphan_results,
+            "paired": not missing_results and not orphan_results,
+        }
+
     def _yield_formatted_parts(self, content: Any, msg_id: Any = None) -> Generator[str, None, None]:
         """
         将复杂内容拆解为独立可打印字符串，支持列表、生成器、字典等。
@@ -82,19 +135,45 @@ class DebugLLMContextMiddleware(AgentMiddleware):
 
     def _append_log_line(self, lines: List[str], icon: str, role: str, content: Any, msg_id: Any = None):
         """将消息内容拆分为多行并添加到 lines 列表"""
+        msg_prefix = f"#{msg_id} " if msg_id else ""
         for part in self._yield_formatted_parts(content, ""):
             for i, line in enumerate(part.splitlines()):
                 if i == 0:
-                    lines.append(f"{icon} [{role:^7}] | {line}")
+                    lines.append(f"{icon} [{role:^7}] | {msg_prefix}{line}")
                 else:
                     lines.append(f"{'':10} | {line}")  # 统一对齐
+
+    def _append_tool_call_details(self, lines: List[str], msg: AIMessage):
+        tool_calls = getattr(msg, "tool_calls", []) or []
+        if not tool_calls:
+            return
+
+        lines.append(f"{'':10} | ├─ 🔧 Tool Calls ({len(tool_calls)})")
+        for idx, call in enumerate(tool_calls, start=1):
+            call_id = str(call.get("id") or "unknown")
+            call_name = str(call.get("name") or "unknown")
+            call_args = self._json_preview(call.get("args", {}), limit=1200)
+            lines.append(f"{'':10} | │  [{idx}] name={call_name}")
+            lines.append(f"{'':10} | │      id={call_id}")
+            lines.append(f"{'':10} | │      args={call_args}")
+
+    def _append_tool_result_details(self, lines: List[str], msg: ToolMessage):
+        tool_call_id = str(getattr(msg, "tool_call_id", "") or "unknown")
+        tool_name = str(getattr(msg, "name", "") or "unknown")
+        artifact = getattr(msg, "artifact", None)
+
+        lines.append(f"{'':10} | ├─ 🧰 Tool Result")
+        lines.append(f"{'':10} | │    name={tool_name}")
+        lines.append(f"{'':10} | │    tool_call_id={tool_call_id}")
+        if artifact is not None:
+            lines.append(f"{'':10} | │    artifact={self._json_preview(artifact, limit=800)}")
 
     async def awrap_model_call(
         self,
         request: ModelRequest,
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse:
-        header = f"\n{self.c1}>>> [{self.namespace}] LLM CALL START <<<{self.reset}"
+        header = f"\n{self.c1}╔═ [{self.namespace}] LLM CALL START{self.reset}"
         lines: List[str] = [header]
 
         # 1️⃣ 元信息
@@ -105,8 +184,25 @@ class DebugLLMContextMiddleware(AgentMiddleware):
             t_names = [getattr(t, 'name', str(t)) for t in request.tools]
             lines.append(f" 🛠️ 【Tools】: {', '.join(t_names)}")
 
-        lines.append("=" * 60)
+        lines.append(self._divider("Request Meta"))
 
+        pairing = self._analyze_tool_pairing(request.messages)
+        pair_status = "✅ Paired" if pairing["paired"] else "⚠️ Unpaired"
+        lines.append(
+            f" 🔗 【Tool Pairing】: {pair_status} | "
+            f"declared={len(pairing['declared_calls'])}, results={len(pairing['tool_results'])}"
+        )
+
+        if pairing["missing_results"]:
+            lines.append("   ↳ Missing results for calls: " + ", ".join(
+                f"{x['name']}#{x['id']}" for x in pairing["missing_results"]
+            ))
+        if pairing["orphan_results"]:
+            lines.append("   ↳ Orphan tool results: " + ", ".join(
+                f"{x['name']}#{x['id']}" for x in pairing["orphan_results"]
+            ))
+
+        lines.append(self._divider("Message Trace"))
         # 2️⃣ 消息流解析
         if self.show_messages:
             if request.system_message:
@@ -116,8 +212,12 @@ class DebugLLMContextMiddleware(AgentMiddleware):
                 role_map = {"human": ("👤", "USER"), "ai": ("🤖", "ASSIST"), "tool": ("🛠️", "TOOL")}
                 icon, role_name = role_map.get(str(msg.type), ("📝", str(msg.type).upper()))
                 self._append_log_line(lines, icon, role_name, msg.content, getattr(msg, 'id', None))
+                if isinstance(msg, AIMessage):
+                    self._append_tool_call_details(lines, msg)
+                elif isinstance(msg, ToolMessage):
+                    self._append_tool_result_details(lines, msg)
 
-        lines.append(f"{self.c1}>>> [{self.namespace}] END CALL <<<{self.reset}\n")
+        lines.append(f"{self.c1}╚═ [{self.namespace}] END CALL{self.reset}\n")
         print("\n".join(lines))
 
         try:
@@ -138,8 +238,11 @@ class DebugLLMContextMiddleware(AgentMiddleware):
         tool_call = request.tool_call
         t_name = tool_call.get("name", "unknown")
 
-        print(f"\n{self.c1}🚀 [{self.namespace}] TOOL START: {t_name}{self.reset}")
-        print(f"   📥 Args: {json.dumps(tool_call.get('args', {}), ensure_ascii=False)}")
+        t_id = tool_call.get("id", "unknown")
+        print(f"\n{self.c1}╔═ [{self.namespace}] TOOL START{self.reset}")
+        print(f" 🔧 Name: {t_name}")
+        print(f" 🆔 Call ID: {t_id}")
+        print(f" 📥 Args: {self._json_preview(tool_call.get('args', {}), limit=3000)}")
 
         start_t = time.perf_counter()
         try:
@@ -147,14 +250,23 @@ class DebugLLMContextMiddleware(AgentMiddleware):
             duration = time.perf_counter() - start_t
 
             # 提取 result preview
-            res_id = getattr(result, 'id', 'res')
             content = getattr(result, 'content', str(result))
             parts = list(self._yield_formatted_parts(content, ""))
             preview = parts[0] if parts else "[No Preview]"
+            preview = preview[:1200] + (" ..." if len(preview) > 1200 else "")
+
+            paired_note = ""
+            if isinstance(result, ToolMessage):
+                res_tool_call_id = getattr(result, "tool_call_id", "")
+                paired_note = "✅ matched" if str(res_tool_call_id) == str(t_id) else f"⚠️ mismatch (result={res_tool_call_id}, request={t_id})"
+            else:
+                paired_note = "ℹ️ non-ToolMessage result"
 
             status = "✅" if not isinstance(result, Exception) else "❌"
             print(f"{status} [{self.namespace}] COMPLETED ({duration:.3f}s)")
-            print(f"   📤 Result: {preview}")
+            print(f" 🔗 Pairing: {paired_note}")
+            print(f" 📤 Result: {preview}")
+            print(f"{self.c1}╚═ [{self.namespace}] TOOL END{self.reset}")
 
             return result
 
@@ -162,6 +274,7 @@ class DebugLLMContextMiddleware(AgentMiddleware):
             print(f"❌ [{self.namespace}] FAILED: {type(e).__name__}")
             traceback.print_exc()
             tool_call_id = tool_call.get("id", "unknown")
+            print(f"{self.c1}╚═ [{self.namespace}] TOOL END{self.reset}")
             return ToolMessage(
                 content=(
                     f"Tool call failed in middleware '{self.namespace}' for '{t_name}': "
