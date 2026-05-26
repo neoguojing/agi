@@ -565,6 +565,5 @@ __all__ = [
     "ProfileMemoryTask",
     "EpisodicMemoryTask",
     "SemanticMemoryTask",
-    "MemoryMaintenanceManager",
-    "format_memory_for_llm",
+    "MemoryMaintenanceManager"
 ]
