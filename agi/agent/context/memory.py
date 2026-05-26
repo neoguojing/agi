@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any, Sequence
+from pydantic import ValidationError
 
 from agi.agent.context.memory_extraction import (
     MEMORY_EXTRACTION_INSTRUCTIONS,
@@ -357,9 +358,8 @@ class MemoryMaintenanceManager:
 
     async def start(self):
         """
-        Start background maintenance loop.
+        Start background maintenance loop and initialize memories.
         """
-
         if self._loop_task and not self._loop_task.done():
             logger.warning(
                 "Memory maintenance loop already running."
@@ -377,10 +377,88 @@ class MemoryMaintenanceManager:
             "Started memory maintenance loop."
         )
 
+    async def load_memories(self,targets:list[MemoryTarget] = None) -> MemoryExtractionResult:
+        """
+        Explicitly load memories from the backend store.
+        In the current BackendMemoryStore implementation, this is a no-op
+        as records are read on-demand, but provided for architectural completeness.
+        """
+        logger.info("Loading memories from storage...")
+        if targets is None:
+            targets = ["profile", "episodic", "semantic"]
+        # We could potentially pre-cache records here if the store was not a simple wrapper
+        # For now, we just verify the backend is accessible.
+        result = MemoryExtractionResult()
+
+        for target in targets:
+            path = DEFAULT_MEMORY_TARGET_PATHS.get(target, "")
+            records = self.store.read_jsonl(path)
+
+
+            # -------------------------
+            # Profile memories
+            # -------------------------
+            if target == "profile":
+                for record in records:
+                    try:
+                        result.profile_memories.append(
+                            ProfileMemoryRecord.model_validate(record)
+                        )
+                    except ValidationError as exc:
+                        logger.warning(
+                            "Invalid profile memory record in %s: %s",
+                            path,
+                            exc,
+                        )
+
+            # -------------------------
+            # Episodic memories
+            # -------------------------
+            if target == "episodic":
+                for record in records:
+                    try:
+                        result.episodic_memories.append(
+                            EpisodicMemoryRecord.model_validate(record)
+                        )
+                    except ValidationError as exc:
+                        logger.warning(
+                            "Invalid episodic memory record in %s: %s",
+                            path,
+                            exc,
+                        )
+
+            # -------------------------
+            # Semantic memories
+            # -------------------------
+            if target == "semantic":
+                for record in records:
+                    try:
+                        result.semantic_memories.append(
+                            SemanticMemoryRecord.model_validate(record)
+                        )
+                    except ValidationError as exc:
+                        logger.warning(
+                            "Invalid semantic memory record in %s: %s",
+                            path,
+                            exc,
+                        )
+        return result
+
+    async def flush(self) -> None:
+        """
+        Ensure all pending memory changes are persisted to the backend.
+        In the current implemention, apply_patch is immediate, so this is primarily
+        for triggering a final maintenance tick to consolidate memory.
+        """
+        logger.info("Flushing memories to storage...")
+        await self.tick()
+
     async def stop(self):
         """
-        Stop background maintenance loop.
+        Stop background maintenance loop and flush final state.
         """
+        # 1. Final flush before exiting
+        await self.flush()
 
         self._stopped = True
 
@@ -399,12 +477,39 @@ class MemoryMaintenanceManager:
             "Stopped memory maintenance loop."
         )
 
-    def get_state_dict(self) -> dict[str, str]:
+    async def force_tick(self, target: str | None = None) -> str:
         """
-        Export current scheduler state.
+        Force run memory tasks regardless of their schedule.
+        If target is provided, only run the task matching that target.
         """
+        results = []
+        try:
+            for task in self.tasks:
+                # If a target is specified, only run the task that matches that target
+                if target and task.target != target:
+                    continue
 
-        return self.state.to_iso_dict()
+                if not task.should_run(self.context):
+                    continue
+
+                result = await task.run(self.context)
+                if self.apply_patches:
+                    for patch in result.patches:
+                        self.store.apply_patch(patch)
+                results.append(result)
+
+            completed_tasks = [t for t in self.tasks if t.name in [r.task_name for r in results]]
+            self.state = self.scheduler.mark_completed(completed_tasks, self.context, self.state)
+
+        except Exception:
+            logger.exception("Force memory maintenance tick failed!")
+
+        changed_count = sum(1 for r in results if r.changed)
+        if changed_count > 0:
+            logger.info("Force memory maintenance tick completed: %s tasks made changes.", changed_count)
+
+        return f"Memory organized. {changed_count} tasks made changes."
+
 
     # ======================================================================
     # Internal
@@ -435,139 +540,95 @@ class MemoryMaintenanceManager:
             )
             raise
 
-def read_memory(
-    backend: Any,
-    target: MemoryTarget,
-    as_jsonl: bool = True,
-    **kwargs: Any,
-) -> list[dict[str, Any]] | str:
-    """
-    High-level entry point to read memory for a specific target.
-
-    Encapsulates MemoryStore creation.
-
-    Args:
-        backend: The backend protocol implementation.
-        target: The memory target to read ('profile', 'episodic', or 'semantic').
-        as_jsonl: If True, returns a list of records. If False, returns raw text.
-        **kwargs: Reserved for future retrieval options such as:
-            - `limit`: Max number of records to return.
-            - `offset`: Number of records to skip.
-            - `filter_func`: A predicate to filter records.
-            - `sort_by`: Field to sort records by.
-    """
-    store = BackendMemoryStore(backend)
-    path = DEFAULT_MEMORY_TARGET_PATHS.get(target, "")
-
-    if as_jsonl:
-        # For now, read all records. kwargs are reserved for future
-        # implementation of selective/batch retrieval in BackendMemoryStore.
-        return store.read_jsonl(path)
-    return store.read_text(path)
-
 def format_memory_for_llm(
-    backend: Any,
+    records: MemoryExtractionResult,
     target: MemoryTarget | None = None,
-    **kwargs: Any,
 ) -> str:
     """
-    Read memory and format it into a human-readable string
+    Formats structured memory into a human-readable string
     suitable for LLM context injection.
 
     Behavior:
     - If target is provided:
-        read only that memory target
+        format only that memory target
     - If target is None:
-        read ALL memory targets
-
-    Args:
-        backend: Backend protocol implementation.
-        target: Optional memory target.
-        **kwargs: Forwarded to read_memory().
+        format all memory targets
     """
-
-    targets: list[MemoryTarget]
-
-    if target is None:
-        targets = [
-            "profile",
-            "episodic",
-            "semantic",
-        ]
-    else:
-        targets = [target]
 
     sections: list[str] = []
 
-    for current_target in targets:
+    # =====================================================
+    # Profile Memory
+    # =====================================================
 
-        records = read_memory(
-            backend,
-            current_target,
-            as_jsonl=True,
-            **kwargs,
-        )
+    if target in (None, "profile"):
 
-        if not records:
-            continue
+        if records.profile_memories:
 
-        lines = [
-            f"--- {current_target.upper()} MEMORY ---"
-        ]
+            lines = [
+                "--- PROFILE MEMORY ---"
+            ]
 
-        for rec in records:
-
-            if not isinstance(rec, dict):
-                continue
-
-            if current_target == "profile":
-
-                key = rec.get("key", "unknown_key")
-                value = rec.get("value", "unknown_value")
+            for rec in records.profile_memories:
 
                 lines.append(
-                    f"- {key}: {value}"
+                    f"- {rec.key}: {rec.value}"
                 )
 
-            elif current_target == "episodic":
+            sections.append(
+                "\n".join(lines)
+            )
 
-                summary = rec.get(
-                    "summary",
-                    "No summary",
-                )
+    # =====================================================
+    # Episodic Memory
+    # =====================================================
 
-                event_time = rec.get(
-                    "event_time",
-                    "Unknown time",
-                )
+    if target in (None, "episodic"):
 
-                lines.append(
-                    f"- [{event_time}] {summary}"
-                )
+        if records.episodic_memories:
 
-            elif current_target == "semantic":
+            lines = [
+                "--- EPISODIC MEMORY ---"
+            ]
 
-                subject = rec.get(
-                    "subject",
-                    "Unknown subject",
-                )
+            for rec in records.episodic_memories:
 
-                predicate = rec.get(
-                    "predicate",
-                    "related_to",
-                )
-
-                object_ = rec.get(
-                    "object",
-                    "Unknown object",
+                event_time = (
+                    rec.event_time
+                    or "Unknown time"
                 )
 
                 lines.append(
-                    f"- {subject} {predicate} {object_}"
+                    f"- [{event_time}] {rec.summary}"
                 )
 
-        if len(lines) > 1:
-            sections.append("\n".join(lines))
+            sections.append(
+                "\n".join(lines)
+            )
+
+    # =====================================================
+    # Semantic Memory
+    # =====================================================
+
+    if target in (None, "semantic"):
+
+        if records.semantic_memories:
+
+            lines = [
+                "--- SEMANTIC MEMORY ---"
+            ]
+
+            for rec in records.semantic_memories:
+
+                lines.append(
+                    f"- {rec.subject} "
+                    f"{rec.predicate} "
+                    f"{rec.object}"
+                )
+
+            sections.append(
+                "\n".join(lines)
+            )
 
     if not sections:
         return "No memory available."
@@ -600,6 +661,5 @@ __all__ = [
     "EpisodicMemoryTask",
     "SemanticMemoryTask",
     "MemoryMaintenanceManager",
-    "read_memory",
     "format_memory_for_llm",
 ]

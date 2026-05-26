@@ -50,7 +50,8 @@ from deepagents.middleware.subagents import (
     SubAgent,
     SubAgentMiddleware,
 )
-from deepagents.middleware.summarization import create_summarization_middleware
+# from deepagents.middleware.summarization import create_summarization_middleware
+from agi.agent.middlewares import create_summarization_middleware
 from deepagents.profiles.harness.harness_profiles import (
     GeneralPurposeSubagentProfile,
     _apply_profile_prompt,

@@ -22,7 +22,6 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Protocol, Sequence, runtime_checkable
 
 from agi.agent.context.memory_models import MemoryOperation, MemoryPatch, MemoryTarget
-
 if TYPE_CHECKING:
     from deepagents.backends.protocol import BackendProtocol
 else:
@@ -31,9 +30,9 @@ else:
 logger = logging.getLogger(__name__)
 
 EPISODIC_RETENTION_DAYS = 30
-EPISODIC_MAX_RECORDS = 500
+EPISODIC_MAX_RECORDS = 50
 SEMANTIC_RETENTION_DAYS = 180
-SEMANTIC_MAX_RECORDS = 1000
+SEMANTIC_MAX_RECORDS = 100
 
 # Default filesystem paths for the different memory types.
 DEFAULT_MEMORY_TARGET_PATHS: dict[MemoryTarget, str] = {
@@ -61,10 +60,6 @@ class MemoryStore(Protocol):
 
     def write_text(self, path: str, content: str) -> None:
         """Create or replace raw text at a memory path."""
-        ...
-
-    def load_legacy_memory(self) -> dict[str, str]:
-        """Read existing markdown memory files for backward compatibility."""
         ...
 
     def read_jsonl(self, path: str) -> list[dict[str, Any]]:
@@ -162,7 +157,7 @@ class BackendMemoryStore:
             else:
                 logger.warning("Skipping non-object JSONL record in %s:%d", path, line_number)
         return records
-
+    
     def replace_jsonl(self, path: str, records: Sequence[dict[str, Any]]) -> None:
         """Overwrites a file with a new set of JSONL records."""
         content = "".join(f"{json.dumps(record, ensure_ascii=False, sort_keys=True)}\n" for record in records)
