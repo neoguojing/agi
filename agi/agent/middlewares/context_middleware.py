@@ -3,12 +3,16 @@ import platform
 import datetime
 import os
 import asyncio
-from typing import Callable, List, Awaitable, Any, Annotated, Literal, cast, Union
+from collections.abc import Sequence
+from typing import Callable, List, Awaitable, Any, Annotated, Literal, cast, Union,Optional
 from venv import logger
 from langchain_core.messages import SystemMessage, BaseMessage, AIMessage, ToolMessage
 from langchain_core.tools import StructuredTool, InjectedToolCallId,tool
 from langgraph.types import Command
 from langchain.tools import ToolRuntime
+from langgraph.channels import LastValue
+from langgraph.channels.delta import DeltaChannel
+
 
 from pydantic import BaseModel, Field
 from typing_extensions import NotRequired, TypedDict, override
@@ -28,7 +32,6 @@ from agi.agent.prompt import get_middleware_prompt
 from agi.utils.common import append_to_system_message
 from agi.agent.context.memory import (
     MemoryMaintenanceManager,
-    format_memory_for_llm,
     MessageProvider
 )
 from agi.agent.context.memory_models import (
@@ -41,14 +44,99 @@ from agi.agent.context.memory_models import (
 
 # --- State and Input Definitions ---
 
+
+
+def profile_memory_delta_reducer(
+    state: Optional[list[ProfileMemoryRecord]],
+    writes: Sequence[list[ProfileMemoryRecord]],
+) -> list[ProfileMemoryRecord]:
+    merged = {
+        r.key: r
+        for r in (state or [])
+    }
+
+    order = list(merged)
+
+    for batch in writes:
+        for r in batch:
+            if r.key not in merged:
+                order.append(r.key)
+            merged[r.key] = r
+
+    return [merged[k] for k in order]
+
+def episodic_memory_delta_reducer(
+    state: Optional[list[EpisodicMemoryRecord]],
+    writes: Sequence[list[EpisodicMemoryRecord]],
+) -> list[EpisodicMemoryRecord]:
+
+    def record_key(r: EpisodicMemoryRecord):
+        return (
+            r.summary,
+            r.event_time,
+            tuple(sorted(r.participants)),
+        )
+
+    merged = {
+        record_key(r): r
+        for r in (state or [])
+    }
+
+    order = list(merged)
+
+    for batch in writes:
+        for r in batch:
+            k = record_key(r)
+
+            if k not in merged:
+                order.append(k)
+
+            # 相同事件 -> 最新覆盖
+            merged[k] = r
+
+    return [merged[k] for k in order]
+
+def semantic_memory_delta_reducer(
+    state: Optional[list[SemanticMemoryRecord]],
+    writes: Sequence[list[SemanticMemoryRecord]],
+) -> list[SemanticMemoryRecord]:
+
+    def record_key(r: SemanticMemoryRecord):
+        return (
+            r.subject,
+            r.predicate,
+            r.object,
+        )
+
+    merged = {
+        record_key(r): r
+        for r in (state or [])
+    }
+
+    order = list(merged)
+
+    for batch in writes:
+        for r in batch:
+            k = record_key(r)
+
+            if k not in merged:
+                order.append(k)
+
+            # 相同 triple -> 最新覆盖
+            merged[k] = r
+
+    return [merged[k] for k in order]
+
 class MemoryState(AgentState[ResponseT]):
     """State schema for the memory organization middleware."""
     # The memory records the model wants to persist
-    pending_records: Annotated[NotRequired[MemoryExtractionResult], OmitFromInput]
+    profile_records: Annotated[NotRequired[list[ProfileMemoryRecord]], DeltaChannel(profile_memory_delta_reducer, snapshot_frequency=50)]
+    episodic_records: Annotated[NotRequired[list[EpisodicMemoryRecord]], DeltaChannel(episodic_memory_delta_reducer, snapshot_frequency=50)]  
+    semantic_records: Annotated[NotRequired[list[SemanticMemoryRecord]],DeltaChannel(semantic_memory_delta_reducer, snapshot_frequency=50)] 
     # The type of memory target chosen by the model
-    pending_target: NotRequired[MemoryTarget]
+    pending_target: Annotated[NotRequired[MemoryTarget], LastValue]
     # Reason for the current organization request
-    organization_reason: NotRequired[str]
+    organization_reason: Annotated[NotRequired[str], LastValue]
 
 class OrganizeMemoryInput(BaseModel):
     """Input schema for the `organize_memory` tool.
@@ -102,21 +190,28 @@ def organize_memory(
     reason: str, 
     tool_call_id: Annotated[str, InjectedToolCallId]
 ) -> Command[Any]:
-    """Trigger memory organization by updating the state."""
-    import pdb;pdb.set_trace()
-    extraction_result = MemoryExtractionResult(
-        profile_memories=records if target == "profile" else [],
-        episodic_memories=records if target == "episodic" else [],
-        semantic_memories=records if target == "semantic" else []
-    )
-    return Command(
-        update={
-            "pending_target": target,
-            "pending_records": extraction_result,
-            "organization_reason": reason,
-            "messages": [ToolMessage(content=f"Memory records for {target} received. Reason: {reason}", tool_call_id=tool_call_id)],
-        }
-    )
+    try:
+        """Trigger memory organization by updating the state."""
+
+        return Command(
+            update={
+                "pending_target": target,
+                "profile_records": records if target == "profile" else [],
+                "episodic_records": records if target == "episodic" else [],
+                "semantic_records": records if target == "semantic" else [],
+                "organization_reason": reason,
+                "messages": [ToolMessage(content=f"Memory records for {target} received. Reason: {reason}", tool_call_id=tool_call_id)],
+            }
+        )
+
+    except Exception as e:
+        return Command(
+            update={
+                "messages": [
+                    ToolMessage(f"Memory records for {target} failed. Reason: {e}", tool_call_id=tool_call_id,statu="error")
+                ],
+            }
+        )
 
 # Dynamically create the organize_memory tool with the custom description
 def _organize_memory(
@@ -125,24 +220,29 @@ def _organize_memory(
     target: MemoryTarget,
     reason: str
 ) -> Command[Any]:
-    import pdb;pdb.set_trace()
+    try:
+        """Create and manage a structured task list for your current work session."""
 
-    """Create and manage a structured task list for your current work session."""
-    extraction_result = MemoryExtractionResult(
-        profile_memories=records if target == "profile" else [],
-        episodic_memories=records if target == "episodic" else [],
-        semantic_memories=records if target == "semantic" else []
-    )
-    return Command(
-        update={
-            "pending_target": target,
-            "pending_records": extraction_result,
-            "organization_reason": reason,
-            "messages": [
-                ToolMessage(f"Memory records for {target} received. Reason: {reason}", tool_call_id=runtime.tool_call_id)
-            ],
-        }
-    )
+        return Command(
+            update={
+                "pending_target": target,
+                "profile_records": records if target == "profile" else [],
+                "episodic_records": records if target == "episodic" else [],
+                "semantic_records": records if target == "semantic" else [],
+                "organization_reason": reason,
+                "messages": [
+                    ToolMessage(f"Memory records for {target} received. Reason: {reason}", tool_call_id=runtime.tool_call_id)
+                ],
+            }
+        )
+    except Exception as e:
+        return Command(
+            update={
+                "messages": [
+                    ToolMessage(f"Memory records for {target} failed. Reason: {e}", tool_call_id=runtime.tool_call_id,statu="error")
+                ],
+            }
+        )
 
 
 async def _aorganize_memory(
@@ -234,6 +334,86 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
             logger.error(f"Failed to build environment context: {e}")
             return "<environment>(failed to load)</environment>"
 
+    def format_memory_for_llm(
+        self,
+        state: AgentState
+    ) -> str:
+        """
+        Formats structured memory into a human-readable string
+        suitable for LLM context injection.
+        """
+
+        sections: list[str] = []
+
+        # =====================================================
+        # Profile Memory
+        # =====================================================
+        if state.get('profile_records'):
+
+            lines = [
+                "--- PROFILE MEMORY ---"
+            ]
+
+            for rec in state.get('profile_records'):
+
+                lines.append(
+                    f"- {rec.key}: {rec.value}"
+                )
+
+            sections.append(
+                "\n".join(lines)
+            )
+
+        # =====================================================
+        # Episodic Memory
+        # =====================================================
+        if state.get('episodic_records'):
+
+            lines = [
+                "--- EPISODIC MEMORY ---"
+            ]
+
+            for rec in state.get('episodic_records'):
+
+                event_time = (
+                    rec.event_time
+                    or "Unknown time"
+                )
+
+                lines.append(
+                    f"- [{event_time}] {rec.summary}"
+                )
+
+            sections.append(
+                "\n".join(lines)
+            )
+
+        # =====================================================
+        # Semantic Memory
+        # =====================================================
+        if state.get('semantic_records'):
+
+            lines = [
+                "--- SEMANTIC MEMORY ---"
+            ]
+
+            for rec in state.get('semantic_records'):
+
+                lines.append(
+                    f"- {rec.subject} "
+                    f"{rec.predicate} "
+                    f"{rec.object}"
+                )
+
+            sections.append(
+                "\n".join(lines)
+            )
+
+        if not sections:
+            return "No memory available."
+
+        return "\n\n".join(sections)
+
     async def awrap_model_call(
         self,
         request: ModelRequest,
@@ -257,11 +437,16 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
             self.memory_cache = await self.memory_manager.load_memories()
 
         # Load memories from files
-        if request.state.get('pending_target') is None:
-            request.state['pending_target'] = self.memory_cache
-            request = request.override(state=request.state)
+        if request.state.get('profile_records') is None:
+            request.state["profile_records"] =  self.memory_cache.profile_memories
+        if request.state.get('episodic_records') is None:
+            request.state["episodic_records"] = self.memory_cache.episodic_memories
+        if request.state.get('semantic_records') is None:
+            request.state["semantic_records"] = self.memory_cache.semantic_memories
+
+        request = request.override(state=request.state)
             
-        memory_body = format_memory_for_llm(request.state['pending_target'])
+        memory_body = self.format_memory_for_llm(request.state)
 
         memory_context_str = get_middleware_prompt("context").format(agent_memory=memory_body)
         env_context_str = self._format_environment_context(runtime)
@@ -328,58 +513,33 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
         if not org_calls:
             return None
 
-        call = org_calls[0]
-
-        if self.memory_manager is None:
-            return {
-                "messages": [
-                    ToolMessage(
-                        content="Error: Memory manager not initialized. Could not save memories.",
-                        tool_call_id=call["id"],
-                        status="error"
-                    )
-                ]
-            }
+        # call = org_calls[0]
 
         try:
             # Extract requested records and target from state
             target = state.get("pending_target")
-            records = state.get("pending_records")
             reason = state.get("organization_reason", "Manual organization")
-
-            if target and records:
-                patches = records.to_patches(reason=reason)
+            extraction_result = MemoryExtractionResult(
+                profile_memories=state.get["profile_records"],
+                episodic_memories=state.get["episodic_records"],
+                semantic_memories=state.get["semantic_records"],
+            )
+            if target:
+                patches = extraction_result.to_patches(reason=reason)
                 applied_count = 0
                 for patch in patches:
                     self.memory_manager.store.apply_patch(patch)
                     applied_count += 1
 
-                result_text = f"Successfully persisted {applied_count} memory patches to {target} store."
-            else:
-                result_text = "No memory records or target provided to organize."
+                logger.info(f"Successfully persisted {applied_count} memory patches to {target} store.")
+           
 
             return {
-                "messages": [
-                    ToolMessage(
-                        content=result_text,
-                        tool_call_id=call["id"]
-                    )
-                ],
-                "pending_records": None,
                 "pending_target": None,
                 "organization_reason": None,
             }
         except Exception as e:
             logger.exception("Failed to persist memories in aafter_model")
-            return {
-                "messages": [
-                    ToolMessage(
-                        content=f"Error persisting memories: {str(e)}",
-                        tool_call_id=call["id"],
-                        status="error"
-                    )
-                ]
-            }
 
     def _log_debug_info(self, ctx_data: str, total_count: int):
         print(f"--- [Context Engine] 注入数据: {ctx_data} | 消息流长度: {total_count} ---")
