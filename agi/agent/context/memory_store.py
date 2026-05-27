@@ -30,7 +30,7 @@ else:
 logger = logging.getLogger(__name__)
 
 EPISODIC_RETENTION_DAYS = 30
-EPISODIC_MAX_RECORDS = 50
+EPISODIC_MAX_RECORDS = 20
 SEMANTIC_RETENTION_DAYS = 180
 SEMANTIC_MAX_RECORDS = 100
 
@@ -62,7 +62,7 @@ class MemoryStore(Protocol):
         """Create or replace raw text at a memory path."""
         ...
 
-    def read_jsonl(self, path: str) -> list[dict[str, Any]]:
+    def read_jsonl(self, target: str) -> list[dict[str, Any]]:
         """Read a JSONL memory file into dictionaries."""
         ...
 
@@ -139,8 +139,9 @@ class BackendMemoryStore:
         if getattr(result, "error", None):
             raise RuntimeError(result.error)
 
-    def read_jsonl(self, path: str) -> list[dict[str, Any]]:
+    def read_jsonl(self, target: str) -> list[dict[str, Any]]:
         """Reads a file and parses each line as a JSON object."""
+        path = self.target_paths[target]
         content = self.read_text(path)
         records: list[dict[str, Any]] = []
         for line_number, line in enumerate(content.splitlines(), start=1):
@@ -156,6 +157,8 @@ class BackendMemoryStore:
                 records.append(value)
             else:
                 logger.warning("Skipping non-object JSONL record in %s:%d", path, line_number)
+
+        records, _ = self._apply_retention(records, target, datetime.now(timezone.utc))
         return records
     
     def replace_jsonl(self, path: str, records: Sequence[dict[str, Any]]) -> None:
@@ -183,7 +186,7 @@ class BackendMemoryStore:
             return
 
         path = patch.target_path or self.target_paths[patch.target]
-        records = self.read_jsonl(path)
+        records = self.read_jsonl(patch.target)
 
         if patch.strategy == "replace":
             incoming: list[dict[str, Any]] = []
@@ -218,8 +221,6 @@ class BackendMemoryStore:
 
         records, dedup_changed = self._deduplicate_records(records, patch.target, patch.created_at)
         changed = changed or dedup_changed
-        records, retention_changed = self._apply_retention(records, patch.target, patch.created_at)
-        changed = changed or retention_changed
 
         if changed:
             self.replace_jsonl(path, records)

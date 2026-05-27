@@ -1,6 +1,6 @@
 import json
 import platform
-import datetime
+from datetime import datetime, timedelta, timezone
 import os
 import asyncio
 from collections.abc import Sequence
@@ -42,6 +42,13 @@ from agi.agent.context.memory_models import (
     SemanticMemoryRecord
 )
 
+from agi.agent.context.memory_store import (
+    EPISODIC_MAX_RECORDS,
+    EPISODIC_RETENTION_DAYS,
+    SEMANTIC_MAX_RECORDS,
+    SEMANTIC_RETENTION_DAYS
+)
+
 # --- State and Input Definitions ---
 
 
@@ -71,37 +78,54 @@ def episodic_memory_delta_reducer(
     writes: list[EpisodicMemoryRecord],
 ) -> list[EpisodicMemoryRecord]:
 
-    def record_key(r: EpisodicMemoryRecord):
+    expire_before = datetime.now(timezone.utc) - timedelta(days=EPISODIC_RETENTION_DAYS)
+
+    def ts(v: str):
+        try:
+            return datetime.fromisoformat(v.replace("Z", "+00:00"))
+        except Exception:
+            return datetime.min.replace(tzinfo=timezone.utc)
+
+    def key(r: EpisodicMemoryRecord):
         return (
             r.summary,
             r.event_time,
-            tuple(sorted(r.participants)),
+            tuple(r.participants),
         )
 
     merged = {
-        record_key(r): r
+        key(r): r
         for r in (state or [])
+        if not r.event_time or ts(r.event_time) >= expire_before
     }
 
-    order = list(merged)
+    merged.update({
+        key(r): r
+        for r in writes
+    })
 
-    for r in writes:
-        k = record_key(r)
-
-        if k not in merged:
-            order.append(k)
-
-        # 相同事件 -> 最新覆盖
-        merged[k] = r
-
-    return [merged[k] for k in order]
+    return sorted(
+        merged.values(),
+        key=lambda r: ts(r.event_time),
+        reverse=True,
+    )[:EPISODIC_MAX_RECORDS]
 
 def semantic_memory_delta_reducer(
     state: Optional[list[SemanticMemoryRecord]],
     writes: list[SemanticMemoryRecord],
 ) -> list[SemanticMemoryRecord]:
 
-    def record_key(r: SemanticMemoryRecord):
+    expire_before = datetime.now(timezone.utc) - timedelta(days=SEMANTIC_RETENTION_DAYS)
+
+    def ts(r: SemanticMemoryRecord):
+        try:
+            return datetime.fromisoformat(
+                r.updated_at.replace("Z", "+00:00")
+            )
+        except Exception:
+            return datetime.min.replace(tzinfo=timezone.utc)
+
+    def key(r: SemanticMemoryRecord):
         return (
             r.subject,
             r.predicate,
@@ -109,22 +133,22 @@ def semantic_memory_delta_reducer(
         )
 
     merged = {
-        record_key(r): r
+        key(r): r
         for r in (state or [])
+        if not getattr(r, "updated_at", None)
+        or ts(r) >= expire_before
     }
 
-    order = list(merged)
+    merged.update({
+        key(r): r
+        for r in writes
+    })
 
-    for r in writes:
-        k = record_key(r)
-
-        if k not in merged:
-            order.append(k)
-
-        # 相同 triple -> 最新覆盖
-        merged[k] = r
-
-    return [merged[k] for k in order]
+    return sorted(
+        merged.values(),
+        key=ts,
+        reverse=True,
+    )[:SEMANTIC_MAX_RECORDS]
 
 class MemoryState(AgentState[ResponseT]):
     """State schema for the memory organization middleware."""
@@ -430,7 +454,7 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
                 backend=backend,
                 messages=self.message_provider
             )
-            # await self.memory_manager.start()
+            await self.memory_manager.start()
 
             self.memory_cache = await self.memory_manager.load_memories()
 

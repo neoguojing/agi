@@ -166,6 +166,16 @@ class ProfileMemoryRecord(BaseModel):
         )
     )
 
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="creation timestamp."
+    )
+
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="update timestamp."
+    )
+
 class ProfileMemoryList(BaseModel):
     """
     Structured long-term profile memory representing stable
@@ -293,6 +303,16 @@ class EpisodicMemoryRecord(BaseModel):
         )
     )
 
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="creation timestamp."
+    )
+
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="update timestamp."
+    )
+
 class EpisodicMemoryList(BaseModel):
     """
     Structured episodic memory representing a specific event,
@@ -396,6 +416,16 @@ class SemanticMemoryRecord(BaseModel):
         )
     )
 
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="creation timestamp."
+    )
+
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="update timestamp."
+    )
+
 class SemanticMemoryList(BaseModel):
     """
     Structured semantic relationship memory.
@@ -467,7 +497,7 @@ class MemoryExtractionResult(BaseModel):
             # 2. Quality Metrics (Default to 0.5 if 0.0 or missing, as 0.0 is often a default)
             if data.get("confidence") == 0.0:
                 data["confidence"] = 0.5
-                
+
                 
             return data
 

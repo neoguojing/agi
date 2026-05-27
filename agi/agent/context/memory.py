@@ -170,7 +170,7 @@ class BaseMemoryExtractionTask(MemoryTask):
             filtered_extraction.semantic_memories = llm_payload.items
         
         patches = filtered_extraction.to_patches(reason=f"Automatic {self.target} memory extraction")
-        patches = self._filter_and_deduplicate_patches(patches, context.store.read_jsonl(path))
+        patches = self._filter_and_deduplicate_patches(patches, context.store.read_jsonl(self.target))
         patch_strategy = "replace" if self.target == "profile" else "merge"
         patches = tuple(
             patch.model_copy(update={"strategy": patch_strategy})
@@ -391,9 +391,7 @@ class MemoryMaintenanceManager:
         result = MemoryExtractionResult()
 
         for target in targets:
-            path = DEFAULT_MEMORY_TARGET_PATHS.get(target, "")
-            records = self.store.read_jsonl(path)
-
+            records = self.store.read_jsonl(target)
 
             # -------------------------
             # Profile memories
@@ -407,7 +405,7 @@ class MemoryMaintenanceManager:
                     except ValidationError as exc:
                         logger.warning(
                             "Invalid profile memory record in %s: %s",
-                            path,
+                            target,
                             exc,
                         )
 
@@ -423,7 +421,7 @@ class MemoryMaintenanceManager:
                     except ValidationError as exc:
                         logger.warning(
                             "Invalid episodic memory record in %s: %s",
-                            path,
+                            target,
                             exc,
                         )
 
@@ -439,7 +437,7 @@ class MemoryMaintenanceManager:
                     except ValidationError as exc:
                         logger.warning(
                             "Invalid semantic memory record in %s: %s",
-                            path,
+                            target,
                             exc,
                         )
         return result

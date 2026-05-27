@@ -92,8 +92,7 @@ class MultimodalBase64Middleware(AgentMiddleware):
 
                 new_messages.append(
                     HumanMessage(
-                        content=msg.content if isinstance(msg.content, str) else "",
-                        content_blocks=content_blocks,
+                        content=msg.content if isinstance(msg.content, str) else content_blocks,
                     )
                 )
 

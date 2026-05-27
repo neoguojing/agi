@@ -1,7 +1,7 @@
 
 import asyncio
 from agi.agent.middlewares.debug_middleware import DebugLLMContextMiddleware
-from agi.agent.tools import RemoteImageEditTool,RemoteImageGenTool,RemoteMultiModalTool,RemoteTranscriptionTool,RemoteTTSTool,search_web
+from agi.agent.tools import RemoteImageEditTool,RemoteImageGenTool,RemoteMultiModalTool,RemoteTranscriptionTool,RemoteTTSTool,search_web,get_context_info
 from agi.agent.middlewares import BrowserMiddleware,FfmpegMiddleware,StockMiddleware
 from agi.agent.models import ModelProvider
 from agi.agent.sandbox.docker import DockerSandbox
@@ -78,7 +78,7 @@ web_search_subagent = {
     "name": "web-search-expert",
     "description": ("Specialized in web search and information retrieval. "),
     "system_prompt": get_subagent_prompt("web-search-expert"),
-    "tools": [search_web],
+    "tools": [search_web,get_context_info],
 
     "middleware": [
         DebugLLMContextMiddleware(name="web_search_subagent")
