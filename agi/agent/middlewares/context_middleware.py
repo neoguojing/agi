@@ -230,45 +230,6 @@ def organize_memory(
         )
 
 # Dynamically create the organize_memory tool with the custom description
-def _organize_memory(
-    runtime: ToolRuntime[ContextT, MemoryState[ResponseT]],
-    records: list[Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord]],
-    target: MemoryTarget,
-    reason: str
-) -> Command[Any]:
-    try:
-        """Persist key information from the current conversation into long-term memory."""
-
-        return Command(
-            update={
-                "pending_target": target,
-                "profile_records": records if target == "profile" else [],
-                "episodic_records": records if target == "episodic" else [],
-                "semantic_records": records if target == "semantic" else [],
-                "organization_reason": reason,
-                "messages": [
-                    ToolMessage(f"Memory records for {target} received. Reason: {reason}", tool_call_id=runtime.tool_call_id)
-                ],
-            }
-        )
-    except Exception as e:
-        return Command(
-            update={
-                "messages": [
-                    ToolMessage(f"Memory records for {target} failed. Reason: {e}", tool_call_id=runtime.tool_call_id,statu="error")
-                ],
-            }
-        )
-
-
-async def _aorganize_memory(
-    runtime: ToolRuntime[ContextT, MemoryState[ResponseT]],
-    records: list[Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord]],
-    target: MemoryTarget,
-    reason: str
-) -> Command[Any]:
-    """Persist key information from the current conversation into long-term memory."""
-    return _organize_memory(runtime, records,target,reason)
 
 
 # --- Middleware ---
@@ -308,12 +269,64 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
             StructuredTool.from_function(
                 name="organize_memory",
                 description=ORGANIZE_MEMORY_TOOL_DESCRIPTION,
-                func=_organize_memory,
-                coroutine=_aorganize_memory,
+                func=self._organize_memory,
+                coroutine=self._aorganize_memory,
                 args_schema=OrganizeMemoryInput,
                 infer_schema=False,
             )
         ]
+
+    def _organize_memory(
+        self,
+        runtime: ToolRuntime[ContextT, MemoryState[ResponseT]],
+        records: list[Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord]],
+        target: MemoryTarget,
+        reason: str
+    ) -> Command[Any]:
+        try:
+            """Persist key information from the current conversation into long-term memory."""
+            extraction_result = MemoryExtractionResult(
+                profile_memories=records if target == "profile" else [],
+                episodic_memories=records if target == "episodic" else [],
+                semantic_memories=records if target == "semantic" else [],
+            )
+            patches = extraction_result.to_patches(reason=reason)
+            applied_count = 0
+            for patch in patches:
+                self.memory_manager.store.apply_patch(patch)
+                applied_count += 1
+
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            content=f"Successfully persisted {applied_count} memory patches to {target} store. Reason: {reason}",
+                            tool_call_id=runtime.tool_call_id
+                        )
+                    ],
+                }
+            )
+        except Exception as e:
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            content=f"Failed to persist memories to {target}: {e}",
+                            tool_call_id=runtime.tool_call_id
+                        )
+                    ],
+                }
+            )
+
+    async def _aorganize_memory(
+        self,
+        runtime: ToolRuntime[ContextT, MemoryState[ResponseT]],
+        records: list[Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord]],
+        target: MemoryTarget,
+        reason: str
+    ) -> Command[Any]:
+        """Persist key information from the current conversation into long-term memory."""
+        return self._organize_memory(runtime, records, target, reason)
 
     def _get_backend(self, runtime) -> BackendProtocol:
         if callable(self.backend):
@@ -493,46 +506,8 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
         self, state: MemoryState[ResponseT], runtime: Any
     ) -> dict[str, Any] | None:
         """Handle the persistence of memory records provided by the model."""
-        messages = state.get("messages", [])
-        if not messages:
-            return None
-
-        last_ai_msg = next((msg for msg in reversed(messages) if isinstance(msg, AIMessage)), None)
-        if not last_ai_msg or not last_ai_msg.tool_calls:
-            return None
-
-        org_calls = [tc for tc in last_ai_msg.tool_calls if tc["name"] == "organize_memory"]
-
-        if not org_calls:
-            return None
-
-        # call = org_calls[0]
-
-        try:
-            # Extract requested records and target from state
-            target = state.get("pending_target")
-            reason = state.get("organization_reason", "Manual organization")
-            extraction_result = MemoryExtractionResult(
-                profile_memories=state.get("profile_records"),
-                episodic_memories=state.get("episodic_records"),
-                semantic_memories=state.get("semantic_records"),
-            )
-            if target:
-                patches = extraction_result.to_patches(reason=reason)
-                applied_count = 0
-                for patch in patches:
-                    self.memory_manager.store.apply_patch(patch)
-                    applied_count += 1
-
-                logger.info(f"Successfully persisted {applied_count} memory patches to {target} store.")
-           
-
-            return {
-                "pending_target": None,
-                "organization_reason": None,
-            }
-        except Exception as e:
-            logger.exception("Failed to persist memories in aafter_model")
+        # Persistence is now handled directly by the organize_memory tool.
+        return None
 
     def _log_debug_info(self, ctx_data: str, total_count: int):
         print(f"--- [Context Engine] 注入数据: {ctx_data} | 消息流长度: {total_count} ---")
