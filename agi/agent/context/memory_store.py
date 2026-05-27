@@ -78,6 +78,31 @@ class MemoryStore(Protocol):
         """Apply a storage-neutral memory patch."""
         ...
 
+def record_dedup_key(target: MemoryTarget, record: dict[str, Any]) -> tuple[Any, ...] | None:
+    """Best-effort semantic key used to collapse duplicate memories."""
+    if target == "profile":
+        key = _normalize_text(record.get("key"))
+        value = _normalize_text(record.get("value"))
+        return ("profile", key, value) if key and value else None
+
+    if target == "episodic":
+        summary = _normalize_text(record.get("summary"))
+        participants = _normalize_participants(record.get("participants"))
+        event_time = _normalize_text(record.get("event_time"))
+        if not summary:
+            return None
+        # Event time often drifts; ignore it for matching to reduce repeated
+        # extraction duplicates for the same event.
+        return ("episodic", summary, participants, event_time[:10] if event_time else "")
+
+    if target == "semantic":
+        subject = _normalize_text(record.get("subject"))
+        predicate = _normalize_text(record.get("predicate"))
+        obj = _normalize_text(record.get("object"))
+        return ("semantic", subject, predicate, obj) if subject and predicate and obj else None
+
+    return None
+    
 
 class BackendMemoryStore:
     """File-backed MemoryStore adapter over the existing BackendProtocol.
@@ -227,13 +252,13 @@ class BackendMemoryStore:
 
     def _add_or_merge_record(self, records: list[dict[str, Any]], target: MemoryTarget, record: dict[str, Any], timestamp) -> bool:
         """Add record unless a semantic duplicate already exists; merge when duplicate found."""
-        candidate = _record_dedup_key(target, record)
+        candidate = record_dedup_key(target, record)
         if not candidate:
             records.append(record)
             return True
 
         for existing in records:
-            if _record_dedup_key(target, existing) != candidate:
+            if record_dedup_key(target, existing) != candidate:
                 continue
             # Keep existing id/created_at; refresh mutable fields to reduce stale duplicates.
             for key, value in record.items():
@@ -276,7 +301,7 @@ class BackendMemoryStore:
         changed = False
 
         for record in records:
-            key = _record_dedup_key(target, record)
+            key = record_dedup_key(target, record)
             if not key:
                 deduped.append(record)
                 continue
@@ -349,32 +374,6 @@ def _normalize_participants(value: Any) -> tuple[str, ...]:
         return ()
     normalized = [_normalize_text(v) for v in value if isinstance(v, str) and _normalize_text(v)]
     return tuple(sorted(set(normalized)))
-
-
-def _record_dedup_key(target: MemoryTarget, record: dict[str, Any]) -> tuple[Any, ...] | None:
-    """Best-effort semantic key used to collapse duplicate memories."""
-    if target == "profile":
-        key = _normalize_text(record.get("key"))
-        value = _normalize_text(record.get("value"))
-        return ("profile", key, value) if key and value else None
-
-    if target == "episodic":
-        summary = _normalize_text(record.get("summary"))
-        participants = _normalize_participants(record.get("participants"))
-        event_time = _normalize_text(record.get("event_time"))
-        if not summary:
-            return None
-        # Event time often drifts; ignore it for matching to reduce repeated
-        # extraction duplicates for the same event.
-        return ("episodic", summary, participants, event_time[:10] if event_time else "")
-
-    if target == "semantic":
-        subject = _normalize_text(record.get("subject"))
-        predicate = _normalize_text(record.get("predicate"))
-        obj = _normalize_text(record.get("object"))
-        return ("semantic", subject, predicate, obj) if subject and predicate and obj else None
-
-    return None
 
 
 def _parse_iso_datetime(value: Any) -> datetime | None:

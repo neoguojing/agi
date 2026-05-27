@@ -527,7 +527,6 @@ class StockMiddleware(AgentMiddleware):
         """Handle tool call."""
 
         logger.info(
-            "*******************\n" +
             "\n".join(
                 tool.name for tool in self.tools
             )

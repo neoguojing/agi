@@ -46,7 +46,8 @@ from agi.agent.context.memory_store import (
     EPISODIC_MAX_RECORDS,
     EPISODIC_RETENTION_DAYS,
     SEMANTIC_MAX_RECORDS,
-    SEMANTIC_RETENTION_DAYS
+    SEMANTIC_RETENTION_DAYS,
+    record_dedup_key,
 )
 
 # --- State and Input Definitions ---
@@ -59,19 +60,21 @@ def profile_memory_delta_reducer(
 ) -> list[ProfileMemoryRecord]:
 
     merged = {
-        r.key: r
+        record_dedup_key("profile", r.model_dump()): r
         for r in (state or [])
+        if record_dedup_key("profile", r.model_dump()) is not None
     }
 
-    order = list(merged)
+    order = list(merged.keys())
 
     for r in writes:
-        if r.key not in merged:
-            order.append(r.key)
+        k = record_dedup_key("profile", r.model_dump())
+        if k and k not in merged:
+            order.append(k)
+        if k:
+            merged[k] = r
 
-        merged[r.key] = r
-
-    return [merged[k] for k in order]
+    return [merged[k] for k in order if k in merged]
 
 def episodic_memory_delta_reducer(
     state: Optional[list[EpisodicMemoryRecord]],
@@ -86,22 +89,17 @@ def episodic_memory_delta_reducer(
         except Exception:
             return datetime.min.replace(tzinfo=timezone.utc)
 
-    def key(r: EpisodicMemoryRecord):
-        return (
-            r.summary,
-            r.event_time,
-            tuple(r.participants),
-        )
-
     merged = {
-        key(r): r
+        record_dedup_key("episodic", r.model_dump()): r
         for r in (state or [])
-        if not r.event_time or ts(r.event_time) >= expire_before
+        if (not r.event_time or ts(r.event_time) >= expire_before)
+        and record_dedup_key("episodic", r.model_dump()) is not None
     }
 
     merged.update({
-        key(r): r
+        record_dedup_key("episodic", r.model_dump()): r
         for r in writes
+        if record_dedup_key("episodic", r.model_dump()) is not None
     })
 
     return sorted(
@@ -125,23 +123,18 @@ def semantic_memory_delta_reducer(
         except Exception:
             return datetime.min.replace(tzinfo=timezone.utc)
 
-    def key(r: SemanticMemoryRecord):
-        return (
-            r.subject,
-            r.predicate,
-            r.object,
-        )
-
     merged = {
-        key(r): r
+        record_dedup_key("semantic", r.model_dump()): r
         for r in (state or [])
-        if not getattr(r, "updated_at", None)
-        or ts(r) >= expire_before
+        if (not getattr(r, "updated_at", None)
+        or ts(r) >= expire_before)
+        and record_dedup_key("semantic", r.model_dump()) is not None
     }
 
     merged.update({
-        key(r): r
+        record_dedup_key("semantic", r.model_dump()): r
         for r in writes
+        if record_dedup_key("semantic", r.model_dump()) is not None
     })
 
     return sorted(
@@ -238,13 +231,13 @@ def organize_memory(
 
 # Dynamically create the organize_memory tool with the custom description
 def _organize_memory(
-    runtime: ToolRuntime[ContextT, MemoryState[ResponseT]], 
+    runtime: ToolRuntime[ContextT, MemoryState[ResponseT]],
     records: list[Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord]],
     target: MemoryTarget,
     reason: str
 ) -> Command[Any]:
     try:
-        """Create and manage a structured task list for your current work session."""
+        """Persist key information from the current conversation into long-term memory."""
 
         return Command(
             update={
@@ -269,12 +262,12 @@ def _organize_memory(
 
 
 async def _aorganize_memory(
-    runtime: ToolRuntime[ContextT, MemoryState[ResponseT]], 
+    runtime: ToolRuntime[ContextT, MemoryState[ResponseT]],
     records: list[Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord]],
     target: MemoryTarget,
     reason: str
 ) -> Command[Any]:
-    """Create and manage a structured task list for your current work session."""
+    """Persist key information from the current conversation into long-term memory."""
     return _organize_memory(runtime, records,target,reason)
 
 
@@ -329,7 +322,7 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
 
     def _format_environment_context(self, runtime) -> str:
         try:
-            now = datetime.datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
 
             env_info = {
                 "current_time_utc": now,
@@ -494,26 +487,6 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
         """Clean up memory manager and flush final state."""
         if self.memory_manager:
             await self.memory_manager.stop()
-
-    @override
-    def after_model(
-        self, state: MemoryState, runtime: Any
-    ) -> dict[str, Any] | None:
-        """Check for `organize_memory` tool calls and handle them synchronously."""
-        messages = state.get("messages", [])
-        if not messages:
-            return None
-
-        last_ai_msg = next((msg for msg in reversed(messages) if isinstance(msg, AIMessage)), None)
-        if not last_ai_msg or not last_ai_msg.tool_calls:
-            return None
-
-        org_calls = [tc for tc in last_ai_msg.tool_calls if tc["name"] == "organize_memory"]
-
-        if not org_calls:
-            return None
-
-        return None
 
     @override
     async def aafter_model(
