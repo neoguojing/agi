@@ -1,8 +1,10 @@
 import asyncio
 import logging
-import sqlite3
 import traceback
 import uuid
+import psycopg
+from psycopg_pool import AsyncConnectionPool,ConnectionPool
+
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Dict, Optional
@@ -26,16 +28,17 @@ from deepagents.middleware import FilesystemMiddleware
 from deepagents.middleware.summarization import SummarizationMiddleware, SummarizationToolMiddleware
 from langchain.agents.middleware import ModelFallbackMiddleware
 from langchain.agents import create_agent
-from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.memory import InMemoryStore
-from langgraph.store.sqlite import SqliteStore
+from langgraph.store.postgres import PostgresStore
+from langgraph.store.postgres.aio import AsyncPostgresStore
+
 
 logger = logging.getLogger(__name__)
 
-DB_PATH_CHECKPOINT = Path(CACHE_DIR) / "agent_checkpoint.db"
-DB_PATH_STRORE = Path(CACHE_DIR) / "agent_store.db"
+DB_URI = "postgres://admin:123456@localhost:5432/langchain?sslmode=disable"
 
 
 @dataclass
@@ -50,32 +53,46 @@ class AgentRuntimeResources:
 class AgentPersistenceFactory:
     """Responsible for checkpoint/store resource creation and cleanup only."""
 
-    def __init__(self, checkpoint_db_path: str = DB_PATH_CHECKPOINT):
+    def __init__(self, checkpoint_db_path: str = DB_URI):
         self.checkpoint_db_path = checkpoint_db_path
+        self.conn = None
 
     def create_sync_resources(self) -> AgentRuntimeResources:
-        conn = sqlite3.connect(self.checkpoint_db_path, check_same_thread=False)
+        self.conn = ConnectionPool(conninfo=self.checkpoint_db_path)
+
+        checkpointer = PostgresSaver(conn=self.conn)
+        store = PostgresStore(conn=self.conn)
+
+        checkpointer.setup()
+        store.setup()
         return AgentRuntimeResources(
-            checkpointer=SqliteSaver(conn),
-            store=SqliteStore(conn=conn),
-            connections=[],
+            checkpointer=checkpointer,
+            store=store,
+            connections=[self.conn],
         )
 
     async def create_async_resources(self) -> AgentRuntimeResources:
-        conn_saver = await aiosqlite.connect(self.checkpoint_db_path)
-        await conn_saver.execute("PRAGMA journal_mode=WAL")
-        await conn_saver.execute("PRAGMA synchronous=NORMAL")
+        self.conn = AsyncConnectionPool(conninfo=self.checkpoint_db_path,open=True)
 
-        saver = AsyncSqliteSaver(conn=conn_saver)
-        await saver.setup()
+        checkpointer = AsyncPostgresSaver(conn=self.conn)
+        
+        store = AsyncPostgresStore(conn=self.conn)
+
+        async with AsyncPostgresSaver.from_conn_string(self.checkpoint_db_path) as tmp_checkpointer:
+            # 在这个 temp_conn 上执行 setup，它不会被当前的连接池事务影响
+            await tmp_checkpointer.setup()
+        
+        async with AsyncPostgresSaver.from_conn_string(self.checkpoint_db_path) as tmp_store:
+            # 在这个 temp_conn 上执行 setup，它不会被当前的连接池事务影响
+            await tmp_store.setup()
 
         return AgentRuntimeResources(
-            checkpointer=saver,
-            store=InMemoryStore(),
-            connections=[conn_saver],
+            checkpointer=checkpointer,
+            store=store,
+            connections=[self.conn],
         )
 
-    async def close_async_connections(self, connections: list[aiosqlite.Connection]) -> None:
+    async def close_async_connections(self, connections: list[psycopg.Connection]) -> None:
         for conn in connections:
             await conn.close()
 
