@@ -164,13 +164,13 @@ my_model_pool = [
         # extra_params={"project": GOOGLE_CLOUD_PROJECT}
     ),
 
-    # ModelNode(
-    #     provider="google",
-    #     model_name="gemma-4-31b-it",
-    #     priority=2,
-    #     api_key=GOOGLE_API_KEY,
-    #     # extra_params={"project": GOOGLE_CLOUD_PROJECT}
-    # ),
+    ModelNode(
+        provider="google",
+        model_name="gemma-4-31b-it",
+        priority=2,
+        api_key=GOOGLE_API_KEY,
+        # extra_params={"project": GOOGLE_CLOUD_PROJECT}
+    ),
 
     # ModelNode(
     #     provider="openrouter",

@@ -48,8 +48,9 @@ from agi.agent.context.memory_models import (
 
 def profile_memory_delta_reducer(
     state: Optional[list[ProfileMemoryRecord]],
-    writes: Sequence[list[ProfileMemoryRecord]],
+    writes: list[ProfileMemoryRecord],
 ) -> list[ProfileMemoryRecord]:
+
     merged = {
         r.key: r
         for r in (state or [])
@@ -57,17 +58,17 @@ def profile_memory_delta_reducer(
 
     order = list(merged)
 
-    for batch in writes:
-        for r in batch:
-            if r.key not in merged:
-                order.append(r.key)
-            merged[r.key] = r
+    for r in writes:
+        if r.key not in merged:
+            order.append(r.key)
+
+        merged[r.key] = r
 
     return [merged[k] for k in order]
 
 def episodic_memory_delta_reducer(
     state: Optional[list[EpisodicMemoryRecord]],
-    writes: Sequence[list[EpisodicMemoryRecord]],
+    writes: list[EpisodicMemoryRecord],
 ) -> list[EpisodicMemoryRecord]:
 
     def record_key(r: EpisodicMemoryRecord):
@@ -84,21 +85,20 @@ def episodic_memory_delta_reducer(
 
     order = list(merged)
 
-    for batch in writes:
-        for r in batch:
-            k = record_key(r)
+    for r in writes:
+        k = record_key(r)
 
-            if k not in merged:
-                order.append(k)
+        if k not in merged:
+            order.append(k)
 
-            # 相同事件 -> 最新覆盖
-            merged[k] = r
+        # 相同事件 -> 最新覆盖
+        merged[k] = r
 
     return [merged[k] for k in order]
 
 def semantic_memory_delta_reducer(
     state: Optional[list[SemanticMemoryRecord]],
-    writes: Sequence[list[SemanticMemoryRecord]],
+    writes: list[SemanticMemoryRecord],
 ) -> list[SemanticMemoryRecord]:
 
     def record_key(r: SemanticMemoryRecord):
@@ -115,24 +115,23 @@ def semantic_memory_delta_reducer(
 
     order = list(merged)
 
-    for batch in writes:
-        for r in batch:
-            k = record_key(r)
+    for r in writes:
+        k = record_key(r)
 
-            if k not in merged:
-                order.append(k)
+        if k not in merged:
+            order.append(k)
 
-            # 相同 triple -> 最新覆盖
-            merged[k] = r
+        # 相同 triple -> 最新覆盖
+        merged[k] = r
 
     return [merged[k] for k in order]
 
 class MemoryState(AgentState[ResponseT]):
     """State schema for the memory organization middleware."""
     # The memory records the model wants to persist
-    profile_records: Annotated[NotRequired[list[ProfileMemoryRecord]], DeltaChannel(profile_memory_delta_reducer, snapshot_frequency=50)]
-    episodic_records: Annotated[NotRequired[list[EpisodicMemoryRecord]], DeltaChannel(episodic_memory_delta_reducer, snapshot_frequency=50)]  
-    semantic_records: Annotated[NotRequired[list[SemanticMemoryRecord]],DeltaChannel(semantic_memory_delta_reducer, snapshot_frequency=50)] 
+    profile_records: Annotated[NotRequired[list[ProfileMemoryRecord]], profile_memory_delta_reducer]
+    episodic_records: Annotated[NotRequired[list[EpisodicMemoryRecord]], episodic_memory_delta_reducer]  
+    semantic_records: Annotated[NotRequired[list[SemanticMemoryRecord]],semantic_memory_delta_reducer] 
     # The type of memory target chosen by the model
     pending_target: Annotated[NotRequired[MemoryTarget], LastValue]
     # Reason for the current organization request
@@ -437,11 +436,11 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
             self.memory_cache = await self.memory_manager.load_memories()
 
         # Load memories from files
-        if request.state.get('profile_records') is None:
+        if not request.state.get('profile_records'):
             request.state["profile_records"] =  self.memory_cache.profile_memories
-        if request.state.get('episodic_records') is None:
+        if not request.state.get('episodic_records'):
             request.state["episodic_records"] = self.memory_cache.episodic_memories
-        if request.state.get('semantic_records') is None:
+        if not request.state.get('semantic_records'):
             request.state["semantic_records"] = self.memory_cache.semantic_memories
 
         request = request.override(state=request.state)
