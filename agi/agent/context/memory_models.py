@@ -468,9 +468,6 @@ class MemoryExtractionResult(BaseModel):
             if data.get("confidence") == 0.0:
                 data["confidence"] = 0.5
                 
-            # 3. Source
-            if not data.get("source"):
-                data["source"] = "conversation"
                 
             return data
 

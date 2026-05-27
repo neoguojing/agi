@@ -431,17 +431,14 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
                 messages=self.message_provider
             )
             # await self.memory_manager.start()
-            # import pdb;pdb.set_trace()
 
             self.memory_cache = await self.memory_manager.load_memories()
 
         # Load memories from files
-        if not request.state.get('profile_records'):
-            request.state["profile_records"] =  self.memory_cache.profile_memories
-        if not request.state.get('episodic_records'):
-            request.state["episodic_records"] = self.memory_cache.episodic_memories
-        if not request.state.get('semantic_records'):
-            request.state["semantic_records"] = self.memory_cache.semantic_memories
+
+        request.state["profile_records"] =  profile_memory_delta_reducer(request.state["profile_records"],self.memory_cache.profile_memories)
+        request.state["episodic_records"] = episodic_memory_delta_reducer(request.state["episodic_records"],self.memory_cache.episodic_memories)
+        request.state["semantic_records"] = semantic_memory_delta_reducer(request.state["semantic_records"],self.memory_cache.semantic_memories)
 
         request = request.override(state=request.state)
             
@@ -519,9 +516,9 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
             target = state.get("pending_target")
             reason = state.get("organization_reason", "Manual organization")
             extraction_result = MemoryExtractionResult(
-                profile_memories=state.get["profile_records"],
-                episodic_memories=state.get["episodic_records"],
-                semantic_memories=state.get["semantic_records"],
+                profile_memories=state.get("profile_records"),
+                episodic_memories=state.get("episodic_records"),
+                semantic_memories=state.get("semantic_records"),
             )
             if target:
                 patches = extraction_result.to_patches(reason=reason)

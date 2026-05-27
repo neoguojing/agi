@@ -667,7 +667,7 @@ def create_deep_agent(  # noqa: C901, PLR0912, PLR0915  # Complex graph assembly
         if interrupt_on is not None:
             general_purpose_spec["interrupt_on"] = interrupt_on
 
-        inline_subagents.insert(0, general_purpose_spec)
+        # inline_subagents.insert(0, general_purpose_spec)
 
     # Build main agent middleware stack
     deepagent_middleware: list[AgentMiddleware[Any, Any, Any]] = [
