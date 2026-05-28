@@ -167,3 +167,7 @@ cli:
 .PHONY: openbb
 openbb:
 	openbb-mcp --default-categories admin --tool-discovery
+
+.PHONY: subagent
+subagent:
+	langgraph dev
