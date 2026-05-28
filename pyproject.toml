@@ -34,3 +34,8 @@ dev = [
 ]
 [tool.uv.extra-build-dependencies]
 flash-attn = ["torch"]
+
+[tool.uv.workspace]
+members = [
+    "agi/agent",
+]

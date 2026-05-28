@@ -38,6 +38,7 @@ from agi.agent.context.memory_models import (
     ProfileMemoryList,
     EpisodicMemoryList,
     SemanticMemoryList,
+    record_dedup_key,
 )
 from agi.agent.context.memory_store import (
     DEFAULT_MEMORY_TARGET_PATHS,
@@ -65,36 +66,6 @@ TARGET_SCHEMA_MAP = {
 }
 
 
-def _norm_text(value: Any) -> str:
-    if not isinstance(value, str):
-        return ""
-    return " ".join(value.strip().lower().split())
-
-
-def _task_dedup_key(target: MemoryTarget, record: dict[str, Any]) -> tuple[Any, ...] | None:
-    if target == "profile":
-        k = _norm_text(record.get("key"))
-        v = _norm_text(record.get("value"))
-        return ("profile", k, v) if k and v else None
-
-    if target == "semantic":
-        s = _norm_text(record.get("subject"))
-        p = _norm_text(record.get("predicate"))
-        o = _norm_text(record.get("object"))
-        return ("semantic", s, p, o) if s and p and o else None
-
-    if target == "episodic":
-        summary = _norm_text(record.get("summary"))
-        participants = tuple(sorted(_norm_text(v) for v in record.get("participants", []) if _norm_text(v)))
-        day = _norm_text(record.get("event_time"))[:10]
-        if not summary:
-            return None
-        # Fuzzy bucket to reduce near-duplicate summaries.
-        signature = summary[:80]
-        return ("episodic", signature, participants, day)
-
-    return None
-
 class BaseMemoryExtractionTask(MemoryTask):
     """Base class for tasks that use an LLM to extract memories.
     
@@ -116,25 +87,19 @@ class BaseMemoryExtractionTask(MemoryTask):
 
     async def _call_llm_for_extraction(self, context: MemoryTaskContext, prompt: str) -> Any:
         """Helper to interact with the LLM using structured output."""
-        struct_result = None
-        if context.llm:
-            try:
-                # import pdb;pdb.set_trace()
-
-                # Use the explicit LLM provided in the context
-                schema = TARGET_SCHEMA_MAP.get(self.target)
-                llm_with_struct = context.llm.with_structured_output(schema)
-                struct_result = await llm_with_struct.ainvoke(prompt,config= {"configurable": {"thread_id": str(self.target)}})
-                # struct_result = llm_with_struct.invoke(prompt)
-
-                logger.info("struct result=%s", struct_result)
-                return struct_result
-
-            except Exception as e:
-                logger.error(f"Task {self.name} failed: {e}.")
-
-            finally:
-                return struct_result
+        if not context.llm:
+            return None
+        try:
+            schema = TARGET_SCHEMA_MAP.get(self.target)
+            llm_with_struct = context.llm.with_structured_output(schema)
+            struct_result = await llm_with_struct.ainvoke(
+                prompt, config={"configurable": {"thread_id": str(self.target)}}
+            )
+            logger.info("Task %s struct result=%s", self.name, struct_result)
+            return struct_result
+        except Exception:
+            logger.exception("Task %s LLM call failed", self.name)
+            return None
 
     async def run(self, context: MemoryTaskContext) -> MemoryTaskResult:
         """Executes the memory extraction process for the target memory type."""
@@ -150,6 +115,7 @@ class BaseMemoryExtractionTask(MemoryTask):
         prompt = build_memory_extraction_prompt(
             conversation=conversation_text,
             existing_memory=existing_mem_text,
+            target=self.target,
         )
         
         # 4. Get LLM result
@@ -210,7 +176,7 @@ class BaseMemoryExtractionTask(MemoryTask):
                 if confidence < self.config.min_confidence:
                     continue
 
-                key = _task_dedup_key(self.target, op.value)
+                key = record_dedup_key(self.target, op.value)
                 # In replace mode we still remove duplicates inside the current
                 # extraction batch, but do not force retention of historical
                 # records from existing store.
@@ -377,69 +343,27 @@ class MemoryMaintenanceManager:
             "Started memory maintenance loop."
         )
 
-    async def load_memories(self,targets:list[MemoryTarget] = None) -> MemoryExtractionResult:
-        """
-        Explicitly load memories from the backend store.
-        In the current BackendMemoryStore implementation, this is a no-op
-        as records are read on-demand, but provided for architectural completeness.
-        """
+    async def load_memories(self, targets: list[MemoryTarget] = None) -> MemoryExtractionResult:
+        """Explicitly load memories from the backend store."""
         logger.info("Loading memories from storage...")
         if targets is None:
             targets = ["profile", "episodic", "semantic"]
-        # We could potentially pre-cache records here if the store was not a simple wrapper
-        # For now, we just verify the backend is accessible.
+
         result = MemoryExtractionResult()
+        target_to_model = {
+            "profile": (result.profile_memories, ProfileMemoryRecord),
+            "episodic": (result.episodic_memories, EpisodicMemoryRecord),
+            "semantic": (result.semantic_memories, SemanticMemoryRecord),
+        }
 
         for target in targets:
-            records = self.store.read_jsonl(target)
+            container, model = target_to_model[target]
+            for record in self.store.read_jsonl(target):
+                try:
+                    container.append(model.model_validate(record))
+                except ValidationError as exc:
+                    logger.warning("Invalid %s memory record: %s", target, exc)
 
-            # -------------------------
-            # Profile memories
-            # -------------------------
-            if target == "profile":
-                for record in records:
-                    try:
-                        result.profile_memories.append(
-                            ProfileMemoryRecord.model_validate(record)
-                        )
-                    except ValidationError as exc:
-                        logger.warning(
-                            "Invalid profile memory record in %s: %s",
-                            target,
-                            exc,
-                        )
-
-            # -------------------------
-            # Episodic memories
-            # -------------------------
-            if target == "episodic":
-                for record in records:
-                    try:
-                        result.episodic_memories.append(
-                            EpisodicMemoryRecord.model_validate(record)
-                        )
-                    except ValidationError as exc:
-                        logger.warning(
-                            "Invalid episodic memory record in %s: %s",
-                            target,
-                            exc,
-                        )
-
-            # -------------------------
-            # Semantic memories
-            # -------------------------
-            if target == "semantic":
-                for record in records:
-                    try:
-                        result.semantic_memories.append(
-                            SemanticMemoryRecord.model_validate(record)
-                        )
-                    except ValidationError as exc:
-                        logger.warning(
-                            "Invalid semantic memory record in %s: %s",
-                            target,
-                            exc,
-                        )
         return result
 
     async def flush(self) -> None:

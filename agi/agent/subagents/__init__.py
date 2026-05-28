@@ -2,6 +2,7 @@
 from typing import List
 # 导入具体的工具实现
 from .general import *
+from deepagents import AsyncSubAgent
 
 # 显式暴露可用工具数组
 # 你可以直接放函数（如果用了 @tool 装饰器），也可以放实例化后的对象
@@ -16,7 +17,18 @@ buildin_agents = [
     pdf_parser_subagent,
     stock_analyse_subagent,
 ]
+
+
+buildin_async_agents: list[AsyncSubAgent] = [
+    {
+        "name": "stock-analyse-asubagent",
+        "description": (
+            "Specialized in stock market analyse task."
+        ),
+        "graph_id": "stock-analyse-asubagent",
+    },
+]
         
 
 # 导出清单，方便其他模块调用
-__all__ = ["buildin_agents","make_backend"]
+__all__ = ["buildin_agents","make_backend","buildin_async_agents"]

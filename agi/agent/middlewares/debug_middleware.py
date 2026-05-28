@@ -1,7 +1,9 @@
 import json
 import time
 import traceback
+import unicodedata
 from typing import Callable, Awaitable, List, Any, Optional, Union, Generator
+
 from langchain.agents.middleware.types import AgentMiddleware, ModelRequest, ModelResponse
 from langchain_core.messages import BaseMessage, ToolMessage, AIMessage
 from langgraph.types import Command
@@ -17,6 +19,7 @@ class DebugLLMContextMiddleware(AgentMiddleware):
         show_state: bool = False,
         show_settings: bool = False,
         content_limit: int = 10000,
+        max_line_width: int = 150,  # 终端显示最大宽度，您可以根据自己的终端拉伸程度调整（如 120）
         color_header: str = "\033[95m",
         color_reset: str = "\033[0m"
     ):
@@ -26,8 +29,44 @@ class DebugLLMContextMiddleware(AgentMiddleware):
         self.show_state = show_state
         self.show_settings = show_settings
         self.limit = content_limit
+        self.max_line_width = max_line_width
         self.c1 = color_header
         self.reset = color_reset
+        
+        # 统一左侧宽度 (Icon 1字符 + 空格 + [ 7字符 ] + 空格 = 12字符视觉，为安全取 14 以防 emoji 宽度异常)
+        self.gutter_width = 14
+        self.empty_gutter = f"{'':{self.gutter_width}}| "
+
+    def _split_and_wrap(self, text: str, width_offset: int = 0) -> List[str]:
+        """自定义硬换行，完美支持中英文混排，按终端视觉宽度强行截断"""
+        effective_width = max(self.max_line_width - self.gutter_width - width_offset, 40)
+        result = []
+        
+        for line in str(text).splitlines():
+            if not line:
+                result.append("")
+                continue
+                
+            current_line = ""
+            current_width = 0
+            
+            for char in line:
+                # 判断字符的视觉宽度（全角/宽字符为2，其他为1）
+                char_w = 2 if unicodedata.east_asian_width(char) in ('F', 'W') else 1
+                
+                if current_width + char_w > effective_width:
+                    # 达到行宽，截断当前行
+                    result.append(current_line)
+                    current_line = char
+                    current_width = char_w
+                else:
+                    current_line += char
+                    current_width += char_w
+                    
+            if current_line:
+                result.append(current_line)
+                
+        return result
 
     def _divider(self, title: str = "", width: int = 80) -> str:
         if not title:
@@ -36,16 +75,19 @@ class DebugLLMContextMiddleware(AgentMiddleware):
         side = max((width - len(label)) // 2, 1)
         return f"{'─' * side}{label}{'─' * side}"
 
-    def _json_preview(self, data: Any, limit: int = 2000) -> str:
+    def _json_preview(self, data: Any, limit: int = 2000, pretty: bool = True) -> str:
         try:
-            rendered = json.dumps(data, ensure_ascii=False, default=str)
+            if pretty:
+                rendered = json.dumps(data, ensure_ascii=False, indent=2, default=str)
+            else:
+                rendered = json.dumps(data, ensure_ascii=False, default=str)
         except Exception:
             rendered = str(data)
 
         if len(rendered) <= limit:
             return rendered
         omitted = len(rendered) - limit
-        return f"{rendered[:limit]} ... [omitted {omitted} chars]"
+        return f"{rendered[:limit]}\n... [已省略 {omitted} 字符]"
 
     def _analyze_tool_pairing(self, messages: List[BaseMessage]) -> dict[str, Any]:
         declared_calls: List[dict[str, str]] = []
@@ -83,13 +125,9 @@ class DebugLLMContextMiddleware(AgentMiddleware):
         }
 
     def _yield_formatted_parts(self, content: Any, msg_id: Any = None) -> Generator[str, None, None]:
-        """
-        将复杂内容拆解为独立可打印字符串，支持列表、生成器、字典等。
-        """
         if content is None:
             return
 
-        # 支持生成器、列表、单条内容
         if isinstance(content, Generator):
             items = list(content)
         elif isinstance(content, list):
@@ -108,65 +146,87 @@ class DebugLLMContextMiddleware(AgentMiddleware):
                 if c_type == "TEXT":
                     res = str(item.get("text", "")).strip()
                 elif c_type in ["IMAGE", "FILE", "AUDIO", "VIDEO"]:
-                    source = "unknown"
-                    if "url" in item:
-                        source = f"URL: {item['url']}"
-                    elif "file_id" in item:
-                        source = f"FileID: {item['file_id']}"
-                    elif "base64" in item:
+                    source = item.get("url") or item.get("file_id") or "unknown source"
+                    if "base64" in item:
                         mime = item.get("mime_type", "unknown-mime")
                         source = f"Base64({mime}, len={len(str(item['base64']))})"
                     res = f"[{c_type} | {source}]"
                 else:
-                    res = f"[Unsupported Type: {c_type}]"
+                    res = self._json_preview(item, limit=self.limit, pretty=True)
             else:
                 res = str(item).strip()
 
             if not res:
                 continue
 
-            # 截断处理，保证省略字数非负
             if len(res) > self.limit:
                 half = self.limit // 2
                 omitted = max(len(res) - self.limit, 0)
-                res = f"{res[:half]}\n    ... [已省略 {omitted} 字] ...\n    {res[-half:]}"
+                res = f"{res[:half]}\n... [已省略 {omitted} 字] ...\n{res[-half:]}"
 
             yield f"{prefix}{res}"
 
     def _append_log_line(self, lines: List[str], icon: str, role: str, content: Any, msg_id: Any = None):
-        """将消息内容拆分为多行并添加到 lines 列表"""
-        msg_prefix = f"#{msg_id} " if msg_id else ""
+        msg_prefix = f"[{msg_id}] " if msg_id else ""
+        first_gutter = f"{icon} [{role[:7]:^7}]"
+        
+        # 使用 ljust 固定英文字符宽度对齐左侧边栏
+        first_gutter = f"{first_gutter:<{self.gutter_width}}| "
+        current_gutter = first_gutter
+
         for part in self._yield_formatted_parts(content, ""):
-            for i, line in enumerate(part.splitlines()):
-                if i == 0:
-                    lines.append(f"{icon} [{role:^7}] | {msg_prefix}{line}")
-                else:
-                    lines.append(f"{'':10} | {line}")  # 统一对齐
+            # 考虑 msg_prefix 的长度偏移，确保消息 ID 出现时也不会溢出
+            prefix_w = len(msg_prefix)
+            wrapped_lines = self._split_and_wrap(part, width_offset=prefix_w)
+            
+            for line in wrapped_lines:
+                lines.append(f"{current_gutter}{msg_prefix}{line}")
+                current_gutter = self.empty_gutter
+                msg_prefix = "" 
 
     def _append_tool_call_details(self, lines: List[str], msg: AIMessage):
         tool_calls = getattr(msg, "tool_calls", []) or []
         if not tool_calls:
             return
 
-        lines.append(f"{'':10} | ├─ 🔧 Tool Calls ({len(tool_calls)})")
+        lines.append(f"{self.empty_gutter}├─ 🔧 Tool Calls ({len(tool_calls)})")
+
         for idx, call in enumerate(tool_calls, start=1):
             call_id = str(call.get("id") or "unknown")
             call_name = str(call.get("name") or "unknown")
-            call_args = self._json_preview(call.get("args", {}), limit=1200)
-            lines.append(f"{'':10} | │  [{idx}] name={call_name}")
-            lines.append(f"{'':10} | │      id={call_id}")
-            lines.append(f"{'':10} | │      args={call_args}")
+            
+            lines.append(f"{self.empty_gutter}│  [{idx}] name={call_name}")
+            lines.append(f"{self.empty_gutter}│      id={call_id}")
+            
+            args_str = self._json_preview(call.get("args", {}), limit=3000, pretty=True)
+            args_lines = self._split_and_wrap(args_str, width_offset=10) # 10是缩进偏移
+            
+            if len(args_lines) == 1:
+                lines.append(f"{self.empty_gutter}│      args: {args_lines[0]}")
+            else:
+                lines.append(f"{self.empty_gutter}│      args:")
+                for arg_line in args_lines:
+                    lines.append(f"{self.empty_gutter}│        {arg_line}")
 
     def _append_tool_result_details(self, lines: List[str], msg: ToolMessage):
         tool_call_id = str(getattr(msg, "tool_call_id", "") or "unknown")
         tool_name = str(getattr(msg, "name", "") or "unknown")
         artifact = getattr(msg, "artifact", None)
 
-        lines.append(f"{'':10} | ├─ 🧰 Tool Result")
-        lines.append(f"{'':10} | │    name={tool_name}")
-        lines.append(f"{'':10} | │    tool_call_id={tool_call_id}")
+        lines.append(f"{self.empty_gutter}├─ 🧰 Tool Result")
+        lines.append(f"{self.empty_gutter}│    name={tool_name}")
+        lines.append(f"{self.empty_gutter}│    tool_call_id={tool_call_id}")
+        
         if artifact is not None:
-            lines.append(f"{'':10} | │    artifact={self._json_preview(artifact, limit=800)}")
+            art_str = self._json_preview(artifact, limit=3000, pretty=True)
+            art_lines = self._split_and_wrap(art_str, width_offset=8)
+            
+            if len(art_lines) == 1:
+                lines.append(f"{self.empty_gutter}│    artifact={art_lines[0]}")
+            else:
+                lines.append(f"{self.empty_gutter}│    artifact:")
+                for line in art_lines:
+                    lines.append(f"{self.empty_gutter}│      {line}")
 
     async def awrap_model_call(
         self,
@@ -176,13 +236,15 @@ class DebugLLMContextMiddleware(AgentMiddleware):
         header = f"\n{self.c1}╔═ [{self.namespace}] LLM CALL START{self.reset}"
         lines: List[str] = [header]
 
-        # 1️⃣ 元信息
         model_id = getattr(request.model, "model_name", "Unknown Model")
         lines.append(f" 🤖 【Model】: {model_id}")
 
         if self.show_tools and request.tools:
             t_names = [getattr(t, 'name', str(t)) for t in request.tools]
-            lines.append(f" 🛠️ 【Tools】: {', '.join(t_names)}")
+            t_lines = self._split_and_wrap(', '.join(t_names), width_offset=15)
+            lines.append(f" 🛠️ 【Tools】: {t_lines[0]}")
+            for t_line in t_lines[1:]:
+                lines.append(f"               {t_line}")
 
         lines.append(self._divider("Request Meta"))
 
@@ -195,15 +257,15 @@ class DebugLLMContextMiddleware(AgentMiddleware):
 
         if pairing["missing_results"]:
             lines.append("   ↳ Missing results for calls: " + ", ".join(
-                f"{x['name']}#{x['id']}" for x in pairing["missing_results"]
+                f"{x['name']}[{x['id']}]" for x in pairing["missing_results"]
             ))
         if pairing["orphan_results"]:
             lines.append("   ↳ Orphan tool results: " + ", ".join(
-                f"{x['name']}#{x['id']}" for x in pairing["orphan_results"]
+                f"{x['name']}[{x['id']}]" for x in pairing["orphan_results"]
             ))
 
         lines.append(self._divider("Message Trace"))
-        # 2️⃣ 消息流解析
+        
         if self.show_messages:
             if request.system_message:
                 self._append_log_line(lines, "⚙️", "SYSTEM", request.system_message.content, "SYS")
@@ -211,7 +273,9 @@ class DebugLLMContextMiddleware(AgentMiddleware):
             for msg in request.messages:
                 role_map = {"human": ("👤", "USER"), "ai": ("🤖", "ASSIST"), "tool": ("🛠️", "TOOL")}
                 icon, role_name = role_map.get(str(msg.type), ("📝", str(msg.type).upper()))
+                
                 self._append_log_line(lines, icon, role_name, msg.content, getattr(msg, 'id', None))
+                
                 if isinstance(msg, AIMessage):
                     self._append_tool_call_details(lines, msg)
                 elif isinstance(msg, ToolMessage):
@@ -237,28 +301,41 @@ class DebugLLMContextMiddleware(AgentMiddleware):
 
         tool_call = request.tool_call
         t_name = tool_call.get("name", "unknown")
-
         t_id = tool_call.get("id", "unknown")
+        
         print(f"\n{self.c1}╔═ [{self.namespace}] TOOL START{self.reset}")
         print(f" 🔧 Name: {t_name}")
         print(f" 🆔 Call ID: {t_id}")
-        print(f" 📥 Args: {self._json_preview(tool_call.get('args', {}), limit=3000)}")
+        
+        args_str = self._json_preview(tool_call.get('args', {}), limit=5000, pretty=True)
+        args_lines = self._split_and_wrap(args_str, width_offset=8)
+        
+        if len(args_lines) == 1:
+            print(f" 📥 Args: {args_lines[0]}")
+        else:
+            print(" 📥 Args:")
+            for line in args_lines:
+                print(f"    {line}")
 
         start_t = time.perf_counter()
         try:
             result = await handler(request)
             duration = time.perf_counter() - start_t
 
-            # 提取 result preview
             content = getattr(result, 'content', str(result))
             parts = list(self._yield_formatted_parts(content, ""))
             preview = parts[0] if parts else "[No Preview]"
-            preview = preview[:1200] + (" ..." if len(preview) > 1200 else "")
+            
+            if "\n" in preview:
+                preview_lines = preview.splitlines()
+                preview = f"{preview_lines[0]} ... [Multline Content]"
+            else:
+                preview = preview[:100] + (" ..." if len(preview) > 100 else "")
 
             paired_note = ""
             if isinstance(result, ToolMessage):
                 res_tool_call_id = getattr(result, "tool_call_id", "")
-                paired_note = "✅ matched" if str(res_tool_call_id) == str(t_id) else f"⚠️ mismatch (result={res_tool_call_id}, request={t_id})"
+                paired_note = "✅ matched" if str(res_tool_call_id) == str(t_id) else f"⚠️ mismatch (res={res_tool_call_id}, req={t_id})"
             else:
                 paired_note = "ℹ️ non-ToolMessage result"
 

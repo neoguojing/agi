@@ -10,7 +10,6 @@ from agi.agent.middlewares.memory_middleware import MemoryMiddleware
 from agi.agent.middlewares.pdf_middleware import PDFMiddleware
 from pathlib import Path
 from deepagents.backends import CompositeBackend,StateBackend,FilesystemBackend
-from deepagents import AsyncSubAgent
 from agi.config import CACHE_DIR
 
 image_gen_tool = RemoteImageGenTool()
@@ -81,7 +80,7 @@ web_search_subagent = {
     "tools": [search_web,get_context_info],
 
     "middleware": [
-        DebugLLMContextMiddleware(name="web_search_subagent")
+        # DebugLLMContextMiddleware(name="web_search_subagent")
     ]
 }
 
@@ -177,7 +176,7 @@ stock_analyse_subagent = {
     # "tools": stock_tools,
     "middleware": [
         stock_middleware,
-        # DebugLLMContextMiddleware(name="stock_analyse_subagent")
+        DebugLLMContextMiddleware(name="stock_analyse_subagent")
     ]
 }
 

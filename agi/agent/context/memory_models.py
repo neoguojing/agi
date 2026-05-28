@@ -22,6 +22,24 @@ from pydantic import BaseModel, Field
 
 
 # =========================================================
+# Normalization Helpers (shared by dedup in tasks and store)
+# =========================================================
+
+
+def _normalize_text(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return " ".join(value.strip().lower().split())
+
+
+def _normalize_participants(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    normalized = [_normalize_text(v) for v in value if isinstance(v, str) and _normalize_text(v)]
+    return tuple(sorted(set(normalized)))
+
+
+# =========================================================
 # Type Aliases
 # =========================================================
 
@@ -43,6 +61,35 @@ MemorySourceKind = Literal[
     "system",
     "tool",
 ]
+
+
+# =========================================================
+# Dedup
+# =========================================================
+
+
+def record_dedup_key(target: "MemoryTarget", record: dict[str, Any]) -> tuple[Any, ...] | None:
+    """Best-effort semantic key used to collapse duplicate memories."""
+    if target == "profile":
+        key = _normalize_text(record.get("key"))
+        value = _normalize_text(record.get("value"))
+        return ("profile", key, value) if key and value else None
+
+    if target == "episodic":
+        summary = _normalize_text(record.get("summary"))
+        participants = _normalize_participants(record.get("participants"))
+        event_time = _normalize_text(record.get("event_time"))
+        if not summary:
+            return None
+        return ("episodic", summary, participants, event_time[:10] if event_time else "")
+
+    if target == "semantic":
+        subject = _normalize_text(record.get("subject"))
+        predicate = _normalize_text(record.get("predicate"))
+        obj = _normalize_text(record.get("object"))
+        return ("semantic", subject, predicate, obj) if subject and predicate and obj else None
+
+    return None
 
 
 # =========================================================
@@ -177,76 +224,9 @@ class ProfileMemoryRecord(BaseModel):
     )
 
 class ProfileMemoryList(BaseModel):
-    """
-    Structured long-term profile memory representing stable
-    user attributes, preferences, habits, identities,
-    settings, skills, or persistent personal information.
-
-    Purpose:
-    - Capture stable user characteristics
-    - Preserve long-term preferences and identity traits
-    - Store reusable personalization information
-    - Support future personalization and memory retrieval
-
-    Suitable Memory Types:
-    - Preferences
-    - Personal settings
-    - Long-term goals
-    - Skills and expertise
-    - Roles and occupations
-    - Frequently repeated behaviors
-    - Stable relationships
-    - Persistent environment information
-
-    Good Examples:
-    - "favorite_language" -> "Python"
-    - "job_title" -> "Software Engineer"
-    - "preferred_database" -> "ClickHouse"
-    - "timezone" -> "Asia/Tokyo"
-    - "communication_style" -> "concise"
-
-    Bad Examples:
-    - "User attended a meeting yesterday"
-        -> episodic memory
-
-    - "Python is a programming language"
-        -> semantic memory
-
-    - Temporary short-lived states
-        -> should not be stored as profile memory
-
-    Extraction Guidelines for LLM:
-    - Extract ONLY stable long-term information
-    - Avoid temporary conversational details
-    - Prefer normalized concise keys
-    - Prefer atomic key-value pairs
-    - Each memory should contain ONLY ONE fact
-    - Do not merge unrelated attributes together
-
-    Key Naming Rules:
-    - Use concise snake_case keys
-    - Keep keys stable and reusable
-    - Avoid natural language sentences
-
-    Good Keys:
-    - favorite_language
-    - job_title
-    - preferred_editor
-    - timezone
-
-    Bad Keys:
-    - user_really_likes_programming_languages
-    - the_user_currently_works_as
-
-    Field Rules:
-    - ALL fields are REQUIRED
-    - ALL string fields MUST be non-empty
-    - confidence MUST be between 0.0 and 1.0
-    - do NOT generate placeholder values
-    - do NOT generate empty strings
-    """
+    """Stable user profile attributes as key-value pairs."""
     items: list[ProfileMemoryRecord] = Field(
-        description="List of profiles"
+        description="Extracted profile memories — stable user attributes, preferences, skills."
     )
 
 
@@ -314,54 +294,9 @@ class EpisodicMemoryRecord(BaseModel):
     )
 
 class EpisodicMemoryList(BaseModel):
-    """
-    Structured episodic memory representing a specific event,
-    activity, interaction, or experience that occurred at a
-    particular time.
-
-    Purpose:
-    - Capture time-bound experiences and interactions
-    - Preserve conversational events as retrievable memories
-    - Store meaningful user activities, milestones, decisions,
-      meetings, plans, achievements, or incidents
-    - Support timeline reconstruction and temporal reasoning
-
-    Extraction Guidelines for LLM:
-    - Extract ONLY concrete events or experiences
-    - Each memory should represent ONE atomic event
-    - The event should be meaningful and retrievable later
-    - Avoid vague or generic summaries
-    - Avoid duplicating semantic/profile memories
-    - Prefer concise factual summaries
-
-    Good Examples:
-    - "User started a new job at OpenAI"
-    - "User traveled to Tokyo for a conference"
-    - "User completed migration from Cassandra to ClickHouse"
-    - "User discussed long-term memory architecture design"
-
-    Bad Examples:
-    - "User likes Python"                -> profile memory
-    - "Python is a programming language" -> semantic memory
-    - "User talked about something"      -> too vague
-
-    Field Rules:
-    - ALL fields are REQUIRED
-    - ALL string fields MUST be non-empty
-    - participants list MUST NOT be empty
-    - participants items MUST NOT be empty
-    - confidence MUST be between 0.0 and 1.0
-    - event_time MUST use ISO datetime string format
-    - do NOT generate placeholder values
-    - do NOT generate empty strings
-
-    Time Rules:
-    - Use the actual event occurrence time when available
-    - If exact time is unknown, infer the best approximate time
-    - Always use ISO-8601 datetime format    
-    """
+    """Time-bound events and experiences as structured records."""
     items: list[EpisodicMemoryRecord] = Field(
-        description="List of episodic"
+        description="Extracted episodic memories — concrete events, milestones, decisions."
     )
 
 # =========================================================
@@ -447,30 +382,9 @@ class SemanticMemoryRecord(BaseModel):
     )
 
 class SemanticMemoryList(BaseModel):
-    """
-    Structured semantic relationship memory.
-
-    Purpose:
-    - Extract stable factual relationships
-    - Represent knowledge as semantic triples
-    - Keep relationships atomic and graph-friendly
-
-    Extraction Rules for LLM:
-    - ALL fields are REQUIRED
-    - ALL string fields MUST be non-empty
-    - subject MUST be a concrete entity
-    - predicate MUST be a short normalized relation
-    - object MUST be a concrete value or target entity
-    - confidence MUST be between 0.0 and 1.0
-    - use concise normalized predicates:
-        GOOD: works_at, likes, lives_in, uses
-        BAD: "is currently working at"
-    - each memory should contain ONLY ONE fact
-    - do NOT generate placeholder values
-    - do NOT generate empty strings
-    """
+    """Factual knowledge as subject-predicate-object triples."""
     items: list[SemanticMemoryRecord] = Field(
-        description="List of semantic"
+        description="Extracted semantic memories — factual triples, graph-ready knowledge."
     )
 
 # =========================================================

@@ -1,0 +1,7 @@
+{
+    "python_version": "3.11",
+    "dependencies": ["./agi/agent"],
+    "graphs": {
+      "stock-analyse-asubagent": "./agi/agent/subagents/async_subagents.py:stock_graph"
+    }
+}

@@ -20,7 +20,7 @@ from agi.agent.middlewares import (
 )
 from agi.agent.models import ModelProvider
 from agi.agent.prompt import BACKGROUD_SYSTEM_PROMPT
-from agi.agent.subagents import buildin_agents, make_backend
+from agi.agent.subagents import buildin_agents, make_backend,buildin_async_agents
 from agi.agent.tools import buildin_tools
 from agi.config import OLLAMA_DEFAULT_MODE,CACHE_DIR
 from .deep_agent import create_deep_agent
@@ -131,6 +131,7 @@ class DeepAgentBuilder:
         self.system_prompt = ""
         self.tools = list(buildin_tools)
         self.subagents = list(buildin_agents)
+        self.async_subagents = list(buildin_async_agents)
         self.middlewares: list[Any] = []
         self.backend = make_backend
 
@@ -142,6 +143,7 @@ class DeepAgentBuilder:
         new.system_prompt = self.system_prompt
         new.tools = list(self.tools)
         new.subagents = list(self.subagents)
+        new.async_subagents = list(self.async_subagents)
         new.middlewares = list(self.middlewares)
         new.backend = self.backend
         return new
@@ -173,6 +175,7 @@ class DeepAgentBuilder:
             "tools": self.tools,
             "system_prompt": self.system_prompt,
             "subagents": self.subagents,
+            "async_subagents": self.async_subagents,
             "middleware": AgentMiddlewareFactory.build_main(
                 llm=self.llm,
                 fallback_llm=self.fallback_llm,

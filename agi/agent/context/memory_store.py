@@ -21,7 +21,14 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Protocol, Sequence, runtime_checkable
 
-from agi.agent.context.memory_models import MemoryOperation, MemoryPatch, MemoryTarget
+from agi.agent.context.memory_models import (
+    MemoryOperation,
+    MemoryPatch,
+    MemoryTarget,
+    _normalize_participants,
+    _normalize_text,
+    record_dedup_key,
+)
 if TYPE_CHECKING:
     from deepagents.backends.protocol import BackendProtocol
 else:
@@ -77,32 +84,6 @@ class MemoryStore(Protocol):
     def apply_patch(self, patch: MemoryPatch) -> None:
         """Apply a storage-neutral memory patch."""
         ...
-
-def record_dedup_key(target: MemoryTarget, record: dict[str, Any]) -> tuple[Any, ...] | None:
-    """Best-effort semantic key used to collapse duplicate memories."""
-    if target == "profile":
-        key = _normalize_text(record.get("key"))
-        value = _normalize_text(record.get("value"))
-        return ("profile", key, value) if key and value else None
-
-    if target == "episodic":
-        summary = _normalize_text(record.get("summary"))
-        participants = _normalize_participants(record.get("participants"))
-        event_time = _normalize_text(record.get("event_time"))
-        if not summary:
-            return None
-        # Event time often drifts; ignore it for matching to reduce repeated
-        # extraction duplicates for the same event.
-        return ("episodic", summary, participants, event_time[:10] if event_time else "")
-
-    if target == "semantic":
-        subject = _normalize_text(record.get("subject"))
-        predicate = _normalize_text(record.get("predicate"))
-        obj = _normalize_text(record.get("object"))
-        return ("semantic", subject, predicate, obj) if subject and predicate and obj else None
-
-    return None
-    
 
 class BackendMemoryStore:
     """File-backed MemoryStore adapter over the existing BackendProtocol.
@@ -361,20 +342,6 @@ def _strip_line_numbers(content: str) -> str:
                 continue
         lines.append(line)
     return "\n".join(lines)
-
-
-def _normalize_text(value: Any) -> str:
-    if not isinstance(value, str):
-        return ""
-    return " ".join(value.strip().lower().split())
-
-
-def _normalize_participants(value: Any) -> tuple[str, ...]:
-    if not isinstance(value, list):
-        return ()
-    normalized = [_normalize_text(v) for v in value if isinstance(v, str) and _normalize_text(v)]
-    return tuple(sorted(set(normalized)))
-
 
 def _parse_iso_datetime(value: Any) -> datetime | None:
     if not isinstance(value, str) or not value:
