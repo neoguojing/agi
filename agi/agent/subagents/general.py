@@ -143,6 +143,7 @@ def make_backend(runtime):
             "/skills/": FilesystemBackend(root / user_id,virtual_mode=True),
             "/conversation_history/": FilesystemBackend(root / user_id / session_id,virtual_mode=True),
             # 全局：系统配置、模板
+            "/large_tool_results/": FilesystemBackend(root / user_id,virtual_mode=True),
             "/shared/": FilesystemBackend(root / user_id,virtual_mode=True),
         },
     )

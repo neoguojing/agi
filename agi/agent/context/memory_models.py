@@ -368,6 +368,23 @@ class EpisodicMemoryList(BaseModel):
 # Semantic Memory (Simplified for LLM)
 # =========================================================
 
+AgentMemoryPredicate = Literal[
+    "is_a",
+    "same_as",
+    "likes",
+    "prefers",
+    "uses",
+    "owns",
+    "knows",
+    "member_of",
+    "works_at",
+    "created",
+    "located_in",
+    "learned",
+    "depends_on",
+    "related_to",
+]
+
 class SemanticMemoryRecord(BaseModel):
 
     id: str = Field(
@@ -383,18 +400,21 @@ class SemanticMemoryRecord(BaseModel):
         ...,
         min_length=1,
         description=(
-            "REQUIRED. Source entity of the relationship. "
-            "Example: 'Alice', 'Python', 'OpenAI'."
+            "REQUIRED. Canonical subject entity name. "
+            "Must be a short noun-style entity, not a sentence. "
+            "Use concise reusable names such as "
+            "'OpenAI', 'Python', 'Tokyo', 'FastAPI'. "
+            "Avoid pronouns, full sentences, and excessive details."
         )
     )
 
-    predicate: str = Field(
+    predicate: AgentMemoryPredicate = Field(
         ...,
-        min_length=1,
         description=(
-            "REQUIRED. Normalized relationship type. "
-            "Use short graph-friendly predicates such as "
-            "'works_at', 'likes', 'uses', 'located_in'."
+            "REQUIRED. Target entity or value of the relationship. "
+            "Prefer short canonical entity names or concise literal values. "
+            "Examples: 'OpenAI', 'Python', 'Tokyo', 'backend_development'. "
+            "Avoid long natural language sentences."
         )
     )
 

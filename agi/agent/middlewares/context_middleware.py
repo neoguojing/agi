@@ -298,6 +298,11 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
 
             return Command(
                 update={
+                    "pending_target": target,
+                    "profile_records": records if target == "profile" else [],
+                    "episodic_records": records if target == "episodic" else [],
+                    "semantic_records": records if target == "semantic" else [],
+                    "organization_reason": reason,
                     "messages": [
                         ToolMessage(
                             content=f"Successfully persisted {applied_count} memory patches to {target} store. Reason: {reason}",
