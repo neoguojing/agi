@@ -155,19 +155,19 @@ image_tika:
 	-f ./Dockerfile.tika \
 	-t $(REGISTRY)/guojingneo/tika:3.2.2.0-full-zh .
 
+.PHONY: openbb
+openbb:
+	nohup openbb-mcp --default-categories admin --tool-discovery&
+
+.PHONY: subagent
+subagent:
+	nohup langgraph dev&
 
 .PHONY: agent
 agent:
 	python -m agi.agent.agent
 
 .PHONY: cli
-cli:
+cli: openbb subagent
 	python -m agi.cli
 
-.PHONY: openbb
-openbb:
-	openbb-mcp --default-categories admin --tool-discovery
-
-.PHONY: subagent
-subagent:
-	langgraph dev

@@ -174,8 +174,7 @@ class DeepAgentBuilder:
             "backend": self.backend,
             "tools": self.tools,
             "system_prompt": self.system_prompt,
-            "subagents": self.subagents,
-            "async_subagents": self.async_subagents,
+            "subagents": self.subagents + self.async_subagents,
             "middleware": AgentMiddlewareFactory.build_main(
                 llm=self.llm,
                 fallback_llm=self.fallback_llm,

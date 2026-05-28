@@ -188,3 +188,4 @@ search_list.json
 admin/profile.json
 .cli_prompt_history
 .langgraph_api/
+nohup.out

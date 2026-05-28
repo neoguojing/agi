@@ -6,7 +6,7 @@ from venv import logger
 from langchain_core.messages import BaseMessage, AIMessage, ToolMessage
 from langchain_core.tools import StructuredTool, InjectedToolCallId
 from langgraph.types import Command
-from langchain.tools import ToolRuntime
+from langchain.tools import ToolRuntime,tool
 from langgraph.channels import LastValue
 
 
