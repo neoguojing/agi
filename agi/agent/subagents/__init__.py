@@ -26,6 +26,7 @@ buildin_async_agents: list[AsyncSubAgent] = [
             "Specialized in stock market analyse task."
         ),
         "graph_id": "stock-analyse-asubagent",
+        "url": "http://127.0.0.1:2024",
     },
 ]
         

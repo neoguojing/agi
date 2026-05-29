@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+import traceback
 from collections.abc import Awaitable, Callable
 from typing import Any,Annotated
 from contextlib import suppress
@@ -493,7 +494,7 @@ class StockMiddleware(AgentMiddleware):
         try:
             return await handler(request)
         except Exception as e:
-            logger.exception("StockMiddleware.awrap_model_call handler failed: %s", e)
+            traceback.print_stack()
             return ModelResponse(
                 result=[AIMessage(content=f"Stock middleware model call failed: {type(e).__name__}: {e}")]
             )
