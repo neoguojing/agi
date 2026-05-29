@@ -1,8 +1,10 @@
 # tools/__init__.py
 import os
+
+from deepagents.middleware.async_subagents import AsyncSubAgent
+
 # 导入具体的工具实现
 from .general import *
-from deepagents.middleware.async_subagents import AsyncSubAgent
 
 # 显式暴露可用工具数组
 # 你可以直接放函数（如果用了 @tool 装饰器），也可以放实例化后的对象
@@ -18,36 +20,18 @@ buildin_agents = [
     # stock_analyse_subagent,
 ]
 
+stock_async_subagent: AsyncSubAgent = {
+    "name": "stock-analyse-asubagent",
+    "description": "Specialized in stock market analyse task.",
+    "graph_id": "stock-analyse-asubagent",
+}
 
-def _async_subagent(name: str, description: str, graph_id: str, env_url: str | None = None) -> AsyncSubAgent:
-    """Create an async subagent spec.
+# Empty URL means co-registered LangGraph graphs communicate in-process via ASGI.
+# Set this env var only when the stock subagent runs on another LangGraph server.
+if stock_async_subagent_url := os.getenv("AGI_STOCK_ASUBAGENT_URL"):
+    stock_async_subagent["url"] = stock_async_subagent_url
 
-    If ``env_url`` is unset or the environment variable is empty, no ``url`` is
-    included and LangGraph SDK uses in-process ASGI transport for graphs
-    co-registered in the same ``langgraph.json``. Setting the URL switches the
-    same spec to HTTP transport for direct remote-agent communication.
-    """
-
-    spec: AsyncSubAgent = {
-        "name": name,
-        "description": description,
-        "graph_id": graph_id,
-    }
-    if env_url:
-        url = os.getenv(env_url)
-        if url:
-            spec["url"] = url
-    return spec
-
-
-buildin_async_agents: list[AsyncSubAgent] = [
-    _async_subagent(
-        name="stock-analyse-asubagent",
-        description="Specialized in stock market analyse task.",
-        graph_id="stock-analyse-asubagent",
-        env_url="AGI_STOCK_ASUBAGENT_URL",
-    ),
-]
+buildin_async_agents: list[AsyncSubAgent] = [stock_async_subagent]
 
 
 # 导出清单，方便其他模块调用

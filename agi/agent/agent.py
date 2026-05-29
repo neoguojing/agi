@@ -1,15 +1,8 @@
 """Main AGI agent assembly and LangGraph entrypoints.
 
-This module intentionally keeps the agent lifecycle small and explicit:
-
-1. Build an ``AgentProfile`` (main agent or a promoted subagent).
-2. Create persistence resources.
-3. Compile one DeepAgent graph.
-
-The exported ``main_graph`` factory is used by ``langgraph dev``. Async subagents
-registered in the same ``langgraph.json`` can omit ``url`` and communicate via
-LangGraph SDK ASGI transport in the same process; adding ``url`` to an async
-subagent switches it to HTTP transport for direct cross-server communication.
+This module only builds and runs the main agent.  Async subagent graphs are
+constructed in ``agi.agent.subagents`` so their lifecycle and dependencies stay
+independent from the main-agent runtime.
 """
 
 from __future__ import annotations
@@ -20,7 +13,6 @@ import logging
 import os
 import uuid
 from collections.abc import AsyncGenerator, Mapping, Sequence
-from dataclasses import dataclass, field, replace
 from typing import Any
 
 from psycopg_pool import AsyncConnectionPool, ConnectionPool
@@ -46,123 +38,118 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_DB_URI = "postgres://admin:123456@localhost:5432/langchain?sslmode=disable"
 DB_URI = os.getenv("AGI_CHECKPOINT_DB_URI", DEFAULT_DB_URI)
+AgentOptions = dict[str, Any]
+RuntimeResources = dict[str, Any]
 
 
-@dataclass(slots=True)
-class AgentRuntimeResources:
-    """Checkpoint/store handles plus the connections that own them."""
+class AgentRuntime:
+    """Build, persist, and run only the top-level AGI DeepAgent graph."""
 
-    checkpointer: Any
-    store: Any
-    connections: list[Any] = field(default_factory=list)
+    def __init__(self, db_uri: str = DB_URI, backend: Any = make_backend):
+        self.db_uri = db_uri
+        self.backend = backend
+        self._sync_agent: Any = None
+        self._async_agent: Any = None
+        self._async_connections: list[Any] = []
 
+    def main_options(self) -> AgentOptions:
+        """Return graph options for the top-level assistant."""
 
-@dataclass(slots=True)
-class AgentProfile:
-    """Declarative configuration for a DeepAgent graph."""
-
-    name: str = "main"
-    model: Any = None
-    fallback_model: Any = None
-    embeddings: Any = None
-    system_prompt: str = ""
-    tools: list[Any] = field(default_factory=list)
-    subagents: list[dict[str, Any]] = field(default_factory=list)
-    async_subagents: list[dict[str, Any]] = field(default_factory=list)
-    middleware: list[Any] = field(default_factory=list)
-    backend: Any = make_backend
-    context_schema: type[Context] = Context
-
-    @classmethod
-    def main(cls) -> "AgentProfile":
-        """Build the default top-level agent profile."""
-
-        return cls(
+        return self._options(
             name="main",
             model=ModelProvider.get_chat_model(),
             fallback_model=ModelProvider.get_falback_model(),
-            embeddings=ModelProvider.get_embeddings(provider="ollama", model_name="embeddinggemma:latest"),
             tools=list(buildin_tools),
+            system_prompt="",
             subagents=list(buildin_agents),
             async_subagents=list(buildin_async_agents),
         )
 
-    @classmethod
-    def from_subagent(
-        cls,
-        subagent: Mapping[str, Any],
-        *,
-        include_default_subagents: bool = False,
-        async_subagents: Sequence[Mapping[str, Any]] | None = None,
-    ) -> "AgentProfile":
-        """Promote a subagent spec into a first-class/main graph profile.
+    def compile_graph(self, options: AgentOptions, resources: RuntimeResources | None = None):
+        """Compile one DeepAgent graph from already prepared options."""
 
-        A promoted subagent keeps its own prompt, tools, model, and middleware,
-        but can be registered in ``langgraph.json`` and called directly as a
-        normal LangGraph assistant. By default it does not inherit sibling
-        subagents, keeping the graph focused and avoiding delegation cycles.
-        """
-
-        base = cls.main()
-        return replace(
-            base,
-            name=str(subagent["name"]),
-            model=subagent.get("model", base.model),
-            system_prompt=subagent.get("system_prompt", ""),
-            tools=list(subagent.get("tools", [])),
-            subagents=list(buildin_agents) if include_default_subagents else [],
-            async_subagents=[dict(item) for item in async_subagents or ()],
-            middleware=list(subagent.get("middleware", [])),
+        kwargs = dict(options)
+        if resources is not None:
+            kwargs.update(checkpointer=resources["checkpointer"], store=resources["store"])
+        logger.debug(
+            "Compiling agent graph",
+            extra={
+                "agent_name": kwargs.get("name"),
+                "tools": len(kwargs.get("tools", [])),
+                "subagents": len(kwargs.get("subagents", [])),
+                "middleware": len(kwargs.get("middleware", [])),
+                "persistent": resources is not None,
+            },
         )
+        return create_deep_agent(**kwargs)
 
-    def with_system_prompt(self, prompt: str) -> "AgentProfile":
-        return replace(self, system_prompt=prompt)
+    def compile_main(self, resources: RuntimeResources | None = None):
+        """Compile the top-level assistant graph."""
 
-    def with_middleware(self, middleware: Sequence[Any]) -> "AgentProfile":
-        return replace(self, middleware=[*self.middleware, *middleware])
+        return self.compile_graph(self.main_options(), resources)
 
-    def options(self) -> dict[str, Any]:
-        """Return kwargs accepted by ``create_deep_agent``."""
+    def sync_agent(self):
+        if self._sync_agent is None:
+            self._sync_agent = self.compile_main(self._sync_resources())
+        return self._sync_agent
 
+    async def async_agent(self):
+        if self._async_agent is None:
+            resources = await self._async_resources()
+            self._async_connections = resources["connections"]
+            self._async_agent = self.compile_main(resources)
+        return self._async_agent
+
+    async def close(self) -> None:
+        for conn in self._async_connections:
+            close = getattr(conn, "close", None)
+            if close is None:
+                continue
+            result = close()
+            if hasattr(result, "__await__"):
+                await result
+        self._async_connections = []
+        self._async_agent = None
+
+    def _options(
+        self,
+        *,
+        name: str,
+        model: Any,
+        fallback_model: Any,
+        tools: Sequence[Any],
+        system_prompt: str,
+        subagents: Sequence[Any],
+        async_subagents: Sequence[Any],
+        extra_middleware: Sequence[Any] = (),
+    ) -> AgentOptions:
+        middleware = [
+            ContextEngineeringMiddleware(backend=self.backend, llm=fallback_model),
+            ModelFallbackMiddleware(model, *ModelProvider.get_chat_models()[1:]),
+            MultimodalBase64Middleware(),
+            DebugLLMContextMiddleware(),
+            *extra_middleware,
+        ]
         return {
-            "name": self.name,
-            "context_schema": self.context_schema,
-            "model": self.model,
+            "name": name,
+            "context_schema": Context,
+            "model": model,
             "backend": self.backend,
-            "tools": self.tools,
-            "system_prompt": self.system_prompt,
-            "subagents": [*self.subagents, *self.async_subagents],
-            "middleware": build_main_middleware(self.model, self.fallback_model, self.middleware),
+            "tools": list(tools),
+            "system_prompt": system_prompt,
+            "subagents": [*subagents, *async_subagents],
+            "middleware": middleware,
         }
 
-
-def build_main_middleware(llm: Any, fallback_llm: Any, extra: Sequence[Any] = ()) -> list[Any]:
-    """Middleware shared by main graphs and promoted subagent graphs."""
-
-    return [
-        ContextEngineeringMiddleware(backend=make_backend, llm=fallback_llm),
-        ModelFallbackMiddleware(llm, *ModelProvider.get_chat_models()[1:]),
-        MultimodalBase64Middleware(),
-        DebugLLMContextMiddleware(),
-        *extra,
-    ]
-
-
-class AgentPersistence:
-    """Creates Postgres checkpoint/store resources for sync and async graphs."""
-
-    def __init__(self, db_uri: str = DB_URI):
-        self.db_uri = db_uri
-
-    def create_sync(self) -> AgentRuntimeResources:
+    def _sync_resources(self) -> RuntimeResources:
         pool = ConnectionPool(conninfo=self.db_uri)
         checkpointer = PostgresSaver(conn=pool)
         store = PostgresStore(conn=pool)
         checkpointer.setup()
         store.setup()
-        return AgentRuntimeResources(checkpointer=checkpointer, store=store, connections=[pool])
+        return {"checkpointer": checkpointer, "store": store, "connections": [pool]}
 
-    async def create_async(self) -> AgentRuntimeResources:
+    async def _async_resources(self) -> RuntimeResources:
         pool = AsyncConnectionPool(conninfo=self.db_uri, open=True)
         checkpointer = AsyncPostgresSaver(conn=pool)
         store = AsyncPostgresStore(conn=pool)
@@ -174,72 +161,20 @@ class AgentPersistence:
         async with AsyncPostgresStore.from_conn_string(self.db_uri) as setup_store:
             await setup_store.setup()
 
-        return AgentRuntimeResources(checkpointer=checkpointer, store=store, connections=[pool])
-
-    async def close(self, connections: Sequence[Any]) -> None:
-        for conn in connections:
-            close = getattr(conn, "close", None)
-            if close is None:
-                continue
-            result = close()
-            if hasattr(result, "__await__"):
-                await result
-
-
-class AgentRuntime:
-    """Small lifecycle wrapper for one profile."""
-
-    def __init__(self, profile: AgentProfile | None = None, persistence: AgentPersistence | None = None):
-        self.profile = profile or AgentProfile.main()
-        self.persistence = persistence or AgentPersistence()
-        self._sync_agent: Any = None
-        self._async_agent: Any = None
-        self._async_connections: list[Any] = []
-
-    def compile(self, resources: AgentRuntimeResources | None = None):
-        kwargs = self.profile.options()
-        if resources is not None:
-            kwargs.update(checkpointer=resources.checkpointer, store=resources.store)
-        return create_deep_agent(**kwargs)
-
-    def sync_agent(self):
-        if self._sync_agent is None:
-            self._sync_agent = self.compile(self.persistence.create_sync())
-        return self._sync_agent
-
-    async def async_agent(self):
-        if self._async_agent is None:
-            resources = await self.persistence.create_async()
-            self._async_connections = resources.connections
-            self._async_agent = self.compile(resources)
-        return self._async_agent
-
-    async def close(self) -> None:
-        await self.persistence.close(self._async_connections)
-        self._async_connections = []
-        self._async_agent = None
+        return {"checkpointer": checkpointer, "store": store, "connections": [pool]}
 
 
 agent_runtime = AgentRuntime()
 
-
-def build_agent(profile: AgentProfile | None = None, resources: AgentRuntimeResources | None = None):
-    """Compile any profile as a standalone DeepAgent graph."""
-
     return AgentRuntime(profile or AgentProfile.main()).compile(resources)
-
-
-def build_agent_from_subagent(subagent: Mapping[str, Any], **kwargs: Any):
-    """Compile a subagent spec as a standalone/main agent graph."""
-
-    return build_agent(AgentProfile.from_subagent(subagent, **kwargs))
-
 
 def _prepare_config(config: dict[str, Any] | None, state: Mapping[str, Any]) -> dict[str, Any]:
     if config is not None:
         return config
     return {"configurable": {"thread_id": state.get("thread_id", str(uuid.uuid4()))}}
 
+def build_agent_from_subagent(subagent: Mapping[str, Any], **kwargs: Any):
+    """Compile a subagent spec as a standalone/main agent graph."""
 
 def _prepare_context(context: Context | None, state: Mapping[str, Any]) -> Context:
     if context is not None:
@@ -287,14 +222,9 @@ def invoke_agent_sync(state: dict[str, Any], config: dict[str, Any] | None = Non
 
 @contextlib.asynccontextmanager
 async def main_graph(config: Any = None):  # noqa: ARG001 - LangGraph passes RunnableConfig.
-    """LangGraph factory for the top-level assistant.
+    """LangGraph factory for the top-level assistant."""
 
-    Register this graph together with async subagents in ``langgraph.json``.
-    Local async subagents should omit ``url`` so LangGraph SDK can use ASGI
-    in-process transport; subagents with ``url`` use HTTP transport instead.
-    """
-
-    runtime = AgentRuntime(AgentProfile.main())
+    runtime = AgentRuntime()
     try:
         yield await runtime.async_agent()
     finally:
