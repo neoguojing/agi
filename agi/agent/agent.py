@@ -1,244 +1,170 @@
+"""Main AGI agent assembly and LangGraph entrypoints.
+
+This module builds the main agent directly with ``create_deep_agent``.  Async
+subagent graphs are constructed in ``agi.agent.subagents`` so their lifecycle
+and dependencies stay independent from the main-agent helpers here.
+"""
+
+from __future__ import annotations
+
 import asyncio
+import contextlib
 import logging
-import traceback
+import os
 import uuid
-import psycopg
-from psycopg_pool import AsyncConnectionPool,ConnectionPool
+from collections.abc import AsyncGenerator, Mapping, Sequence
+from typing import Any
 
-from copy import deepcopy
-from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Dict, Optional
-from pathlib import Path
+from psycopg_pool import AsyncConnectionPool, ConnectionPool
 
-import aiosqlite
 from agi.agent.context import Context
 from agi.agent.middlewares import (
     ContextEngineeringMiddleware,
     DebugLLMContextMiddleware,
-    MemoryMiddleware,
     MultimodalBase64Middleware,
 )
 from agi.agent.models import ModelProvider
-from agi.agent.prompt import BACKGROUD_SYSTEM_PROMPT
-from agi.agent.subagents import buildin_agents, make_backend,buildin_async_agents
+from agi.agent.subagents import buildin_agents, buildin_async_agents, make_backend
 from agi.agent.tools import buildin_tools
-from agi.config import OLLAMA_DEFAULT_MODE,CACHE_DIR
-from .deep_agent import create_deep_agent
-from deepagents.middleware import FilesystemMiddleware
-from deepagents.middleware.summarization import SummarizationMiddleware, SummarizationToolMiddleware
 from langchain.agents.middleware import ModelFallbackMiddleware
-from langchain.agents import create_agent
-from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from langgraph.store.memory import InMemoryStore
 from langgraph.store.postgres import PostgresStore
 from langgraph.store.postgres.aio import AsyncPostgresStore
 
+from .deep_agent import create_deep_agent
 
 logger = logging.getLogger(__name__)
 
-DB_URI = "postgres://admin:123456@localhost:5432/langchain?sslmode=disable"
+DEFAULT_DB_URI = "postgres://admin:123456@localhost:5432/langchain?sslmode=disable"
+DB_URI = os.getenv("AGI_CHECKPOINT_DB_URI", DEFAULT_DB_URI)
+RuntimeResources = dict[str, Any]
+
+_sync_agent: Any = None
+_async_agent: Any = None
+_async_connections: list[Any] = []
 
 
-@dataclass
-class AgentRuntimeResources:
-    """Container for runtime resources used by `create_deep_agent`."""
+def create_main_agent(
+    *,
+    checkpointer: Any = None,
+    store: Any = None,
+    backend: Any = make_backend,
+):
+    """Create the top-level AGI agent by calling ``create_deep_agent`` directly."""
 
-    checkpointer: Any
-    store: Any
-    connections: list[aiosqlite.Connection]
-
-
-class AgentPersistenceFactory:
-    """Responsible for checkpoint/store resource creation and cleanup only."""
-
-    def __init__(self, checkpoint_db_path: str = DB_URI):
-        self.checkpoint_db_path = checkpoint_db_path
-        self.conn = None
-
-    def create_sync_resources(self) -> AgentRuntimeResources:
-        self.conn = ConnectionPool(conninfo=self.checkpoint_db_path)
-
-        checkpointer = PostgresSaver(conn=self.conn)
-        store = PostgresStore(conn=self.conn)
-
-        checkpointer.setup()
-        store.setup()
-        return AgentRuntimeResources(
-            checkpointer=checkpointer,
-            store=store,
-            connections=[self.conn],
-        )
-
-    async def create_async_resources(self) -> AgentRuntimeResources:
-        self.conn = AsyncConnectionPool(conninfo=self.checkpoint_db_path,open=True)
-
-        checkpointer = AsyncPostgresSaver(conn=self.conn)
-        
-        store = AsyncPostgresStore(conn=self.conn)
-
-        async with AsyncPostgresSaver.from_conn_string(self.checkpoint_db_path) as tmp_checkpointer:
-            # 在这个 temp_conn 上执行 setup，它不会被当前的连接池事务影响
-            await tmp_checkpointer.setup()
-        
-        async with AsyncPostgresSaver.from_conn_string(self.checkpoint_db_path) as tmp_store:
-            # 在这个 temp_conn 上执行 setup，它不会被当前的连接池事务影响
-            await tmp_store.setup()
-
-        return AgentRuntimeResources(
-            checkpointer=checkpointer,
-            store=store,
-            connections=[self.conn],
-        )
-
-    async def close_async_connections(self, connections: list[psycopg.Connection]) -> None:
-        for conn in connections:
-            await conn.close()
-
-
-class AgentMiddlewareFactory:
-    """Responsible for middleware assembly only."""
-
-    SUMMARY_TRIM_CONFIG = {
-        "trigger": ("tokens", 30000),
-        "keep": ("messages", 10),
-        "max_length": 2000,
-        "truncation_text": "...(truncated)",
-    }
-
-    @staticmethod
-    def build_main(llm: Any, fallback_llm: Any, extra_middlewares: list[Any]) -> list[Any]:
-        return [
-            ContextEngineeringMiddleware(backend=make_backend,llm=fallback_llm),
-            ModelFallbackMiddleware(llm,*ModelProvider.get_chat_models()[1:]),
+    llm = ModelProvider.get_chat_model()
+    fallback_llm = ModelProvider.get_falback_model()
+    kwargs = {
+        "name": "main",
+        "context_schema": Context,
+        "model": llm,
+        "backend": backend,
+        "tools": list(buildin_tools),
+        "system_prompt": "",
+        "subagents": [*buildin_agents, *buildin_async_agents],
+        "middleware": [
+            ContextEngineeringMiddleware(backend=backend, llm=fallback_llm),
+            ModelFallbackMiddleware(llm, *ModelProvider.get_chat_models()[1:]),
             MultimodalBase64Middleware(),
             DebugLLMContextMiddleware(),
-
-            *extra_middlewares,
-        ]
-
-
-class DeepAgentBuilder:
-    """Responsible for agent-level configuration only (no runtime resources)."""
-
-    def __init__(self, name: str = "main"):
-        self.name = name
-        self.llm = ModelProvider.get_chat_model()
-        self.fallback_llm = ModelProvider.get_falback_model()
-        self.embd = ModelProvider.get_embeddings(provider="ollama", model_name="embeddinggemma:latest")
-
-        self.system_prompt = ""
-        self.tools = list(buildin_tools)
-        self.subagents = list(buildin_agents)
-        self.async_subagents = list(buildin_async_agents)
-        self.middlewares: list[Any] = []
-        self.backend = make_backend
-
-    def clone(self) -> "DeepAgentBuilder":
-        new = DeepAgentBuilder(self.name)
-        new.llm = self.llm
-        new.fallback_llm = self.fallback_llm
-        new.embd = self.embd
-        new.system_prompt = self.system_prompt
-        new.tools = list(self.tools)
-        new.subagents = list(self.subagents)
-        new.async_subagents = list(self.async_subagents)
-        new.middlewares = list(self.middlewares)
-        new.backend = self.backend
-        return new
-
-    def with_model(self, provider: str, name: str) -> "DeepAgentBuilder":
-        self.llm = ModelProvider.get_chat_model()
-        return self
-
-    def with_system_prompt(self, prompt: str) -> "DeepAgentBuilder":
-        self.system_prompt = prompt
-        return self
-
-    def with_middleware(self, middlewares: list[Any]) -> "DeepAgentBuilder":
-        self.middlewares.extend(middlewares)
-        return self
-
-    def _build_base_options(self) -> Dict[str, Any]:
-        return {
-            "name": self.name,
-            "context_schema": Context,
-        }
-
-    def build_options(self) -> Dict[str, Any]:
-        return {
-            **self._build_base_options(),
-            "model": self.llm,
-            # "fallback_model": self.fallback_llm,
-            "backend": self.backend,
-            "tools": self.tools,
-            "system_prompt": self.system_prompt,
-            "subagents": self.subagents + self.async_subagents,
-            "middleware": AgentMiddlewareFactory.build_main(
-                llm=self.llm,
-                fallback_llm=self.fallback_llm,
-                extra_middlewares=self.middlewares,
-            ),
-        }
+        ],
+    }
+    if checkpointer is not None:
+        kwargs["checkpointer"] = checkpointer
+    if store is not None:
+        kwargs["store"] = store
+    logger.debug(
+        "Creating main agent graph",
+        extra={
+            "tools": len(kwargs["tools"]),
+            "subagents": len(kwargs["subagents"]),
+            "middleware": len(kwargs["middleware"]),
+            "persistent": checkpointer is not None or store is not None,
+        },
+    )
+    return create_deep_agent(**kwargs)
 
 
-class DeepAgentManager:
-    """Responsible for agent runtime lifecycle and orchestration only."""
+def create_sync_resources(db_uri: str = DB_URI) -> RuntimeResources:
+    pool = ConnectionPool(conninfo=db_uri)
+    checkpointer = PostgresSaver(conn=pool)
+    store = PostgresStore(conn=pool)
+    checkpointer.setup()
+    store.setup()
+    return {"checkpointer": checkpointer, "store": store, "connections": [pool]}
 
-    def __init__(self, builder: DeepAgentBuilder, persistence_factory: Optional[AgentPersistenceFactory] = None):
-        self.builder = builder
-        self.persistence_factory = persistence_factory or AgentPersistenceFactory()
 
-        self._sync_agent = None
-        self._async_agent = None
+async def create_async_resources(db_uri: str = DB_URI) -> RuntimeResources:
+    pool = AsyncConnectionPool(conninfo=db_uri, open=True)
+    checkpointer = AsyncPostgresSaver(conn=pool)
+    store = AsyncPostgresStore(conn=pool)
 
-        self._async_connections: list[aiosqlite.Connection] = []
+    # Setup must run on independent short-lived connections so it is not
+    # affected by transactions held by the runtime pool.
+    async with AsyncPostgresSaver.from_conn_string(db_uri) as setup_checkpointer:
+        await setup_checkpointer.setup()
+    async with AsyncPostgresStore.from_conn_string(db_uri) as setup_store:
+        await setup_store.setup()
 
-    def get_sync_agent(self):
-        if self._sync_agent is None:
-            resources = self.persistence_factory.create_sync_resources()
-            self._sync_agent = create_deep_agent(
-                **self.builder.build_options(),
-                checkpointer=resources.checkpointer,
-                store=resources.store,
-            )
-        return self._sync_agent
+    return {"checkpointer": checkpointer, "store": store, "connections": [pool]}
 
-    async def _init_async_agent(self):
-        resources = await self.persistence_factory.create_async_resources()
-        self._async_connections = resources.connections
-        self._async_agent = create_deep_agent(
-            **self.builder.build_options(),
-            checkpointer=resources.checkpointer,
-            store=resources.store,
+
+async def close_connections(connections: Sequence[Any]) -> None:
+    for conn in connections:
+        close = getattr(conn, "close", None)
+        if close is None:
+            continue
+        result = close()
+        if hasattr(result, "__await__"):
+            await result
+
+
+def get_sync_agent():
+    global _sync_agent
+    if _sync_agent is None:
+        resources = create_sync_resources()
+        _sync_agent = create_main_agent(
+            checkpointer=resources["checkpointer"],
+            store=resources["store"],
         )
-
-    async def get_async_agent(self):
-        if self._async_agent is None:
-            await self._init_async_agent()
-        return self._async_agent
-
-    async def close(self):
-        await self.persistence_factory.close_async_connections(self._async_connections)
-        self._async_connections = []
-        self._async_agent = None
+    return _sync_agent
 
 
-agent_manager = DeepAgentManager(DeepAgentBuilder())
+async def get_async_agent():
+    global _async_agent, _async_connections
+    if _async_agent is None:
+        resources = await create_async_resources()
+        _async_connections = resources["connections"]
+        _async_agent = create_main_agent(
+            checkpointer=resources["checkpointer"],
+            store=resources["store"],
+        )
+    return _async_agent
 
 
-def _prepare_config(config: Optional[Dict], state: Dict) -> Dict:
-    return config or {"configurable": {"thread_id": state.get("thread_id", str(uuid.uuid4()))}}
+async def close_async_agent() -> None:
+    global _async_agent, _async_connections
+    await close_connections(_async_connections)
+    _async_connections = []
+    _async_agent = None
 
 
-def _prepare_context(context: Optional[Context], state: Dict) -> Context:
-    return context or Context(user_id=state.get("user_id"), conversation_id=state.get("conversation_id"))
+def _prepare_config(config: dict[str, Any] | None, state: Mapping[str, Any]) -> dict[str, Any]:
+    if config is not None:
+        return config
+    return {"configurable": {"thread_id": state.get("thread_id", str(uuid.uuid4()))}}
 
 
-async def invoke_agent_async(state: Dict, config: Dict = None, context: Context = None, **kwargs):
-    agent = await agent_manager.get_async_agent()
-    return await agent.invoke(
+def _prepare_context(context: Context | None, state: Mapping[str, Any]) -> Context:
+    if context is not None:
+        return context
+    return Context(user_id=state.get("user_id"), conversation_id=state.get("conversation_id"))
+
+
+async def invoke_agent_async(state: dict[str, Any], config: dict[str, Any] | None = None, context: Context | None = None, **kwargs: Any):
+    agent = await get_async_agent()
+    return await agent.ainvoke(
         state,
         config=_prepare_config(config, state),
         context=_prepare_context(context, state),
@@ -246,8 +172,13 @@ async def invoke_agent_async(state: Dict, config: Dict = None, context: Context 
     )
 
 
-async def stream_agent_async(state: Dict, config: Dict = None, context: Context = None, **kwargs) -> AsyncGenerator:
-    agent = await agent_manager.get_async_agent()
+async def stream_agent_async(
+    state: dict[str, Any],
+    config: dict[str, Any] | None = None,
+    context: Context | None = None,
+    **kwargs: Any,
+) -> AsyncGenerator[Any, None]:
+    agent = await get_async_agent()
     async for part in agent.astream(
         state,
         config=_prepare_config(config, state),
@@ -259,8 +190,8 @@ async def stream_agent_async(state: Dict, config: Dict = None, context: Context 
         yield part
 
 
-def invoke_agent_sync(state: Dict, config: Dict = None, context: Context = None, **kwargs):
-    agent = agent_manager.get_sync_agent()
+def invoke_agent_sync(state: dict[str, Any], config: dict[str, Any] | None = None, context: Context | None = None, **kwargs: Any):
+    agent = get_sync_agent()
     return agent.invoke(
         state,
         config=_prepare_config(config, state),
@@ -269,15 +200,33 @@ def invoke_agent_sync(state: Dict, config: Dict = None, context: Context = None,
     )
 
 
+@contextlib.asynccontextmanager
+async def main_graph(config: Any = None):  # noqa: ARG001 - LangGraph passes RunnableConfig.
+    """LangGraph factory for the top-level assistant."""
+
+    resources = await create_async_resources()
+    try:
+        yield create_main_agent(
+            checkpointer=resources["checkpointer"],
+            store=resources["store"],
+        )
+    finally:
+        await close_connections(resources["connections"])
+
+
+# Common LangGraph convention: allow ``./agi/agent/agent.py:graph`` too.
+graph = main_graph
+
+
 if __name__ == "__main__":
     print("--- Running Sync ---")
     sync_res = invoke_agent_sync({"messages": [{"role": "user", "content": "ls"}]})
     print(f"Result: {sync_res['messages'][-1].content}")
 
-    async def main():
+    async def main() -> None:
         print("\n--- Running Async ---")
         async for chunk in stream_agent_async({"messages": [{"role": "user", "content": "whoami"}]}):
             print(f"Stream Chunk: {chunk}")
-        await agent_manager.close()
+        await close_async_agent()
 
     asyncio.run(main())
