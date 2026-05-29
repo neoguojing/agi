@@ -108,8 +108,7 @@ class BaseMemoryExtractionTask(MemoryTask):
         conversation_text = "\n".join([str(m.content) for m in context.get_messages()])
 
         # 2. Load existing memory for the target to provide context to the LLM
-        path = DEFAULT_MEMORY_TARGET_PATHS.get(self.target, "")
-        existing_mem_text = context.store.read_text(path)
+        existing_mem_text = await context.store.read_text(self.target)
 
         # 3. Build prompt
         prompt = build_memory_extraction_prompt(
@@ -136,7 +135,7 @@ class BaseMemoryExtractionTask(MemoryTask):
             filtered_extraction.semantic_memories = llm_payload.items
         
         patches = filtered_extraction.to_patches(reason=f"Automatic {self.target} memory extraction")
-        patches = self._filter_and_deduplicate_patches(patches, context.store.read_jsonl(self.target))
+        patches = self._filter_and_deduplicate_patches(patches, await context.store.read_jsonl(self.target))
         patch_strategy = "replace" if self.target == "profile" else "merge"
         patches = tuple(
             patch.model_copy(update={"strategy": patch_strategy})
@@ -258,7 +257,7 @@ class MemoryMaintenanceManager:
         # Long-lived objects
         # ------------------------------------------------------------------
 
-        self.store = BackendMemoryStore(self.backend)
+        self.store = BackendMemoryStore(self.backend, target_paths=self.config.target_paths)
 
         if isinstance(messages, MessageProvider):
             self.context = MemoryTaskContext(
@@ -358,7 +357,7 @@ class MemoryMaintenanceManager:
 
         for target in targets:
             container, model = target_to_model[target]
-            for record in self.store.read_jsonl(target):
+            for record in await self.store.read_jsonl(target):
                 try:
                     container.append(model.model_validate(record))
                 except ValidationError as exc:
@@ -417,7 +416,7 @@ class MemoryMaintenanceManager:
                 result = await task.run(self.context)
                 if self.apply_patches:
                     for patch in result.patches:
-                        self.store.apply_patch(patch)
+                        await self.store.apply_patch(patch)
                 results.append(result)
 
             completed_tasks = [t for t in self.tasks if t.name in [r.task_name for r in results]]

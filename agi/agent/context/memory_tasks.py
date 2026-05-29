@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Protocol, Sequence, runtime_checkable
 
 from agi.agent.context.memory_models import MemoryPatch, MemoryTarget
-from agi.agent.context.memory_store import  DEFAULT_MEMORY_TARGET_PATHS
+from agi.agent.context.memory_store import DEFAULT_MEMORY_TARGET_PATHS
 
 if TYPE_CHECKING:
     from langchain_core.messages import AnyMessage
@@ -221,7 +221,7 @@ class MemoryTaskScheduler:
             result = await task.run(context)
             if apply_patches:
                 for patch in result.patches:
-                    context.store.apply_patch(patch)
+                    await context.store.apply_patch(patch)
             results.append(result)
 
         return results, self.mark_completed(due, context, state)
