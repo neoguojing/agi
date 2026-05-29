@@ -32,7 +32,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres import PostgresStore
 from langgraph.store.postgres.aio import AsyncPostgresStore
 
-from .deep_agent import create_deep_agent
+from agi.agent.deep_agent import create_deep_agent
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +40,32 @@ DEFAULT_DB_URI = "postgres://admin:123456@localhost:5432/langchain?sslmode=disab
 DB_URI = os.getenv("AGI_CHECKPOINT_DB_URI", DEFAULT_DB_URI)
 RuntimeResources = dict[str, Any]
 
-_sync_agent: Any = None
 _async_agent: Any = None
 _async_connections: list[Any] = []
+
+async def create_async_resources(db_uri: str = DB_URI) -> RuntimeResources:
+    pool = AsyncConnectionPool(conninfo=db_uri, open=True)
+    checkpointer = AsyncPostgresSaver(conn=pool)
+    store = AsyncPostgresStore(conn=pool)
+
+    # Setup must run on independent short-lived connections so it is not
+    # affected by transactions held by the runtime pool.
+    async with AsyncPostgresSaver.from_conn_string(db_uri) as setup_checkpointer:
+        await setup_checkpointer.setup()
+    async with AsyncPostgresStore.from_conn_string(db_uri) as setup_store:
+        await setup_store.setup()
+
+    return {"checkpointer": checkpointer, "store": store, "connections": [pool]}
+
+
+async def close_connections(connections: Sequence[Any]) -> None:
+    for conn in connections:
+        close = getattr(conn, "close", None)
+        if close is None:
+            continue
+        result = close()
+        if hasattr(result, "__await__"):
+            await result
 
 
 def create_main_agent(
@@ -86,51 +109,6 @@ def create_main_agent(
     return create_deep_agent(**kwargs)
 
 
-def create_sync_resources(db_uri: str = DB_URI) -> RuntimeResources:
-    pool = ConnectionPool(conninfo=db_uri)
-    checkpointer = PostgresSaver(conn=pool)
-    store = PostgresStore(conn=pool)
-    checkpointer.setup()
-    store.setup()
-    return {"checkpointer": checkpointer, "store": store, "connections": [pool]}
-
-
-async def create_async_resources(db_uri: str = DB_URI) -> RuntimeResources:
-    pool = AsyncConnectionPool(conninfo=db_uri, open=True)
-    checkpointer = AsyncPostgresSaver(conn=pool)
-    store = AsyncPostgresStore(conn=pool)
-
-    # Setup must run on independent short-lived connections so it is not
-    # affected by transactions held by the runtime pool.
-    async with AsyncPostgresSaver.from_conn_string(db_uri) as setup_checkpointer:
-        await setup_checkpointer.setup()
-    async with AsyncPostgresStore.from_conn_string(db_uri) as setup_store:
-        await setup_store.setup()
-
-    return {"checkpointer": checkpointer, "store": store, "connections": [pool]}
-
-
-async def close_connections(connections: Sequence[Any]) -> None:
-    for conn in connections:
-        close = getattr(conn, "close", None)
-        if close is None:
-            continue
-        result = close()
-        if hasattr(result, "__await__"):
-            await result
-
-
-def get_sync_agent():
-    global _sync_agent
-    if _sync_agent is None:
-        resources = create_sync_resources()
-        _sync_agent = create_main_agent(
-            checkpointer=resources["checkpointer"],
-            store=resources["store"],
-        )
-    return _sync_agent
-
-
 async def get_async_agent():
     global _async_agent, _async_connections
     if _async_agent is None:
@@ -143,21 +121,10 @@ async def get_async_agent():
     return _async_agent
 
 
-async def close_async_agent() -> None:
-    global _async_agent, _async_connections
-    await close_connections(_async_connections)
-    _async_connections = []
-    _async_agent = None
-
-    return AgentRuntime(profile or AgentProfile.main()).compile(resources)
-
 def _prepare_config(config: dict[str, Any] | None, state: Mapping[str, Any]) -> dict[str, Any]:
     if config is not None:
         return config
     return {"configurable": {"thread_id": state.get("thread_id", str(uuid.uuid4()))}}
-
-def build_agent_from_subagent(subagent: Mapping[str, Any], **kwargs: Any):
-    """Compile a subagent spec as a standalone/main agent graph."""
 
 def _prepare_context(context: Context | None, state: Mapping[str, Any]) -> Context:
     if context is not None:
@@ -193,16 +160,6 @@ async def stream_agent_async(
         yield part
 
 
-def invoke_agent_sync(state: dict[str, Any], config: dict[str, Any] | None = None, context: Context | None = None, **kwargs: Any):
-    agent = get_sync_agent()
-    return agent.invoke(
-        state,
-        config=_prepare_config(config, state),
-        context=_prepare_context(context, state),
-        **kwargs,
-    )
-
-
 @contextlib.asynccontextmanager
 async def main_graph(config: Any = None):  # noqa: ARG001 - LangGraph passes RunnableConfig.
     """LangGraph factory for the top-level assistant."""
@@ -220,16 +177,3 @@ async def main_graph(config: Any = None):  # noqa: ARG001 - LangGraph passes Run
 # Common LangGraph convention: allow ``./agi/agent/agent.py:graph`` too.
 graph = main_graph
 
-
-if __name__ == "__main__":
-    print("--- Running Sync ---")
-    sync_res = invoke_agent_sync({"messages": [{"role": "user", "content": "ls"}]})
-    print(f"Result: {sync_res['messages'][-1].content}")
-
-    async def main() -> None:
-        print("\n--- Running Async ---")
-        async for chunk in stream_agent_async({"messages": [{"role": "user", "content": "whoami"}]}):
-            print(f"Stream Chunk: {chunk}")
-        await close_async_agent()
-
-    asyncio.run(main())
