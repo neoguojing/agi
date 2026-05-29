@@ -131,11 +131,6 @@ class MemoryPatch(BaseModel):
         description="Operations included in this patch."
     )
 
-    target_path: str | None = Field(
-        default=None,
-        description="Optional backend-specific storage path."
-    )
-
     reason: str = Field(
         default="",
         description="Reason for this patch."
