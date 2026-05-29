@@ -5,10 +5,10 @@
   ],
   "graphs": {
     "main": "./agi/agent/agent.py:get_async_agent",
-    "stock-analyse-asubagent": "./agi/agent/subagents/async_subagents.py:stock_graph",
-    "pdf-parser-asubagent": "./agi/agent/subagents/async_subagents.py:pdf_graph",
-    "ffmpeg-asubagent": "./agi/agent/subagents/async_subagents.py:ffmpeg_graph",
-    "browser-asubagent": "./agi/agent/subagents/async_subagents.py:browser_graph"
+    "stock-analyse-subagent": "./agi/agent/subagents/async_subagents.py:stock_graph",
+    "pdf-parser-subagent": "./agi/agent/subagents/async_subagents.py:pdf_graph",
+    "video-expert": "./agi/agent/subagents/async_subagents.py:ffmpeg_graph",
+    "browser-expert": "./agi/agent/subagents/async_subagents.py:browser_graph"
   },
   "env": "./.env"
 }

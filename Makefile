@@ -159,13 +159,9 @@ image_tika:
 openbb:
 	nohup openbb-mcp --default-categories admin --tool-discovery&
 
-.PHONY: subagent
-subagent: openbb
-	langgraph dev
-
 .PHONY: agent
-agent:
-	python -m agi.agent.agent
+agent: openbb
+	langgraph dev
 
 .PHONY: cli
 cli:

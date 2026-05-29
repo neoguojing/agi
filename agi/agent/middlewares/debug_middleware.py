@@ -2,12 +2,14 @@ import json
 import time
 import traceback
 import unicodedata
+import logging
 from typing import Callable, Awaitable, List, Any, Optional, Union, Generator
 
 from langchain.agents.middleware.types import AgentMiddleware, ModelRequest, ModelResponse
 from langchain_core.messages import BaseMessage, ToolMessage, AIMessage
 from langgraph.types import Command
 from langchain.tools.tool_node import ToolCallRequest
+logger = logging.getLogger(__name__)
 
 
 class DebugLLMContextMiddleware(AgentMiddleware):
@@ -287,10 +289,10 @@ class DebugLLMContextMiddleware(AgentMiddleware):
         try:
             return await handler(request)
         except Exception as e:
-            print(f"❌ [{self.namespace}] MODEL FAILED: {type(e).__name__}")
+            logger.error(f"❌ [{self.namespace}] MODEL FAILED: {type(e).__name__}")
             traceback.print_exc()
             return ModelResponse(result=[AIMessage(content=(
-                f"Model call failed in middleware '{self.namespace}': {type(e).__name__}: {e}"
+                f"Model call failed in middleware '{self.namespace}': {type(e).__name__}: {request.tool_choice}\n{request.messages[-1]}"
             ))])
 
     async def awrap_tool_call(
