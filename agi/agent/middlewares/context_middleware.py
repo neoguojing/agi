@@ -1,3 +1,4 @@
+import asyncio
 import json
 import platform
 from datetime import datetime, timedelta, timezone
@@ -279,8 +280,35 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
         target: MemoryTarget,
         reason: str
     ) -> Command[Any]:
+        """Synchronously persist key information into long-term memory."""
         try:
-            """Persist key information from the current conversation into long-term memory."""
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(self._aorganize_memory(runtime, records, target, reason))
+
+        return Command(
+            update={
+                "messages": [
+                    ToolMessage(
+                        content=(
+                            "organize_memory sync execution is unavailable while an "
+                            "event loop is running; use the async tool coroutine instead."
+                        ),
+                        tool_call_id=runtime.tool_call_id,
+                    )
+                ],
+            }
+        )
+
+    async def _aorganize_memory(
+        self,
+        runtime: ToolRuntime[ContextT, MemoryState[ResponseT]],
+        records: list[Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord]],
+        target: MemoryTarget,
+        reason: str
+    ) -> Command[Any]:
+        """Persist key information from the current conversation into long-term memory."""
+        try:
             extraction_result = MemoryExtractionResult(
                 profile_memories=records if target == "profile" else [],
                 episodic_memories=records if target == "episodic" else [],
@@ -289,7 +317,7 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
             patches = extraction_result.to_patches(reason=reason)
             applied_count = 0
             for patch in patches:
-                self.memory_manager.store.apply_patch(patch)
+                await self.memory_manager.store.apply_patch(patch)
                 applied_count += 1
 
             return Command(
@@ -318,16 +346,6 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
                     ],
                 }
             )
-
-    async def _aorganize_memory(
-        self,
-        runtime: ToolRuntime[ContextT, MemoryState[ResponseT]],
-        records: list[Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord]],
-        target: MemoryTarget,
-        reason: str
-    ) -> Command[Any]:
-        """Persist key information from the current conversation into long-term memory."""
-        return self._organize_memory(runtime, records, target, reason)
 
     def _get_backend(self, runtime) -> BackendProtocol:
         if callable(self.backend):

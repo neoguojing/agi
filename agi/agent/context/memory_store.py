@@ -2,13 +2,13 @@
 
 Usage:
     `BackendMemoryStore` wraps the existing DeepAgents `BackendProtocol` and
-    exposes memory-oriented helpers: legacy markdown reads, JSONL reads/writes,
-    and `MemoryPatch` application.
+    exposes async, target-oriented memory helpers: legacy text reads, JSONL
+    reads/writes, and `MemoryPatch` application.
 
     Example:
         store = BackendMemoryStore(backend)
-        legacy = store.load_legacy_memory()
-        store.apply_patch(patch)
+        legacy = await store.read_text("profile")
+        await store.apply_patch(patch)
 
 This module should remain storage-focused. It should not call an LLM or decide
 which memories to create; those decisions live in extraction/tasks modules.
@@ -25,8 +25,6 @@ from agi.agent.context.memory_models import (
     MemoryOperation,
     MemoryPatch,
     MemoryTarget,
-    _normalize_participants,
-    _normalize_text,
     record_dedup_key,
 )
 if TYPE_CHECKING:
@@ -53,43 +51,51 @@ DEFAULT_MEMORY_TARGET_PATHS: dict[MemoryTarget, str] = {
 
 @runtime_checkable
 class MemoryStore(Protocol):
-    """Minimal storage contract for memory maintenance.
-    
-    Defines the required interface for any store that manages memory 
-    persistence, whether it's file-based, database-based, or in-memory.
+    """Async storage contract for memory maintenance.
+
+    Public methods are target-oriented: callers select a `MemoryTarget`, and the
+    store resolves the backing path internally. This keeps path knowledge in the
+    storage adapter instead of spreading direct path operations across memory
+    extraction, scheduling, or middleware code.
     """
 
     target_paths: dict[MemoryTarget, str]
 
-    def read_text(self, path: str) -> str:
-        """Read raw text from a memory path, returning an empty string if absent."""
+    def path_for_target(self, target: MemoryTarget) -> str:
+        """Return the backing path configured for a memory target."""
         ...
 
-    def write_text(self, path: str, content: str) -> None:
-        """Create or replace raw text at a memory path."""
+    async def read_text(self, target: MemoryTarget) -> str:
+        """Read raw text for a memory target, returning an empty string if absent."""
         ...
 
-    def read_jsonl(self, target: str) -> list[dict[str, Any]]:
-        """Read a JSONL memory file into dictionaries."""
+    async def write_text(self, target: MemoryTarget, content: str) -> None:
+        """Create or replace raw text for a memory target."""
         ...
 
-    def replace_jsonl(self, path: str, records: Sequence[dict[str, Any]]) -> None:
-        """Replace a JSONL memory file with the supplied records."""
+    async def read_jsonl(self, target: MemoryTarget) -> list[dict[str, Any]]:
+        """Read a target JSONL memory collection into dictionaries."""
         ...
 
-    def append_jsonl(self, path: str, records: Sequence[dict[str, Any]]) -> None:
-        """Append records to a JSONL memory file."""
+    async def replace_jsonl(self, target: MemoryTarget, records: Sequence[dict[str, Any]]) -> None:
+        """Replace a target JSONL memory collection with the supplied records."""
         ...
 
-    def apply_patch(self, patch: MemoryPatch) -> None:
+    async def append_jsonl(self, target: MemoryTarget, records: Sequence[dict[str, Any]]) -> None:
+        """Append records to a target JSONL memory collection."""
+        ...
+
+    async def apply_patch(self, patch: MemoryPatch) -> None:
         """Apply a storage-neutral memory patch."""
         ...
 
+
 class BackendMemoryStore:
     """File-backed MemoryStore adapter over the existing BackendProtocol.
-    
-    This class translates high-level memory operations (like applying a patch) 
-    into low-level backend file operations (read, write, edit).
+
+    This class translates target-level memory operations (like applying a patch)
+    into low-level backend file operations (read, write, edit). Direct path
+    access is intentionally kept private to this adapter.
     """
 
     def __init__(
@@ -101,54 +107,24 @@ class BackendMemoryStore:
         self.backend = backend
         self.target_paths = dict(target_paths or DEFAULT_MEMORY_TARGET_PATHS)
 
-    def read_text(self, path: str) -> str:
-        """Reads raw text from the backend, handling potential errors and stripping line numbers."""
-        try:
-            responses = self.backend.download_files([path])
-            if responses and responses[0].content is not None and responses[0].error is None:
-                return responses[0].content.decode("utf-8")
-            if responses and responses[0].error == "file_not_found":
-                return ""
-        except (AttributeError, NotImplementedError):
-            pass
-        except Exception as exc:  # noqa: BLE001 - backend-specific errors should not break reads
-            logger.debug("Raw memory download failed for %s: %s", path, exc)
+    def path_for_target(self, target: MemoryTarget) -> str:
+        """Return the configured backend path for a memory target."""
+        return self.target_paths[target]
 
-        try:
-            content = self.backend.read(path)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Failed to read memory path %s: %s", path, exc)
-            return ""
+    async def read_text(self, target: MemoryTarget) -> str:
+        """Read raw text for the target, handling errors and line-number stripping."""
+        path = self.path_for_target(target)
+        return await self._read_path(path)
 
-        if not content or content.startswith("Error:") or content.startswith("System reminder:"):
-            return ""
-        return _strip_line_numbers(content)
+    async def write_text(self, target: MemoryTarget, content: str) -> None:
+        """Write raw text for the target, using upload or edit depending on existence."""
+        path = self.path_for_target(target)
+        await self._write_path(path, content)
 
-    def write_text(self, path: str, content: str) -> None:
-        """Writes raw text to the backend, using upload or edit depending on existence."""
-        encoded = content.encode("utf-8")
-        try:
-            responses = self.backend.upload_files([(path, encoded)])
-            if responses and responses[0].error is None:
-                return
-        except (AttributeError, NotImplementedError):
-            pass
-
-        existing = self.read_text(path)
-        if existing:
-            result = self.backend.edit(path, existing, content)
-            if getattr(result, "error", None):
-                raise RuntimeError(result.error)
-            return
-
-        result = self.backend.write(path, content)
-        if getattr(result, "error", None):
-            raise RuntimeError(result.error)
-
-    def read_jsonl(self, target: str) -> list[dict[str, Any]]:
-        """Reads a file and parses each line as a JSON object."""
-        path = self.target_paths[target]
-        content = self.read_text(path)
+    async def read_jsonl(self, target: MemoryTarget) -> list[dict[str, Any]]:
+        """Read a target memory collection and parse each line as a JSON object."""
+        path = self.path_for_target(target)
+        content = await self.read_text(target)
         records: list[dict[str, Any]] = []
         for line_number, line in enumerate(content.splitlines(), start=1):
             line = line.strip()
@@ -166,33 +142,27 @@ class BackendMemoryStore:
 
         records, _ = self._apply_retention(records, target, datetime.now(timezone.utc))
         return records
-    
-    def replace_jsonl(self, path: str, records: Sequence[dict[str, Any]]) -> None:
-        """Overwrites a file with a new set of JSONL records."""
-        content = "".join(f"{json.dumps(record, ensure_ascii=False, sort_keys=True)}\n" for record in records)
-        self.write_text(path, content)
 
-    def append_jsonl(self, path: str, records: Sequence[dict[str, Any]]) -> None:
-        """Appends new JSONL records to an existing file."""
+    async def replace_jsonl(self, target: MemoryTarget, records: Sequence[dict[str, Any]]) -> None:
+        """Overwrite a target memory collection with a new set of JSONL records."""
+        content = "".join(f"{json.dumps(record, ensure_ascii=False, sort_keys=True)}\n" for record in records)
+        await self.write_text(target, content)
+
+    async def append_jsonl(self, target: MemoryTarget, records: Sequence[dict[str, Any]]) -> None:
+        """Append new JSONL records to a target memory collection."""
         if not records:
             return
-        existing = self.read_text(path)
+        existing = await self.read_text(target)
         addition = "".join(f"{json.dumps(record, ensure_ascii=False, sort_keys=True)}\n" for record in records)
         separator = "" if not existing or existing.endswith("\n") else "\n"
-        self.write_text(path, f"{existing}{separator}{addition}")
+        await self.write_text(target, f"{existing}{separator}{addition}")
 
-    def apply_patch(self, patch: MemoryPatch) -> None:
-        """
-        Applies a MemoryPatch to the store.
-        
-        Reads the current records for the target, iterates through the operations 
-        (add, update, delete, deprecate), and writes the updated list back to the backend.
-        """
+    async def apply_patch(self, patch: MemoryPatch) -> None:
+        """Apply a MemoryPatch to the target collection selected by the patch."""
         if patch.is_empty:
             return
 
-        path = patch.target_path or self.target_paths[patch.target]
-        records = self.read_jsonl(patch.target)
+        records = await self.read_jsonl(patch.target)
 
         if patch.strategy == "replace":
             incoming: list[dict[str, Any]] = []
@@ -205,7 +175,7 @@ class BackendMemoryStore:
                 incoming.append(record)
 
             incoming, _ = self._deduplicate_records(incoming, patch.target, patch.created_at)
-            self.replace_jsonl(path, incoming)
+            await self.replace_jsonl(patch.target, incoming)
             return
 
         changed = False
@@ -229,7 +199,49 @@ class BackendMemoryStore:
         changed = changed or dedup_changed
 
         if changed:
-            self.replace_jsonl(path, records)
+            await self.replace_jsonl(patch.target, records)
+
+    async def _read_path(self, path: str) -> str:
+        try:
+            responses = await self.backend.adownload_files([path])
+            if responses and responses[0].content is not None and responses[0].error is None:
+                return responses[0].content.decode("utf-8")
+            if responses and responses[0].error == "file_not_found":
+                return ""
+        except (AttributeError, NotImplementedError):
+            pass
+        except Exception as exc:  # noqa: BLE001 - backend-specific errors should not break reads
+            logger.debug("Raw memory download failed for %s: %s", path, exc)
+
+        try:
+            content = await self.backend.aread(path)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to read memory path %s: %s", path, exc)
+            return ""
+
+        if not content or content.startswith("Error:") or content.startswith("System reminder:"):
+            return ""
+        return _strip_line_numbers(content)
+
+    async def _write_path(self, path: str, content: str) -> None:
+        encoded = content.encode("utf-8")
+        try:
+            responses = await self.backend.aupload_files([(path, encoded)])
+            if responses and responses[0].error is None:
+                return
+        except (AttributeError, NotImplementedError):
+            pass
+
+        existing = await self._read_path(path)
+        if existing:
+            result = await self.backend.aedit(path, existing, content)
+            if getattr(result, "error", None):
+                raise RuntimeError(result.error)
+            return
+
+        result = await self.backend.awrite(path, content)
+        if getattr(result, "error", None):
+            raise RuntimeError(result.error)
 
     def _add_or_merge_record(self, records: list[dict[str, Any]], target: MemoryTarget, record: dict[str, Any], timestamp) -> bool:
         """Add record unless a semantic duplicate already exists; merge when duplicate found."""
@@ -324,7 +336,6 @@ class BackendMemoryStore:
             return sorted_records, len(sorted_records) != len(records)
 
         return records, False
-
 
 def _strip_line_numbers(content: str) -> str:
     """Best-effort conversion from backend read() output to raw text.
