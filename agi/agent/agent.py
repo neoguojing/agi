@@ -166,12 +166,15 @@ class AgentRuntime:
 
 agent_runtime = AgentRuntime()
 
+    return AgentRuntime(profile or AgentProfile.main()).compile(resources)
 
 def _prepare_config(config: dict[str, Any] | None, state: Mapping[str, Any]) -> dict[str, Any]:
     if config is not None:
         return config
     return {"configurable": {"thread_id": state.get("thread_id", str(uuid.uuid4()))}}
 
+def build_agent_from_subagent(subagent: Mapping[str, Any], **kwargs: Any):
+    """Compile a subagent spec as a standalone/main agent graph."""
 
 def _prepare_context(context: Context | None, state: Mapping[str, Any]) -> Context:
     if context is not None:
