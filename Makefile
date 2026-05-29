@@ -157,10 +157,10 @@ image_tika:
 
 .PHONY: openbb
 openbb:
-	openbb-mcp --default-categories admin --tool-discovery
+	nohup openbb-mcp --default-categories admin --tool-discovery&
 
 .PHONY: subagent
-subagent:
+subagent: openbb
 	langgraph dev
 
 .PHONY: agent

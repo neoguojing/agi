@@ -113,6 +113,8 @@ AGI_TENANT_ID = get_env("AGI_TENANT_ID", "default_tenant")
 # -----------------------------
 # LangChain 调试
 # -----------------------------
+os.environ["LANGSMITH_API_KEY"] = get_env("LANGSMITH_API_KEY", "")
+
 def init_langchain_debug():
     if not get_env_bool("LANGCHAIN_DEBUG"):
         return
@@ -124,7 +126,6 @@ def init_langchain_debug():
 
     os.environ["LANGSMITH_TRACING"] = "true" if get_env_bool("LANGSMITH_TRACING") else "false"
     os.environ["LANGSMITH_ENDPOINT"] = "https://api.smith.langchain.com"
-    os.environ["LANGSMITH_API_KEY"] = get_env("LANGSMITH_API_KEY", "")
     os.environ["LANGSMITH_PROJECT"] = get_env("LANGSMITH_PROJECT", "agi")
 
 # -----------------------------

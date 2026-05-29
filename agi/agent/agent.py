@@ -31,6 +31,7 @@ from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres import PostgresStore
 from langgraph.store.postgres.aio import AsyncPostgresStore
+from langchain_core.runnables import RunnableConfig
 
 from agi.agent.deep_agent import create_deep_agent
 
@@ -159,5 +160,4 @@ async def stream_agent_async(
     ):
         yield part
 
-
-
+    

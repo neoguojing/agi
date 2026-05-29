@@ -775,7 +775,8 @@ def create_deep_agent(  # noqa: C901, PLR0912, PLR0915  # Complex graph assembly
         debug=debug,
         name=name,
         cache=cache,
-        state_schema=_DeepAgentState,
+        # state_schema=_DeepAgentState,
+        
         transformers=[_subagent_factory],
     ).with_config(
         {
