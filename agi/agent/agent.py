@@ -160,20 +160,4 @@ async def stream_agent_async(
         yield part
 
 
-@contextlib.asynccontextmanager
-async def main_graph(config: Any = None):  # noqa: ARG001 - LangGraph passes RunnableConfig.
-    """LangGraph factory for the top-level assistant."""
-
-    resources = await create_async_resources()
-    try:
-        yield create_main_agent(
-            checkpointer=resources["checkpointer"],
-            store=resources["store"],
-        )
-    finally:
-        await close_connections(resources["connections"])
-
-
-# Common LangGraph convention: allow ``./agi/agent/agent.py:graph`` too.
-graph = main_graph
 

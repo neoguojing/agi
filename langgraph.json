@@ -4,7 +4,7 @@
     "./agi/agent"
   ],
   "graphs": {
-    "main": "./agi/agent/agent.py:main_graph",
+    "main": "./agi/agent/agent.py:get_async_agent",
     "stock-analyse-asubagent": "./agi/agent/subagents/async_subagents.py:stock_graph"
   }
 }
