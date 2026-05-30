@@ -10,13 +10,14 @@ import traceback
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
+from langgraph_sdk import get_client
 from langgraph.graph.message import add_messages
-from langgraph.types import Overwrite
+
 from prompt_toolkit import PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-from prompt_toolkit.completion import Completer, Completion, PathCompleter, WordCompleter
+from prompt_toolkit.completion import Completer, PathCompleter, WordCompleter
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.history import FileHistory
 from rich.console import Console
@@ -27,6 +28,7 @@ from rich.spinner import Spinner
 
 from agi.agent.agent import stream_agent_async
 from agi.agent.context import Context
+from agi.agent.stream_processor import StreamProcessor
 from agi.api.media import process_multimodal_content
 from agi.apps.common import FileObject, ImageURL, MessageContent
 
@@ -66,6 +68,8 @@ class DeepAgentCLI:
     def __init__(self):
         self.cwd = Path.cwd()
         self.load_session()
+        self.client = get_client(url="http://127.0.0.1:2024")
+        self.assistant_id = "main"
         self.command_map: Dict[str, CLICommand] = {}
         self._register_commands()
 
@@ -78,18 +82,20 @@ class DeepAgentCLI:
         )
 
     def load_session(self):
+        import getpass
+        current_user = getpass.getuser()
         if os.path.exists(STATE_CACHE):
             try:
                 with open(STATE_CACHE, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    self.user_id = data.get("user_id", "admin")
+                    self.user_id = data.get("user_id", current_user)
                     self.conversation_id = data.get("conversation_id", str(uuid.uuid4()))
                     self.thread_id = self.conversation_id
                     self.state = {"messages": [], "user_id": self.user_id}
                     return
             except Exception:
                 pass
-        self.user_id = "admin"
+        self.user_id = current_user
         self.conversation_id = str(uuid.uuid4())
         self.thread_id = self.conversation_id
         self.state = {"messages": []}
@@ -108,7 +114,7 @@ class DeepAgentCLI:
                 os.fsync(f.fileno())
             os.replace(tmp_path, STATE_CACHE)
         except Exception:
-            if os.path.exists(tmp_path):
+            if os.path_exists(tmp_path):
                 os.remove(tmp_path)
 
     def _register_commands(self):
@@ -251,7 +257,7 @@ class DeepAgentCLI:
 
     def _append_file_content(self, path: Path, contents: List[MessageContent]):
         mime, _ = mimetypes.guess_type(str(path))
-        mime = mime or "application/octet-stream"
+        mime = mime or "application_octet_stream"
         if path.suffix.lower() in TEXT_EXTENSIONS:
             doc_content = self._read_document_for_prompt(path)
             contents.append(MessageContent(type="text", text=doc_content))
@@ -277,7 +283,7 @@ class DeepAgentCLI:
             if t.startswith("img:"):
                 flush_text()
                 source = t[4:]
-                if source and not source.startswith(("http://", "https://", "data:")):
+                if source and not source.startswith(("http://", "api:s://", "data:")):
                     source = str(self._resolve_path(source))
                 contents.append(MessageContent(type="image_url", image_url=ImageURL(url=source)))
             elif t.startswith(("file:", "audio:", "video:")):
@@ -307,248 +313,70 @@ class DeepAgentCLI:
         flush_text()
         return contents
 
+    async def handle_stream(self, live, assistant_id: str = None):
+        processor = StreamProcessor()
+        start_time = time.time()
 
+        if assistant_id and self.client:
+            async with self.client.threads.stream(
+                thread_id=self.thread_id,
+                assistant_id=assistant_id,
+            ) as thread:
+                input_data = {"messages": self._prepare_input_data()}
+                await thread.run.start(input=input_data)
 
-    def _extract_text_from_content_blocks(self, content: Any) -> str:
-        if isinstance(content, str):
-            return content
-        if isinstance(content, list):
-            parts: List[str] = []
-            for item in content:
-                if isinstance(item, dict):
-                    if item.get("type") == "text":
-                        txt = item.get("text", "")
-                        if txt:
-                            parts.append(str(txt))
-                    else:
-                        parts.append(str(item))
-                else:
-                    parts.append(str(item))
-            return "\n".join(x for x in parts if x).strip()
-        if isinstance(content, dict):
-            if content.get("type") == "text":
-                return str(content.get("text", "")).strip()
-            return str(content)
-        return str(content or "").strip()
+                async def consume_messages():
+                    async for stream in thread.messages:
+                        try:
+                            text = await stream.text
+                            print("text =", text)
+                        except Exception as e:
+                            print("stream.text error =", repr(e))
+                        # We need to wrap it in the expected event format for StreamProcessor
+                        # Since StreamProcessor.process_part expects a dict with 'type' and 'data'
+                        # and 'data' being the message itself (or list/tuple).
+                        # Let'ring it be processed by the same logic.
+                        # However, we don't have the metadata here.
+                        # For simplicity, we'll just pass the text.
+                        # Wait, the processor expects the full part.
+                        # Let's just use the raw message.
+                        # processor.process_part({"type": "messages", "data": [stream, {}]})
 
-    def _message_to_dict(self, msg: Any) -> Dict[str, Any]:
-        if isinstance(msg, dict):
-            return msg
-        result: Dict[str, Any] = {
-            "type": type(msg).__name__,
-            "content": getattr(msg, "content", ""),
-            "response_metadata": getattr(msg, "response_metadata", {}) or {},
-            "usage_metadata": getattr(msg, "usage_metadata", {}) or {},
-            "additional_kwargs": getattr(msg, "additional_kwargs", {}) or {},
-            "name": getattr(msg, "name", None),
-            "id": getattr(msg, "id", None),
-            "tool_calls": getattr(msg, "tool_calls", None),
-            "invalid_tool_calls": getattr(msg, "invalid_tool_calls", None),
-        }
-        return result
+                async def consume_tool_calls():
+                    async for tool_call in thread.tool_calls:
+                        print(f"222222222222{tool_call}")
+                        processor.process_part({"type": "tool_calls", "data": {"tool_call": tool_call}})
 
-    def _message_type_name(self, msg_data: Dict[str, Any]) -> str:
-        raw_type = str(msg_data.get("type") or "Message")
-        if "|" in raw_type:
-            raw_type = raw_type.split("|")[0].strip()
-        return raw_type
+                async def wait_for_completion():
+                    output = await thread.output
+                    print(f"33333333333333{output}")
+                    processor.process_part({"type": "messages", "data": [output, {}]})
+                    # Signal completion by just finishing
 
-    def _parse_messages_event(self, part: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        data = part.get("data")
-        if isinstance(data, tuple) and data:
-            msg = data[0]
-            meta = data[1] if len(data) > 1 and isinstance(data[1], dict) else {}
-            return self._message_to_dict(msg), meta
-        if isinstance(data, list) and data:
-            msg = data[0]
-            meta = data[1] if len(data) > 1 and isinstance(data[1], dict) else {}
-            return self._message_to_dict(msg), meta
-        if isinstance(data, dict):
-            msg = data.get("message") or data.get("chunk") or data.get("data")
-            meta = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
-            if msg is not None:
-                return self._message_to_dict(msg), meta
-        return {}, {}
-
-    def _update_stats_from_message(self, msg_data: Dict[str, Any], stats_info: Dict[str, Any], start_time: float):
-        metadata = msg_data.get("response_metadata") or {}
-        usage = msg_data.get("usage_metadata") or {}
-        additional = msg_data.get("additional_kwargs") or {}
-
-        model_name = metadata.get("model_name") or metadata.get("model") or additional.get("model_name")
-        if model_name:
-            stats_info["model"] = str(model_name)
-
-        in_t = usage.get("input_tokens")
-        out_t = usage.get("output_tokens")
-        total_t = usage.get("total_tokens")
-
-        if isinstance(in_t, int):
-            stats_info["input_tokens"] = max(stats_info.get("input_tokens", 0), in_t)
-        if isinstance(out_t, int):
-            stats_info["output_tokens"] = stats_info.get("output_tokens", 0) + max(out_t, 0)
-        if isinstance(total_t, int):
-            stats_info["total_tokens"] = max(
-                stats_info.get("total_tokens", 0),
-                total_t,
-                stats_info.get("input_tokens", 0) + stats_info.get("output_tokens", 0),
-            )
+                await asyncio.gather(consume_messages(), consume_tool_calls(), wait_for_completion())
         else:
-            stats_info["total_tokens"] = max(
-                stats_info.get("total_tokens", 0),
-                stats_info.get("input_tokens", 0) + stats_info.get("output_tokens", 0),
-            )
+            config = {"configurable": {"thread_id": self.thread_id}}
+            context = Context(user_id=self.user_id, conversation_id=self.conversation_id)
+            async for part in stream_agent_async(self.state, config=config, context=context, stream_mode=["messages"]):
+                processor.process_part(part)
 
-        stats_info["tokens"] = (
-            f"In: {stats_info.get('input_tokens', 0)} | "
-            f"Out: {stats_info.get('output_tokens', 0)} | "
-            f"Total: {stats_info.get('total_tokens', 0)}"
+        # Update the Live panel
+        elapsed = time.time() - start_time
+        body = processor.get_presentation_body()
+        subtitle = processor.get_subtitle(elapsed)
+        live.update(
+            Panel(
+                Markdown(body),
+                title="[bold blue]Agent Response[/bold blue]",
+                subtitle=subtitle,
+                subtitle_align="right",
+                border_style="blue",
+            )
         )
 
-        elapsed = max(time.time() - start_time, 1e-6)
-        out_total = stats_info.get("output_tokens", 0)
-        stats_info["tps"] = out_total / elapsed if out_total else 0.0
-
-    def _format_message_preview(self, msg_data: Dict[str, Any], max_len: int = 1000) -> str:
-        msg_type = self._message_type_name(msg_data)
-        content = self._extract_text_from_content_blocks(msg_data.get("content", ""))
-        preview = content if content else "(empty)"
-        if len(preview) > max_len:
-            preview = preview[:max_len] + "..."
-        line = f"- **{msg_type}**: {preview}"
-
-        usage = msg_data.get("usage_metadata") or {}
-        in_t = usage.get("input_tokens")
-        out_t = usage.get("output_tokens")
-        total_t = usage.get("total_tokens")
-        if any(isinstance(x, int) for x in (in_t, out_t, total_t)):
-            line += f"\n  - tokens: in={in_t or 0}, out={out_t or 0}, total={total_t or 0}"
-
-        meta = msg_data.get("response_metadata") or {}
-        model = meta.get("model_name")
-        finish_reason = meta.get("finish_reason")
-        provider = meta.get("model_provider")
-        if model or finish_reason or provider:
-            line += (
-                f"\n  - meta: model={model or 'N/A'}, provider={provider or 'N/A'}, "
-                f"finish_reason={finish_reason or 'N/A'}"
-            )
-
-        return line
-
-    def _normalize_message_content(self, msg_content: Any) -> str:
-        if isinstance(msg_content, list):
-            normalized = []
-            for item in msg_content:
-                if isinstance(item, dict):
-                    if item.get("type") == "text":
-                        normalized.append(str(item.get("text", "")))
-                    else:
-                        normalized.append(str(item))
-                else:
-                    normalized.append(str(item))
-            return "\n".join(x for x in normalized if x).strip()
-
-        return str(msg_content or "").strip()
-
-    async def handle_stream(self, live):
-        full_response = ""
-        seen_messages: Set[Tuple[str, str]] = set()
-        latest_ai_message = ""
-        updates_trace: List[str] = []
-        max_updates_trace = 30
-
-        config = {"configurable": {"thread_id": self.thread_id}}
-        context = Context(user_id=self.user_id, conversation_id=self.conversation_id)
-        start_time = time.time()
-        last_update_time = 0.0
-        stats_info: Dict[str, Any] = {
-            "model": "N/A",
-            "tokens": "In: 0 | Out: 0 | Total: 0",
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "total_tokens": 0,
-            "node": "N/A",
-            "tps": 0.0,
-        }
-
-        async for part in stream_agent_async(self.state, config=config, context=context, stream_mode=["messages"]):
-            if isinstance(part, dict) and part.get("type") == "messages":
-                msg_data, event_meta = self._parse_messages_event(part)
-                if msg_data:
-                    msg_type = self._message_type_name(msg_data)
-                    content = self._extract_text_from_content_blocks(msg_data.get("content", ""))
-                    stream_node = event_meta.get("langgraph_node") or event_meta.get("lc_agent_name")
-                    if stream_node:
-                        stats_info["node"] = str(stream_node)
-                    if content:
-                        full_response += str(content).replace("→", "->")
-                    if "AIMessage" in msg_type and content:
-                        latest_ai_message = (latest_ai_message + content) if "Chunk" in msg_type else content
-                    self._update_stats_from_message(msg_data, stats_info, start_time)
-
-            elif isinstance(part, dict) and part.get("type") == "updates":
-                updates = part.get("data", {})
-                if isinstance(updates, dict):
-                    for node_name, node_payload in updates.items():
-                        if not isinstance(node_payload, dict) or "messages" not in node_payload:
-                            continue
-                        stats_info["node"] = str(node_name)
-                        msgs = node_payload.get("messages", [])
-                        if isinstance(msgs, Overwrite):
-                            continue
-                        if not isinstance(msgs, list):
-                            continue
-
-                        for raw_msg in msgs:
-                            msg_data = self._message_to_dict(raw_msg)
-                            msg_type = self._message_type_name(msg_data)
-                            content = self._extract_text_from_content_blocks(msg_data.get("content", ""))
-                            msg_key = (str(node_name), f"{msg_type}|{content}|{msg_data.get('id')}")
-                            if msg_key in seen_messages:
-                                continue
-                            seen_messages.add(msg_key)
-
-                            self._update_stats_from_message(msg_data, stats_info, start_time)
-                            if msg_type == "AIMessage" and content:
-                                latest_ai_message = content
-                            preview = self._format_message_preview(msg_data, max_len=400)
-                            updates_trace.append(f"### Node `{node_name}`\n{preview}")
-                            if len(updates_trace) > max_updates_trace:
-                                updates_trace = updates_trace[-max_updates_trace:]
-
-            now = time.time()
-            if now - last_update_time > 0.05:
-                elapsed = now - start_time
-                sections: List[str] = []
-                if updates_trace:
-                    sections.append("## Updates Trace")
-                    sections.extend(updates_trace[-10:])
-                if latest_ai_message:
-                    sections.append("\n---\n\n## Latest AIMessage\n" + latest_ai_message)
-                elif full_response:
-                    sections.append("\n---\n\n## Streamed Response\n" + full_response)
-                body = "\n\n".join(sections).strip()
-                if not body:
-                    body = "(waiting for updates...)"
-
-                subtitle = (
-                    f"[bold cyan]{elapsed:.1f}s[/bold cyan] | {stats_info['model']} | "
-                    f"Node: [yellow]{stats_info['node']}[/yellow] | {stats_info['tokens']} | "
-                    f"[magenta]{stats_info['tps']:.1f} t/s[/magenta]"
-                )
-                live.update(
-                    Panel(
-                        Markdown(body),
-                        title="[bold blue]Agent Response[/bold blue]",
-                        subtitle=subtitle,
-                        subtitle_align="right",
-                        border_style="blue",
-                    )
-                )
-                last_update_time = now
-
-        return latest_ai_message or full_response
+    def _prepare_input_data(self) -> List[Dict[str, Any]]:
+        # Convert current state messages to a format suitable for thread.run.start
+        return [{"role": "user", "content": m.content} for m in self.state["messages"] if hasattr(m, "content")]
 
     async def run(self):
         self._save_session()
@@ -574,7 +402,9 @@ class DeepAgentCLI:
                     refresh_per_second=10,
                     transient=False,
                 ) as live:
-                    await self.handle_stream(live)
+                    # We don't pass assistant_id here so it falls back to stream_agent_async
+                    # unless we want to test the new pattern.
+                    await self.handle_stream(live,assistant_id=self.assistant_id)
                 self._save_session()
             except (EOFError, KeyboardInterrupt):
                 break
