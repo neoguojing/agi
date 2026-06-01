@@ -114,7 +114,7 @@ class DeepAgentCLI:
                 os.fsync(f.fileno())
             os.replace(tmp_path, STATE_CACHE)
         except Exception:
-            if os.path_exists(tmp_path):
+            if os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
     def _register_commands(self):
@@ -317,6 +317,7 @@ class DeepAgentCLI:
         processor = StreamProcessor()
         start_time = time.time()
 
+        assistant_id = None
         if assistant_id and self.client:
             async with self.client.threads.stream(
                 thread_id=self.thread_id,
@@ -328,10 +329,41 @@ class DeepAgentCLI:
                 async def consume_messages():
                     async for stream in thread.messages:
                         try:
-                            text = await stream.text
-                            print("text =", text)
+                            text_content = ""
+                            proj = stream.text
+                            if proj is not None:
+                                try:
+                                    full_text = await proj
+                                    if full_text:
+                                        text_content = full_text
+                                except Exception:
+                                    async for delta in proj:
+                                        if delta:
+                                            text_content += str(delta)
+
+                            if not text_content:
+                                text_content = getattr(stream, "content", None)
+                                if not text_content:
+                                    text_content = str(stream)
+
+                            if text_content and text_content != str(stream):
+                                print(f"DEBUG: stream message = {text_content}")
+                                processor.process_part({"type": "messages", "data": [{"content": text_content, "type": "AIMessageChunk"}, {}]})
+
+                                # Update Live panel in real-time
+                                elapsed = time.time() - start_time
+                                live.update(
+                                    Panel(
+                                        Markdown(processor.get_presentation_body()),
+                                        title="[bold blue]Agent Response[/bold blue]",
+                                        subtitle=processor.get_subtitle(elapsed),
+                                        subtitle_align="right",
+                                        border_style="blue",
+                                    )
+                                )
                         except Exception as e:
-                            print("stream.text error =", repr(e))
+                            print("consume_messages error =", repr(e))
+                            traceback.print_exc()
                         # We need to wrap it in the expected event format for StreamProcessor
                         # Since StreamProcessor.process_part expects a dict with 'type' and 'data'
                         # and 'data' being the message itself (or list/tuple).
@@ -344,12 +376,13 @@ class DeepAgentCLI:
 
                 async def consume_tool_calls():
                     async for tool_call in thread.tool_calls:
-                        print(f"222222222222{tool_call}")
+                        print(f"DEBUG: stream tool_call = {tool_call}")
                         processor.process_part({"type": "tool_calls", "data": {"tool_call": tool_call}})
 
                 async def wait_for_completion():
                     output = await thread.output
-                    print(f"33333333333333{output}")
+                    print(f"DEBUG: thread output = {output}")
+
                     processor.process_part({"type": "messages", "data": [output, {}]})
                     # Signal completion by just finishing
 
@@ -359,6 +392,18 @@ class DeepAgentCLI:
             context = Context(user_id=self.user_id, conversation_id=self.conversation_id)
             async for part in stream_agent_async(self.state, config=config, context=context, stream_mode=["messages"]):
                 processor.process_part(part)
+
+                # Update Live panel in real-time
+                elapsed = time.time() - start_time
+                live.update(
+                    Panel(
+                        Markdown(processor.get_presentation_body()),
+                        title="[bold blue]Agent Response[/bold blue]",
+                        subtitle=processor.get_subtitle(elapsed),
+                        subtitle_align="right",
+                        border_style="blue",
+                    )
+                )
 
         # Update the Live panel
         elapsed = time.time() - start_time

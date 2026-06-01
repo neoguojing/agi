@@ -3,6 +3,29 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
+"""
+Protocal:
+
+1. for messages mode:
+AIMessage response
+
+{'type': 'messages', 'ns': (), 'data': (AIMessageChunk(content=[], additional_kwargs={}, response_metadata={}, 
+id='lc_run--019e814f-66eb-76d2-9616-b3d03216e20c', tool_calls=[], invalid_tool_calls=[], tool_call_chunks=[], chunk_position='last'), {'ls_integration': 
+'langchain_chat_model', 'lc_agent_name': 'main', 'versions': {'deepagents': '0.6.3'}, 'thread_id': '411bb209-a276-47cb-9e65-431516cacf9c', 'langgraph_step': 
+824, 'langgraph_node': 'model', 'langgraph_triggers': ('branch:to:model',), 'langgraph_path': ('__pregel_pull', 'model'), 'langgraph_checkpoint_ns': 
+'model:0fa16542-1048-39a9-0cc2-c4dc7cc41262', 'checkpoint_ns': 'model:0fa16542-1048-39a9-0cc2-c4dc7cc41262', 'ls_provider': 'google_genai', 'ls_model_name': 
+'gemini-3.1-flash-lite', 'ls_model_type': 'chat', 'ls_temperature': 1.0})}
+
+ToolMessage response
+
+{'type': 'messages', 'ns': (), 'data': (ToolMessage(content="Tool call failed in middleware 'DEFAULT' for 'check_async_task': KeyError: 
+'stock-analyse-asubagent'", name='check_async_task', id='24a00531-bb8f-4455-88ea-52d25ef0ed4c', tool_call_id='64e0d2be-5cdb-4fff-b41b-1c11d4772337'), 
+{'ls_integration': 'deepagents', 'lc_agent_name': 'main', 'versions': {'deepagents': '0.6.3'}, 'thread_id': '411bb209-a276-47cb-9e65-431516cacf9c', 
+'langgraph_step': 827, 'langgraph_node': 'tools', 'langgraph_triggers': ('__pregel_push',), 'langgraph_path': ('__pregel_push', 0, False), 
+'langgraph_checkpoint_ns': 'tools:c5fe63c6-eb73-7d49-d252-24e37d853e1a'})}
+
+"""
+
 @dataclass
 class StreamStats:
     model: str = "N/A"
@@ -56,6 +79,9 @@ class StreamProcessor:
         if "|" in raw_type:
             raw_type = raw_type.split("|")[0].strip()
         return raw_type
+
+    def _is_ai_message(self, msg_type: str) -> bool:
+        return "ai" in msg_type.lower() or "AIMessage" in msg_type
 
     def _extract_text_from_content_blocks(self, content: Any) -> str:
         if isinstance(content, str):
@@ -170,7 +196,7 @@ class StreamProcessor:
             if content:
                 content_val = str(content).replace("→", "->")
                 self.full_response += content_val
-                if "AIMessage" in msg_type:
+                if self._is_ai_message(msg_type):
                     self.latest_ai_message = (self.latest_ai_message + content_val) if "Chunk" in msg_type else content_val
 
             self._update_stats_from_message(msg_data)
@@ -199,7 +225,7 @@ class StreamProcessor:
                                 if content:
                                     snippet = f"### Node `{node_name}`\n- **{msg_type}**: {content[:400]}"
                                     self.updates_trace_snippet = snippet
-                                    if msg_type == "AIMessage":
+                                    if self._is_ai_message(msg_type):
                                         self.latest_ai_message = content
                                 self._update_stats_from_message(msg_data)
 
