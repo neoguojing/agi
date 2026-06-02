@@ -21,10 +21,9 @@ from prompt_toolkit.completion import Completer, Completion, PathCompleter, Word
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.history import FileHistory
 from rich.console import Console
-from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
-from rich.spinner import Spinner
+from rich.table import Table
 
 from agi.agent.agent import stream_agent_async
 from agi.agent.context import Context
@@ -115,7 +114,10 @@ class HybridCompleter(Completer):
             )
 
 
-class ThreadEventListener:
+STREAM_DONE = object()
+
+
+class ThreadEventProducer:
 
     def __init__(
         self,
@@ -138,29 +140,14 @@ class ThreadEventListener:
                 thread_id=self.thread_id,
                 assistant_id=self.assistant_id,
             ) as thread:
-
                 self.thread_stream = thread
                 self.ready.set()
 
                 async for event in thread.events:
-                    print(f"**************{event}")
                     await self.event_queue.put(event)
-                # async def get_messages():
-                #     return [s async for s in thread.messages]
 
-                # async def get_tool_calls():
-                #     return [c async for c in thread.tool_calls]
-
-                # messages, tool_calls = await asyncio.gather(get_messages(), get_tool_calls())
-
-                # for stream in messages:
-                #     print(await stream.text)          # accumulated text
-
-                # for stream in tool_calls:
-                #     print(await stream.name)          # accumulated text
-
-                # final = await thread.output           # terminal state values
-
+        except asyncio.CancelledError:
+            raise
         except Exception:
             traceback.print_exc()
             raise
@@ -168,39 +155,41 @@ class ThreadEventListener:
     async def wait_ready(self):
         await self.ready.wait()
 
-    async def submit(self, input_data: dict[str, Any]):
+    async def submit_and_wait(self, input_data: dict[str, Any]):
         await self.wait_ready()
 
         await self.thread_stream.run.start(
             input=input_data,
         )
+        try:
+            return await self.thread_stream.output
+        finally:
+            await self.event_queue.put(STREAM_DONE)
+
 
 class EventConsumer:
 
     def __init__(
         self,
         event_queue: asyncio.Queue,
-        update_callback,
     ):
         self.event_queue = event_queue
-        self.update_callback = update_callback
 
-    async def run(self, live):
+    async def run(self) -> StreamProcessor:
         processor = StreamProcessor()
-        start_time = time.time()
 
         while True:
             event = await self.event_queue.get()
+            if event is STREAM_DONE:
+                break
 
             try:
-                if processor.process_part(event):
-                    self.update_callback(
-                        live,
-                        processor,
-                        start_time,
-                    )
+                processor.process_part(event)
             except Exception:
                 traceback.print_exc()
+
+        return processor
+
 
 class DeepAgentCLI:
     def __init__(self):
@@ -221,7 +210,7 @@ class DeepAgentCLI:
 
         self.event_queue = asyncio.Queue()
 
-        self.listener = ThreadEventListener(
+        self.producer = ThreadEventProducer(
             client=self.client,
             thread_id=self.thread_id,
             assistant_id=self.assistant_id,
@@ -460,46 +449,78 @@ class DeepAgentCLI:
         flush_text()
         return contents
 
-    def _update_stream_panel(self, live, processor: StreamProcessor, start_time: float):
-        elapsed = time.time() - start_time
-        live.update(
+    def _drain_event_queue(self):
+        while True:
+            try:
+                self.event_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
+    def _render_stream_result(self, processor: StreamProcessor):
+        self._render_stream_stats(processor)
+        body = processor.get_presentation_body()
+        console.print(Markdown(body))
+
+    def _render_stream_stats(self, processor: StreamProcessor):
+        elapsed = time.time() - processor.start_time
+        stats = processor.stats
+        stats.tps = (
+            stats.output_tokens / max(elapsed, 1e-6)
+            if stats.output_tokens
+            else stats.tps
+        )
+
+        table = Table.grid(expand=True)
+        table.add_column(justify="right", style="bold cyan", no_wrap=True)
+        table.add_column(style="white")
+        table.add_column(justify="right", style="bold cyan", no_wrap=True)
+        table.add_column(style="white")
+
+        table.add_row("⏱️ 耗时", f"{elapsed:.1f}s", "🤖 模型", stats.model)
+        table.add_row("📍 节点", stats.node, "🚀 速度", f"{stats.tps:.1f} t/s")
+        table.add_row("⬇️ 输入", str(stats.input_tokens), "⬆️ 输出", str(stats.output_tokens))
+        table.add_row("🧮 总计", str(stats.total_tokens), "🎯 Tokens", stats.tokens)
+
+        console.print(
             Panel(
-                Markdown(processor.get_presentation_body()),
-                title="[bold blue]Agent Response[/bold blue]",
-                subtitle=processor.get_subtitle(elapsed),
-                subtitle_align="right",
-                border_style="blue",
+                table,
+                title="[bold cyan]📊 Stream Stats[/bold cyan]",
+                border_style="cyan",
+                padding=(1, 2),
             )
         )
 
-    async def handle_stream(self, live, assistant_id: str = None):
-        processor = StreamProcessor()
-        start_time = time.time()
-
-        if assistant_id and self.client:
-            input_data = {"messages": self._prepare_input_data()}
-            await self.listener.submit(input_data)
-            # async for chunk in self.client.runs.stream(
-            #     self.thread_id,
-            #     assistant_id,
-            #     input=input_data,
-            #     stream_mode=["messages", "updates"],
-            # ):
-            #     if processor.process_part(chunk):
-            #         self._update_stream_panel(live, processor, start_time)
-        else:
-            config = {"configurable": {"thread_id": self.thread_id}}
-            context = Context(user_id=self.user_id, conversation_id=self.conversation_id)
+    async def _produce_local_stream(self):
+        config = {"configurable": {"thread_id": self.thread_id}}
+        context = Context(user_id=self.user_id, conversation_id=self.conversation_id)
+        try:
             async for part in stream_agent_async(
                 self.state,
                 config=config,
                 context=context,
                 stream_mode=["messages", "updates"],
             ):
-                if processor.process_part(part):
-                    self._update_stream_panel(live, processor, start_time)
+                await self.event_queue.put(part)
+        finally:
+            await self.event_queue.put(STREAM_DONE)
 
-        # self._update_stream_panel(live, processor, start_time)
+    async def handle_stream(self, assistant_id: str = None):
+        self._drain_event_queue()
+        consumer_task = asyncio.create_task(EventConsumer(self.event_queue).run())
+
+        try:
+            if assistant_id and self.client:
+                input_data = {"messages": self._prepare_input_data()}
+                await self.producer.submit_and_wait(input_data)
+            else:
+                await self._produce_local_stream()
+
+            processor = await consumer_task
+            self._render_stream_result(processor)
+        except Exception:
+            if not consumer_task.done():
+                consumer_task.cancel()
+            raise
 
     def _prepare_input_data(self) -> List[Dict[str, Any]]:
         # Convert current state messages to a format suitable for thread.run.start
@@ -509,11 +530,11 @@ class DeepAgentCLI:
         self._save_session()
         console.print(Panel(f"🔥 [bold green]Agent 已就绪[/bold green]\nThread: {self.thread_id[:8]}...\nCWD: {self.cwd}", border_style="green"))
 
-        listener_task = asyncio.create_task(
-            self.listener.start()
+        producer_task = asyncio.create_task(
+            self.producer.start()
         )
 
-        await self.listener.wait_ready()
+        await self.producer.wait_ready()
         try:
             while True:
             
@@ -529,15 +550,8 @@ class DeepAgentCLI:
                 human_message = process_multimodal_content(self._smart_parse(user_input))
                 self.state["messages"] = add_messages(self.state["messages"], [human_message])
 
-                with Live(
-                    Panel(Spinner("dots", text="思考中..."), title="Agent Response", border_style="blue"),
-                    console=console,
-                    refresh_per_second=10,
-                    transient=False,
-                ) as live:
-                    # We don't pass assistant_id here so it falls back to stream_agent_async
-                    # unless we want to test the new pattern.
-                    await self.handle_stream(live,assistant_id=self.assistant_id)
+                console.print("[dim]思考中...[/dim]")
+                await self.handle_stream(assistant_id=self.assistant_id)
                 self._save_session()
         except (EOFError, KeyboardInterrupt):
             return
@@ -545,7 +559,7 @@ class DeepAgentCLI:
             traceback.print_exc()
             console.print(f"[red]发生错误: {e}[/red]")
         finally:
-            listener_task.cancel()
+            producer_task.cancel()
 
 
 if __name__ == "__main__":
