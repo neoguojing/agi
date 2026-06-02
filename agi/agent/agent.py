@@ -155,7 +155,7 @@ async def stream_agent_async(
         config=_prepare_config(config, state),
         context=_prepare_context(context, state),
         stream_mode=kwargs.pop("stream_mode", ["messages", "updates"]),
-        version="v2",
+        version="v3",
         **kwargs,
     ):
         yield part

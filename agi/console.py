@@ -317,80 +317,40 @@ class DeepAgentCLI:
         processor = StreamProcessor()
         start_time = time.time()
 
-        assistant_id = None
         if assistant_id and self.client:
-            async with self.client.threads.stream(
-                thread_id=self.thread_id,
-                assistant_id=assistant_id,
-            ) as thread:
-                input_data = {"messages": self._prepare_input_data()}
-                await thread.run.start(input=input_data)
+            input_data = {"messages": self._prepare_input_data()}
+            async for chunk in self.client.runs.stream(self.thread_id,assistant_id, input=input_data,stream_mode="messages"):
+                print(f"{chunk}")
+            # async with self.client.threads.stream(
+            #     thread_id=self.thread_id,
+            #     assistant_id=assistant_id,
+            # ) as thread:
+            #     input_data = {"messages": self._prepare_input_data()}
+            #     await thread.run.start(input=input_data)
+            #     async def get_messages():
+            #         return [s async for s in thread.messages]
 
-                async def consume_messages():
-                    async for stream in thread.messages:
-                        try:
-                            text_content = ""
-                            proj = stream.text
-                            if proj is not None:
-                                try:
-                                    full_text = await proj
-                                    if full_text:
-                                        text_content = full_text
-                                except Exception:
-                                    async for delta in proj:
-                                        if delta:
-                                            text_content += str(delta)
+            #     async def get_tool_calls():
+            #         return [c async for c in thread.tool_calls]
 
-                            if not text_content:
-                                text_content = getattr(stream, "content", None)
-                                if not text_content:
-                                    text_content = str(stream)
+            #     messages, tool_calls = await asyncio.gather(get_messages(), get_tool_calls())
 
-                            if text_content and text_content != str(stream):
-                                print(f"DEBUG: stream message = {text_content}")
-                                processor.process_part({"type": "messages", "data": [{"content": text_content, "type": "AIMessageChunk"}, {}]})
+            #     for stream in messages:
+            #         print(f"***********{await stream.text}")          # accumulated text
 
-                                # Update Live panel in real-time
-                                elapsed = time.time() - start_time
-                                live.update(
-                                    Panel(
-                                        Markdown(processor.get_presentation_body()),
-                                        title="[bold blue]Agent Response[/bold blue]",
-                                        subtitle=processor.get_subtitle(elapsed),
-                                        subtitle_align="right",
-                                        border_style="blue",
-                                    )
-                                )
-                        except Exception as e:
-                            print("consume_messages error =", repr(e))
-                            traceback.print_exc()
-                        # We need to wrap it in the expected event format for StreamProcessor
-                        # Since StreamProcessor.process_part expects a dict with 'type' and 'data'
-                        # and 'data' being the message itself (or list/tuple).
-                        # Let'ring it be processed by the same logic.
-                        # However, we don't have the metadata here.
-                        # For simplicity, we'll just pass the text.
-                        # Wait, the processor expects the full part.
-                        # Let's just use the raw message.
-                        # processor.process_part({"type": "messages", "data": [stream, {}]})
+            #     final = await thread.output  
 
-                async def consume_tool_calls():
-                    async for tool_call in thread.tool_calls:
-                        print(f"DEBUG: stream tool_call = {tool_call}")
-                        processor.process_part({"type": "tool_calls", "data": {"tool_call": tool_call}})
-
-                async def wait_for_completion():
-                    output = await thread.output
-                    print(f"DEBUG: thread output = {output}")
-
-                    processor.process_part({"type": "messages", "data": [output, {}]})
-                    # Signal completion by just finishing
-
-                await asyncio.gather(consume_messages(), consume_tool_calls(), wait_for_completion())
+                # processor.process_part(
+                #     {
+                #         "type": "messages",
+                #         "data": [output, {}],
+                #     }
+                # )
         else:
             config = {"configurable": {"thread_id": self.thread_id}}
             context = Context(user_id=self.user_id, conversation_id=self.conversation_id)
-            async for part in stream_agent_async(self.state, config=config, context=context, stream_mode=["messages"]):
+            async for part in stream_agent_async(self.state, config=config, context=context, stream_mode=["updates"]):
+                print(f"*************{part}")
                 processor.process_part(part)
 
                 # Update Live panel in real-time

@@ -24,6 +24,43 @@ ToolMessage response
 'langgraph_step': 827, 'langgraph_node': 'tools', 'langgraph_triggers': ('__pregel_push',), 'langgraph_path': ('__pregel_push', 0, False), 
 'langgraph_checkpoint_ns': 'tools:c5fe63c6-eb73-7d49-d252-24e37d853e1a'})}
 
+
+2.for updates mode：
+
+AIMessage response：
+{'type': 'updates', 'ns': (), 'data': {'model': {'messages': [AIMessage(content=[], additional_kwargs={'function_call': {'name': 'task', 
+'arguments': '{"subagent_type": "web-search-expert", "description": "Retrieve the current stock prices for NVDA and TSLA. Please provide the output as a 
+clean text string with the price for each ticker. If multiple sources exist, pick the most reliable recent market close or real-time price."}'}, 
+'__gemini_function_call_thought_signatures__': {'5aad0492-3d92-4923-94d4-69a95934c3f6': 
+'EjQKMgEMOdbHQLew3Q0gncQqHxD0+f9SIOP7xmoFjje9nqYg+ZQZ+p1mAWWCHv90RAg4Dh9x'}}, response_metadata={'finish_reason': 'STOP', 'model_name': 
+'gemini-3.1-flash-lite', 'safety_ratings': [], 'model_provider': 'google_genai'}, name='main', id='lc_run--019e864f-874d-7f73-b0f1-a137e683f191-0', 
+tool_calls=[{'name': 'task', 'args': {'subagent_type': 'web-search-expert', 'description': 'Retrieve the current stock prices for NVDA and TSLA. Please 
+provide the output as a clean text string with the price for each ticker. If multiple sources exist, pick the most reliable recent market close or real-time 
+price.'}, 'id': '5aad0492-3d92-4923-94d4-69a95934c3f6', 'type': 'tool_call'}], invalid_tool_calls=[], usage_metadata={'input_tokens': 12135, 'output_tokens':
+72, 'total_tokens': 12207, 'input_token_details': {'cache_read': 4052}})]}}}
+
+ToolMesage response:
+
+{'type': 'updates', 'ns': (), 'data': {'tools': {'todos': [{'content': '将经过测试的策略集成至 FastAPI BackgroundTasks', 'status': 'pending'}], 
+'messages': [ToolMessage(content="Updated todo list to [{'content': '在系统内查找与InvestmentMonitor相关的类或逻辑（项目范围搜索）', 'status': 'completed'}, 
+{'content': '重新评估NVDA和TSLA在内的投资组合风险 profile (June 1)', 'status': 'completed'}, {'content': '定义重平衡策略 (sell/hedge/hold) based on 
+analysis', 'status': 'in_progress'}, {'content': '将经过测试的策略集成至 FastAPI BackgroundTasks', 'status': 'pending'}]", name='write_todos', 
+id='8d5538c6-b457-4209-a393-3b7d90fd5511', tool_call_id='2760e797-57dd-4615-a0da-393222926c47')]}}}
+
+MiddleWare state:
+
+{'type': 'updates', 'ns': (), 'data': {'ContextEngineeringMiddleware.after_model': None}}
+{'type': 'updates', 'ns': (), 'data': {'TodoListMiddleware.after_model': None}}
+
+3. for langgraph sdk
+
+StreamPart(event='messages/partial', data=[{'content': [{'type': 'text', 'text': 
+'您好', 'index': 0, 'extras': {'signature': 
+'EjQKMgEMOdbHIog8QLuMANWBoql8fBF0vxk740NWbk0eFuCv+ktO+8/i/EDA0BRug9uj40AB'}}], 'additional_kwargs': {}, 'response_metadata': {'safety_ratings': [], 
+'model_provider': 'google_genai', 'finish_reason': 'STOP', 'model_name': 'gemini-3.1-flash-lite'}, 'type': 'ai', 'name': None, 'id': 
+'lc_run--019e86f2-9afc-7610-9d31-07c1d4ca9918', 'tool_calls': [], 'invalid_tool_calls': [], 'usage_metadata': {'input_tokens': 11565, 'output_tokens': 180, 
+'total_tokens': 11745, 'input_token_details': {'cache_read': 0}}}], id=None)
+
 """
 
 @dataclass
