@@ -479,7 +479,7 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
                 backend=backend,
                 messages=self.message_provider
             )
-            await self.memory_manager.start()
+            # await self.memory_manager.start()
 
             self.memory_cache = await self.memory_manager.load_memories()
 

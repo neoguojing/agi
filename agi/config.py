@@ -46,6 +46,7 @@ os.makedirs(BROWSER_STORAGE_PATH, exist_ok=True)
 # -----------------------------
 MODEL_PATH = get_env("MODEL_PATH", "/data/model")
 
+LANGGRAPH_MAIN_URL = get_env("LANGGRAPH_MAIN_URL", "http://127.0.0.1:2024")
 # LLM
 OLLAMA_API_BASE_URL = get_env("OLLAMA_API_BASE_URL", "http://localhost:11434")
 # OLLAMA_DEFAULT_MODE = get_env("OLLAMA_DEFAULT_MODE", "qwen3.5:9b")
@@ -109,6 +110,7 @@ AGI_LONG_TERM_MEMORY_ENABLED = get_env_bool("AGI_LONG_TERM_MEMORY_ENABLED", True
 AGI_MEMORY_PATH_PREFIX = get_env("AGI_MEMORY_PATH_PREFIX", "/memories/")
 AGI_ASSISTANT_ID = get_env("AGI_ASSISTANT_ID", "deepagent_main")
 AGI_TENANT_ID = get_env("AGI_TENANT_ID", "default_tenant")
+
 
 # -----------------------------
 # LangChain 调试

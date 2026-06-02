@@ -24,8 +24,6 @@ stock_async_subagent: AsyncSubAgent = {
     "description": stock_analyse_subagent.get("description"),
     "graph_id": stock_analyse_subagent.get("name")
 }
-if stock_async_subagent_url := os.getenv("AGI_STOCK_ASUBAGENT_URL"):
-    stock_async_subagent["url"] = stock_async_subagent_url
 
 # --- PDF Parser Subagent ---
 pdf_async_subagent: AsyncSubAgent = {
@@ -33,8 +31,6 @@ pdf_async_subagent: AsyncSubAgent = {
     "description": pdf_parser_subagent.get("description"),
     "graph_id": pdf_parser_subagent.get("name")
 }
-if pdf_async_subagent_url := os.getenv("AGI_PDF_ASUBAGENT_URL"):
-    pdf_async_subagent["url"] = pdf_async_subagent_url
 
 # --- FFmpeg Subagent ---
 ffmpeg_async_subagent: AsyncSubAgent = {
@@ -42,8 +38,6 @@ ffmpeg_async_subagent: AsyncSubAgent = {
     "description": ffmpeg_subagent.get("description"),
     "graph_id": ffmpeg_subagent.get("name")
 }
-if ffmpeg_async_subagent_url := os.getenv("AGI_FFMPEG_ASUBAGENT_URL"):
-    ffmpeg_async_subagent["url"] = ffmpeg_async_subagent_url
 
 # --- Browser Subagent ---
 browser_async_subagent: AsyncSubAgent = {
@@ -51,8 +45,6 @@ browser_async_subagent: AsyncSubAgent = {
     "description": browser_subagent.get("description"),
     "graph_id": browser_subagent.get("name")
 }
-if browser_async_subagent_url := os.getenv("AGI_BROWSER_ASUBAGENT_URL"):
-    browser_async_subagent["url"] = browser_async_subagent_url
 
 
 # =====================================================================
@@ -67,6 +59,7 @@ async def stock_graph(config: RunnableConfig):
         parent_thread_id=configurable.get("parent_thread_id"),
         parent_assistant_id=configurable.get("parent_assistant_id"),
         subagent_name=stock_analyse_subagent.get("name"),
+        url=""
     )
     yield create_agent(
         model=ModelProvider.get_falback_model(),  # 保持原代码中的拼写

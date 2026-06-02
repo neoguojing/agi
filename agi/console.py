@@ -31,6 +31,7 @@ from agi.agent.context import Context
 from agi.agent.stream_processor import StreamProcessor
 from agi.api.media import process_multimodal_content
 from agi.apps.common import FileObject, ImageURL, MessageContent
+from agi.config import LANGGRAPH_MAIN_URL
 
 STATE_CACHE = ".cli_session.json"
 HISTORY_CACHE = ".cli_prompt_history"
@@ -114,11 +115,98 @@ class HybridCompleter(Completer):
             )
 
 
+class ThreadEventListener:
+
+    def __init__(
+        self,
+        client,
+        thread_id: str,
+        assistant_id: str,
+        event_queue: asyncio.Queue,
+    ):
+        self.client = client
+        self.thread_id = thread_id
+        self.assistant_id = assistant_id
+        self.event_queue = event_queue
+
+        self.thread_stream = None
+        self.ready = asyncio.Event()
+
+    async def start(self):
+        try:
+            async with self.client.threads.stream(
+                thread_id=self.thread_id,
+                assistant_id=self.assistant_id,
+            ) as thread:
+
+                self.thread_stream = thread
+                self.ready.set()
+
+                async for event in thread.events:
+                    print(f"**************{event}")
+                    await self.event_queue.put(event)
+                # async def get_messages():
+                #     return [s async for s in thread.messages]
+
+                # async def get_tool_calls():
+                #     return [c async for c in thread.tool_calls]
+
+                # messages, tool_calls = await asyncio.gather(get_messages(), get_tool_calls())
+
+                # for stream in messages:
+                #     print(await stream.text)          # accumulated text
+
+                # for stream in tool_calls:
+                #     print(await stream.name)          # accumulated text
+
+                # final = await thread.output           # terminal state values
+
+        except Exception:
+            traceback.print_exc()
+            raise
+
+    async def wait_ready(self):
+        await self.ready.wait()
+
+    async def submit(self, input_data: dict[str, Any]):
+        await self.wait_ready()
+
+        await self.thread_stream.run.start(
+            input=input_data,
+        )
+
+class EventConsumer:
+
+    def __init__(
+        self,
+        event_queue: asyncio.Queue,
+        update_callback,
+    ):
+        self.event_queue = event_queue
+        self.update_callback = update_callback
+
+    async def run(self, live):
+        processor = StreamProcessor()
+        start_time = time.time()
+
+        while True:
+            event = await self.event_queue.get()
+
+            try:
+                if processor.process_part(event):
+                    self.update_callback(
+                        live,
+                        processor,
+                        start_time,
+                    )
+            except Exception:
+                traceback.print_exc()
+
 class DeepAgentCLI:
     def __init__(self):
         self.cwd = Path.cwd()
         self.load_session()
-        self.client = get_client(url="http://127.0.0.1:2024")
+        self.client = get_client(url=LANGGRAPH_MAIN_URL)
         self.assistant_id = "main"
         self.command_map: Dict[str, CLICommand] = {}
         self._register_commands()
@@ -129,6 +217,15 @@ class DeepAgentCLI:
             history=FileHistory(HISTORY_CACHE),
             auto_suggest=AutoSuggestFromHistory(),
             complete_while_typing=True,
+        )
+
+        self.event_queue = asyncio.Queue()
+
+        self.listener = ThreadEventListener(
+            client=self.client,
+            thread_id=self.thread_id,
+            assistant_id=self.assistant_id,
+            event_queue=self.event_queue,
         )
 
     def load_session(self):
@@ -381,14 +478,15 @@ class DeepAgentCLI:
 
         if assistant_id and self.client:
             input_data = {"messages": self._prepare_input_data()}
-            async for chunk in self.client.runs.stream(
-                self.thread_id,
-                assistant_id,
-                input=input_data,
-                stream_mode=["messages", "updates"],
-            ):
-                if processor.process_part(chunk):
-                    self._update_stream_panel(live, processor, start_time)
+            await self.listener.submit(input_data)
+            # async for chunk in self.client.runs.stream(
+            #     self.thread_id,
+            #     assistant_id,
+            #     input=input_data,
+            #     stream_mode=["messages", "updates"],
+            # ):
+            #     if processor.process_part(chunk):
+            #         self._update_stream_panel(live, processor, start_time)
         else:
             config = {"configurable": {"thread_id": self.thread_id}}
             context = Context(user_id=self.user_id, conversation_id=self.conversation_id)
@@ -401,7 +499,7 @@ class DeepAgentCLI:
                 if processor.process_part(part):
                     self._update_stream_panel(live, processor, start_time)
 
-        self._update_stream_panel(live, processor, start_time)
+        # self._update_stream_panel(live, processor, start_time)
 
     def _prepare_input_data(self) -> List[Dict[str, Any]]:
         # Convert current state messages to a format suitable for thread.run.start
@@ -411,8 +509,14 @@ class DeepAgentCLI:
         self._save_session()
         console.print(Panel(f"🔥 [bold green]Agent 已就绪[/bold green]\nThread: {self.thread_id[:8]}...\nCWD: {self.cwd}", border_style="green"))
 
-        while True:
-            try:
+        listener_task = asyncio.create_task(
+            self.listener.start()
+        )
+
+        await self.listener.wait_ready()
+        try:
+            while True:
+            
                 user_input = await self.session.prompt_async(HTML("\n👤 <b><ansiyellow>You > </ansiyellow></b>"))
                 if not user_input:
                     continue
@@ -435,11 +539,13 @@ class DeepAgentCLI:
                     # unless we want to test the new pattern.
                     await self.handle_stream(live,assistant_id=self.assistant_id)
                 self._save_session()
-            except (EOFError, KeyboardInterrupt):
-                break
-            except Exception as e:
-                traceback.print_exc()
-                console.print(f"[red]发生错误: {e}[/red]")
+        except (EOFError, KeyboardInterrupt):
+            return
+        except Exception as e:
+            traceback.print_exc()
+            console.print(f"[red]发生错误: {e}[/red]")
+        finally:
+            listener_task.cancel()
 
 
 if __name__ == "__main__":
