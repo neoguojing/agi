@@ -17,7 +17,7 @@ from langgraph.graph.message import add_messages
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-from prompt_toolkit.completion import Completer, PathCompleter, WordCompleter
+from prompt_toolkit.completion import Completer, Completion, PathCompleter, WordCompleter
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.history import FileHistory
 from rich.console import Console
@@ -49,19 +49,69 @@ class CLICommand:
 
 
 class HybridCompleter(Completer):
-    def __init__(self, command_words: List[str]):
-        self.command_words = set(command_words)
-        self.command_completer = WordCompleter(command_words, ignore_case=True)
-        self.path_completer = PathCompleter(expanduser=True)
+    PATH_PREFIXES = ("img:", "file:", "doc:", "audio:", "video:")
+    PATH_COMMANDS = {"/cd", "/ls", "/cat"}
+
+    def __init__(self, command_words: List[str], cwd_getter: Callable[[], Path]):
+        self.command_words = sorted(set(command_words))
+        self.cwd_getter = cwd_getter
+        self.command_completer = WordCompleter(self.command_words, ignore_case=True)
+        self.path_completer = PathCompleter(
+            expanduser=True,
+            get_paths=lambda: [str(self.cwd_getter())],
+        )
 
     def get_completions(self, document, complete_event):
         text = document.text_before_cursor
         stripped = text.lstrip()
-        first = stripped.split(maxsplit=1)[0] if stripped else ""
-        is_command_context = first.startswith("/") and first in self.command_words
-        if is_command_context:
+
+        if not stripped:
+            return
+
+        first_token = stripped.split(maxsplit=1)[0]
+        cursor_in_first_token = len(stripped.split()) <= 1 and not stripped.endswith(" ")
+        if stripped.startswith("/") and cursor_in_first_token:
             yield from self.command_completer.get_completions(document, complete_event)
-        yield from self.path_completer.get_completions(document, complete_event)
+            return
+
+        active_word = document.get_word_before_cursor(WORD=True)
+        prefix = next((item for item in self.PATH_PREFIXES if active_word.startswith(item)), None)
+        if prefix:
+            path_fragment = active_word[len(prefix) :]
+            yield from self._path_completions_for_fragment(path_fragment, -len(active_word), prefix)
+            return
+
+        if first_token in self.PATH_COMMANDS or not stripped.startswith("/"):
+            yield from self.path_completer.get_completions(document, complete_event)
+
+    def _path_completions_for_fragment(
+        self,
+        fragment: str,
+        start_position: int,
+        prefix: str,
+    ):
+        base = Path(fragment).expanduser()
+        if not base.is_absolute():
+            base = self.cwd_getter() / base
+        parent = base if fragment.endswith(os.sep) else base.parent
+        typed = "" if fragment.endswith(os.sep) else base.name
+        display_parent = fragment if fragment.endswith(os.sep) else str(Path(fragment).parent)
+        if display_parent in (".", ""):
+            display_parent = ""
+        elif not display_parent.endswith(os.sep):
+            display_parent += os.sep
+        try:
+            children = sorted(parent.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
+        except OSError:
+            return
+        for child in children:
+            if not child.name.startswith(typed):
+                continue
+            suffix = os.sep if child.is_dir() else ""
+            yield Completion(
+                f"{prefix}{display_parent}{child.name}{suffix}",
+                start_position=start_position,
+            )
 
 
 class DeepAgentCLI:
@@ -73,7 +123,7 @@ class DeepAgentCLI:
         self.command_map: Dict[str, CLICommand] = {}
         self._register_commands()
 
-        completer = HybridCompleter(list(self.command_map.keys()))
+        completer = HybridCompleter(list(self.command_map.keys()), lambda: self.cwd)
         self.session = PromptSession(
             completer=completer,
             history=FileHistory(HISTORY_CACHE),
@@ -283,7 +333,7 @@ class DeepAgentCLI:
             if t.startswith("img:"):
                 flush_text()
                 source = t[4:]
-                if source and not source.startswith(("http://", "api:s://", "data:")):
+                if source and not source.startswith(("http://", "https://", "data:")):
                     source = str(self._resolve_path(source))
                 contents.append(MessageContent(type="image_url", image_url=ImageURL(url=source)))
             elif t.startswith(("file:", "audio:", "video:")):
@@ -313,71 +363,45 @@ class DeepAgentCLI:
         flush_text()
         return contents
 
+    def _update_stream_panel(self, live, processor: StreamProcessor, start_time: float):
+        elapsed = time.time() - start_time
+        live.update(
+            Panel(
+                Markdown(processor.get_presentation_body()),
+                title="[bold blue]Agent Response[/bold blue]",
+                subtitle=processor.get_subtitle(elapsed),
+                subtitle_align="right",
+                border_style="blue",
+            )
+        )
+
     async def handle_stream(self, live, assistant_id: str = None):
         processor = StreamProcessor()
         start_time = time.time()
 
         if assistant_id and self.client:
             input_data = {"messages": self._prepare_input_data()}
-            async for chunk in self.client.runs.stream(self.thread_id,assistant_id, input=input_data,stream_mode="messages"):
-                print(f"{chunk}")
-            # async with self.client.threads.stream(
-            #     thread_id=self.thread_id,
-            #     assistant_id=assistant_id,
-            # ) as thread:
-            #     input_data = {"messages": self._prepare_input_data()}
-            #     await thread.run.start(input=input_data)
-            #     async def get_messages():
-            #         return [s async for s in thread.messages]
-
-            #     async def get_tool_calls():
-            #         return [c async for c in thread.tool_calls]
-
-            #     messages, tool_calls = await asyncio.gather(get_messages(), get_tool_calls())
-
-            #     for stream in messages:
-            #         print(f"***********{await stream.text}")          # accumulated text
-
-            #     final = await thread.output  
-
-                # processor.process_part(
-                #     {
-                #         "type": "messages",
-                #         "data": [output, {}],
-                #     }
-                # )
+            async for chunk in self.client.runs.stream(
+                self.thread_id,
+                assistant_id,
+                input=input_data,
+                stream_mode=["messages", "updates"],
+            ):
+                if processor.process_part(chunk):
+                    self._update_stream_panel(live, processor, start_time)
         else:
             config = {"configurable": {"thread_id": self.thread_id}}
             context = Context(user_id=self.user_id, conversation_id=self.conversation_id)
-            async for part in stream_agent_async(self.state, config=config, context=context, stream_mode=["updates"]):
-                print(f"*************{part}")
-                processor.process_part(part)
+            async for part in stream_agent_async(
+                self.state,
+                config=config,
+                context=context,
+                stream_mode=["messages", "updates"],
+            ):
+                if processor.process_part(part):
+                    self._update_stream_panel(live, processor, start_time)
 
-                # Update Live panel in real-time
-                elapsed = time.time() - start_time
-                live.update(
-                    Panel(
-                        Markdown(processor.get_presentation_body()),
-                        title="[bold blue]Agent Response[/bold blue]",
-                        subtitle=processor.get_subtitle(elapsed),
-                        subtitle_align="right",
-                        border_style="blue",
-                    )
-                )
-
-        # Update the Live panel
-        elapsed = time.time() - start_time
-        body = processor.get_presentation_body()
-        subtitle = processor.get_subtitle(elapsed)
-        live.update(
-            Panel(
-                Markdown(body),
-                title="[bold blue]Agent Response[/bold blue]",
-                subtitle=subtitle,
-                subtitle_align="right",
-                border_style="blue",
-            )
-        )
+        self._update_stream_panel(live, processor, start_time)
 
     def _prepare_input_data(self) -> List[Dict[str, Any]]:
         # Convert current state messages to a format suitable for thread.run.start
