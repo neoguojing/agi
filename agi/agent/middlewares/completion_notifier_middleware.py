@@ -57,6 +57,7 @@ class CompletionNotifierMiddleware(AgentMiddleware):
             await self._client.runs.create(
                 thread_id=self.parent_thread_id,
                 assistant_id=self.parent_assistant_id or "main",
+                stream_mode=["messages"],
                 input={
                     "messages": [
                         {

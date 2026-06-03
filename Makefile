@@ -165,5 +165,7 @@ agent: openbb
 
 .PHONY: cli
 cli:
-	python -m agi.cli
+	# python -m agi.cli
+	PYTHONPATH=. TEXTUAL=devtools python -m agi.console
+
 

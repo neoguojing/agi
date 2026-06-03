@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from agi.api.routes_chat import router as router_chat
 from agi.api.routes_models import router as router_models
 from agi.api.fast_api_file import router_file
+from agi.api.routes_investment import router as router_investment
 
 app = FastAPI(title="AGI API", version="2.0.0")
 
@@ -13,3 +14,4 @@ app.add_middleware(
 app.include_router(router_chat)
 app.include_router(router_models)
 app.include_router(router_file)
+app.include_router(router_investment)
