@@ -58,6 +58,7 @@ class CompletionNotifierMiddleware(AgentMiddleware):
                 thread_id=self.parent_thread_id,
                 assistant_id=self.parent_assistant_id or "main",
                 stream_mode=["messages"],
+                # stream_subgraphs=True,
                 input={
                     "messages": [
                         {

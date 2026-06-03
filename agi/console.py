@@ -426,6 +426,8 @@ class DeepAgentTUI(App):
         self.command_map: Dict[str, CLICommand] = {}
         self._register_commands()
 
+        self._mounted_widgets: Dict[str, Any] = {}
+
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         yield VerticalScroll(id="chat-container")
@@ -440,7 +442,7 @@ class DeepAgentTUI(App):
         self.persistent_consumer()
         
         if self.is_cloud_mode:
-            self.start_global_cloud_listener()
+            self.run_worker(self.start_global_cloud_listener(), thread=False)
         else:
             self.container.mount(Static("[bold yellow]ℹ️ 当前运行于：本地直连 Mock 模式[/bold yellow]"))
         
@@ -455,29 +457,46 @@ class DeepAgentTUI(App):
     @work(group="consumers", exclusive=False)
     async def persistent_consumer(self) -> None:
         processor = StreamProcessor()
+        # 清空 TUI 挂载组件缓存
+        self._mounted_widgets = {}
+        
         while True:
             event = await self.event_queue.get()
 
             if event is STREAM_START:
                 processor = StreamProcessor()
+                self._mounted_widgets = {}
+                
+                # 初始化顶层全局状态标签
                 self.current_status_badge = Static("⚙️ [dim]Agent 正在整理思绪...[/dim]", classes="tool-badge")
-                self.current_agent_markdown = Markdown("🤖 **Agent >** \n", classes="msg-agent")
-                await self.container.mount(self.current_status_badge)
-                await self.container.mount(self.current_agent_markdown)
+                # 🌟 修复：mount 是同步函数，去掉 await 确保 DOM 树原子级挂载成功
+                self.container.mount(self.current_status_badge)
                 self.container.scroll_end(animate=False)
                 continue
                 
             if event is STREAM_DONE:
                 if self.current_status_badge:
-                    self.current_status_badge.update("✅ [dim]响应完成[/dim]")
+                    self.current_status_badge.update("✅ [bold green]响应完成[/bold green]")
+                
                 elapsed = time.time() - processor.start_time
                 stats = processor.stats
                 tps = stats.output_tokens / max(elapsed, 1e-6) if stats.output_tokens else 0.0
+                
+                # 1. 精美终端页脚统计
                 stats_footer = Static(
-                    f"[dim]⏱️ 耗时: {elapsed:.1f}s  |  🚀 速度: {tps:.1f} t/s  "
-                    f"|  ⬇️ Input: {stats.input_tokens}  |  ⬆️ Output: {stats.output_tokens}[/dim]"
+                    f"\n[dim]⏱️ 耗时: [cyan]{elapsed:.1f}s[/cyan]  |  🚀 速度: [magenta]{tps:.1f} t/s[/magenta]  "
+                    f"|  ⬇️ Input: [yellow]{stats.input_tokens}[/yellow]  |  ⬆️ Output: [green]{stats.output_tokens}[/green][/dim]\n"
                 )
-                await self.container.mount(stats_footer)
+                self.container.mount(stats_footer)
+                
+                # 🌟 2. 【核心修复】：改用纯 Rich 富文本的 Static 模拟大师级分割线
+                divider = Static("[dim]─" * 20 + " EOF (End of Turn) " + "─" * 20 + "[/dim]")
+                divider.styles.text_align = "center"  # 让虚线和文字在终端里绝对居中
+                divider.styles.margin = (1, 0, 2, 0) # 上边距 1 行，下边距 2 行，拉开呼吸感
+                
+                self.container.mount(divider)
+                
+                # 3. 顺滑滚动并落盘
                 self.container.scroll_end(animate=True)
                 self._save_session()
                 continue
@@ -485,37 +504,75 @@ class DeepAgentTUI(App):
             if isinstance(event, StreamError):
                 if self.current_status_badge:
                     self.current_status_badge.update("❌ [bold red]流式连接异常[/bold red]")
-                await self.container.mount(Static(f"[red]错误: {event.exc}[/red]"))
+                # 🌟 修复：去掉这里的 await
+                self.container.mount(Static(f"[bold red]错误提示: {event.exc}[/bold red]"))
                 self.container.scroll_end(animate=True)
                 continue
 
             try:
+                # 1. 喂入处理器，并获取归一化事件快照
+                stream_ev = processor.process_part(event)
+                if not stream_ev:
+                    continue
 
-                self.log.info(f"**********************Received Event Type: {type(event)}, Content: {event}")
-                processor.process_part(event)
-                current_node = processor.stats.node or "执行中"
-                if self.current_status_badge:
-                    self.current_status_badge.update(f"⚙️ [bold yellow]当前节点: {current_node}[/bold yellow] ...")
-                
-                content_text = processor.get_presentation_body()
-                if content_text.strip() and self.current_agent_markdown:
-                    self.current_agent_markdown.update(f"🤖 **Agent >**\n{content_text}")
-                    self.container.scroll_end(animate=False)
+                # 2. 精准更新顶部状态徽章
+                current_node = stream_ev.stats.node
+                if self.current_status_badge and current_node and current_node != "N/A":
+                    self.current_status_badge.update(f"⚙️ [bold yellow]当前步骤: {current_node}[/bold yellow] ...")
+
+                # 3. 消费结构化关联日志链
+                for item in stream_ev.structured_logs:
+                    widget_key = f"{item.category}_{item.title}"
+                    
+                    # 💡 就在此渲染层按需格式化。既让名称与内容严格换行，又将样式彻底从数据层剥离
+                    if item.category == "Tool":
+                        # 格式要求：第一行 func(arg)，换行紧跟使用 [dim]（微弱注释字）包裹的返回值
+                        display_text = f"[bold cyan]{item.title}[/bold cyan]\n"
+                        if item.detail.strip():
+                            display_text += f"[dim]{item.detail.strip()}[/dim]"
+                        else:
+                            display_text += "[dim]  * 正在等待工具响应...[/dim]"
+                    elif item.category == "Final_Output":
+                        # 格式要求：名称和内容之间换行，内容使用柔和对比度展示
+                        display_text = f"[bold green]{item.title}[/bold green]\n{item.detail.strip()}"
+                    else:
+                        display_text = f"[bold yellow]{item.title}[/bold yellow]\n[dim]{item.detail.strip()}[/dim]"
+
+                    # 挂载控制
+                    if widget_key not in self._mounted_widgets:
+                        # 第一次见，挂载通用的 Textual Static 组件
+                        new_widget = Static(display_text, classes="pipeline-node-card")
+                        self._mounted_widgets[widget_key] = new_widget
+                        await self.container.mount(new_widget)
+                        self.container.scroll_end(animate=False)
+                    else:
+                        existing_widget = self._mounted_widgets[widget_key]
+                        # 原地就地刷新
+                        if getattr(existing_widget, "_last_raw_text", "") != display_text:
+                            existing_widget.update(display_text)
+                            existing_widget._last_raw_text = display_text
+                            
+                            if stream_ev.is_delta and item.category == "Final_Output":
+                                self.container.scroll_end(animate=False)
+
             except Exception as e:
-                # 修复：安全记录 TUI 内部解析日志，避免终端瞎眼
+                import traceback
                 self.log.error(f"Render Layer Crash: {traceback.format_exc()}")
-                await self.container.mount(Static(f"[red]流处理异常: {e}[/red]"))
+                # 🌟 修复：去掉这里的 await
+                self.container.mount(Static(f"[bold red]终端渲染层故障: {e}[/bold red]"))
+                self.container.scroll_end(animate=True)
 
-
-    @work(group="cloud-listener", exclusive=True, thread=False)
     async def start_global_cloud_listener(self) -> None:
-        self.cloud_manager = CloudLifecycleManager(
-            client=self.client,
-            thread_id=self.thread_id,
-            assistant_id=self.assistant_id,
-            event_queue=self.event_queue
-        )
-        await self.cloud_manager.run_forever()
+        try:
+            self.cloud_manager = CloudLifecycleManager(
+                client=self.client,
+                thread_id=self.thread_id,
+                assistant_id=self.assistant_id,
+                event_queue=self.event_queue
+            )
+            await self.cloud_manager.run_forever()
+        except Exception as e:
+            self.log.error(e)
 
     @on(Input.Submitted, "#chat-input")
     async def handle_input_event(self, event: Input.Submitted):
@@ -526,7 +583,7 @@ class DeepAgentTUI(App):
             event.input.append_history(user_input)
             
         event.input.value = ""
-        await self.container.mount(Markdown(f"👤 **You >** {user_input}", classes="msg-user"))
+        self.container.mount(Markdown(f"👤 **You >** {user_input}", classes="msg-user"))
         self.container.scroll_end(animate=False)
 
         command_result = self._parse_command(user_input)

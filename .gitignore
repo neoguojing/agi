@@ -189,3 +189,6 @@ admin/profile.json
 .cli_prompt_history
 .langgraph_api/
 nohup.out
+agi/deepagents/investment_monitor.py
+.gitignore
+agi/deepagents/test_rebalance.py

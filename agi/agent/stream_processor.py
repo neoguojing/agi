@@ -33,7 +33,6 @@ StreamPart(event='messages/partial', data=[{'content': [{'type': 'text', 'text':
 """
 
 
-
 @dataclass
 class StreamStats:
     model: str = "N/A"
@@ -47,57 +46,44 @@ class StreamStats:
 
 @dataclass
 class EventLogItem:
-    """对流信息进行高度定制的结构化关联"""
-    category: str       # 'Node' | 'Tool' | 'Final_Output' | 'Stats'
-    title: str          # 动态标题：不再是类别名，而是实际的 node 名或工具函数名 (例如: "agent_core", "web_search")
-    detail: str         # 详细内容：小字附在后面的实际参数、输出文本或状态
+    """纯粹的数据传输结构，供外部 UI / TUI 层按需渲染"""
+    category: str       # 'Node' | 'Tool' | 'Final_Output'
+    title: str          # 标准名称：模型节点名（如 agent），或格式化好的完整工具名 func(arg)
+    detail: str         # 纯明细文本：大模型流式输出全量，或纯工具返回值字符串
     timestamp: float = field(default_factory=time.time)
-
-    def to_markdown(self) -> str:
-        """格式化输出：以实际名称为标题，详细内容作为下级缩进附在后面"""
-        indented_detail = "\n  ".join(self.detail.strip().splitlines())
-        if self.category in ("Tool", "Stats"):
-            # 工具执行逻辑或统计明细，用代码块或缩进包裹以体现关联和层次
-            return f"- **{self.title}**\n  ```python\n  {indented_detail}\n  ```"
-        else:
-            return f"- **{self.title}**\n  {indented_detail}"
 
 
 @dataclass
 class StreamEvent:
-    event_type: str                   # 'messages' | 'updates' | 'sdk_partial'
-    payload: Any                      # 原始报文
-    stats: StreamStats                # 实时统计
-    preview: Optional[str] = None     # 增量文本或工具名预览
-    full_response: str = ""           # 迄今为止累计的完整模型文本
-    is_delta: bool = False            # 是否为增量碎片
-    structured_logs: List[EventLogItem] = field(default_factory=list) # 全量关联的事件日志链
+    event_type: str
+    payload: Any
+    stats: StreamStats
+    is_delta: bool
+    preview: str = ""
+    full_response: str = ""
+    structured_logs: List[EventLogItem] = field(default_factory=list)
 
 
 class StreamProcessor:
-    """深度结构化、按实际节点/工具命名的 LangGraph 流处理器"""
-
     def __init__(self):
         self.stats = StreamStats()
         self.start_time = time.time()
         
-        # 核心状态机
+        # 核心全量状态事实源
         self.full_response = ""               
-        self.log_sequence: List[EventLogItem] = [] 
-        self._seen_update_items: set[Tuple[str, str, str]] = set()
+        
+        # 🛠️ 工具链上下文精准追踪注册表：
+        # 键为具有唯一性的 tool_call_id（或工具名），值映射为格式化好的 "func(arg)" 完备形态
+        self.active_tools_registry: Dict[str, str] = {}
+        self.fallback_last_tool_name = ""
 
-        # 原始报文分类缓存
+        self.log_sequence: List[EventLogItem] = [] 
         self.buffers: Dict[str, List[Any]] = {
-            "messages": [],
-            "updates": [],
-            "sdk_partial": [],
-            "unknown": []
+            "messages": [], "updates": [], "sdk_partial": [], "unknown": []
         }
 
-    # ==========================================
-    # 主路由入口
-    # ==========================================
     def process_part(self, part: Any) -> Optional[StreamEvent]:
+        """流式数据唯一入口：智能识别不同协议并完成数据的清洗过滤"""
         if part is None:
             return None
 
@@ -120,16 +106,9 @@ class StreamProcessor:
                 current_event = self._dispatch_sdk_part(event, data, part)
 
         if current_event:
-            # 伴随统计数据落盘，直接用 "System Stats" 替代类名大标题
-            self._add_log_item(
-                category="Stats",
-                title="System Stats",
-                detail=f"Active Node: {self.stats.node} | {self.stats.tokens} | {self.stats.tps:.1f} t/s"
-            )
+            # 外部渲染层直接遍历此链表即可拿到当前生命周期内最干净的内容
             current_event.structured_logs = list(self.log_sequence)
             return current_event
-
-        self.buffers["unknown"].append(part)
         return None
 
     def _dispatch_sdk_part(self, event: str, data: Any, original_part: Any) -> Optional[StreamEvent]:
@@ -138,9 +117,9 @@ class StreamProcessor:
             return self._handle_sdk_partial_mode(data, original_part)
         return None
 
-    # ==========================================
-    # Protocol 1: Messages Mode 策略处理器
-    # ==========================================
+    # =========================================================================
+    # Protocol 1: Messages Mode (包含核心 ToolMessage.artifact 深度穿透捕获)
+    # =========================================================================
     def _handle_messages_mode(self, part: Dict[str, Any]) -> Optional[StreamEvent]:
         raw_data = part.get("data")
         if not isinstance(raw_data, (tuple, list)) or len(raw_data) < 1:
@@ -148,8 +127,6 @@ class StreamProcessor:
         
         msg_obj = raw_data[0]
         meta = raw_data[1] if len(raw_data) > 1 and isinstance(raw_data[1], dict) else {}
-        
-        # 提取或重置当前节点信息
         node_name = meta.get("langgraph_node", "model")
         self.stats.node = node_name
 
@@ -158,44 +135,64 @@ class StreamProcessor:
         is_delta = "Chunk" in msg_type
         
         content = self._extract_text(msg_dict.get("content"))
+        artifact = msg_dict.get("artifact")  # 🌟 捕获关键的高阶返回容器
         tool_calls, calls_list = self._parse_tool_calls_with_meta(msg_dict)
-        
-        preview_text = ""
         
         if "ai" in msg_type.lower():
             if content:
-                preview_text = content
-                self.full_response = (self.full_response + content) if is_delta else content
-                # 用实际的节点名（如 "agent_core"）作为标题，后面附输出明细
+                # 增量去重纠正：防止全量与增量混合导致的阶梯状堆叠
+                if is_delta:
+                    if self.full_response and content.startswith(self.full_response):
+                        self.full_response = content
+                    else:
+                        self.full_response += content
+                else:
+                    self.full_response = content
                 self._add_log_item("Final_Output", node_name, self.full_response)
+                
             if tool_calls:
-                preview_text = tool_calls
-                # 统一为 Tool 类别：标题直接是具体的工具名，详细内容附上调用传参 func(arg)
                 for c in calls_list:
-                    self._add_log_item("Tool", c['name'], f"-> Call: {c['name']}({c['args']})")
+                    # 1. 构建符合要求的标准 func(arg) 格式大标题
+                    tool_title = f"{c['name']}({c['args']})"
+                    tool_call_id = str(c.get("id") or c['name'])
                     
-        elif "tool" in msg_type.lower():
-            preview_text = content
-            # 统一为 Tool 类别：标题直接是具体的工具名，详细内容附上返回值
-            tool_name = msg_dict.get("name") or "tool"
-            self._add_log_item("Tool", tool_name, f"<= Return: {content}")
+                    # 2. 注入注册表，提供给接下来可能由于没有参数而面临失联的 ToolMessage
+                    self.active_tools_registry[tool_call_id] = tool_title
+                    self.fallback_last_tool_name = c['name']
+                    
+                    # 3. 初始投递，此时还没有返回值，detail 给空
+                    self._add_log_item("Tool", tool_title, "")
+                    
+        elif "tool" in msg_type.lower() or msg_type == "ToolMessage":
+            # 💡【权威修复】：拦截 ToolMessage 报文
+            tool_name = str(msg_dict.get("name") or self.fallback_last_tool_name or "unknown")
+            tool_call_id = str(msg_dict.get("tool_call_id") or tool_name)
+            
+            # 优先提取高级扩展字段 artifact 里的完整数据，如果没有才降级到 content 文本
+            raw_result = artifact if artifact is not None else content
+            result_str = self._raw_data_to_clean_str(raw_result)
+            
+            # 检索它应该归宿的那个带有全量参数的 func(arg) 卡片标题
+            target_title = self.active_tools_registry.get(tool_call_id)
+            if not target_title:
+                target_title = self.active_tools_registry.get(tool_name) or f"{tool_name}(...)"
+                
+            self._add_log_item("Tool", target_title, result_str)
             
         self._update_stats(msg_dict)
-        
         return StreamEvent(
-            event_type="messages", platform_payload=part, stats=self.stats,
-            preview=preview_text, full_response=self.full_response, is_delta=is_delta
+            event_type="messages", payload=part, stats=self.stats,
+            preview=content or tool_calls, full_response=self.full_response, is_delta=is_delta
         )
 
-    # ==========================================
-    # Protocol 2: Updates Mode 策略处理器
-    # ==========================================
+    # =========================================================================
+    # Protocol 2: Updates Mode
+    # =========================================================================
     def _handle_updates_mode(self, part: Dict[str, Any]) -> Optional[StreamEvent]:
         data_dict = part.get("data")
         if not isinstance(data_dict, dict):
             return None
             
-        preview_text = ""
         for node_name, node_payload in data_dict.items():
             self.stats.node = str(node_name)
             
@@ -205,38 +202,41 @@ class StreamProcessor:
                     msg_dict = self._message_to_dict(raw_msg)
                     msg_type = msg_dict.get("type", "").lower()
                     content = self._extract_text(msg_dict.get("content"))
+                    artifact = msg_dict.get("artifact")
                     tool_calls, calls_list = self._parse_tool_calls_with_meta(msg_dict)
                     
                     if "ai" in msg_type:
                         if content:
                             self.full_response = content
-                            preview_text = content
-                            # 用实际的节点名作为大标题
                             self._add_log_item("Final_Output", node_name, self.full_response)
                         if tool_calls:
-                            preview_text = tool_calls
                             for c in calls_list:
-                                self._add_log_item("Tool", c['name'], f"-> Call: {c['name']}({c['args']})")
+                                tool_title = f"{c['name']}({c['args']})"
+                                tool_call_id = str(c.get("id") or c['name'])
+                                self.active_tools_registry[tool_call_id] = tool_title
+                                self.fallback_last_tool_name = c['name']
+                                self._add_log_item("Tool", tool_title, "")
                     elif "tool" in msg_type:
-                        preview_text = content
-                        tool_name = msg_dict.get("name") or "tool"
-                        self._add_log_item("Tool", tool_name, f"<= Return: {content}")
+                        tool_name = str(msg_dict.get("name") or self.fallback_last_tool_name or "unknown")
+                        tool_call_id = str(msg_dict.get("tool_call_id") or tool_name)
                         
-                    self._update_stats(msg_dict)
+                        raw_result = artifact if artifact is not None else content
+                        result_str = self._raw_data_to_clean_str(raw_result)
+                        
+                        target_title = self.active_tools_registry.get(tool_call_id) or self.active_tools_registry.get(tool_name) or f"{tool_name}(...)"
+                        self._add_log_item("Tool", target_title, result_str)
             else:
-                # 状态/中间件更新，直接以中间件或节点本身作为标题
-                state_desc = str(node_payload) if node_payload is not None else "Execution completed."
+                state_desc = str(node_payload) if node_payload is not None else "Completed."
                 self._add_log_item("Node", node_name, state_desc)
-                preview_text = state_desc
 
         return StreamEvent(
             event_type="updates", payload=part, stats=self.stats,
-            preview=preview_text, full_response=self.full_response, is_delta=False
+            preview=self.full_response, full_response=self.full_response, is_delta=False
         )
 
-    # ==========================================
-    # Protocol 3: LangGraph SDK Partial 策略处理器
-    # ==========================================
+    # =========================================================================
+    # Protocol 3: LangGraph SDK Partial Mode
+    # =========================================================================
     def _handle_sdk_partial_mode(self, data: Any, original_part: Any) -> Optional[StreamEvent]:
         if not isinstance(data, list) or len(data) < 1:
             return None
@@ -248,28 +248,70 @@ class StreamProcessor:
         content = self._extract_text(msg_dict.get("content"))
         tool_calls, calls_list = self._parse_tool_calls_with_meta(msg_dict)
         
-        preview_text = ""
         if content:
-            preview_text = content
-            self.full_response += content
-            # 用实际的节点名作为大标题
+            if self.full_response and content.startswith(self.full_response):
+                self.full_response = content
+            else:
+                self.full_response += content
             self._add_log_item("Final_Output", node_name, self.full_response)
             
         if tool_calls:
-            preview_text = tool_calls
             for c in calls_list:
-                self._add_log_item("Tool", c['name'], f"-> Call: {c['name']}({c['args']})")
+                tool_title = f"{c['name']}({c['args']})"
+                tool_call_id = str(c.get("id") or c['name'])
+                self.active_tools_registry[tool_call_id] = tool_title
+                self.fallback_last_tool_name = c['name']
+                self._add_log_item("Tool", tool_title, "")
             
         self._update_stats(msg_dict)
-        
         return StreamEvent(
             event_type="sdk_partial", payload=original_part, stats=self.stats,
-            preview=preview_text, full_response=self.full_response, is_delta=True
+            preview=content or tool_calls, full_response=self.full_response, is_delta=True
         )
 
-    # ==========================================
-    # 数据格式化辅助标准件
-    # ==========================================
+    # =========================================================================
+    # 核心分配过滤器：全部采用“原地全量最新快照清洗覆盖”，不再在内部追加 \n
+    # =========================================================================
+    def _add_log_item(self, category: str, title: str, detail: str):
+        clean_detail = detail.strip()
+        
+        if category in ("Final_Output", "Node"):
+            if not clean_detail:
+                return
+            for item in reversed(self.log_sequence):
+                if item.category == category and item.title == title:
+                    item.detail = clean_detail  
+                    return
+
+        if category == "Tool":
+            for item in reversed(self.log_sequence):
+                if item.category == "Tool" and item.title == title:
+                    if clean_detail:
+                        if clean_detail in item.detail:
+                            return
+                        # 数据层保持完全干净的覆写。外部 TUI 消费时读取这个最新的 detail
+                        # 换行和样式控制完全由终端代码按需渲染，解耦业务与展现
+                        item.detail = clean_detail
+                    return
+
+        self.log_sequence.append(EventLogItem(category=category, title=title, detail=clean_detail))
+        if len(self.log_sequence) > 40:
+            self.log_sequence.pop(0)
+
+    # =========================================================================
+    # 底层泛化抽取清洗工具组
+    # =========================================================================
+    def _raw_data_to_clean_str(self, data: Any) -> str:
+        """安全地将复杂对象或基础返回转化为紧凑干净的纯字符串"""
+        if data is None:
+            return ""
+        if isinstance(data, str):
+            return data.strip()
+        try:
+            return json.dumps(data, ensure_ascii=False, indent=2)
+        except Exception:
+            return str(data)
+
     def _parse_tool_calls_with_meta(self, msg_dict: Dict[str, Any]) -> Tuple[str, List[Dict[str, str]]]:
         tool_calls = msg_dict.get("tool_calls") or msg_dict.get("tool_call_chunks") or []
         if isinstance(tool_calls, dict):
@@ -290,6 +332,7 @@ class StreamProcessor:
                 continue
             name = call.get("name") or call.get("function", {}).get("name") or "tool"
             args = call.get("args") or call.get("arguments") or ""
+            call_id = call.get("id")
             
             if isinstance(args, dict):
                 try: args_str = json.dumps(args, ensure_ascii=False)
@@ -297,47 +340,16 @@ class StreamProcessor:
             else:
                 args_str = str(args).strip()
                 
+            # 清洗参数中的剧烈换行以精简格式
             args_str = args_str.replace("\n", "").replace("  ", "")
             extracted_string_list.append(f"{name}({args_str})")
-            structured_meta_list.append({"name": name, "args": args_str})
+            
+            meta_payload = {"name": name, "args": args_str}
+            if call_id:
+                meta_payload["id"] = str(call_id)
+            structured_meta_list.append(meta_payload)
             
         return "\n".join(extracted_string_list), structured_meta_list
-
-    def _add_log_item(self, category: str, title: str, detail: str):
-        """去重与更新核心过滤器"""
-        clean_detail = detail.strip()
-        if not clean_detail:
-            return
-            
-        # 大模型最终文本和状态统计：采取就地覆盖最新明细的处理
-        if category in ("Final_Output", "Stats"):
-            for item in reversed(self.log_sequence):
-                if item.category == category and item.title == title:
-                    item.detail = clean_detail
-                    return
-        
-        # 工具和状态节点：如果对同一个工具进行“调用（Call）”和“返回（Return）”，
-        # 我们让它们在同一个工具名标题下进行内容内聚追加，而不是开辟新的一行
-        if category == "Tool":
-            for item in reversed(self.log_sequence):
-                if item.category == "Tool" and item.title == title:
-                    # 如果详情已经包含该段子文本，直接跳过（解决协议重放）
-                    if clean_detail[:100] in item.detail:
-                        return
-                    # 将调用参数和返回值序列追加到同一个工具节点的明细下
-                    item.detail = f"{item.detail}\n{clean_detail}"
-                    return
-
-        # 兜底：对完全相同的事件进行去重
-        dedup_key = (category, title, clean_detail[:300])
-        if dedup_key in self._seen_update_items:
-            return
-        self._seen_update_items.add(dedup_key)
-        
-        # 实例化结构化节点
-        self.log_sequence.append(EventLogItem(category=category, title=title, detail=clean_detail))
-        if len(self.log_sequence) > 40:
-            self.log_sequence.pop(0)
 
     def _extract_text(self, content: Any) -> str:
         if isinstance(content, str): return content
@@ -356,12 +368,13 @@ class StreamProcessor:
     def _message_to_dict(self, msg: Any) -> Dict[str, Any]:
         if isinstance(msg, dict): return msg
         return {
-            "type": type(msg).__name__, "content": getattr(msg, "content", ""),
+            "type": type(msg).__name__, 
+            "content": getattr(msg, "content", ""),
+            "name": getattr(msg, "name", None),
+            "tool_call_id": getattr(msg, "tool_call_id", None),
+            "artifact": getattr(msg, "artifact", None),  # 🌟 射入基础映射反射
             "response_metadata": getattr(msg, "response_metadata", {}) or {},
             "usage_metadata": getattr(msg, "usage_metadata", {}) or {},
-            "additional_kwargs": getattr(msg, "additional_kwargs", {}) or {},
-            "tool_calls": getattr(msg, "tool_calls", None),
-            "tool_call_chunks": getattr(msg, "tool_call_chunks", None),
         }
 
     def _update_stats(self, msg_dict: Dict[str, Any]):
@@ -378,7 +391,3 @@ class StreamProcessor:
         elapsed = max(time.time() - self.start_time, 1e-6)
         if self.stats.output_tokens: self.stats.tps = self.stats.output_tokens / elapsed
         self.stats.tokens = f"In: {self.stats.input_tokens} | Out: {self.stats.output_tokens} | Total: {self.stats.total_tokens}"
-
-    def get_presentation_markdown(self) -> str:
-        """渲染输出：完全剔除了大分类标签，只呈现真实节点/工具与其名下绑定的明细"""
-        return "\n\n".join(item.to_markdown() for item in self.log_sequence)
