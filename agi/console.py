@@ -511,6 +511,7 @@ class DeepAgentTUI(App):
 
             try:
                 # 1. 喂入处理器，并获取归一化事件快照
+                self.log.info(f"**********8{event}")
                 stream_ev = processor.process_part(event)
                 if not stream_ev:
                     continue
