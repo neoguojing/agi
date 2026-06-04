@@ -13,7 +13,7 @@ Usage:
 """
 
 from __future__ import annotations
-
+import uuid
 import asyncio
 import logging
 from typing import Any, Sequence
@@ -93,7 +93,10 @@ class BaseMemoryExtractionTask(MemoryTask):
             schema = TARGET_SCHEMA_MAP.get(self.target)
             llm_with_struct = context.llm.with_structured_output(schema)
             struct_result = await llm_with_struct.ainvoke(
-                prompt, config={"configurable": {"thread_id": str(self.target)}}
+                prompt, 
+                config={
+                    "configurable": {"thread_id": str(uuid.uuid4())},
+                }
             )
             logger.info("Task %s struct result=%s", self.name, struct_result)
             return struct_result

@@ -8,6 +8,7 @@ import sys
 import time
 import traceback
 import uuid
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -22,6 +23,7 @@ from textual.binding import Binding
 from textual.widgets.option_list import Option
 from textual.containers import Container
 from textual.geometry import Offset
+from textual.containers import Vertical
 
 # ---- Rich 美化组件 ----
 from rich.panel import Panel
@@ -60,79 +62,67 @@ class CLICommand:
 
 
 # =====================================================================
-# 🔮 冒号前缀智能提示器 (保留 Zsh 行内暗影)
+# 1. 独立封装的自定义折叠 Markdown 卡片
 # =====================================================================
-class AgentSuggester(Suggester):
-    def __init__(self, command_input: "CommandInput"):
-        super().__init__(use_cache=False)
-        self.cmd_input = command_input
+class CollapsibleCard(Vertical):
+    """时序安全、干净排版、支持最终输出不含折叠外壳的组件容器"""
+    
+    def __init__(self, raw_markdown: str, category: str, title: str, **kwargs):
+        super().__init__(**kwargs)
+        self.raw_markdown = raw_markdown
+        self.category = category
+        self.title = title
+        
+        # 建立内容组件
+        css_class = "msg-agent" if category == "Final_Output" else "msg-pipeline-trace"
+        self.content_widget = Markdown(raw_markdown, classes=css_class)
+        
+        # 🎯 分流处理：如果是最终输出，彻底不要折叠标题栏
+        if category == "Final_Output":
+            self.header_widget = None
+            self.is_collapsed = False
+            self.content_widget.styles.display = "block"
+        else:
+            # 工具/日志层：清洗乱码并截断，默认折叠
+            clean_title = re.sub(r'\[\/?[a-zA-Z0-9 #_=-]+\]', '', title)
+            self.display_title = clean_title if len(clean_title) <= 40 else clean_title[:40] + "..."
+            
+            self.is_collapsed = True
+            self.header_widget = Static(f"▶️ [bold cyan]{self.display_title}[/bold cyan]", classes="fold-header")
+            self.content_widget.styles.display = "none"
 
-    async def get_suggestion(self, value: str) -> str | None:
-        if not value: return None
-        if value.startswith(":") and " " not in value:
-            cmds = getattr(self.cmd_input.app, "command_map", {})
-            for cmd in cmds.keys():
-                if cmd.startswith(value) and cmd != value: return cmd
-        if not value.startswith(":"):
-            for hist in reversed(self.cmd_input.history):
-                if hist.startswith(value) and hist != value: return hist
-        return None
+    def compose(self):
+        # 🎯 如果 header_widget 存在才挂载（Final_Output 此时不会挂载标题栏）
+        if self.header_widget:
+            yield self.header_widget
+        yield self.content_widget
 
+    def toggle(self) -> None:
+        """切换折叠/展开状态（最终输出不参与折叠）"""
+        if self.category == "Final_Output" or not self.header_widget:
+            return
+            
+        if self.is_collapsed:
+            self.content_widget.styles.display = "block"
+            self.header_widget.update(f"▼ [bold yellow]{self.display_title}[/bold yellow]")
+            self.is_collapsed = False
+        else:
+            self.content_widget.styles.display = "none"
+            self.header_widget.update(f"▶️ [bold cyan]{self.display_title}[/bold cyan]")
+            self.is_collapsed = True
+            
+        self.refresh(layout=True)
 
 # =====================================================================
-# ⚙️ 支持 Tab 呼出提示选项菜单的 CommandInput
+# ⚙️ 极简高效率单项直出 CommandInput (已拔除下拉菜单)
 # =====================================================================
 class CommandInput(Input):
-    """支持 Tab 弹出多选项菜单、原生路径补全的现代输入框"""
+    """支持快捷键历史、Zsh 式单项首选直接补全的轻量输入框"""
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.history: List[str] = []
         self.history_index: int = -1
         self._load_history()
-        self.suggester = AgentSuggester(self)
-        
-        # 🌟 修复方案：初始化时作为一个不属于 DOM 树的变量引用，或者先声明
-        self.menu: Optional[OptionList] = None
-
-    def on_mount(self) -> None:
-        """在组件挂载到 App 时，一次性提前初始化悬浮提示菜单"""
-        self.menu = OptionList(id="completion-menu")
-        
-        # 预设现代悬浮样式
-        self.menu.styles.layer = "above"
-        self.menu.styles.dock = "bottom"
-        self.menu.styles.margin = (0, 2, 4, 2)
-        self.menu.styles.max_height = 6
-        self.menu.styles.border = ("panel", "cyan")
-        self.menu.styles.background = "#1e1e1e"
-        
-        # 🌟 核心：默认隐藏并直接挂载到 App 树
-        self.menu.visible = False
-        self.app.mount(self.menu)
-
-    def _show_menu(self, items: List[str], prefix: str, is_cmd: bool):
-        """动态复用现有的提示选项菜单，杜绝重复插入 DOM 导致的 ID 冲突"""
-        if not self.menu:
-            return
-
-        # 保存补全上下文信息
-        self._menu_prefix = prefix
-        self._menu_is_cmd = is_cmd
-
-        # 🌟 修复：直接清空老数据，并注入新匹配到的候选数据
-        self.menu.clear_options()
-        for item in items:
-            self.menu.add_option(Option(item, id=item))
-            
-        # 展现菜单并强行抢占焦点
-        self.menu.visible = True
-        self.menu.focus()
-
-    def _close_menu(self):
-        """关闭菜单只需将其隐藏，并将焦点送回输入框"""
-        if self.menu and self.menu.visible:
-            self.menu.visible = False
-            self.focus()
 
     def _load_history(self):
         try:
@@ -151,40 +141,12 @@ class CommandInput(Input):
         self.history_index = -1
 
     def on_key(self, event) -> None:
-        # 🌟 核心修复：当菜单可见时，精确劫持回车事件
-        if self.menu and self.menu.visible:
-            if event.key == "escape":
-                self._close_menu()
-                event.stop()
-                event.prevent_default()
-                return
-                
-            if event.key == "enter":
-                event.stop()
-                event.prevent_default()
-                
-                # 🌟 主动获取当前菜单中被高亮选中的索引和选项
-                idx = self.menu.highlighted
-                if idx is not None:
-                    # 从菜单的 _options 中安全提取选中的 Option 对象
-                    option = self.menu._options[idx]
-                    selected_text = str(option.id)
-                    
-                    # 立即执行补全并关闭菜单
-                    self._apply_completion(selected_text, self._menu_prefix, self._menu_is_cmd)
-                    self._close_menu()
-                return
-                
-            if event.key in ("up", "down"):
-                # 放行让 OptionList 自身处理高亮上下移动
-                return
-
-        # ---- 下面是你原有的 Tab 和 History 逻辑 ----
-        # if event.key == "tab":
-        #     event.stop()
-        #     event.prevent_default()
-        #     self._handle_tab_completion()
-        #     return
+        # 🌟 劫持 Tab 键，触发单项首选补全
+        if event.key == "tab":
+            event.stop()
+            event.prevent_default()
+            self._handle_tab_completion()
+            return
 
         elif event.key == "up":
             event.stop()
@@ -216,7 +178,6 @@ class CommandInput(Input):
         raw_val = self.value
         if not raw_val: return
 
-        # 区分命令还是路径
         is_cmd = raw_val.startswith(":") and " " not in raw_val
         candidates = []
         prefix = ""
@@ -226,7 +187,7 @@ class CommandInput(Input):
             candidates = [c for c in cmds if c.startswith(raw_val)]
             prefix = raw_val
         else:
-            # 路径解析
+            # 路径解析基块
             if raw_val.endswith(" "): last_token = ""
             else:
                 try: last_token = shlex.split(raw_val)[-1]
@@ -247,24 +208,17 @@ class CommandInput(Input):
                     prefix = ""
 
                 if search_dir.exists() and search_dir.is_dir():
-                    for item in search_dir.iterdir():
+                    # 对结果做字母序排序，确保匹配表现稳定可预测
+                    for item in sorted(search_dir.iterdir(), key=lambda x: x.name):
                         if item.name.startswith(prefix):
                             suffix = "/" if item.is_dir() else " "
                             candidates.append(item.name + suffix)
             except Exception as e:
-                self.app.log.error(f"Menu Scan Error: {e}")
+                self.app.log.error(f"Scan Directory Error: {e}")
 
-        if not candidates:
-            self._close_menu()
-            return
-
-        # ---- 核心分支：单项直接补全，多项弹出提示选项 ----
-        if len(candidates) == 1:
-            self._close_menu()
+        # 🎯 核心优化：只要有候选，直接无脑把第一个（最匹配的）丢给应用层，绝不弹窗
+        if candidates:
             self._apply_completion(candidates[0], prefix, is_cmd)
-        else:
-            # 存在多个选项，展示悬浮提示菜单
-            self._show_menu(candidates, prefix, is_cmd)
 
     def _apply_completion(self, match_result: str, prefix: str, is_cmd: bool):
         """精准计算并替换输入框最后的 Token 文本"""
@@ -273,33 +227,16 @@ class CommandInput(Input):
         if is_cmd:
             self.value = match_result + " "
         else:
-            # 🌟 智能路径拼接算法：
-            # 如果末尾有输入前缀 (如输入 agi/con，按 Tab 弹窗选了 console.py )
+            # 智能路径拼接算法：
             if prefix:
                 # 斩断末尾的不完整前缀，拼上完整匹配项
                 self.value = raw_val[:-len(prefix)] + match_result
             else:
-                # 如果没有前缀 (如输入 agi/，按 Tab 弹窗选了 utils/)
-                # 直接追加匹配项
+                # 如果没有前缀 (如输入 agi/) 直接追加首选匹配项
                 self.value = raw_val + match_result
                 
-        # 强行刷新光标位置到最后，并通知组件内容已重绘
+        # 强制通知 DOM 刷新光标到文本最末端
         self.cursor_position = len(self.value)
-
-    # 🌟 监听提示菜单的选择锁定事件
-    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        """当用户在菜单中按下回车或点击某一项时触发"""
-        event.stop()  # 阻止事件继续向上传递
-        
-        # 获取用户选中的文本（即我们在 _show_menu 里塞进去的 Option(item, id=item)）
-        selected_text = str(event.option_id)
-        
-        # 调用补全应用函数，把文本追加/替换到输入框中
-        self._apply_completion(selected_text, self._menu_prefix, self._menu_is_cmd)
-        
-        # 自动关闭菜单，焦点回到输入框
-        self._close_menu()
-
 
 # =====================================================================
 # 2. 🔮 完美的云端事件常驻监听服务 (保留你的设计灵魂)
@@ -395,11 +332,22 @@ class DeepAgentTUI(App):
     CommandInput:focus {
         border: tall double cyan;
     }
+    CollapsibleCard {
+        margin: 1 0;
+        border: none;
+        height: auto;
+    }
+    .fold-header {
+        background: $boost;
+        padding: 0 1;
+        color: $text;
+    }
     """
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "退出系统", show=True),
         Binding("ctrl+l", "clear_screen", "清屏", show=True),
+        Binding("ctrl+o", "toggle_all_collapse", "展开/折叠最新内容", show=True),
     ]
 
     def __init__(self):
@@ -452,12 +400,25 @@ class DeepAgentTUI(App):
         self.sub_title = f"📁 目录: {self.cwd.name} | 🧵 线程: {self.thread_id[:8]}"
 
     # =====================================================================
+    # 🌟 快捷键触发动作 (Action)
+    # =====================================================================
+    def action_toggle_all_collapse(self) -> None:
+        """当用户按下 Ctrl+O 时执行的动作"""
+        # 策略 A：折叠或展开【当前最后一轮对话】的所有卡片（最符合日常使用直觉）
+        if self._mounted_widgets:
+            # 拿到最近更新的卡片列表，对其状态进行切换
+            for card in self._mounted_widgets.values():
+                if isinstance(card, CollapsibleCard):
+                    card.toggle()
+            
+            # 状态切换完毕后，顺滑贴底滚动
+            self.container.scroll_end(animate=True)
+    # =====================================================================
     # 后台常驻统一消费者
     # =====================================================================
     @work(group="consumers", exclusive=False)
     async def persistent_consumer(self) -> None:
         processor = StreamProcessor()
-        # 清空 TUI 挂载组件缓存
         self._mounted_widgets = {}
         
         while True:
@@ -467,9 +428,7 @@ class DeepAgentTUI(App):
                 processor = StreamProcessor()
                 self._mounted_widgets = {}
                 
-                # 初始化顶层全局状态标签
                 self.current_status_badge = Static("⚙️ [dim]Agent 正在整理思绪...[/dim]", classes="tool-badge")
-                # 🌟 修复：mount 是同步函数，去掉 await 确保 DOM 树原子级挂载成功
                 self.container.mount(self.current_status_badge)
                 self.container.scroll_end(animate=False)
                 continue
@@ -482,21 +441,17 @@ class DeepAgentTUI(App):
                 stats = processor.stats
                 tps = stats.output_tokens / max(elapsed, 1e-6) if stats.output_tokens else 0.0
                 
-                # 1. 精美终端页脚统计
                 stats_footer = Static(
                     f"\n[dim]⏱️ 耗时: [cyan]{elapsed:.1f}s[/cyan]  |  🚀 速度: [magenta]{tps:.1f} t/s[/magenta]  "
                     f"|  ⬇️ Input: [yellow]{stats.input_tokens}[/yellow]  |  ⬆️ Output: [green]{stats.output_tokens}[/green][/dim]\n"
                 )
                 self.container.mount(stats_footer)
                 
-                # 🌟 2. 【核心修复】：改用纯 Rich 富文本的 Static 模拟大师级分割线
                 divider = Static("[dim]─" * 20 + " EOF (End of Turn) " + "─" * 20 + "[/dim]")
-                divider.styles.text_align = "center"  # 让虚线和文字在终端里绝对居中
-                divider.styles.margin = (1, 0, 2, 0) # 上边距 1 行，下边距 2 行，拉开呼吸感
-                
+                divider.styles.text_align = "center"
+                divider.styles.margin = (1, 0, 2, 0)
                 self.container.mount(divider)
                 
-                # 3. 顺滑滚动并落盘
                 self.container.scroll_end(animate=True)
                 self._save_session()
                 continue
@@ -504,62 +459,55 @@ class DeepAgentTUI(App):
             if isinstance(event, StreamError):
                 if self.current_status_badge:
                     self.current_status_badge.update("❌ [bold red]流式连接异常[/bold red]")
-                # 🌟 修复：去掉这里的 await
                 self.container.mount(Static(f"[bold red]错误提示: {event.exc}[/bold red]"))
                 self.container.scroll_end(animate=True)
                 continue
 
             try:
-                # 1. 喂入处理器，并获取归一化事件快照
                 self.log.info(f"**********8{event}")
                 stream_ev = processor.process_part(event)
                 if not stream_ev:
                     continue
 
-                # 2. 精准更新顶部状态徽章
                 current_node = stream_ev.stats.node
                 if self.current_status_badge and current_node and current_node != "N/A":
                     self.current_status_badge.update(f"⚙️ [bold yellow]当前步骤: {current_node}[/bold yellow] ...")
 
-                # 3. 消费结构化关联日志链
                 for item in stream_ev.structured_logs:
                     widget_key = f"{item.category}_{item.title}"
                     
-                    # 💡 就在此渲染层按需格式化。既让名称与内容严格换行，又将样式彻底从数据层剥离
                     if item.category == "Tool":
-                        # 格式要求：第一行 func(arg)，换行紧跟使用 [dim]（微弱注释字）包裹的返回值
-                        display_text = f"[bold cyan]{item.title}[/bold cyan]\n"
                         if item.detail.strip():
-                            display_text += f"[dim]{item.detail.strip()}[/dim]"
+                            display_text = f"{item.detail.strip()}"
                         else:
-                            display_text += "[dim]  * 正在等待工具响应...[/dim]"
-                    elif item.category == "Final_Output":
-                        # 格式要求：名称和内容之间换行，内容使用柔和对比度展示
-                        display_text = f"[bold green]{item.title}[/bold green]\n{item.detail.strip()}"
+                            display_text = "[dim]  * 正在等待工具响应...[/dim]"
                     else:
-                        display_text = f"[bold yellow]{item.title}[/bold yellow]\n[dim]{item.detail.strip()}[/dim]"
+                        display_text = f"{item.detail.strip()}"
 
-                    # 挂载控制
                     if widget_key not in self._mounted_widgets:
-                        # 第一次见，挂载通用的 Textual Static 组件
-                        new_widget = Static(display_text, classes="pipeline-node-card")
-                        self._mounted_widgets[widget_key] = new_widget
-                        await self.container.mount(new_widget)
+                        new_card = CollapsibleCard(
+                            raw_markdown=display_text, 
+                            category=item.category, 
+                            title=item.title
+                        )
+                        self._mounted_widgets[widget_key] = new_card
+                        self.container.mount(new_card)
                         self.container.scroll_end(animate=False)
                     else:
-                        existing_widget = self._mounted_widgets[widget_key]
-                        # 原地就地刷新
+                        existing_card = self._mounted_widgets[widget_key]
+                        existing_widget = existing_card.content_widget
+                        
                         if getattr(existing_widget, "_last_raw_text", "") != display_text:
                             existing_widget.update(display_text)
                             existing_widget._last_raw_text = display_text
                             
+                            # Final_Output 直接吐字更新并丝滑贴底
                             if stream_ev.is_delta and item.category == "Final_Output":
                                 self.container.scroll_end(animate=False)
 
             except Exception as e:
                 import traceback
                 self.log.error(f"Render Layer Crash: {traceback.format_exc()}")
-                # 🌟 修复：去掉这里的 await
                 self.container.mount(Static(f"[bold red]终端渲染层故障: {e}[/bold red]"))
                 self.container.scroll_end(animate=True)
 
