@@ -32,12 +32,11 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres import PostgresStore
 from langgraph.store.postgres.aio import AsyncPostgresStore
 from langchain_core.runnables import RunnableConfig
-
+from agi.config import DEFAULT_DB_URI
 from agi.agent.deep_agent import create_deep_agent
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_DB_URI = "postgres://admin:123456@localhost:5432/langchain?sslmode=disable"
 DB_URI = os.getenv("AGI_CHECKPOINT_DB_URI", DEFAULT_DB_URI)
 RuntimeResources = dict[str, Any]
 

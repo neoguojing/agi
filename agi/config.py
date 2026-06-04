@@ -41,6 +41,7 @@ FILE_STORAGE_URL = get_env("FILE_STORAGE_URL", f"file://{FILE_STORAGE_PATH}")
 BROWSER_STORAGE_PATH = os.path.join(CACHE_DIR, "browser")
 os.makedirs(BROWSER_STORAGE_PATH, exist_ok=True)
 
+DEFAULT_DB_URI = os.getenv("DEFAULT_DB_URI", "postgres://admin:123456@localhost:5432/langchain?sslmode=disable")
 # -----------------------------
 # 模型相关
 # -----------------------------

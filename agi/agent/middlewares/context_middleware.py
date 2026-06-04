@@ -520,13 +520,5 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
         if self.memory_manager:
             await self.memory_manager.stop()
 
-    @override
-    async def aafter_model(
-        self, state: MemoryState[ResponseT], runtime: Any
-    ) -> dict[str, Any] | None:
-        """Handle the persistence of memory records provided by the model."""
-        # Persistence is now handled directly by the organize_memory tool.
-        return None
-
     def _log_debug_info(self, ctx_data: str, total_count: int):
         print(f"--- [Context Engine] 注入数据: {ctx_data} | 消息流长度: {total_count} ---")
