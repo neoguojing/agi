@@ -21,6 +21,16 @@ def get_memory_index(thread_id: str,graph: CompiledStateGraph):
 
     return messages
 
+def get_memories(thread_id: str,graph: CompiledStateGraph):
+    config = {"configurable": {"thread_id": thread_id}}
+    snapshot = graph.get_state(config)
+
+    # 假设你的状态定义中有一个名为 "messages" 的 channel
+    profile_records = snapshot.values.get("profile_records", {})
+    episodic_records = snapshot.values.get("episodic_records", {})
+    semantic_records = snapshot.values.get("semantic_records", {})
+    return profile_records,episodic_records,semantic_records
+
 
 def update_state(thread_id: str,graph: CompiledStateGraph,key: str,value: Any):
     config = {"configurable": {"thread_id": thread_id}}

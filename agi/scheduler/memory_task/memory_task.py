@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
 from agi.scheduler.base import BaseTaskRuntime, BaseTaskUnit, TaskExecutionResult
-from agi.scheduler.utils.state import get_memory_index, get_messages, update_state
+from agi.scheduler.utils.state import get_memory_index, get_messages, update_state,get_memories
 from agi.scheduler.memory_task.memory_tools import (
     MEMORY_SYSTEM_PROMPT,
     consolidate_profile_memory,
@@ -61,30 +61,6 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
         return get_messages(self.runtime.thread_id, self.runtime.graph, self.offset)
     
     # ==============================================================================
-    # 核心变更：全面拉取 3 种维度的全部记忆
-    # ==============================================================================
-    def load_memories(self, store_client: Any) -> Dict[str, Any]:
-        """
-        全量记忆灌流：一次性捞出 profile, episodic, semantic 三种核心记忆实体
-        """
-        mem_ns = ("users", self.target_id, "consolidated_memory")
-        memory_types = ["profile", "episodic", "semantic"]
-        fetched_memories = {}
-
-        for m_type in memory_types:
-            res = store_client.get(namespace=mem_ns, key=m_type)
-            
-            # 严格防呆解析：提取 Store 包装类中的真实 value，无数据则 fallback 为 "(none)"
-            if res and hasattr(res, "value"):
-                fetched_memories[m_type] = str(res.value)
-            elif res:
-                fetched_memories[m_type] = str(res)
-            else:
-                fetched_memories[m_type] = "(none)"
-                
-        return fetched_memories
-    
-    # ==============================================================================
     # 核心变更：重塑 Prompt 模板，建立 3 种记忆的强感知视窗
     # ==============================================================================
     def build_prompt(self, order_input: str) -> str:
@@ -127,7 +103,7 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
             return False
             
         # 🚀 加载全量 3 种记忆上下文
-        self.memories = self.load_memories(store_client)
+        self.memories = get_memories(self.runtime.thread_id, self.runtime.graph)
         return True
 
     async def execute(self, store_client: Any) -> TaskExecutionResult:
@@ -149,19 +125,6 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
         # 保持原有状态机跟进
         update_state(self.runtime.thread_id, self.runtime.graph, self.task_type, result)
         
-        # 物理落库，保持原名字空间格式
-        mem_ns = ("users", self.target_id, "consolidated_memory")
-        payload = {
-            "patches": target_patches, 
-            "extracted_at": datetime.now().isoformat(),
-            "meta_params": self.params
-        }
-        
-        if hasattr(store_client, "aput"):
-            await store_client.aput(namespace=mem_ns, key=f"{self.task_type}_patches_latest", value=payload)
-        else:
-            store_client.put(namespace=mem_ns, key=f"{self.task_type}_patches_latest", value=payload)
-
         if self.messages:
             self.add_index(len(self.messages))
 
