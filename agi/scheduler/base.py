@@ -1,17 +1,48 @@
 import abc
 import json
+import logging
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple, Type
 
+logger = logging.getLogger("SchedulerKernel")
+
 # ==============================================================================
-# 核心数据契约
+# 1. 统一命名空间与存储约束 (解决痛点 3)
+# ==============================================================================
+class SchedulerStorageContract:
+    """统一管理调度器在持久化存储中的命名空间与 Key 生成规则"""
+    TASK_NAMESPACE: Tuple[str, ...] = ("sys", "scheduler", "tasks")
+
+    @classmethod
+    def generate_task_key(cls, task_type: str, target_id: str) -> str:
+        """统一分布式唯一 Key 生成器"""
+        return f"job_{task_type}_{target_id}"
+
+
+# ==============================================================================
+# 2. 强类型数据契约 (解决痛点 1 & 2)
 # ==============================================================================
 class ExecutionPlan:
-    """定义任务实例的执行载荷，业务层只需提供 target_id，其余可选覆盖"""
+    """
+    定义任务实例的执行载荷。
+    正式启用作为入参契约，内聚业务目标、时钟表达式与强约束参数。
+    """
     def __init__(self, target_id: str, cron_expr: Optional[str] = None, params: Optional[Dict[str, Any]] = None):
+        if not target_id or not isinstance(target_id, str):
+            raise ValueError("❌ 契约错误: target_id 不能为空且必须为字符串")
+        
         self.target_id: str = target_id
         self.cron_expr: Optional[str] = cron_expr
         self.params: Dict[str, Any] = params or {}
+
+    def to_dict(self) -> Dict[str, Any]:
+        """将契约安全转换为可落库的干净字典"""
+        payload = {"target_id": self.target_id}
+        if self.cron_expr:
+            payload["cron_expr"] = self.cron_expr
+        if self.params:
+            payload["params"] = self.params
+        return payload
 
 
 class TaskExecutionResult:
@@ -23,19 +54,13 @@ class TaskExecutionResult:
         self.finished_at: datetime = datetime.now()
 
 
-# ==============================================================================
-# 强类型运行时基类 (基础设施依赖全内聚于此)
-# ==============================================================================
 class BaseTaskRuntime:
-    """
-    所有任务运行时的基类。
-    不同的任务集群可以派生自己的强类型 Runtime，并在内部存放各自需要的重型对象（LLM、RPC Client等）。
-    """
+    """所有任务运行时的基类（基础设施依赖容器）"""
     pass
 
 
 # ==============================================================================
-# 任务单元基类
+# 3. 任务单元基类
 # ==============================================================================
 class BaseTaskUnit(abc.ABC):
     """
@@ -43,74 +68,65 @@ class BaseTaskUnit(abc.ABC):
     """
     task_type: str = ""
     default_cron: str = "0 0 * * *"
-    default_params: Dict[str, Any] = {}
     
-    # 💡 核心约束：声明此任务类型期望得到的强类型运行时容器类
+    # 💡 强约束蓝图：子类定义的默认值不仅作为缺省，也作为参数类型强校验的依据
+    default_params: Dict[str, Any] = {}
     runtime_schema: Type[BaseTaskRuntime] = BaseTaskRuntime
 
     def __init__(self, runtime: Any):
-        # ⚡️ 架构升级：强制要求在实例化时注入专属的运行时环境
         self.runtime: Any = runtime
-        
         self.task_id: str = ""
         self.target_id: str = ""
         self.cron_expr: str = ""
         self.params: Dict[str, Any] = {}
 
     @classmethod
-    def create_instance(
-        cls, 
-        store_client: Any, 
-        target_id: str, 
-        cron_expr: Optional[str] = None, 
-        params: Optional[Dict[str, Any]] = None
-    ) -> None:
+    def create_instance(cls, store_client: Any, plan: ExecutionPlan) -> None:
         """
-        🚀 封装核心：统一的任务分发工厂。
-        直接双写进你的 BaseStore，业务方无需关心底层的存储结构和命名空间。
+        🚀 统一任务分发工厂
+        已完全切换至基于 ExecutionPlan 契约驱动，并对内部参数实施静态强约束校验。
         """
         if not cls.task_type:
             raise ValueError(f"类 {cls.__name__} 未定义有效的静态 task_type")
 
-        internal_task_id = f"job_{cls.task_type}_{target_id}"
-        # 严格验证外部传入的自定义参数，必须属于 default_params 中声明过的键，防止业务端写错
-        if params:
-            for key in params.keys():
-                if key not in cls.default_params:
-                    raise KeyError(f"❌ 参数错误: '{key}' 不是任务 {cls.task_type} 允许的合法业务参数项")
-
-        # 组装满足调度内核所需的标准持久化载荷
-        plan_payload: Dict[str, Any] = {"target_id": target_id}
-        
-        if cron_expr:
-            plan_payload["cron_expr"] = cron_expr
+        # 🔒 强约束拦截点 1：校验参数合法性与类型强一致性
+        for key, val in plan.params.items():
+            if key not in cls.default_params:
+                raise KeyError(f"❌ 参数越界: '{key}' 不是任务 [{cls.task_type}] 允许的业务参数项")
             
-        if params:
-            # 🔒 架构升级：入库前防呆检查，拒绝不可序列化的复杂对象（如 LLM Client、锁、实体类）
-            try:
-                json.dumps(params)
-            except TypeError as e:
-                raise ValueError(
-                    f"❌ 任务下发失败: params 字典中包含了无法被持久化存储的复杂 Python 对象！\n"
-                    f"报错详情: {str(e)}。\n"
-                    f"请将对象转换为纯 Dict 序列化数据，或将重型对象挂载至 Runtime 环境中。"
+            expected_type = type(cls.default_params[key])
+            if not isinstance(val, expected_type):
+                raise TypeError(
+                    f"❌ 参数类型错误: 项 '{key}' 期望类型为 {expected_type.__name__}, "
+                    f"但实际传入了 {type(val).__name__}。"
                 )
-            plan_payload["params"] = params
 
+        # 🔒 强约束拦截点 2：拒绝不可序列化的复杂 Python 对象落库
+        try:
+            json.dumps(plan.params)
+        except TypeError as e:
+            raise ValueError(f"❌ 序列化失败: params 字典中包含无法持久化的复杂对象! 错误原因: {str(e)}")
+
+        # 组合物理存储
+        internal_task_id = SchedulerStorageContract.generate_task_key(cls.task_type, plan.target_id)
+        
         payload = {
             "task_type": cls.task_type,
-            "status": "SCHEDULED",  # 统一由工厂赋予初始状态
-            "plan": plan_payload,
+            "status": "SCHEDULED",
+            "plan": plan.to_dict(),
             "created_at": datetime.now().isoformat()
         }
 
-        # 统一封装物理存储路径约束
-        ns: Tuple[str, ...] = ("sys", "scheduler", "tasks")
-        store_client.put(namespace=ns, key=internal_task_id, value=payload)
+        # 统一使用名字空间常量契约，消除硬编码
+        store_client.put(
+            namespace=SchedulerStorageContract.TASK_NAMESPACE, 
+            key=internal_task_id, 
+            value=payload
+        )
 
     @abc.abstractmethod
     def should_trigger(self, store_client: Any) -> bool:
-        """准入控制流：返回 False 时优雅熔断本次触发"""
+        """准入控制流"""
         pass
 
     @abc.abstractmethod

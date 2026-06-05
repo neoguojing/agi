@@ -20,7 +20,7 @@ def run_background_worker(graph):
     engine.runtime_slots = {
         # 画像任务：分发便宜、低延迟的运行时容器
         "profile": MemoryTaskRuntime(llm=None,graph=graph),
-        
+        "episodic": MemoryTaskRuntime(llm=None,graph=graph),
         # 语义图谱任务：分发高精度、带有嵌入向量支持的重型运行时容器
         "semantic": MemoryTaskRuntime(llm=None,graph=graph)
     }

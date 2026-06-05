@@ -1,105 +1,140 @@
-from typing import List, Any
+from typing import List, Any, Optional
+from pydantic import Field
 from langchain_core.tools import tool
 from langgraph.types import Command
-from agi.scheduler.memory_task.memory_models import ProfileMemoryRecord,EpisodicMemoryRecord,SemanticMemoryRecord
+from agi.scheduler.memory_task.memory_models import ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord
 import logging
-# =====================================================================
-# 1. SYSTEM PROMPT VARIABLE
-# =====================================================================
-MEMORY_SYSTEM_PROMPT = """## Long-Term Memory Management Tools
-You have access to three dedicated tools to proactively manage your long-term memory. Treat these tools as a "Save" button. Whenever you encounter a "golden" piece of information during the conversation, call the appropriate tool immediately to persist it and ensure it is not lost in subsequent turns:
-
-1. `save_profile_memory`: For storing persistent user preferences, workflow habits, or user identity characteristics.
-2. `save_episodic_memory`: For recording significant events, project milestones, or critical design decisions.
-3. `save_semantic_memory`: For storing stable knowledge, configurations, or facts about the project/system in subject-predicate-object triples.
-"""
-
-# =====================================================================
-# 2. TOOL DESCRIPTION VARIABLES
-# =====================================================================
-SAVE_PROFILE_MEMORY_DESCRIPTION = """Use this tool to explicitly persist the user's stable preferences, habits, or individual characteristics into long-term memory (e.g., 'User always uses VS Code for Python' or 'User prefers concise code explanations').
-
-## When to Use
-- The user shares a persistent personal preference or constraint.
-- The user specifies preferred formatting, tools, or interaction styles.
-- The user explicitly requests: "Remember this about me".
-
-## Parameter Requirements
-- records: A list of objects matching the schema: {key: string, value: string, confidence: float}
-- reason: A concise explanation of why this information is being saved.
-"""
-
-SAVE_EPISODIC_MEMORY_DESCRIPTION = """Use this tool to record significant events, decisions, or project milestones that occurred during the conversation into long-term memory (e.g., 'The project architecture was finalized as microservices' or 'First round of beta testing was completed').
-
-## When to Use
-- A critical, irreversible decision or consensus is reached.
-- An event occurs that marks a new phase or milestone for the project.
-- You need to log historical context tied to a specific timeline or event.
-
-## Parameter Requirements
-- records: A list of objects matching the schema: {summary: string, event_time: string, participants: list[string], confidence: float}
-- reason: A concise explanation of why this milestone is being saved.
-"""
-
-SAVE_SEMANTIC_MEMORY_DESCRIPTION = """Use this tool to save stable facts, configurations, architectures, or knowledge structures into long-term memory using Subject-Predicate-Object triples (e.g., 'production server' -> 'located_in' -> 'us-east-1' or 'database' -> 'uses' -> 'PostgreSQL').
-
-## When to Use
-- You discover a stable, factual piece of information about the system, tech stack, or deployment environment.
-- Concrete relationships between entities are established.
-
-## Parameter Requirements
-- records: A list of objects matching the schema: {subject: string, predicate: string, object: string, confidence: float}
-- reason: A concise explanation of why this factual knowledge is being saved.
-"""
-
-# =====================================================================
-# 3. TOOL IMPLEMENTATIONS
-# =====================================================================
 
 # 初始化日志记录器
 logger = logging.getLogger(__name__)
 
-@tool(description=SAVE_PROFILE_MEMORY_DESCRIPTION)
-def save_profile_memory(
-    records: List[ProfileMemoryRecord],  
-    reason: str, 
-) -> Command[Any]:
-    try:
-        return Command(
-            update={
-                "profile_records": records,
-                "organization_reason": reason,
-            }
-        )
-    except Exception as e:
-        logger.exception(f"Failed to save profile memory. Reason: {reason}. Error: {e}")
+# =====================================================================
+# 1. SYSTEM PROMPT VARIABLE (后台专属审计 Prompt)
+# =====================================================================
+MEMORY_SYSTEM_PROMPT = """## Background Memory Consolidation Tools
+You are running as a background Memory Auditor. Your task is to review the user's entire memory state along with recent conversation logs, and perform deduplication, consolidation, and cleanup.
 
-@tool(description=SAVE_EPISODIC_MEMORY_DESCRIPTION)
-def save_episodic_memory(
-    records: List[EpisodicMemoryRecord],  
-    reason: str, 
-) -> Command[Any]:
-    try:
-        return Command(
-            update={
-                "episodic_records": records,
-                "organization_reason": reason,
-            }
-        )
-    except Exception as e:
-        logger.exception(f"Failed to save episodic memory. Reason: {reason}. Error: {e}")
+You have access to three dedicated tools to reconcile the memory state. Think in DELTAS (Changes only):
+1. `consolidate_profile_memory`: For auditing and merging user preferences and identity traits.
+2. `consolidate_episodic_memory`: For auditing historical milestones and chronological logs.
+3. `consolidate_semantic_memory`: For auditing stable system facts and knowledge triples.
 
-@tool(description=SAVE_SEMANTIC_MEMORY_DESCRIPTION)
-def save_semantic_memory(
-    records: List[SemanticMemoryRecord],  
+**CRITICAL RULE:** Do NOT re-save existing, unchanged memories. Only use these tools if you need to ADD new information, UPDATE modified information, or DELETE obsolete/conflicting information.
+"""
+
+# =====================================================================
+# 2. TOOL DESCRIPTION VARIABLES (强化增删分离)
+# =====================================================================
+CONSOLIDATE_PROFILE_MEMORY_DESCRIPTION = """Use this tool to reconcile persistent user preferences, workflow habits, or user identity characteristics.
+
+## Parameter Requirements
+- reason: A concise explanation of why this consolidation is being performed.
+- upserts: List of NEW or UPDATED records {key, value, confidence}. Existing keys will be overwritten.
+- deletions: List of STRING keys to COMPLETELY REMOVE (e.g., ['favorite_ide', 'old_habit']). Use this to delete obsolete preferences.
+"""
+
+CONSOLIDATE_EPISODIC_MEMORY_DESCRIPTION = """Use this tool to reconcile significant events, project milestones, or historical context.
+
+## Parameter Requirements
+- reason: A concise explanation of why this milestone is being updated or removed.
+- upserts: List of NEW or UPDATED records {summary, event_time, participants, confidence}.
+- deletions: List of STRING keys (format: 'summary_date' or 'summary_anytime') to COMPLETELY REMOVE (e.g., ['initial draft completed_2026-06-01']). Use this to remove redundant event logs.
+"""
+
+CONSOLIDATE_SEMANTIC_MEMORY_DESCRIPTION = """Use this tool to reconcile stable facts, configurations, architectures, or knowledge structures.
+
+## Parameter Requirements
+- reason: A concise explanation of why this factual knowledge is being consolidated.
+- upserts: List of NEW or UPDATED triples {subject, predicate, object, confidence}.
+- deletions: List of STRING keys (format: 'subject:predicate:object') to COMPLETELY REMOVE (e.g., ['database:uses:sqlite']). Use this to clear outdated facts.
+"""
+
+# =====================================================================
+# 3. TOOL IMPLEMENTATIONS (字典转化与 Reducer 适配)
+# =====================================================================
+
+@tool(description=CONSOLIDATE_PROFILE_MEMORY_DESCRIPTION,return_direct=True)
+def consolidate_profile_memory(
     reason: str, 
+    upserts: Optional[List[ProfileMemoryRecord]] = Field(default=[], description="Records to add or update."),
+    deletions: Optional[List[str]] = Field(default=[], description="Keys to delete.")
 ) -> Command[Any]:
     try:
+        target_dict = {}
+        
+        if upserts:
+            for record in upserts:
+                if record.key:
+                    target_dict[record.key.strip().lower()] = record
+                    
+        if deletions:
+            for delete_key in deletions:
+                target_dict[delete_key.strip().lower()] = None
+
         return Command(
             update={
-                "semantic_records": records,
+                "profile_records": target_dict,
                 "organization_reason": reason,
             }
         )
     except Exception as e:
-        logger.exception(f"Failed to save semantic memory. Reason: {reason}. Error: {e}")
+        logger.exception(f"Failed to consolidate profile memory. Reason: {reason}. Error: {e}")
+
+
+@tool(description=CONSOLIDATE_EPISODIC_MEMORY_DESCRIPTION,return_direct=True)
+def consolidate_episodic_memory(
+    reason: str, 
+    upserts: Optional[List[EpisodicMemoryRecord]] = Field(default=[], description="Records to add or update."),
+    deletions: Optional[List[str]] = Field(default=[], description="Keys to delete.")
+) -> Command[Any]:
+    try:
+        target_dict = {}
+        
+        if upserts:
+            for record in upserts:
+                if record.summary:
+                    date_str = record.event_time[:10] if getattr(record, "event_time", None) else "anytime"
+                    key = f"{record.summary.strip().lower()}_{date_str}"
+                    target_dict[key] = record
+                    
+        if deletions:
+            for delete_key in deletions:
+                target_dict[delete_key.strip().lower()] = None
+
+        return Command(
+            update={
+                "episodic_records": target_dict,
+                "organization_reason": reason,
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Failed to consolidate episodic memory. Reason: {reason}. Error: {e}")
+
+
+@tool(description=CONSOLIDATE_SEMANTIC_MEMORY_DESCRIPTION,return_direct=True)
+def consolidate_semantic_memory(
+    reason: str, 
+    upserts: Optional[List[SemanticMemoryRecord]] = Field(default=[], description="Records to add or update."),
+    deletions: Optional[List[str]] = Field(default=[], description="Keys to delete.")
+) -> Command[Any]:
+    try:
+        target_dict = {}
+        
+        if upserts:
+            for record in upserts:
+                if record.subject and record.predicate and record.object:
+                    key = f"{record.subject.strip().lower()}:{record.predicate}:{record.object.strip().lower()}"
+                    target_dict[key] = record
+                    
+        if deletions:
+            for delete_key in deletions:
+                target_dict[delete_key.strip().lower()] = None
+
+        return Command(
+            update={
+                "semantic_records": target_dict,
+                "organization_reason": reason,
+            }
+        )
+    except Exception as e:
+        logger.exception(f"Failed to consolidate semantic memory. Reason: {reason}. Error: {e}")

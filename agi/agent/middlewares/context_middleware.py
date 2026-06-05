@@ -170,58 +170,114 @@ class OrganizeMemoryInput(BaseModel):
 
 # --- Prompts ---
 
-ORGANIZE_MEMORY_TOOL_DESCRIPTION = """Use this tool to explicitly persist key information from the current conversation into your long-term memory.
+ORGANIZE_MEMORY_SYSTEM_PROMPT = """## Long-Term Memory Manager
+You can proactively manage your long-term memory using the `organize_memory` tool. 
+Treat this tool as your "Memory Maintenance" interface. It supports simultaneous adding/updating (Upsert) and removing (Deletion) of memories.
 
-## When to Use This Tool
-1. **Stable Preferences**: When the user shares a persistent preference (e.g., 'I always use VS Code for Python'). Use target `profile`.
-2. **Key Milestones**: When a significant decision or event occurs (e.g., 'The project architecture was finalized'). Use target `episodic`.
-3. **Factual Knowledge**: When you discover a stable fact about the project or user (e.g., 'The production server is located in us-east-1'). Use target `semantic`.
-4. **Explicit Requests**: When the user says 'Remember this'.
+Whenever you encounter new 'golden' information, notice a shift in user preferences, or need to consolidate conflicting facts, use this tool immediately to keep your memory state accurate, compact, and deduplicated.
+"""
 
-## How to Use This Tool
-- **Choose Target**: Select `profile`, `episodic`, or `semantic` based on the nature of the information.
-- **Provide Records**: Provide a list of records matching the target schema:
-    - `profile`: list of {key, value, confidence}
-    - `episodic`: list of {summary, event_time, participants, confidence}
-    - `semantic`: list of {subject, predicate, object, confidence}
-- **Provide Reason**: Explain why this is being saved.
+# =====================================================================
+# 2. TOOL DESCRIPTION VARIABLE
+# =====================================================================
+ORGANIZE_MEMORY_TOOL_DESCRIPTION = """Use this tool to explicitly upsert (add/update) and delete information in your long-term memory.
+
+## 1. Choose Target
+- `profile`: For persistent preferences, habits, or user identity (e.g., 'I always use VS Code').
+- `episodic`: For significant events, decisions, or milestones (e.g., 'Project architecture finalized').
+- `semantic`: For stable factual knowledge triples (e.g., 'database' -> 'uses' -> 'PostgreSQL').
+
+## 2. How to Apply Delta Updates
+- **upserts**: List of full records to ADD or UPDATE. If the key already exists, it will be safely overwritten.
+- **deletions**: List of STRING keys to REMOVE. Use this to delete obsolete, conflicting, or redundant memories.
+  - For `profile`: Use the exact key (e.g., ["favorite_ide"]).
+  - For `episodic`: Use "summary_date" format (e.g., ["beta tested_2026-06-05"]).
+  - For `semantic`: Use "subject:predicate:object" format (e.g., ["db:uses:mysql"]).
 
 ## Guarantees
-Information provided through this tool is immediately processed, deduplicated, and saved. It will be available in your system prompt in the next turn.
+Information is immediately processed via dictionary reducers. 'deletions' are explicitly popped from the state, and 'upserts' are merged.
 """
-
-ORGANIZE_MEMORY_SYSTEM_PROMPT = """## `organize_memory` tool
-You can proactively manage your long-term memory using the `organize_memory` tool.
-Treat this tool as a 'Save' button. If you encounter a 'golden' piece of information, use this tool immediately to ensure it is not lost.
-"""
-
-# --- Tool Implementation ---
+    
 @tool(description=ORGANIZE_MEMORY_TOOL_DESCRIPTION)
 def organize_memory(
-    records: list[Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord]],
-    target: MemoryTarget,
+    target: MemoryTarget, # Literal["profile", "episodic", "semantic"]
     reason: str, 
-    tool_call_id: Annotated[str, InjectedToolCallId]
+    tool_call_id: Annotated[str, InjectedToolCallId],
+    upserts: Optional[List[Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord]]] = Field(default=[], description="Records to add or update."),
+    deletions: Optional[List[str]] = Field(default=[], description="String keys of memories to completely remove.")
 ) -> Command[Any]:
     try:
-        """Trigger memory organization by updating the state."""
+        # 初始化用于更新的字典
+        target_dict = {}
 
-        return Command(
-            update={
-                "pending_target": target,
-                "profile_records": records if target == "profile" else [],
-                "episodic_records": records if target == "episodic" else [],
-                "semantic_records": records if target == "semantic" else [],
-                "organization_reason": reason,
-                "messages": [ToolMessage(content=f"Memory records for {target} received. Reason: {reason}", tool_call_id=tool_call_id)],
-            }
-        )
+        # ==========================================
+        # 1. 统一处理 Upserts (提取唯一 Key 归一化)
+        # ==========================================
+        if upserts:
+            for record in upserts:
+                key = None
+                
+                # Profile 模式解析
+                if target == "profile" and hasattr(record, "key") and record.key:
+                    key = record.key.strip().lower()
+                
+                # Episodic 模式解析
+                elif target == "episodic" and hasattr(record, "summary") and record.summary:
+                    date_str = record.event_time[:10] if getattr(record, "event_time", None) else "anytime"
+                    key = f"{record.summary.strip().lower()}_{date_str}"
+                
+                # Semantic 模式解析
+                elif target == "semantic" and hasattr(record, "subject") and record.subject:
+                    key = f"{record.subject.strip().lower()}:{record.predicate}:{record.object.strip().lower()}"
+
+                # 存入字典
+                if key:
+                    target_dict[key] = record
+
+        # ==========================================
+        # 2. 统一处理 Deletions (显式赋值为 None 触发删除)
+        # ==========================================
+        if deletions:
+            for delete_key in deletions:
+                if delete_key:
+                    target_dict[delete_key.strip().lower()] = None
+
+        # ==========================================
+        # 3. 构造精准的 Command Update 载荷
+        # ==========================================
+        # 基础更新载荷
+        update_payload = {
+            "pending_target": target,
+            "organization_reason": reason,
+            "messages": [
+                ToolMessage(
+                    content=f"Memory reorganized for target '{target}'. Upserted {len(upserts or [])} items, Deleted {len(deletions or [])} items. Reason: {reason}", 
+                    tool_call_id=tool_call_id
+                )
+            ]
+        }
+
+        # 仅将修改后的字典打入对应的 State 字段
+        # （不修改的字段完全不写，依靠 LangGraph 原生浅合并保留旧数据）
+        if target == "profile":
+            update_payload["profile_records"] = target_dict
+        elif target == "episodic":
+            update_payload["episodic_records"] = target_dict
+        elif target == "semantic":
+            update_payload["semantic_records"] = target_dict
+
+        return Command(update=update_payload)
 
     except Exception as e:
+        logger.exception(f"Failed to organize memory for target {target}. Error: {e}")
         return Command(
             update={
                 "messages": [
-                    ToolMessage(f"Memory records for {target} failed. Reason: {e}", tool_call_id=tool_call_id,statu="error")
+                    ToolMessage(
+                        content=f"Failed to organize memory for {target}. Error: {e}", 
+                        tool_call_id=tool_call_id, 
+                        status="error" # 注意：langchain较新版本才支持status参数，若报错可移除
+                    )
                 ],
             }
         )
@@ -276,76 +332,98 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
     def _organize_memory(
         self,
         runtime: ToolRuntime[ContextT, MemoryState[ResponseT]],
-        records: list[Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord]],
         target: MemoryTarget,
-        reason: str
+        reason: str,
+        upserts: Optional[List[Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord]]] = Field(default=[], description="Records to add or update."),
+        deletions: Optional[List[str]] = Field(default=[], description="String keys of memories to completely remove.")
     ) -> Command[Any]:
         """Synchronously persist key information into long-term memory."""
         try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.run(self._aorganize_memory(runtime, records, target, reason))
+            # 初始化用于更新的字典
+            target_dict = {}
 
-        return Command(
-            update={
+            # ==========================================
+            # 1. 统一处理 Upserts (提取唯一 Key 归一化)
+            # ==========================================
+            if upserts:
+                for record in upserts:
+                    key = None
+                    
+                    # Profile 模式解析
+                    if target == "profile" and hasattr(record, "key") and record.key:
+                        key = record.key.strip().lower()
+                    
+                    # Episodic 模式解析
+                    elif target == "episodic" and hasattr(record, "summary") and record.summary:
+                        date_str = record.event_time[:10] if getattr(record, "event_time", None) else "anytime"
+                        key = f"{record.summary.strip().lower()}_{date_str}"
+                    
+                    # Semantic 模式解析
+                    elif target == "semantic" and hasattr(record, "subject") and record.subject:
+                        key = f"{record.subject.strip().lower()}:{record.predicate}:{record.object.strip().lower()}"
+
+                    # 存入字典
+                    if key:
+                        target_dict[key] = record
+
+            # ==========================================
+            # 2. 统一处理 Deletions (显式赋值为 None 触发删除)
+            # ==========================================
+            if deletions:
+                for delete_key in deletions:
+                    if delete_key:
+                        target_dict[delete_key.strip().lower()] = None
+
+            # ==========================================
+            # 3. 构造精准的 Command Update 载荷
+            # ==========================================
+            # 基础更新载荷
+            update_payload = {
+                "pending_target": target,
+                "organization_reason": reason,
                 "messages": [
                     ToolMessage(
-                        content=(
-                            "organize_memory sync execution is unavailable while an "
-                            "event loop is running; use the async tool coroutine instead."
-                        ),
-                        tool_call_id=runtime.tool_call_id,
+                        content=f"Memory reorganized for target '{target}'. Upserted {len(upserts or [])} items, Deleted {len(deletions or [])} items. Reason: {reason}", 
+                        tool_call_id=runtime.tool_call_id
                     )
-                ],
+                ]
             }
-        )
+
+            # 仅将修改后的字典打入对应的 State 字段
+            # （不修改的字段完全不写，依靠 LangGraph 原生浅合并保留旧数据）
+            if target == "profile":
+                update_payload["profile_records"] = target_dict
+            elif target == "episodic":
+                update_payload["episodic_records"] = target_dict
+            elif target == "semantic":
+                update_payload["semantic_records"] = target_dict
+
+            return Command(update=update_payload)
+
+        except Exception as e:
+            logger.exception(f"Failed to organize memory for target {target}. Error: {e}")
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            content=f"Failed to organize memory for {target}. Error: {e}", 
+                            tool_call_id=runtime.tool_call_id,
+                            status="error" # 注意：langchain较新版本才支持status参数，若报错可移除
+                        )
+                    ],
+                }
+            )
 
     async def _aorganize_memory(
         self,
         runtime: ToolRuntime[ContextT, MemoryState[ResponseT]],
-        records: list[Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord]],
         target: MemoryTarget,
-        reason: str
+        reason: Optional[str],
+        upserts: Optional[List[Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord]]] = Field(default=[], description="Records to add or update."),
+        deletions: Optional[List[str]] = Field(default=[], description="String keys of memories to completely remove.")
     ) -> Command[Any]:
         """Persist key information from the current conversation into long-term memory."""
-        try:
-            extraction_result = MemoryExtractionResult(
-                profile_memories=records if target == "profile" else [],
-                episodic_memories=records if target == "episodic" else [],
-                semantic_memories=records if target == "semantic" else [],
-            )
-            patches = extraction_result.to_patches(reason=reason)
-            applied_count = 0
-            for patch in patches:
-                await self.memory_manager.store.apply_patch(patch)
-                applied_count += 1
-
-            return Command(
-                update={
-                    "pending_target": target,
-                    "profile_records": records if target == "profile" else [],
-                    "episodic_records": records if target == "episodic" else [],
-                    "semantic_records": records if target == "semantic" else [],
-                    "organization_reason": reason,
-                    "messages": [
-                        ToolMessage(
-                            content=f"Successfully persisted {applied_count} memory patches to {target} store. Reason: {reason}",
-                            tool_call_id=runtime.tool_call_id
-                        )
-                    ],
-                }
-            )
-        except Exception as e:
-            return Command(
-                update={
-                    "messages": [
-                        ToolMessage(
-                            content=f"Failed to persist memories to {target}: {e}",
-                            tool_call_id=runtime.tool_call_id
-                        )
-                    ],
-                }
-            )
+        return self._organize_memory(runtime, target=target,reason=reason,upserts=upserts,deletions=deletions)
 
     def _get_backend(self, runtime) -> BackendProtocol:
         if callable(self.backend):

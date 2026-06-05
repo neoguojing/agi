@@ -45,23 +45,6 @@ def _normalize_participants(value: Any) -> tuple[str, ...]:
 
 MemoryTarget = Literal["profile", "episodic", "semantic"]
 
-MemoryOperationType = Literal[
-    "add",
-    "update",
-    "delete",
-    "merge",
-    "deprecate",
-]
-
-MemorySourceKind = Literal[
-    "user_explicit",
-    "conversation",
-    "inferred",
-    "legacy_memory",
-    "system",
-    "tool",
-]
-
 
 # =========================================================
 # Dedup
@@ -91,82 +74,6 @@ def record_dedup_key(target: "MemoryTarget", record: dict[str, Any]) -> tuple[An
 
     return None
 
-
-# =========================================================
-# Patch Layer (System Internal - Not for LLM Extraction)
-# =========================================================
-
-class MemoryOperation(BaseModel):
-    """A storage-neutral mutation operation."""
-
-    op: MemoryOperationType = Field(
-        description="Type of mutation operation."
-    )
-
-    value: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Serialized memory payload."
-    )
-
-    target_id: str | None = Field(
-        default=None,
-        description="Target memory record identifier."
-    )
-
-    reason: str | None = Field(
-        default=None,
-        description="Reason for this operation."
-    )
-
-
-class MemoryPatch(BaseModel):
-    """Auditable memory patch containing multiple operations."""
-
-    target: MemoryTarget = Field(
-        description="Target memory collection."
-    )
-
-    operations: tuple[MemoryOperation, ...] = Field(
-        default_factory=tuple,
-        description="Operations included in this patch."
-    )
-
-    reason: str = Field(
-        default="",
-        description="Reason for this patch."
-    )
-
-    confidence: float = Field(
-        default=1.0,
-        description="Confidence score for this patch."
-    )
-
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        description="Patch creation timestamp."
-    )
-
-    strategy: Literal["merge", "replace"] = Field(
-        default="merge",
-        description="How to apply operations: merge into existing records or replace collection."
-    )
-
-    @property
-    def is_empty(self) -> bool:
-        return not self.operations
-
-    @classmethod
-    def empty(
-        cls,
-        target: MemoryTarget,
-        *,
-        reason: str = "",
-    ) -> "MemoryPatch":
-        return cls(
-            target=target,
-            reason=reason,
-            operations=(),
-        )
 
 # =========================================================
 # Profile Memory (Simplified for LLM)

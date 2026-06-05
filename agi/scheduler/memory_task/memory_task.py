@@ -2,162 +2,173 @@ import abc
 import logging
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
-from agi.scheduler.base import BaseTaskUnit,TaskExecutionResult,BaseTaskRuntime
+
+from agi.scheduler.base import BaseTaskRuntime, BaseTaskUnit, TaskExecutionResult
+from agi.scheduler.utils.state import get_memory_index, get_messages, update_state
+from agi.scheduler.memory_task.memory_tools import (
+    MEMORY_SYSTEM_PROMPT,
+    consolidate_profile_memory,
+    consolidate_episodic_memory,
+    consolidate_semantic_memory
+)
+from langchain_core.prompts import PromptTemplate
 
 logger = logging.getLogger("MemoryTask")
 
+
 class MemoryTaskRuntime(BaseTaskRuntime):
     """内聚了大模型交互所需要的全部重型环境依赖，让 Store 干净地回归存储本质"""
-    def __init__(self, llm: Any, graph: Any = None):
+    def __init__(self, llm: Any, graph: Any, thread_id: str):
+        super().__init__()
         self.llm = llm
         self.graph = graph
+        self.thread_id = thread_id
+
 
 class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
     """
     改造后的记忆提取基类。
-    继承自 BaseTaskUnit，全面适配纯代码插槽与 Store 驱动架构。
+    支持全量加载 Profile、Episodic、Semantic 三种维度的上下文。
     """
-    # 由具体子类覆写
-    target_type: str = "" 
-    
-    # 全局默认配置：默认每天凌晨 3 点跑一次，最低置信度 0.7
+    task_type: str = "" 
     default_cron: str = "0 3 * * *"
     default_params: Dict[str, Any] = {
         "min_confidence": 0.7,
         "model_flavor": "gpt-4o-mini"
     }
 
-    runtime_schema: MemoryTaskRuntime
-
-    def should_trigger(self, store_client: Any) -> bool:
-        """
-        准入控制：利用注入的 self.target_id 去 store 检查该用户是否有未处理的原始对话快照。
-        """
-        # 模拟从你的 BaseStore 获取特定用户的对话消息流
-        msg_ns = ("users", self.target_id, "raw_messages")
-        messages = store_client.search(namespace_prefix=msg_ns, limit=1)
+    def __init__(self, runtime: MemoryTaskRuntime):
+        super().__init__(runtime)
+        self.offset = self.load_index()
+        self.messages = None
         
-        if not messages:
-            logger.info(f"⏭️ 主体 {self.target_id} 近期无新对话消息，跳过本次 {self.task_type} 触发。")
+        # 💡 此时 self.memories 将演变为一个 Dict[str, Any] 结构
+        self.memories: Dict[str, Any] = {}
+        
+        self.llm = self.runtime.llm.bind_tools([
+            consolidate_profile_memory,
+            consolidate_episodic_memory,
+            consolidate_semantic_memory
+        ])
+
+    def add_index(self, value: int):
+        self.offset += value
+
+    def load_index(self):
+        return get_memory_index(self.runtime.thread_id, self.runtime.graph)
+
+    def load_history_messages(self):
+        return get_messages(self.runtime.thread_id, self.runtime.graph, self.offset)
+    
+    # ==============================================================================
+    # 核心变更：全面拉取 3 种维度的全部记忆
+    # ==============================================================================
+    def load_memories(self, store_client: Any) -> Dict[str, Any]:
+        """
+        全量记忆灌流：一次性捞出 profile, episodic, semantic 三种核心记忆实体
+        """
+        mem_ns = ("users", self.target_id, "consolidated_memory")
+        memory_types = ["profile", "episodic", "semantic"]
+        fetched_memories = {}
+
+        for m_type in memory_types:
+            res = store_client.get(namespace=mem_ns, key=m_type)
+            
+            # 严格防呆解析：提取 Store 包装类中的真实 value，无数据则 fallback 为 "(none)"
+            if res and hasattr(res, "value"):
+                fetched_memories[m_type] = str(res.value)
+            elif res:
+                fetched_memories[m_type] = str(res)
+            else:
+                fetched_memories[m_type] = "(none)"
+                
+        return fetched_memories
+    
+    # ==============================================================================
+    # 核心变更：重塑 Prompt 模板，建立 3 种记忆的强感知视窗
+    # ==============================================================================
+    def build_prompt(self, order_input: str) -> str:
+        """构建面向大模型的全景结构化记忆提取 Prompt"""
+        prompt = PromptTemplate.from_template(
+            """{system_prompt}\n\n
+            ==================================================
+            [EXISTING USER MEMORY CONTEXT]
+            --------------------------------------------------
+            * CORE PROFILE (画像记忆):
+            {profile_memory}
+            
+            * EPISODIC LOGS (情节/事件记忆):
+            {episodic_memory}
+            
+            * SEMANTIC KNOWLEDGE (语义知识事实):
+            {semantic_memory}
+            ==================================================\n\n
+            
+            CONVERSATION_HISTORY (自增量新对话):\n{messages}\n
+            
+            INSTRUCTION: {instruction}
+            """
+        )
+        
+        return prompt.format(
+            system_prompt=MEMORY_SYSTEM_PROMPT,
+            profile_memory=self.memories.get("profile", "(none)"),
+            episodic_memory=self.memories.get("episodic", "(none)"),
+            semantic_memory=self.memories.get("semantic", "(none)"),
+            messages=str(self.messages),
+            instruction=order_input
+        )
+    
+    def should_trigger(self, store_client: Any) -> bool:
+        """准入控制"""
+        self.messages = self.load_history_messages()
+        if not self.messages:
+            logger.info(f" Hobson-Skipped: 任务 [{self.task_id}] 未发现新对话消息，跳过本次触发。")
             return False
+            
+        # 🚀 加载全量 3 种记忆上下文
+        self.memories = self.load_memories(store_client)
         return True
 
-    async def _call_llm_for_extraction(self, store_client: Any, prompt: str) -> Any:
-        """调用大模型进行结构化输出 (利用 store_client 中可能挂载的 llm 句柄或外部轻量客户端)"""
-        try:
-            # 这里的 llm 可以是挂载在 store_client 上的特殊 handle，或者你在 params 里传入的配置
-            llm_client = getattr(store_client, "llm", None)
-            if not llm_client:
-                logger.error("Store client 中未挂载有效的 LLM 运行时句柄")
-                return None
-                
-            schema = TARGET_SCHEMA_MAP.get(self.target_type)
-            llm_with_struct = llm_client.with_structured_output(schema)
-            
-            # 执行异步大模型请求
-            struct_result = await llm_with_struct.ainvoke(prompt)
-            return struct_result
-        except Exception as e:
-            logger.exception(f"任务 {self.task_id} LLM 调用失败: {str(e)}")
-            return None
-
     async def execute(self, store_client: Any) -> TaskExecutionResult:
-        """
-        核心生命周期执行流：完全利用 self.target_id 和 self.params 自包含运行
-        """
-        logger.info(f"🎬 启动记忆提取任务: {self.task_id} 目标类型: {self.target_type}")
+        """核心生命周期执行流不变，完全兼容全量上下文"""
+        logger.info(f"🎬 启动记忆提取任务: {self.task_id} | 目标类型: {self.task_type}")
         
-        # 1. 捞取该用户的原始对话上下文
-        msg_ns = ("users", self.target_id, "raw_messages")
-        msg_items = store_client.search(namespace_prefix=msg_ns, limit=100)
-        conversation_text = "\n".join([str(item.value.get("content", "")) for item in msg_items])
+        if self.task_type == "profile":
+            instruction = "Call 'consolidate_profile_memory' tool to analyze user core profile based on history and existing memory."
+        elif self.task_type == "episodic":
+            instruction = "Call 'consolidate_episodic_memory' tool to structure recent lifecycle events without repeating semantic or profile items."
+        else:
+            instruction = "Call 'consolidate_semantic_memory' tool to extract new declarative knowledge facts that do not overlap with profile/episodic data."
+         
+        prompt_text = self.build_prompt(instruction)
+        result = self.llm.invoke(prompt_text)
 
-        # 2. 捞取已有的历史记忆，作为 Few-Shot 上下文提供给大模型
+        target_patches = getattr(result, "tool_calls", [])
+
+        # 保持原有状态机跟进
+        update_state(self.runtime.thread_id, self.runtime.graph, self.task_type, result)
+        
+        # 物理落库，保持原名字空间格式
         mem_ns = ("users", self.target_id, "consolidated_memory")
-        existing_mem = store_client.get(namespace=mem_ns, key=self.target_type)
-        existing_mem_text = str(existing_mem.value) if existing_mem else ""
-
-        # 3. 组装 Prompt
-        prompt = build_memory_extraction_prompt(
-            conversation=conversation_text,
-            existing_memory=existing_mem_text,
-            target=self.target_type,
-        )
-
-        # 4. 驱动大模型
-        llm_payload = await self._call_llm_for_extraction(store_client, prompt)
-        if not llm_payload:
-            return TaskExecutionResult(is_success=False, error_log="LLM 结构化解析未返回有效载荷")
-
-        # 5. 解析并转换为变更补丁（Patches）
-        filtered_extraction = MemoryExtractionResult()
-        if isinstance(llm_payload, ProfileMemoryList):
-            filtered_extraction.profile_memories = llm_payload.items
-        elif isinstance(llm_payload, EpisodicMemoryList):
-            filtered_extraction.episodic_memories = llm_payload.items
-        elif isinstance(llm_payload, SemanticMemoryList):
-            filtered_extraction.semantic_memories = llm_payload.items
-
-        patches = filtered_extraction.to_patches(reason=f"Automatic {self.target_type} memory extraction")
+        payload = {
+            "patches": target_patches, 
+            "extracted_at": datetime.now().isoformat(),
+            "meta_params": self.params
+        }
         
-        # 6. 利用自包含属性 self.params['min_confidence'] 进行去重和过滤
-        # 我们直接将原方法搬配过来，现有的 existing_records 直接通过 store 现场读取
-        existing_records_raw = store_client.search(namespace_prefix=("users", self.target_id, "records"), limit=1000)
-        existing_records = [item.value for item in existing_records_raw]
-        
-        patches = self._filter_and_deduplicate_patches(patches, existing_records)
-        
-        patch_strategy = "replace" if self.target_type == "profile" else "merge"
-        target_patches = tuple(
-            p.model_copy(update={"strategy": patch_strategy})
-            for p in patches if p.target == self.target_type
-        )
+        if hasattr(store_client, "aput"):
+            await store_client.aput(namespace=mem_ns, key=f"{self.task_type}_patches_latest", value=payload)
+        else:
+            store_client.put(namespace=mem_ns, key=f"{self.task_type}_patches_latest", value=payload)
 
-        if not target_patches:
-            return TaskExecutionResult(is_success=True, output_data="未发现高置信度或非重复的记忆变更")
-
-        # 7. 核心业务持久化：将提取出的增量补丁拍进用户的图数据库/存储空间中
-        await store_client.aput(
-            namespace=mem_ns,
-            key=f"{self.target_type}_patches_latest",
-            value={"patches": [p.model_dump() for p in target_patches], "extracted_at": datetime.now().isoformat()}
-        )
+        if self.messages:
+            self.add_index(len(self.messages))
 
         return TaskExecutionResult(
             is_success=True, 
-            output_data=f"成功为 {self.target_type} 提取并固化了 {len(target_patches)} 条记忆补丁。"
+            output_data=f"成功为用户 [{self.target_id}] 提取并固化了 {len(target_patches)} 条 [{self.task_type}] 记忆补丁。"
         )
-
-    def _filter_and_deduplicate_patches(self, patches: tuple, existing_records: list) -> tuple:
-        """保持你原有的去重过滤逻辑完全不动，仅将阈值读取改为自包含属性"""
-        updated = []
-        seen_keys = set()
-        min_conf = self.params.get("min_confidence", 0.7) # 从合并后的参数中安全获取
-
-        for patch in patches:
-            operations = []
-            for op in patch.operations:
-                if op.op != "add":
-                    operations.append(op)
-                    continue
-
-                confidence = float(op.value.get("confidence", 0.5) or 0.0)
-                if confidence < min_conf: # 🛠️ 动态控制线
-                    continue
-
-                key = record_dedup_key(self.target_type, op.value)
-                if key and key in seen_keys:
-                    continue
-                if key:
-                    seen_keys.add(key)
-                operations.append(op)
-
-            if operations:
-                updated.append(patch.model_copy(update={"operations": tuple(operations)}))
-
-        return tuple(updated)
-
-
 # ==============================================================================
 # 三个派生出的具体旁路独立原子任务 (极致干净，只声明类型和差异化默认配置)
 # ==============================================================================
@@ -178,6 +189,6 @@ class SemanticMemoryTask(BaseMemoryExtractionTask):
     task_type = "semantic"
     default_cron = "0 * * * *"
     default_params = {
-        "min_confidence": 0.85,          # 语义入库要求极高的置信度
+        "min_confidence": 0.85,             # 语义入库要求极高的置信度
         "model_flavor": "claude-3-5-sonnet" # 知识沉淀选择推理能力更强的模型
     }
