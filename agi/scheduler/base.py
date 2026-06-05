@@ -1,6 +1,7 @@
 import abc
+import json
 from datetime import datetime
-from typing import Any, Dict, Optional,Tuple
+from typing import Any, Dict, Optional, Tuple, Type
 
 # ==============================================================================
 # 核心数据契约
@@ -22,15 +23,35 @@ class TaskExecutionResult:
         self.finished_at: datetime = datetime.now()
 
 
+# ==============================================================================
+# 强类型运行时基类 (基础设施依赖全内聚于此)
+# ==============================================================================
+class BaseTaskRuntime:
+    """
+    所有任务运行时的基类。
+    不同的任务集群可以派生自己的强类型 Runtime，并在内部存放各自需要的重型对象（LLM、RPC Client等）。
+    """
+    pass
+
+
+# ==============================================================================
+# 任务单元基类
+# ==============================================================================
 class BaseTaskUnit(abc.ABC):
     """
-    带默认配置与自包含实例化工厂的通用任务基类。
+    带默认配置、自包含实例化工厂与强类型依赖注入的通用任务基类。
     """
     task_type: str = ""
     default_cron: str = "0 0 * * *"
     default_params: Dict[str, Any] = {}
+    
+    # 💡 核心约束：声明此任务类型期望得到的强类型运行时容器类
+    runtime_schema: Type[BaseTaskRuntime] = BaseTaskRuntime
 
-    def __init__(self):
+    def __init__(self, runtime: Any):
+        # ⚡️ 架构升级：强制要求在实例化时注入专属的运行时环境
+        self.runtime: Any = runtime
+        
         self.task_id: str = ""
         self.target_id: str = ""
         self.cron_expr: str = ""
@@ -61,10 +82,19 @@ class BaseTaskUnit(abc.ABC):
         # 组装满足调度内核所需的标准持久化载荷
         plan_payload: Dict[str, Any] = {"target_id": target_id}
         
-        # 只有在明确需要覆盖默认时钟/参数时，才往数据库里写，保持存储极简
         if cron_expr:
             plan_payload["cron_expr"] = cron_expr
+            
         if params:
+            # 🔒 架构升级：入库前防呆检查，拒绝不可序列化的复杂对象（如 LLM Client、锁、实体类）
+            try:
+                json.dumps(params)
+            except TypeError as e:
+                raise ValueError(
+                    f"❌ 任务下发失败: params 字典中包含了无法被持久化存储的复杂 Python 对象！\n"
+                    f"报错详情: {str(e)}。\n"
+                    f"请将对象转换为纯 Dict 序列化数据，或将重型对象挂载至 Runtime 环境中。"
+                )
             plan_payload["params"] = params
 
         payload = {
@@ -80,8 +110,10 @@ class BaseTaskUnit(abc.ABC):
 
     @abc.abstractmethod
     def should_trigger(self, store_client: Any) -> bool:
+        """准入控制流：返回 False 时优雅熔断本次触发"""
         pass
 
     @abc.abstractmethod
-    async def execute(self, store_client: Any) -> Any:
+    async def execute(self, store_client: Any) -> TaskExecutionResult:
+        """全异步核心业务逻辑执行入口"""
         pass
