@@ -61,7 +61,6 @@ class BaseTaskUnit(abc.ABC):
     def create_instance(
         cls, 
         store_client: Any, 
-        task_id: str, 
         target_id: str, 
         cron_expr: Optional[str] = None, 
         params: Optional[Dict[str, Any]] = None
@@ -73,6 +72,7 @@ class BaseTaskUnit(abc.ABC):
         if not cls.task_type:
             raise ValueError(f"类 {cls.__name__} 未定义有效的静态 task_type")
 
+        internal_task_id = f"job_{cls.task_type}_{target_id}"
         # 严格验证外部传入的自定义参数，必须属于 default_params 中声明过的键，防止业务端写错
         if params:
             for key in params.keys():
@@ -106,7 +106,7 @@ class BaseTaskUnit(abc.ABC):
 
         # 统一封装物理存储路径约束
         ns: Tuple[str, ...] = ("sys", "scheduler", "tasks")
-        store_client.put(namespace=ns, key=task_id, value=payload)
+        store_client.put(namespace=ns, key=internal_task_id, value=payload)
 
     @abc.abstractmethod
     def should_trigger(self, store_client: Any) -> bool:

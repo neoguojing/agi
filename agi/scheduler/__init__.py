@@ -19,10 +19,10 @@ def run_background_worker(graph):
     # 即使多个任务都在跑，它们的运行时物理隔离，互不干扰，Store 里也完全没有这些脏对象
     engine.runtime_slots = {
         # 画像任务：分发便宜、低延迟的运行时容器
-        "profile": MemoryTaskRuntime(langchain_llm_client=cheap_mini_llm),
+        "profile": MemoryTaskRuntime(llm=None,graph=graph),
         
         # 语义图谱任务：分发高精度、带有嵌入向量支持的重型运行时容器
-        "semantic": MemoryTaskRuntime(langchain_llm_client=heavy_sonnet_llm, embedding_client=MyEmbeddingEngine())
+        "semantic": MemoryTaskRuntime(llm=None,graph=graph)
     }
 
     # 🛠️ 手动登记当前节点支持的记忆抽取原子能力
