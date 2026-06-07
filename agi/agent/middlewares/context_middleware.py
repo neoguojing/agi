@@ -9,7 +9,8 @@ from langchain_core.tools import StructuredTool, InjectedToolCallId
 from langgraph.types import Command
 from langchain.tools import ToolRuntime,tool
 from langgraph.channels import LastValue
-
+from langgraph.runtime import Runtime
+from langchain_core.runnables import RunnableConfig
 
 from pydantic import BaseModel, Field
 
@@ -34,6 +35,7 @@ from agi.scheduler.memory_task.memory_models import (
     SemanticMemoryRecord
 )
 from agi.scheduler.memory_task.memory_state import MemoryState
+from agi.scheduler import DefaultScheduler
 
 
 class OrganizeMemoryInput(BaseModel):
@@ -312,3 +314,38 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
 
     def _log_debug_info(self, ctx_data: str, total_count: int):
         print(f"--- [Context Engine] 注入数据: {ctx_data} | 消息流长度: {total_count} ---")
+        
+    
+    def before_agent(self, state: MemoryState, runtime: Runtime, config: RunnableConfig) -> None:  # ty: ignore[invalid-method-override]
+        """Load memory content before agent execution (synchronous).
+
+        Loads memory from all configured sources and stores in state.
+        Only loads if not already present in state.
+
+        Args:
+            state: Current agent state.
+            runtime: Runtime context.
+            config: Runnable config.
+
+        Returns:
+            State update with memory_contents populated.
+        """
+        DefaultScheduler.load_and_register_tasks(runtime.context.user_id,runtime.context.conversation_id)
+        DefaultScheduler.dispatch_user_mission(runtime.context.user_id)
+
+    async def abefore_agent(self, state: MemoryState, runtime: Runtime, config: RunnableConfig) -> None:  # ty: ignore[invalid-method-override]
+        """Load memory content before agent execution.
+
+        Loads memory from all configured sources and stores in state.
+        Only loads if not already present in state.
+
+        Args:
+            state: Current agent state.
+            runtime: Runtime context.
+            config: Runnable config.
+
+        Returns:
+            State update with memory_contents populated.
+        """
+        pass
+

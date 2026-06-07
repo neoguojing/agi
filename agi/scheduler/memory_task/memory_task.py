@@ -31,11 +31,12 @@ logger = logging.getLogger("MemoryTask")
 
 class MemoryTaskRuntime(BaseTaskRuntime):
     """内聚了大模型交互所需要的全部重型环境依赖，让 Store 干净地回归存储本质"""
-    def __init__(self, llm: Any, graph: Any, thread_id: str):
+    def __init__(self, llm: Any, graph: Any, thread_id: str,user_id:str):
         super().__init__()
         self.llm = llm
         self.graph = graph
         self.thread_id = thread_id
+        self.user_id = user_id
 
 
 class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
@@ -179,7 +180,7 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
 class ProfileMemoryTask(BaseMemoryExtractionTask):
     """画像记忆整理任务：用户画像通常不需要太频繁，默认每天凌晨 3 点跑一次"""
     task_type = "profile"
-    default_cron = "0 3 * * *"
+    default_cron = "*/1 * * * *"
 
 
 class EpisodicMemoryTask(BaseMemoryExtractionTask):

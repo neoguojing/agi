@@ -13,11 +13,10 @@ import logging
 import os
 import uuid
 from collections.abc import AsyncGenerator, Mapping, Sequence
-from typing import Any
-
+from typing import Any,Optional
+from pydantic import BaseModel, Field
 from psycopg_pool import AsyncConnectionPool, ConnectionPool
 
-from agi.agent.context import Context
 from agi.agent.middlewares import (
     ContextEngineeringMiddleware,
     DebugLLMContextMiddleware,
@@ -34,6 +33,7 @@ from langgraph.store.postgres.aio import AsyncPostgresStore
 from langchain_core.runnables import RunnableConfig
 from agi.config import DEFAULT_DB_URI
 from agi.agent.deep_agent import create_deep_agent
+from agi.scheduler import set_global_graph
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,13 @@ RuntimeResources = dict[str, Any]
 _async_agent: Any = None
 _async_connections: list[Any] = []
 
+class Context(BaseModel):
+    user_id: Optional[str] = "admin"
+    conversation_id: Optional[str] = str(uuid.uuid4())
+
+    def model_dump(self, *args, **kwargs):
+        return super().model_dump(*args, **kwargs)
+    
 async def create_async_resources(db_uri: str = DB_URI) -> RuntimeResources:
     pool = AsyncConnectionPool(conninfo=db_uri, open=True)
     checkpointer = AsyncPostgresSaver(conn=pool)
@@ -118,6 +125,7 @@ async def get_async_agent():
             checkpointer=resources["checkpointer"],
             store=resources["store"],
         )
+        set_global_graph(_async_agent)
     return _async_agent
 
 

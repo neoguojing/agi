@@ -33,4 +33,5 @@ dependencies = [
     "openbb-mcp-server==1.4.0",
 
     "textual==8.2.7",
+    "apscheduler==3.11.2",
 ]
