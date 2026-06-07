@@ -1,10 +1,13 @@
-from typing import List, Any, Optional
+from typing import List, Any, Optional,Annotated
 from pydantic import Field
 from langchain_core.tools import tool
+from langchain_core.tools import InjectedToolCallId
+from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 from agi.scheduler.memory_task.memory_models import ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord
 from agi.scheduler.memory_task.memory_state import MemoryState
 import logging
+
 
 # 初始化日志记录器
 logger = logging.getLogger(__name__)
@@ -58,18 +61,19 @@ logger = logging.getLogger(__name__)
 
 @tool(description=CONSOLIDATE_PROFILE_MEMORY_DESCRIPTION, return_direct=True)
 def consolidate_profile_memory(
-    reason: str, 
-    upserts: Optional[List[ProfileMemoryRecord]] = Field(default=[], description="Records to add or update."),
-    deletions: Optional[List[str]] = Field(default=[], description="Keys to delete.")
+    reason: str,
+    upserts: Optional[List[ProfileMemoryRecord]],
+    deletions: Optional[List[str]],
+    tool_call_id: Annotated[str, InjectedToolCallId]
 ) -> Command[MemoryState]: # 1. 强类型返回值约束
     try:
         target_dict = {}
-        
+
         # 2. 直接调用封装好的 dedup_key，无需关心内部拼接逻辑
         for record in (upserts or []):
             if getattr(record, "dedup_key", None):
                 target_dict[record.dedup_key] = record
-                    
+
         for delete_key in (deletions or []):
             if delete_key:
                 target_dict[delete_key.strip().lower()] = None
@@ -78,6 +82,7 @@ def consolidate_profile_memory(
         update_payload: MemoryState = {
             "profile_records": target_dict,
             "organization_reason": reason,
+            "messages": [ToolMessage(f"Updated profile records based on: {reason}", tool_call_id=tool_call_id)] if tool_call_id else [],
         }
         return Command(update=update_payload)
 
@@ -89,17 +94,18 @@ def consolidate_profile_memory(
 
 @tool(description=CONSOLIDATE_EPISODIC_MEMORY_DESCRIPTION, return_direct=True)
 def consolidate_episodic_memory(
-    reason: str, 
-    upserts: Optional[List[EpisodicMemoryRecord]] = Field(default=[], description="Records to add or update."),
-    deletions: Optional[List[str]] = Field(default=[], description="Keys to delete.")
+    reason: str,
+    upserts: Optional[List[EpisodicMemoryRecord]],
+    deletions: Optional[List[str]],
+    tool_call_id: Annotated[str, InjectedToolCallId]
 ) -> Command[MemoryState]:
     try:
         target_dict = {}
-        
+
         for record in (upserts or []):
             if getattr(record, "dedup_key", None):
                 target_dict[record.dedup_key] = record
-                    
+
         for delete_key in (deletions or []):
             if delete_key:
                 target_dict[delete_key.strip().lower()] = None
@@ -107,6 +113,7 @@ def consolidate_episodic_memory(
         update_payload: MemoryState = {
             "episodic_records": target_dict,
             "organization_reason": reason,
+            "messages": [ToolMessage(f"Updated episodic records based on: {reason}", tool_call_id=tool_call_id)] if tool_call_id else [],
         }
         return Command(update=update_payload)
 
@@ -117,17 +124,18 @@ def consolidate_episodic_memory(
 
 @tool(description=CONSOLIDATE_SEMANTIC_MEMORY_DESCRIPTION, return_direct=True)
 def consolidate_semantic_memory(
-    reason: str, 
-    upserts: Optional[List[SemanticMemoryRecord]] = Field(default=[], description="Records to add or update."),
-    deletions: Optional[List[str]] = Field(default=[], description="Keys to delete.")
+    reason: str,
+    upserts: Optional[List[SemanticMemoryRecord]],
+    deletions: Optional[List[str]],
+    tool_call_id: Annotated[str, InjectedToolCallId]
 ) -> Command[MemoryState]:
     try:
         target_dict = {}
-        
+
         for record in (upserts or []):
             if getattr(record, "dedup_key", None):
                 target_dict[record.dedup_key] = record
-                    
+
         for delete_key in (deletions or []):
             if delete_key:
                 target_dict[delete_key.strip().lower()] = None
@@ -135,6 +143,7 @@ def consolidate_semantic_memory(
         update_payload: MemoryState = {
             "semantic_records": target_dict,
             "organization_reason": reason,
+            "messages": [ToolMessage(f"Updated semantic records based on: {reason}", tool_call_id=tool_call_id)] if tool_call_id else [],
         }
         return Command(update=update_payload)
 
