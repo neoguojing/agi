@@ -19,65 +19,12 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import uuid4
 from pydantic import BaseModel, Field
-
-
-# =========================================================
-# Normalization Helpers (shared by dedup in tasks and store)
-# =========================================================
-
-
-def _normalize_text(value: Any) -> str:
-    if not isinstance(value, str):
-        return ""
-    return " ".join(value.strip().lower().split())
-
-
-def _normalize_participants(value: Any) -> tuple[str, ...]:
-    if not isinstance(value, list):
-        return ()
-    normalized = [_normalize_text(v) for v in value if isinstance(v, str) and _normalize_text(v)]
-    return tuple(sorted(set(normalized)))
-
-
 # =========================================================
 # Type Aliases
 # =========================================================
 
 MemoryTarget = Literal["profile", "episodic", "semantic"]
 
-
-# =========================================================
-# Dedup
-# =========================================================
-
-
-def record_dedup_key(target: "MemoryTarget", record: dict[str, Any]) -> tuple[Any, ...] | None:
-    """Best-effort semantic key used to collapse duplicate memories."""
-    if target == "profile":
-        key = _normalize_text(record.get("key"))
-        value = _normalize_text(record.get("value"))
-        return ("profile", key, value) if key and value else None
-
-    if target == "episodic":
-        summary = _normalize_text(record.get("summary"))
-        participants = _normalize_participants(record.get("participants"))
-        event_time = _normalize_text(record.get("event_time"))
-        if not summary:
-            return None
-        return ("episodic", summary, participants, event_time[:10] if event_time else "")
-
-    if target == "semantic":
-        subject = _normalize_text(record.get("subject"))
-        predicate = _normalize_text(record.get("predicate"))
-        obj = _normalize_text(record.get("object"))
-        return ("semantic", subject, predicate, obj) if subject and predicate and obj else None
-
-    return None
-
-
-# =========================================================
-# Profile Memory (Simplified for LLM)
-# =========================================================
 
 class ProfileMemoryRecord(BaseModel):
 
@@ -124,6 +71,11 @@ class ProfileMemoryRecord(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc),
         description="update timestamp."
     )
+
+    @property
+    def dedup_key(self) -> str:
+        """Unique key for deduplication and updates."""
+        return self.key.strip().lower() if self.key else ""
 
 
 # =========================================================
@@ -188,6 +140,13 @@ class EpisodicMemoryRecord(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc),
         description="update timestamp."
     )
+
+    @property
+    def dedup_key(self) -> str:
+        """Unique key for deduplication and updates."""
+        summary = self.summary.strip().lower() if getattr(self, "summary", None) else ""
+        date_str = self.event_time[:10] if getattr(self, "event_time", None) else "anytime"
+        return f"{summary}_{date_str}" if summary else ""
 
 
 # =========================================================
@@ -271,3 +230,11 @@ class SemanticMemoryRecord(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc),
         description="update timestamp."
     )
+
+    @property
+    def dedup_key(self) -> str:
+        """Unique key for deduplication and updates."""
+        subject = self.subject.strip().lower() if getattr(self, "subject", None) else ""
+        predicate = getattr(self, "predicate", "")
+        obj = self.object.strip().lower() if getattr(self, "object", None) else ""
+        return f"{subject}:{predicate}:{obj}" if subject and obj else ""

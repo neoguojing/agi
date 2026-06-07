@@ -189,13 +189,13 @@ my_model_pool = [
         extra_params={"base_url": OLLAMA_API_BASE_URL, "temperature": 0.2}
     ),
 
-    # ModelNode(
-    #     provider="ollama",
-    #     model_name="gemma4:26b",
-    #     priority=6,
-    #     api_key="",
-    #     extra_params={"base_url": OLLAMA_API_BASE_URL, "temperature": 0.2,'num_ctx': OLLAMA_CONTEXT_SIZE}
-    # ),
+    ModelNode(
+        provider="ollama",
+        model_name="gemma4:12b-it-q8_0",
+        priority=6,
+        api_key="",
+        extra_params={"base_url": OLLAMA_API_BASE_URL, "temperature": 0.2,'num_ctx': OLLAMA_CONTEXT_SIZE}
+    ),
     
     
 ]

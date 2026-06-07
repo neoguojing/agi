@@ -12,7 +12,6 @@ from langgraph.channels import LastValue
 
 
 from pydantic import BaseModel, Field
-from typing_extensions import NotRequired, TypedDict, override
 
 from langchain.agents.middleware.types import (
     AgentMiddleware,
@@ -27,141 +26,28 @@ from langchain.agents.middleware.types import (
 from deepagents.backends.protocol import BackendProtocol
 from agi.agent.prompt import get_middleware_prompt
 from agi.utils.common import append_to_system_message
-from agi.agent.context.memory import (
-    MemoryMaintenanceManager,
-    MessageProvider
-)
-from agi.agent.context.memory_models import (
+
+from agi.scheduler.memory_task.memory_models import (
     MemoryTarget,
-    MemoryExtractionResult,
     ProfileMemoryRecord,
     EpisodicMemoryRecord,
     SemanticMemoryRecord
 )
+from agi.scheduler.memory_task.memory_state import MemoryState
 
-from agi.agent.context.memory_store import (
-    EPISODIC_MAX_RECORDS,
-    EPISODIC_RETENTION_DAYS,
-    SEMANTIC_MAX_RECORDS,
-    SEMANTIC_RETENTION_DAYS,
-    record_dedup_key,
-)
-
-# --- State and Input Definitions ---
-
-
-
-def profile_memory_delta_reducer(
-    state: Optional[list[ProfileMemoryRecord]],
-    writes: list[ProfileMemoryRecord],
-) -> list[ProfileMemoryRecord]:
-
-    merged = {
-        record_dedup_key("profile", r.model_dump()): r
-        for r in (state or [])
-        if record_dedup_key("profile", r.model_dump()) is not None
-    }
-
-    order = list(merged.keys())
-
-    for r in writes:
-        k = record_dedup_key("profile", r.model_dump())
-        if k and k not in merged:
-            order.append(k)
-        if k:
-            merged[k] = r
-
-    return [merged[k] for k in order if k in merged]
-
-def episodic_memory_delta_reducer(
-    state: Optional[list[EpisodicMemoryRecord]],
-    writes: list[EpisodicMemoryRecord],
-) -> list[EpisodicMemoryRecord]:
-
-    expire_before = datetime.now(timezone.utc) - timedelta(days=EPISODIC_RETENTION_DAYS)
-
-    def ts(v: str):
-        try:
-            return datetime.fromisoformat(v.replace("Z", "+00:00"))
-        except Exception:
-            return datetime.min.replace(tzinfo=timezone.utc)
-
-    merged = {
-        record_dedup_key("episodic", r.model_dump()): r
-        for r in (state or [])
-        if (not r.event_time or ts(r.event_time) >= expire_before)
-        and record_dedup_key("episodic", r.model_dump()) is not None
-    }
-
-    merged.update({
-        record_dedup_key("episodic", r.model_dump()): r
-        for r in writes
-        if record_dedup_key("episodic", r.model_dump()) is not None
-    })
-
-    return sorted(
-        merged.values(),
-        key=lambda r: ts(r.event_time),
-        reverse=True,
-    )[:EPISODIC_MAX_RECORDS]
-
-def semantic_memory_delta_reducer(
-    state: Optional[list[SemanticMemoryRecord]],
-    writes: list[SemanticMemoryRecord],
-) -> list[SemanticMemoryRecord]:
-
-    expire_before = datetime.now(timezone.utc) - timedelta(days=SEMANTIC_RETENTION_DAYS)
-
-    def ts(r: SemanticMemoryRecord):
-        try:
-            return datetime.fromisoformat(
-                r.updated_at.replace("Z", "+00:00")
-            )
-        except Exception:
-            return datetime.min.replace(tzinfo=timezone.utc)
-
-    merged = {
-        record_dedup_key("semantic", r.model_dump()): r
-        for r in (state or [])
-        if (not getattr(r, "updated_at", None)
-        or ts(r) >= expire_before)
-        and record_dedup_key("semantic", r.model_dump()) is not None
-    }
-
-    merged.update({
-        record_dedup_key("semantic", r.model_dump()): r
-        for r in writes
-        if record_dedup_key("semantic", r.model_dump()) is not None
-    })
-
-    return sorted(
-        merged.values(),
-        key=ts,
-        reverse=True,
-    )[:SEMANTIC_MAX_RECORDS]
-
-class MemoryState(AgentState[ResponseT]):
-    """State schema for the memory organization middleware."""
-    # The memory records the model wants to persist
-    profile_records: Annotated[NotRequired[list[ProfileMemoryRecord]], profile_memory_delta_reducer]
-    episodic_records: Annotated[NotRequired[list[EpisodicMemoryRecord]], episodic_memory_delta_reducer]  
-    semantic_records: Annotated[NotRequired[list[SemanticMemoryRecord]],semantic_memory_delta_reducer] 
-    # The type of memory target chosen by the model
-    pending_target: Annotated[NotRequired[MemoryTarget], LastValue]
-    # Reason for the current organization request
-    organization_reason: Annotated[NotRequired[str], LastValue]
 
 class OrganizeMemoryInput(BaseModel):
-    """Input schema for the `organize_memory` tool.
-
-    This tool acts as a protocol for the model to explicitly define what
-    information should be transitioned from short-term context to long-term memory.
-    """
+    """Input schema for the `organize_memory` tool."""
     target: MemoryTarget = Field(
-        description="The type of memory to update. Valid values: 'profile' (user traits), 'episodic' (events), 'semantic' (facts)."
+        description="The type of memory to update. Valid values: 'profile', 'episodic', or 'semantic'."
     )
-    records: list[Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord]] = Field(
-        description="The memory records to persist. Must match the target type: ProfileMemoryRecord for 'profile', EpisodicMemoryRecord for 'episodic', or SemanticMemoryRecord for 'semantic'."
+    upserts: list[Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord]] = Field(
+        default_factory=list,
+        description="Records to add or update. Ensure they match the 'target' type."
+    )
+    deletions: list[str] = Field(
+        default_factory=list,
+        description="String keys of memories to completely remove."
     )
     reason: str = Field(
         default="Explicit request to organize memory",
@@ -197,106 +83,6 @@ ORGANIZE_MEMORY_TOOL_DESCRIPTION = """Use this tool to explicitly upsert (add/up
 ## Guarantees
 Information is immediately processed via dictionary reducers. 'deletions' are explicitly popped from the state, and 'upserts' are merged.
 """
-    
-@tool(description=ORGANIZE_MEMORY_TOOL_DESCRIPTION)
-def organize_memory(
-    target: MemoryTarget, # Literal["profile", "episodic", "semantic"]
-    reason: str, 
-    tool_call_id: Annotated[str, InjectedToolCallId],
-    upserts: Optional[List[Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord]]] = Field(default=[], description="Records to add or update."),
-    deletions: Optional[List[str]] = Field(default=[], description="String keys of memories to completely remove.")
-) -> Command[Any]:
-    try:
-        # 初始化用于更新的字典
-        target_dict = {}
-
-        # ==========================================
-        # 1. 统一处理 Upserts (提取唯一 Key 归一化)
-        # ==========================================
-        if upserts:
-            for record in upserts:
-                key = None
-                
-                # Profile 模式解析
-                if target == "profile" and hasattr(record, "key") and record.key:
-                    key = record.key.strip().lower()
-                
-                # Episodic 模式解析
-                elif target == "episodic" and hasattr(record, "summary") and record.summary:
-                    date_str = record.event_time[:10] if getattr(record, "event_time", None) else "anytime"
-                    key = f"{record.summary.strip().lower()}_{date_str}"
-                
-                # Semantic 模式解析
-                elif target == "semantic" and hasattr(record, "subject") and record.subject:
-                    key = f"{record.subject.strip().lower()}:{record.predicate}:{record.object.strip().lower()}"
-
-                # 存入字典
-                if key:
-                    target_dict[key] = record
-
-        # ==========================================
-        # 2. 统一处理 Deletions (显式赋值为 None 触发删除)
-        # ==========================================
-        if deletions:
-            for delete_key in deletions:
-                if delete_key:
-                    target_dict[delete_key.strip().lower()] = None
-
-        # ==========================================
-        # 3. 构造精准的 Command Update 载荷
-        # ==========================================
-        # 基础更新载荷
-        update_payload = {
-            "pending_target": target,
-            "organization_reason": reason,
-            "messages": [
-                ToolMessage(
-                    content=f"Memory reorganized for target '{target}'. Upserted {len(upserts or [])} items, Deleted {len(deletions or [])} items. Reason: {reason}", 
-                    tool_call_id=tool_call_id
-                )
-            ]
-        }
-
-        # 仅将修改后的字典打入对应的 State 字段
-        # （不修改的字段完全不写，依靠 LangGraph 原生浅合并保留旧数据）
-        if target == "profile":
-            update_payload["profile_records"] = target_dict
-        elif target == "episodic":
-            update_payload["episodic_records"] = target_dict
-        elif target == "semantic":
-            update_payload["semantic_records"] = target_dict
-
-        return Command(update=update_payload)
-
-    except Exception as e:
-        logger.exception(f"Failed to organize memory for target {target}. Error: {e}")
-        return Command(
-            update={
-                "messages": [
-                    ToolMessage(
-                        content=f"Failed to organize memory for {target}. Error: {e}", 
-                        tool_call_id=tool_call_id, 
-                        status="error" # 注意：langchain较新版本才支持status参数，若报错可移除
-                    )
-                ],
-            }
-        )
-
-# Dynamically create the organize_memory tool with the custom description
-
-
-# --- Middleware ---
-
-class MiddlewareMessageProvider(MessageProvider):
-    """Dynamic message provider that can be updated by the middleware."""
-    def __init__(self):
-        self._messages = []
-
-    def update_messages(self, messages: List[BaseMessage]):
-        self._messages = messages
-
-    def get_messages(self) -> List[BaseMessage]:
-        return self._messages
 
 class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],ContextT, ResponseT]):
     """
@@ -316,7 +102,6 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
         self.backend = backend
         self.llm = llm
         self.memory_manager = None
-        self.message_provider = MiddlewareMessageProvider()
         self.memory_cache = None
         self.tools = [
             StructuredTool.from_function(
@@ -334,86 +119,62 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
         runtime: ToolRuntime[ContextT, MemoryState[ResponseT]],
         target: MemoryTarget,
         reason: str,
-        upserts: Optional[List[Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord]]] = Field(default=[], description="Records to add or update."),
-        deletions: Optional[List[str]] = Field(default=[], description="String keys of memories to completely remove.")
-    ) -> Command[Any]:
+        upserts: Optional[list[Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord]]] = None,
+        deletions: Optional[list[str]] = None
+    ) -> Command[MemoryState]:
         """Synchronously persist key information into long-term memory."""
         try:
-            # 初始化用于更新的字典
             target_dict = {}
+            upserts = upserts or []
+            deletions = deletions or []
 
-            # ==========================================
-            # 1. 统一处理 Upserts (提取唯一 Key 归一化)
-            # ==========================================
-            if upserts:
-                for record in upserts:
-                    key = None
-                    
-                    # Profile 模式解析
-                    if target == "profile" and hasattr(record, "key") and record.key:
-                        key = record.key.strip().lower()
-                    
-                    # Episodic 模式解析
-                    elif target == "episodic" and hasattr(record, "summary") and record.summary:
-                        date_str = record.event_time[:10] if getattr(record, "event_time", None) else "anytime"
-                        key = f"{record.summary.strip().lower()}_{date_str}"
-                    
-                    # Semantic 模式解析
-                    elif target == "semantic" and hasattr(record, "subject") and record.subject:
-                        key = f"{record.subject.strip().lower()}:{record.predicate}:{record.object.strip().lower()}"
+            # 1. 统一处理 Upserts (依赖内部封装的 dedup_key)
+            for record in upserts:
+                key = getattr(record, "dedup_key", None)
+                if key:
+                    target_dict[key] = record
 
-                    # 存入字典
-                    if key:
-                        target_dict[key] = record
+            # 2. 统一处理 Deletions (赋值为 None 触发 Reducer 删除)
+            for delete_key in deletions:
+                if delete_key:
+                    target_dict[delete_key.strip().lower()] = None
 
-            # ==========================================
-            # 2. 统一处理 Deletions (显式赋值为 None 触发删除)
-            # ==========================================
-            if deletions:
-                for delete_key in deletions:
-                    if delete_key:
-                        target_dict[delete_key.strip().lower()] = None
-
-            # ==========================================
-            # 3. 构造精准的 Command Update 载荷
-            # ==========================================
-            # 基础更新载荷
-            update_payload = {
-                "pending_target": target,
+            # 3. 构造强类型且无冗余字段的 Update Payload
+            update_payload: MemoryState = {
                 "organization_reason": reason,
                 "messages": [
                     ToolMessage(
-                        content=f"Memory reorganized for target '{target}'. Upserted {len(upserts or [])} items, Deleted {len(deletions or [])} items. Reason: {reason}", 
+                        content=f"Memory reorganized for target '{target}'. Upserted {len(upserts)} items, Deleted {len(deletions)} items. Reason: {reason}", 
                         tool_call_id=runtime.tool_call_id
                     )
                 ]
             }
 
-            # 仅将修改后的字典打入对应的 State 字段
-            # （不修改的字段完全不写，依靠 LangGraph 原生浅合并保留旧数据）
+            # 4. 根据 Target 将重组好的数据写入 State 对应的字段
             if target == "profile":
-                update_payload["profile_records"] = target_dict
+                update_payload["profile_records"] = target_dict  # type: ignore
             elif target == "episodic":
-                update_payload["episodic_records"] = target_dict
+                update_payload["episodic_records"] = target_dict # type: ignore
             elif target == "semantic":
-                update_payload["semantic_records"] = target_dict
+                update_payload["semantic_records"] = target_dict # type: ignore
 
             return Command(update=update_payload)
 
         except Exception as e:
             logger.exception(f"Failed to organize memory for target {target}. Error: {e}")
-            return Command(
-                update={
-                    "messages": [
-                        ToolMessage(
-                            content=f"Failed to organize memory for {target}. Error: {e}", 
-                            tool_call_id=runtime.tool_call_id,
-                            status="error" # 注意：langchain较新版本才支持status参数，若报错可移除
-                        )
-                    ],
-                }
-            )
-
+            
+            # 异常情况也遵循强类型的 State 返回
+            error_payload: MemoryState = {
+                "messages": [
+                    ToolMessage(
+                        content=f"Failed to organize memory for {target}. Error: {e}", 
+                        tool_call_id=runtime.tool_call_id,
+                        status="error" 
+                    )
+                ]
+            }
+            return Command(update=error_payload)
+        
     async def _aorganize_memory(
         self,
         runtime: ToolRuntime[ContextT, MemoryState[ResponseT]],
@@ -547,27 +308,6 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
     ) -> ModelResponse:
 
         runtime = request.runtime
-        backend = self._get_backend(runtime)
-
-        self.message_provider.update_messages(request.messages)
-
-        if self.memory_manager is None and self.llm is not None:
-            self.memory_manager = MemoryMaintenanceManager(
-                llm=self.llm,
-                backend=backend,
-                messages=self.message_provider
-            )
-            # await self.memory_manager.start()
-
-            self.memory_cache = await self.memory_manager.load_memories()
-
-        # Load memories from files
-
-        request.state["profile_records"] =  profile_memory_delta_reducer(request.state["profile_records"],self.memory_cache.profile_memories)
-        request.state["episodic_records"] = episodic_memory_delta_reducer(request.state["episodic_records"],self.memory_cache.episodic_memories)
-        request.state["semantic_records"] = semantic_memory_delta_reducer(request.state["semantic_records"],self.memory_cache.semantic_memories)
-
-        request = request.override(state=request.state)
             
         memory_body = self.format_memory_for_llm(request.state)
 
