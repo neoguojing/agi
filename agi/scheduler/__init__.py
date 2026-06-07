@@ -125,8 +125,6 @@ class SchedulerOrchestrator:
         self.scheduler.shutdown()
         
 
-DefaultScheduler = SchedulerOrchestrator()
-
 # if __name__ == "__main__":
     
 #     store = PostgresStore(conn=ConnectionPool(conninfo=DEFAULT_DB_URI))

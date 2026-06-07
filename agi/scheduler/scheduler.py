@@ -3,6 +3,7 @@ import json
 import logging
 from datetime import datetime
 from typing import Any, Dict, Type
+from langgraph.store.base import BaseStore
 from agi.scheduler.memory_task.memory_task import *
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -78,7 +79,7 @@ def _pure_code_task_proxy(task_id: str, task_type: str, target_id: str, cron_exp
 # 5. 旁路调度内核（支持启动后安全、动态注册）
 # ==============================================================================
 class ConfigurationMergedScheduler:
-    def __init__(self, store_client: Any, tz_str: str = "Asia/Shanghai"):
+    def __init__(self, store_client: BaseStore, tz_str: str = "Asia/Shanghai"):
         self.store_client = store_client
         self.tz = timezone(tz_str)
         self.registry: Dict[str, Dict[str, Any]] = {}
@@ -117,7 +118,7 @@ class ConfigurationMergedScheduler:
         if self._scheduler.running:
             logger.info("⚡ 检测到引擎正在运行，开始自动激活持久化层中 [%s] 的历史存量任务...", task_type)
             ns = SchedulerStorageContract.TASK_NAMESPACE
-            all_instances = self.store_client.search(namespace_prefix=ns, limit=2000)
+            all_instances = self.store_client.search(ns, limit=2000)
             
             for item in all_instances:
                 data = item.value
@@ -132,7 +133,7 @@ class ConfigurationMergedScheduler:
             logger.info("⏰ 后台调度引擎已激活，执行冷启动数据恢复...")
             
             ns = SchedulerStorageContract.TASK_NAMESPACE
-            all_instances = self.store_client.search(namespace_prefix=ns, limit=2000)
+            all_instances = self.store_client.search(ns, limit=2000)
             for item in all_instances:
                 data = item.value
                 task_type = data.get("task_type")

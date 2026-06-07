@@ -35,7 +35,7 @@ from agi.scheduler.memory_task.memory_models import (
     SemanticMemoryRecord
 )
 from agi.scheduler.memory_task.memory_state import MemoryState
-from agi.scheduler import DefaultScheduler
+from agi.scheduler import SchedulerOrchestrator
 
 
 class OrganizeMemoryInput(BaseModel):
@@ -330,8 +330,9 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
         Returns:
             State update with memory_contents populated.
         """
-        DefaultScheduler.load_and_register_tasks(runtime.context.user_id,runtime.context.conversation_id)
-        DefaultScheduler.dispatch_user_mission(runtime.context.user_id)
+        scheduler = SchedulerOrchestrator()
+        scheduler.load_and_register_tasks(runtime.context.user_id,config['metadata']['thread_id'])
+        scheduler.dispatch_user_mission(runtime.context.user_id)
 
     async def abefore_agent(self, state: MemoryState, runtime: Runtime, config: RunnableConfig) -> None:  # ty: ignore[invalid-method-override]
         """Load memory content before agent execution.
@@ -347,5 +348,5 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
         Returns:
             State update with memory_contents populated.
         """
-        pass
+        return self.before_agent(state,runtime,config)
 
