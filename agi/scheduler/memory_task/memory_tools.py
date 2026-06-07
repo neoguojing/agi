@@ -3,6 +3,7 @@ from pydantic import Field
 from langchain_core.tools import tool
 from langgraph.types import Command
 from agi.scheduler.memory_task.memory_models import ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord
+from agi.scheduler.memory_task.memory_state import MemoryState
 import logging
 
 # 初始化日志记录器
@@ -53,88 +54,90 @@ CONSOLIDATE_SEMANTIC_MEMORY_DESCRIPTION = """Use this tool to reconcile stable f
 # 3. TOOL IMPLEMENTATIONS (字典转化与 Reducer 适配)
 # =====================================================================
 
-@tool(description=CONSOLIDATE_PROFILE_MEMORY_DESCRIPTION,return_direct=True)
+logger = logging.getLogger(__name__)
+
+@tool(description=CONSOLIDATE_PROFILE_MEMORY_DESCRIPTION, return_direct=True)
 def consolidate_profile_memory(
     reason: str, 
     upserts: Optional[List[ProfileMemoryRecord]] = Field(default=[], description="Records to add or update."),
     deletions: Optional[List[str]] = Field(default=[], description="Keys to delete.")
-) -> Command[Any]:
+) -> Command[MemoryState]: # 1. 强类型返回值约束
     try:
         target_dict = {}
         
-        if upserts:
-            for record in upserts:
-                if record.key:
-                    target_dict[record.key.strip().lower()] = record
+        # 2. 直接调用封装好的 dedup_key，无需关心内部拼接逻辑
+        for record in (upserts or []):
+            if getattr(record, "dedup_key", None):
+                target_dict[record.dedup_key] = record
                     
-        if deletions:
-            for delete_key in deletions:
+        for delete_key in (deletions or []):
+            if delete_key:
                 target_dict[delete_key.strip().lower()] = None
 
-        return Command(
-            update={
-                "profile_records": target_dict,
-                "organization_reason": reason,
-            }
-        )
+        # 3. 严格遵循 MemoryState 结构的更新载荷
+        update_payload: MemoryState = {
+            "profile_records": target_dict,
+            "organization_reason": reason,
+        }
+        return Command(update=update_payload)
+
     except Exception as e:
         logger.exception(f"Failed to consolidate profile memory. Reason: {reason}. Error: {e}")
+        # 发生异常时返回空更新或携带错误信息的 State，防止 Graph 崩溃
+        return Command(update={"organization_reason": f"Error: {e}"})
 
 
-@tool(description=CONSOLIDATE_EPISODIC_MEMORY_DESCRIPTION,return_direct=True)
+@tool(description=CONSOLIDATE_EPISODIC_MEMORY_DESCRIPTION, return_direct=True)
 def consolidate_episodic_memory(
     reason: str, 
     upserts: Optional[List[EpisodicMemoryRecord]] = Field(default=[], description="Records to add or update."),
     deletions: Optional[List[str]] = Field(default=[], description="Keys to delete.")
-) -> Command[Any]:
+) -> Command[MemoryState]:
     try:
         target_dict = {}
         
-        if upserts:
-            for record in upserts:
-                if record.summary:
-                    date_str = record.event_time[:10] if getattr(record, "event_time", None) else "anytime"
-                    key = f"{record.summary.strip().lower()}_{date_str}"
-                    target_dict[key] = record
+        for record in (upserts or []):
+            if getattr(record, "dedup_key", None):
+                target_dict[record.dedup_key] = record
                     
-        if deletions:
-            for delete_key in deletions:
+        for delete_key in (deletions or []):
+            if delete_key:
                 target_dict[delete_key.strip().lower()] = None
 
-        return Command(
-            update={
-                "episodic_records": target_dict,
-                "organization_reason": reason,
-            }
-        )
+        update_payload: MemoryState = {
+            "episodic_records": target_dict,
+            "organization_reason": reason,
+        }
+        return Command(update=update_payload)
+
     except Exception as e:
         logger.exception(f"Failed to consolidate episodic memory. Reason: {reason}. Error: {e}")
+        return Command(update={"organization_reason": f"Error: {e}"})
 
 
-@tool(description=CONSOLIDATE_SEMANTIC_MEMORY_DESCRIPTION,return_direct=True)
+@tool(description=CONSOLIDATE_SEMANTIC_MEMORY_DESCRIPTION, return_direct=True)
 def consolidate_semantic_memory(
     reason: str, 
     upserts: Optional[List[SemanticMemoryRecord]] = Field(default=[], description="Records to add or update."),
     deletions: Optional[List[str]] = Field(default=[], description="Keys to delete.")
-) -> Command[Any]:
+) -> Command[MemoryState]:
     try:
         target_dict = {}
         
-        if upserts:
-            for record in upserts:
-                if record.subject and record.predicate and record.object:
-                    key = f"{record.subject.strip().lower()}:{record.predicate}:{record.object.strip().lower()}"
-                    target_dict[key] = record
+        for record in (upserts or []):
+            if getattr(record, "dedup_key", None):
+                target_dict[record.dedup_key] = record
                     
-        if deletions:
-            for delete_key in deletions:
+        for delete_key in (deletions or []):
+            if delete_key:
                 target_dict[delete_key.strip().lower()] = None
 
-        return Command(
-            update={
-                "semantic_records": target_dict,
-                "organization_reason": reason,
-            }
-        )
+        update_payload: MemoryState = {
+            "semantic_records": target_dict,
+            "organization_reason": reason,
+        }
+        return Command(update=update_payload)
+
     except Exception as e:
         logger.exception(f"Failed to consolidate semantic memory. Reason: {reason}. Error: {e}")
+        return Command(update={"organization_reason": f"Error: {e}"})

@@ -236,65 +236,37 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
         # Profile Memory
         # =====================================================
         if state.get('profile_records'):
-
-            lines = [
-                "--- PROFILE MEMORY ---"
-            ]
-
-            for rec in state.get('profile_records'):
-
-                lines.append(
-                    f"- {rec.key}: {rec.value}"
-                )
-
-            sections.append(
-                "\n".join(lines)
-            )
+            # Sort by updated_at descending and take top 50 records to manage context size
+            records = sorted(state.get('profile_records'), key=lambda x: x.updated_at, reverse=True)[:50]
+            lines = ["--- PROFILE MEMORY ---"]
+            for rec in records:
+                lines.append(f"- {rec.key}: {rec.value}")
+            sections.append("\n".join(lines))
 
         # =====================================================
         # Episodic Memory
         # =====================================================
         if state.get('episodic_records'):
-
-            lines = [
-                "--- EPISODIC MEMORY ---"
-            ]
-
-            for rec in state.get('episodic_records'):
-
-                event_time = (
-                    rec.event_time
-                    or "Unknown time"
-                )
-
-                lines.append(
-                    f"- [{event_time}] {rec.summary}"
-                )
-
-            sections.append(
-                "\n".join(lines)
-            )
+            # Sort by updated_at descending and take top 30 for relevance
+            records = sorted(state.get('episodic_records'), key=lambda x: x.updated_at, reverse=True)[:30]
+            lines = ["--- EPISODIC MEMORY ---"]
+            for rec in records:
+                event_time = (rec.event_time or "Unknown time")
+                lines.append(f"- [{event_time}] {rec.summary}")
+            sections.append("\n".join(lines))
 
         # =====================================================
         # Semantic Memory
         # =====================================================
         if state.get('semantic_records'):
-
-            lines = [
-                "--- SEMANTIC MEMORY ---"
+            # Sort by updated_at descending and take top 50 to manage context size
+            records = sorted(state.get('semantic_records'), key=lambda x: x.updated_at, reverse=True)[:50]
+            # Use a compact JSON format to minimize token usage while preserving structured knowledge
+            compact_data = [
+                {"s": r.subject, "p": r.predicate, "o": r.object}
+                for r in records
             ]
-
-            for rec in state.get('semantic_records'):
-
-                lines.append(
-                    f"- {rec.subject} "
-                    f"{rec.predicate} "
-                    f"{rec.object}"
-                )
-
-            sections.append(
-                "\n".join(lines)
-            )
+            sections.append(f"--- SEMANTIC MEMORY ---\n{json.dumps(compact_data, ensure_ascii=False)}")
 
         if not sections:
             return "No memory available."
