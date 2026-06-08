@@ -229,11 +229,12 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
     ) -> str:
         """
         Formats structured memory into a human-readable string
-        suitable for LLM context injection. Supports both legacy list 
-        and new dict formats.
+        suitable for LLM context injection. Supports legacy list, 
+        new dict formats, and raw string fallback.
         """
         import json
-        from datetime import datetime, timezone # 👈 Ensure timezone is imported
+        from datetime import datetime, timezone
+        from typing import Any
 
         sections: list[str] = []
 
@@ -245,13 +246,12 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
                 return data
             return []
 
-        # =====================================================
-        # 🩹 修复后的时间戳安全提取器
-        # =====================================================
+        # 安全时间戳提取器
         def _get_updated_at(rec: Any) -> datetime:
             dt: Any = None
-            
-            # 1. 尝试从属性或字典中捞出原始时间数据
+            if isinstance(rec, str): # 👈 增加字符串拦截，防止后续报错
+                return datetime.min.replace(tzinfo=timezone.utc)
+                
             if hasattr(rec, 'updated_at'):
                 dt = rec.updated_at
             elif isinstance(rec, dict):
@@ -264,17 +264,10 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
                 elif isinstance(val, datetime):
                     dt = val
 
-            # 2. 兜底策略：如果没捞到有效时间，返回带 UTC 时区的绝对最小值
             if dt is None or not isinstance(dt, datetime):
                 return datetime.min.replace(tzinfo=timezone.utc)
             
-            # 3. 核心对齐：统一抹平有时区和无时区的差距
-            if dt.tzinfo is None:
-                # 如果是 naive，强制贴上 UTC 时区标签
-                return dt.replace(tzinfo=timezone.utc)
-            else:
-                # 如果已经是 aware，统一安全平移到 UTC 时区标准线下
-                return dt.astimezone(timezone.utc)
+            return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
 
         # =====================================================
         # Profile Memory
@@ -286,7 +279,12 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
             
             lines = ["--- PROFILE MEMORY ---"]
             for rec in records:
-                lines.append(f"- {rec.key}: {rec.value}")
+                if isinstance(rec, str): # 🌟 如果本身就是字符串，直接打印
+                    lines.append(f"- {rec}")
+                else:
+                    key = getattr(rec, 'key', '') if hasattr(rec, 'key') else rec.get('key', '') if isinstance(rec, dict) else ''
+                    value = getattr(rec, 'value', '') if hasattr(rec, 'value') else rec.get('value', '') if isinstance(rec, dict) else ''
+                    lines.append(f"- {key}: {value}")
             sections.append("\n".join(lines))
 
         # =====================================================
@@ -299,9 +297,12 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
             
             lines = ["--- EPISODIC MEMORY ---"]
             for rec in records:
-                event_time = getattr(rec, 'event_time', 'Unknown time') if hasattr(rec, 'event_time') else rec.get('event_time', 'Unknown time')
-                summary = getattr(rec, 'summary', '') if hasattr(rec, 'summary') else rec.get('summary', '')
-                lines.append(f"- [{event_time}] {summary}")
+                if isinstance(rec, str): # 🌟 如果本身就是字符串，直接打印
+                    lines.append(f"- {rec}")
+                else:
+                    event_time = getattr(rec, 'event_time', 'Unknown time') if hasattr(rec, 'event_time') else rec.get('event_time', 'Unknown time') if isinstance(rec, dict) else 'Unknown time'
+                    summary = getattr(rec, 'summary', '') if hasattr(rec, 'summary') else rec.get('summary', '') if isinstance(rec, dict) else ''
+                    lines.append(f"- [{event_time}] {summary}")
             sections.append("\n".join(lines))
 
         # =====================================================
@@ -312,13 +313,15 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
             record_list = _to_record_list(semantic_data)
             records = sorted(record_list, key=_get_updated_at, reverse=True)[:50]
             
-            # 兼容处理类对象和字典类型数据的读取
             compact_data = []
             for r in records:
-                sub = getattr(r, 'subject', '') if hasattr(r, 'subject') else r.get('subject', '')
-                pred = getattr(r, 'predicate', '') if hasattr(r, 'predicate') else r.get('predicate', '')
-                obj = getattr(r, 'object', '') if hasattr(r, 'object') else r.get('object', '')
-                compact_data.append({"s": sub, "p": pred, "o": obj})
+                if isinstance(r, str): # 🌟 针对字符串类型数据的降级处理
+                    compact_data.append({"raw_fact": r})
+                else:
+                    sub = getattr(r, 'subject', '') if hasattr(r, 'subject') else r.get('subject', '') if isinstance(r, dict) else ''
+                    pred = getattr(r, 'predicate', '') if hasattr(r, 'predicate') else r.get('predicate', '') if isinstance(r, dict) else ''
+                    obj = getattr(r, 'object', '') if hasattr(r, 'object') else r.get('object', '') if isinstance(r, dict) else ''
+                    compact_data.append({"s": sub, "p": pred, "o": obj})
 
             sections.append(f"--- SEMANTIC MEMORY ---\n{json.dumps(compact_data, ensure_ascii=False)}")
 

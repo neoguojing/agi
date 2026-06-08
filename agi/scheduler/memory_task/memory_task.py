@@ -4,14 +4,15 @@ from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
 from agi.scheduler.base import BaseTaskRuntime, BaseTaskUnit, TaskExecutionResult
-from agi.scheduler.utils.state import get_memory_index, get_messages, update_state,get_memories
+from agi.scheduler.utils.state import get_memory_index, get_messages, update_state,get_memories,update_memory_index
 from agi.scheduler.memory_task.memory_tools import (
     MEMORY_SYSTEM_PROMPT,
     consolidate_profile_memory,
     consolidate_episodic_memory,
     consolidate_semantic_memory
 )
-from langchain_core.prompts import PromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
+
 
 TASK_INSTRUCTIONS = {
     "profile": "Call 'consolidate_profile_memory' tool to analyze user core profile based on history and existing memory.",
@@ -67,10 +68,10 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
 
     def add_index(self, value: int):
         self.offset += value
-        update_state(self.runtime.thread_id,self.runtime.graph,"memory_index",self.offset)
+        update_memory_index(self.runtime.thread_id,self.runtime.graph,self.task_type,self.offset)
 
     def load_index(self):
-        return get_memory_index(self.runtime.thread_id, self.runtime.graph)
+        return get_memory_index(self.runtime.thread_id, self.runtime.graph,self.task_type)
 
     def load_history_messages(self):
         return get_messages(self.runtime.thread_id, self.runtime.graph, self.offset)
@@ -80,37 +81,40 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
     # ==============================================================================
     def build_prompt(self, order_input: str) -> str:
         """构建面向大模型的全景结构化记忆提取 Prompt"""
-        prompt = PromptTemplate.from_template(
-            """{system_prompt}\n\n
-            ==================================================
-            [EXISTING USER MEMORY CONTEXT]
-            --------------------------------------------------
-            * CORE PROFILE (画像记忆):
-            {profile_memory}
-
-            * EPISODIC LOGS (情节/事件记忆):
-            {episodic_memory}
-
-            * SEMANTIC KNOWLEDGE (语义知识事实):
-            {semantic_memory}
-            ==================================================\n\n
-
-            CONVERSATION_HISTORY (自增量新对话):\n{messages}\n
-
-            INSTRUCTION: {instruction}
-            """
+        template = ChatPromptTemplate(
+            [
+                ("system", "{system_prompt}"),
+                ("system", "{profile_memory}"),
+                ("system", "{episodic_memory}"),
+                ("system", "{semantic_memory}"),
+                ("placeholder", "{conversation}"),
+                ("human","{instruction}"),
+            ]
         )
 
-        formatted_prompt = prompt.format(
-            system_prompt=MEMORY_SYSTEM_PROMPT,
-            profile_memory=self.memories.get("profile", "(none)"),
-            episodic_memory=self.memories.get("episodic", "(none)"),
-            semantic_memory=self.memories.get("semantic", "(none)"),
-            messages=str(self.messages),
-            instruction=order_input
+        def to_str(memory_dict):
+            if memory_dict is None:
+                return ""
+            import json
+            json_list_str = json.dumps(
+                [v.model_dump() for v in memory_dict.values()], 
+                ensure_ascii=False
+            )
+            return json_list_str
+
+        prompt_value = template.invoke(
+            {
+                "system_prompt": MEMORY_SYSTEM_PROMPT,
+                "profile_memory": to_str(self.memories.get("profile", None)),
+                "episodic_memory": to_str(self.memories.get("episodic", None)),
+                "semantic_memory": to_str(self.memories.get("semantic", None)),
+                "conversation": self.messages,
+                "instruction": order_input,
+            }
         )
-        logger.info(f"📝 任务 [{self.task_id}] 构建 Prompt 完成, 长度: {len(formatted_prompt)}")
-        return formatted_prompt
+
+        logger.info(f"📝 任务 [{self.task_id}] 构建 Prompt 完成\n: {prompt_value}")
+        return prompt_value
     
     def should_trigger(self, store_client: Any) -> bool:
         """准入控制"""
@@ -126,6 +130,9 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
             "episodic": episodic_records,
             "semantic": semantic_records
         }
+
+        logger.info(f"📝 任务 [{self.task_id}] 加载 memory 完成\n: {self.memories}")
+
         return True
 
     async def execute(self, store_client: Any) -> TaskExecutionResult:
@@ -135,10 +142,9 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
         instruction = TASK_INSTRUCTIONS.get(self.task_type, "Call appropriate consolidate memory tool.")
 
         prompt_text = self.build_prompt(instruction)
-        print(f"&&&&&&&&&&&&&&&&&&&&&&&&{prompt_text}")
         try:
             result = self.llm.invoke(prompt_text)
-            print(f"&&&&&&&&&&&&&&&&&&&&&&&&{result}")
+            print(f"22222222222222222222{result}")
         except Exception as e:
             logger.error(f"❌ LLM invocation failed for task {self.task_id}: {e}")
             return TaskExecutionResult(
@@ -159,17 +165,20 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
                 try:
                     # 调用工具获得 Command 对象 (来自 memory_tools.py)
                     tool_result = func.invoke(call)
-                    print(f"&&&&&&&&&&&&&&&&&&&&&&&&{tool_result}")
+                    print(f"333333333333333333333333{tool_result}")
 
                     # 确认 update 内容存在且为字典，然后更新状态
-                    update_payload = getattr(tool_result, "update", None)
-                    if isinstance(update_payload, dict):
-                        record_key = f"{self.task_type}_records"
-                        logger.info(f"💾 准备写入状态 [{record_key}], 载荷大小: {len(str(update_payload))} 字符")
-                        update_state(self.runtime.thread_id, self.runtime.graph, record_key, update_payload)
+                    record_key = f"{self.task_type}_records"
+                    update_records = getattr(tool_result, record_key, None)
+                    reason = getattr(tool_result, "organization_reason", None)
+                    if isinstance(update_records, dict) and len(update_records) > 0:
+                        logger.info(f"💾 准备写入状态 [{record_key}], 载荷大小: {len(str(update_records))} 字符")
+                        update_state(self.runtime.thread_id, self.runtime.graph, record_key, update_records)
+                        update_state(self.runtime.thread_id, self.runtime.graph, "organization_reason", reason)
+
                         logger.info(f"✅ 成功更新状态: {record_key} 使用工具 [{tool_name}] 的输出。")
                     else:
-                        logger.warning(f"⚠️ 工具 [{tool_name}] 返回的更新载荷格式不正确 (expected dict, got {type(update_payload)})")
+                        logger.warning(f"⚠️ 工具 [{tool_name}] 返回的更新载荷格式不正确 (expected dict, got {update_records})")
                 except Exception as e:
                     logger.error(f"❌ 执行工具 [{tool_name}] 时发生异常: {e}")
             else:

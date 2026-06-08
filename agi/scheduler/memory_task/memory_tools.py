@@ -61,11 +61,11 @@ logger = logging.getLogger(__name__)
 
 @tool(description=CONSOLIDATE_PROFILE_MEMORY_DESCRIPTION, return_direct=True)
 def consolidate_profile_memory(
-    reason: str,
-    upserts: Optional[List[ProfileMemoryRecord]],
+    upserts: List[ProfileMemoryRecord],
     deletions: Optional[List[str]],
+    reason: Optional[str],
     tool_call_id: Annotated[str, InjectedToolCallId]
-) -> Command[MemoryState]: # 1. 强类型返回值约束
+) -> MemoryState: # 1. 强类型返回值约束
     try:
         target_dict = {}
 
@@ -82,23 +82,22 @@ def consolidate_profile_memory(
         update_payload: MemoryState = {
             "profile_records": target_dict,
             "organization_reason": reason,
-            "messages": [ToolMessage(f"Updated profile records based on: {reason}", tool_call_id=tool_call_id)] if tool_call_id else [],
+            # "messages": [ToolMessage(f"Updated profile records based on: {reason}", tool_call_id=tool_call_id)] if tool_call_id else [],
         }
-        return Command(update=update_payload)
+        return update_payload
 
     except Exception as e:
         logger.exception(f"Failed to consolidate profile memory. Reason: {reason}. Error: {e}")
         # 发生异常时返回空更新或携带错误信息的 State，防止 Graph 崩溃
-        return Command(update={"organization_reason": f"Error: {e}"})
 
 
 @tool(description=CONSOLIDATE_EPISODIC_MEMORY_DESCRIPTION, return_direct=True)
 def consolidate_episodic_memory(
-    reason: str,
-    upserts: Optional[List[EpisodicMemoryRecord]],
+    upserts: List[EpisodicMemoryRecord],
     deletions: Optional[List[str]],
+    reason: Optional[str],
     tool_call_id: Annotated[str, InjectedToolCallId]
-) -> Command[MemoryState]:
+) -> MemoryState:
     try:
         target_dict = {}
 
@@ -113,22 +112,21 @@ def consolidate_episodic_memory(
         update_payload: MemoryState = {
             "episodic_records": target_dict,
             "organization_reason": reason,
-            "messages": [ToolMessage(f"Updated episodic records based on: {reason}", tool_call_id=tool_call_id)] if tool_call_id else [],
+            # "messages": [ToolMessage(f"Updated episodic records based on: {reason}", tool_call_id=tool_call_id)] if tool_call_id else [],
         }
-        return Command(update=update_payload)
+        return update_payload
 
     except Exception as e:
         logger.exception(f"Failed to consolidate episodic memory. Reason: {reason}. Error: {e}")
-        return Command(update={"organization_reason": f"Error: {e}"})
 
 
 @tool(description=CONSOLIDATE_SEMANTIC_MEMORY_DESCRIPTION, return_direct=True)
 def consolidate_semantic_memory(
-    reason: str,
-    upserts: Optional[List[SemanticMemoryRecord]],
+    upserts: List[SemanticMemoryRecord],
     deletions: Optional[List[str]],
+    reason: Optional[str],
     tool_call_id: Annotated[str, InjectedToolCallId]
-) -> Command[MemoryState]:
+) -> MemoryState:
     try:
         target_dict = {}
 
@@ -143,10 +141,9 @@ def consolidate_semantic_memory(
         update_payload: MemoryState = {
             "semantic_records": target_dict,
             "organization_reason": reason,
-            "messages": [ToolMessage(f"Updated semantic records based on: {reason}", tool_call_id=tool_call_id)] if tool_call_id else [],
+            # "messages": [ToolMessage(f"Updated semantic records based on: {reason}", tool_call_id=tool_call_id)] if tool_call_id else [],
         }
-        return Command(update=update_payload)
+        return update_payload
 
     except Exception as e:
         logger.exception(f"Failed to consolidate semantic memory. Reason: {reason}. Error: {e}")
-        return Command(update={"organization_reason": f"Error: {e}"})

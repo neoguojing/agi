@@ -674,6 +674,7 @@ class DeepAgentTUI(App):
             # 修复：有且仅有这里负责投递单次运行结束状态
             # await self.event_queue.put(STREAM_DONE)
         except Exception as e:
+            self.log.error(f"{e}\n{traceback.format_exc()}")
             await self.event_queue.put(StreamError(e))
 
     @work(group="agent-tasks", exclusive=True)
@@ -691,7 +692,8 @@ class DeepAgentTUI(App):
                 await self.event_queue.put(part)
             await self.event_queue.put(STREAM_DONE)
         except Exception as e:
-            self.log.error(e)
+            self.log.error(f"{e}\n{traceback.format_exc()}")
+            
             await self.event_queue.put(StreamError(e))
 
     # =====================================================================
