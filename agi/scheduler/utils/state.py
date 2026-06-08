@@ -10,8 +10,7 @@ def get_messages(thread_id: str,graph: CompiledStateGraph,offset: int):
     
     if messages is None or len(messages) <= offset:
         return None
-    print(f"***sdadads***{len(messages[offset:])}")
-    print(f"***sdadads***{messages[offset:]}")
+
     return messages[offset:]
 
 def get_memory_index(thread_id: str,graph: CompiledStateGraph,task_type: str):

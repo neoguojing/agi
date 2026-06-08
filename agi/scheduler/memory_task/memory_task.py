@@ -1,4 +1,5 @@
 import abc
+import json
 import logging
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
@@ -55,6 +56,7 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
     def __init__(self, runtime: MemoryTaskRuntime, task_id: str, target_id: str, params: dict):
         super().__init__(runtime, task_id, target_id, params)
         self.offset = self.load_index()
+        logger.info(f"📂 任务 [{self.task_id}] 初始化完成, 当前内存偏移量 (Index): {self.offset}")
         self.messages = None
         
         # 💡 此时 self.memories 将演变为一个 Dict[str, Any] 结构
@@ -95,10 +97,10 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
         def to_str(memory_dict):
             if memory_dict is None:
                 return ""
-            import json
             json_list_str = json.dumps(
-                [v.model_dump() for v in memory_dict.values()], 
-                ensure_ascii=False
+                [v.model_dump() for v in memory_dict.values()],
+                ensure_ascii=False,
+                default=str
             )
             return json_list_str
 
@@ -113,7 +115,7 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
             }
         )
 
-        logger.info(f"📝 任务 [{self.task_id}] 构建 Prompt 完成\n: {prompt_value}")
+        logger.info(f"📝 任务 [{self.task_id}] 构建 Prompt 完成 (Index: {self.offset})")
         return prompt_value
     
     def should_trigger(self, store_client: Any) -> bool:
@@ -131,7 +133,7 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
             "semantic": semantic_records
         }
 
-        logger.info(f"📝 任务 [{self.task_id}] 加载 memory 完成\n: {self.memories}")
+        logger.info(f"📝 任务 [{self.task_id}] 加载 memory 完成 (Index: {self.offset}) | Profile: {len(self.memories.get('profile', []))} Episodic: {len(self.memories.get('episodic', []))} Semantic: {len(self.memories.get('semantic', []))}")
 
         return True
 
@@ -144,7 +146,6 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
         prompt_text = self.build_prompt(instruction)
         try:
             result = self.llm.invoke(prompt_text)
-            print(f"22222222222222222222{result}")
         except Exception as e:
             logger.error(f"❌ LLM invocation failed for task {self.task_id}: {e}")
             return TaskExecutionResult(
@@ -157,26 +158,29 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
             call = tool_calls[0]
             tool_name = call["name"]
             args = call["args"]
-            logger.info(f"🛠️ LLM 决定调用工具 [{tool_name}]，参数: {args}")
-
+            logger.info(f"🛠️ LLM 决定调用工具 [{tool_name}]，参数: {args},{call}")
             # 从映射中获取对应的工具函数并执行
             func = TOOL_MAP.get(tool_name)
             if func:
                 try:
                     # 调用工具获得 Command 对象 (来自 memory_tools.py)
-                    tool_result = func.invoke(call)
-                    print(f"333333333333333333333333{tool_result}")
-
+                    tool_result = func.invoke(args)
+                    logger.info(f"tool_result:{tool_result}")
+                    # records_dict = json.loads(tool_result.content)
                     # 确认 update 内容存在且为字典，然后更新状态
                     record_key = f"{self.task_type}_records"
-                    update_records = getattr(tool_result, record_key, None)
-                    reason = getattr(tool_result, "organization_reason", None)
+                    update_records = tool_result.get(record_key, None)
+                    reason = tool_result.get("organization_reason", None)
+                    
+                    logger.info(f"update_records:{update_records}")
+                    logger.info(f"reason:{reason}")
                     if isinstance(update_records, dict) and len(update_records) > 0:
                         logger.info(f"💾 准备写入状态 [{record_key}], 载荷大小: {len(str(update_records))} 字符")
                         update_state(self.runtime.thread_id, self.runtime.graph, record_key, update_records)
                         update_state(self.runtime.thread_id, self.runtime.graph, "organization_reason", reason)
-
-                        logger.info(f"✅ 成功更新状态: {record_key} 使用工具 [{tool_name}] 的输出。")
+                        if self.messages:
+                            self.add_index(len(self.messages))
+                        logger.info(f"✅ 成功更新状态: {record_key} 使用工具 [{tool_name}] 的输出。index:{self.offset}")
                     else:
                         logger.warning(f"⚠️ 工具 [{tool_name}] 返回的更新载荷格式不正确 (expected dict, got {update_records})")
                 except Exception as e:
@@ -185,9 +189,6 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
                 logger.warning(f"⚠️ 未能在 TOOL_MAP 中找到工具名称: {tool_name}")
         else:
             logger.info("ℹ️ LLM 未产生任何 tool_calls，跳过状态更新。")
-
-        if self.messages:
-            self.add_index(len(self.messages))
 
         return TaskExecutionResult(
             is_success=True,
@@ -205,13 +206,13 @@ class ProfileMemoryTask(BaseMemoryExtractionTask):
 class EpisodicMemoryTask(BaseMemoryExtractionTask):
     """情节/事件记忆提取任务：属于时间敏感型高频任务，默认每 10 分钟盘点一次快照"""
     task_type = "episodic"
-    default_cron = "*/10 * * * *"
+    default_cron = "*/1 * * * *"
 
 
 class SemanticMemoryTask(BaseMemoryExtractionTask):
     """语义知识图谱沉淀任务：属于重型长周期任务，使用更强大的大模型，默认每 1 小时整理一次"""
     task_type = "semantic"
-    default_cron = "0 * * * *"
+    default_cron = "*/1 * * * *"
     default_params = {
         "min_confidence": 0.85,             # 语义入库要求极高的置信度
         "model_flavor": "claude-3-5-sonnet" # 知识沉淀选择推理能力更强的模型

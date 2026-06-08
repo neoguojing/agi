@@ -64,7 +64,7 @@ def consolidate_profile_memory(
     upserts: List[ProfileMemoryRecord],
     deletions: Optional[List[str]],
     reason: Optional[str],
-    tool_call_id: Annotated[str, InjectedToolCallId]
+    # tool_call_id: Annotated[str, InjectedToolCallId]
 ) -> MemoryState: # 1. 强类型返回值约束
     try:
         target_dict = {}
@@ -96,7 +96,7 @@ def consolidate_episodic_memory(
     upserts: List[EpisodicMemoryRecord],
     deletions: Optional[List[str]],
     reason: Optional[str],
-    tool_call_id: Annotated[str, InjectedToolCallId]
+    # tool_call_id: Annotated[str, InjectedToolCallId]
 ) -> MemoryState:
     try:
         target_dict = {}
@@ -125,7 +125,7 @@ def consolidate_semantic_memory(
     upserts: List[SemanticMemoryRecord],
     deletions: Optional[List[str]],
     reason: Optional[str],
-    tool_call_id: Annotated[str, InjectedToolCallId]
+    # tool_call_id: Annotated[str, InjectedToolCallId]
 ) -> MemoryState:
     try:
         target_dict = {}
