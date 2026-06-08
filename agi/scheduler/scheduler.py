@@ -14,13 +14,15 @@ from agi.scheduler.base import BaseTaskUnit, SchedulerStorageContract, TaskExecu
 
 logger = logging.getLogger("SchedulerKernel")
 
-def _pure_code_task_proxy(task_id: str, task_type: str, target_id: str, cron_expr: str, 
+def _pure_code_task_proxy(task_id: str, task_type: str, target_id: str, cron_expr: str,
                           merged_params: dict, task_class: Type[BaseTaskUnit],
                           runtime_handle: BaseTaskRuntime, store_client: Any):
     """
     时钟代理执行器：负责悲观锁校验与全异步事件循环拉起。
     """
     ns = SchedulerStorageContract.TASK_NAMESPACE
+
+    logger.info("⏰ [Clock Trigger] 尝试触发任务 [%s] (Type: %s, Target: %s)", task_id, task_type, target_id)
 
     # 1. 悲观锁校验
     current_meta = store_client.get(namespace=ns, key=task_id)
@@ -40,11 +42,13 @@ def _pure_code_task_proxy(task_id: str, task_type: str, target_id: str, cron_exp
     try:
         # 3. 准入校验
         if not instance.should_trigger(store_client):
+            logger.info("⏭️ 任务 [%s] 准入校验未通过 (should_trigger=False)，跳过执行。", task_id)
             return
 
         # 4. 抢占状态锁
         payload.update({"status": "PROCESSING", "updated_at": datetime.now().isoformat()})
         store_client.put(namespace=ns, key=task_id, value=payload)
+        logger.info("⚡ 任务 [%s] 成功抢占状态锁，开始进入执行阶段...", task_id)
 
         # 5. 驱动异步循环
         loop = asyncio.new_event_loop()
@@ -62,17 +66,24 @@ def _pure_code_task_proxy(task_id: str, task_type: str, target_id: str, cron_exp
             "finished_at": result.finished_at.isoformat()
         }
 
+        if result.is_success:
+            logger.info("✅ 任务 [%s] 执行成功。结果快照: %s", task_id, log_data["output_snapshot"])
+        else:
+            logger.error("❌ 任务 [%s] 执行失败。错误详情: %s", task_id, result.error_log)
+
     except Exception as e:
         next_status = "FAILED"
         log_data = {
-            "is_success": False, 
-            "error_log": f"Fatal Proxy Panic: {str(e)}", 
+            "is_success": False,
+            "error_log": f"Fatal Proxy Panic: {str(e)}",
             "finished_at": datetime.now().isoformat()
         }
-    
+        logger.exception("💥 任务 [%s] 发生致命崩溃: %s", task_id, e)
+
     # 6. 回写持久化存储
     payload.update({"status": next_status, "last_result": log_data, "updated_at": datetime.now().isoformat()})
     store_client.put(namespace=ns, key=task_id, value=payload)
+    logger.info("💾 任务 [%s] 状态已同步至存储, 最终状态: %s", task_id, next_status)
 
 
 # ==============================================================================
@@ -144,7 +155,8 @@ class ConfigurationMergedScheduler:
         reg = self.registry[task_type]
         cron_expr = db_plan.get("cron_expr") or reg["class"].default_cron
         cron_parts = cron_expr.split()
-        
+
+        logger.info("📡 正在将任务 [%s] (%s) 挂载至时钟线, Cron: [%s]", task_id, task_type, cron_expr)
         self._scheduler.add_job(
             func=_pure_code_task_proxy,
             trigger='cron',

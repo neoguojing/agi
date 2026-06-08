@@ -50,3 +50,4 @@ class MemoryState(AgentState[ResponseT]):
     episodic_records: Annotated[NotRequired[dict[str, EpisodicMemoryRecord]], memory_reducer]  
     semantic_records: Annotated[NotRequired[dict[str, SemanticMemoryRecord]], memory_reducer] 
     organization_reason: Annotated[NotRequired[str], LastValue]
+    memory_index: Annotated[NotRequired[int], LastValue]

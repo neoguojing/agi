@@ -2,6 +2,7 @@ import asyncio
 import io
 import json
 import mimetypes
+import logging
 import os
 import shlex
 import sys
@@ -10,12 +11,13 @@ import traceback
 import uuid
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 # ---- Textual 核心组件 ----
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, Input, Markdown, Static,OptionList
+from textual.widgets import Header, Footer, Input, Markdown, Static,OptionList,RichLog
 from textual.containers import VerticalScroll
 from textual import work, on
 from textual.suggester import Suggester
@@ -60,6 +62,50 @@ class CLICommand:
     handler: Callable[[str], bool]
     help_text: str
 
+
+# =====================================================================
+# 🪝 1. 拦截 Python Logger 体系的自定义 Handler
+# =====================================================================
+class TUIAppLoggingHandler(logging.Handler):
+    """将整个 Python logging 模块的日志转发到 Textual TUI 的 RichLog 组件中"""
+    def __init__(self, write_log_func):
+        super().__init__()
+        self.write_log_func = write_log_func
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            if record.levelno >= logging.ERROR:
+                formatted_msg = f"[bold red][ERROR][/bold red] {msg}"
+            elif record.levelno >= logging.WARNING:
+                formatted_msg = f"[bold yellow][WARN][/bold yellow] {msg}"
+            elif record.levelno >= logging.INFO:
+                formatted_msg = f"[bold cyan][INFO][/bold cyan] {msg}"
+            else:
+                formatted_msg = f"[dim][DEBUG][/dim] {msg}"
+            self.write_log_func(formatted_msg)
+        except Exception:
+            self.handleError(record)
+
+# =====================================================================
+# 🪝 2. 拦截 print() 和 sys.stderr 的虚拟流对象
+# =====================================================================
+class TUIStreamRedirector:
+    """伪装成 file-like 对象，把系统的 print() 和报错堆栈接管过来"""
+    def __init__(self, write_log_func, prefix="[PRINT]"):
+        self.write_log_func = write_log_func
+        self.prefix = prefix
+
+    def write(self, buffer: str):
+        for line in buffer.rstrip().splitlines():
+            if line.strip():
+                if "stderr" in self.prefix.lower():
+                    self.write_log_func(f"[bold red]{self.prefix}[/bold red] {line}")
+                else:
+                    self.write_log_func(f"[dim]{self.prefix}[/dim] {line}")
+
+    def flush(self):
+        pass
 
 # =====================================================================
 # 1. 独立封装的自定义折叠 Markdown 卡片
@@ -318,6 +364,14 @@ class DeepAgentTUI(App):
         overflow-y: scroll;
         background: $surface;
     }
+    #system-log {
+        dock: right;
+        width: 50%;              /* 🌟 核心：右侧 50% 宽度分屏 */
+        display: none;          /* 默认隐藏，通过命令/快捷键唤醒 */
+        border-left: tall magenta;
+        background: $surface;
+        color: $text;
+    }
     .msg-user {
         margin: 1 0;
         background: $boost;
@@ -356,6 +410,7 @@ class DeepAgentTUI(App):
         Binding("ctrl+q", "quit", "退出系统", show=True),
         Binding("ctrl+l", "clear_screen", "清屏", show=True),
         Binding("ctrl+o", "toggle_all_collapse", "展开/折叠最新内容", show=True),
+        Binding("ctrl+b", "toggle_log_panel", "显示/隐藏控制台", show=True),
     ]
 
     def __init__(self):
@@ -374,8 +429,8 @@ class DeepAgentTUI(App):
         self.client = get_client(url=LANGGRAPH_MAIN_URL)
         self.assistant_id = "main"
         
-        self.is_cloud_mode = bool(LANGGRAPH_MAIN_URL and self.assistant_id)
-        # self.is_cloud_mode = False
+        # self.is_cloud_mode = bool(LANGGRAPH_MAIN_URL and self.assistant_id)
+        self.is_cloud_mode = False
         self.cloud_manager: Optional[CloudLifecycleManager] = None
         
         self.event_queue = asyncio.Queue()
@@ -387,14 +442,32 @@ class DeepAgentTUI(App):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         yield VerticalScroll(id="chat-container")
+        yield RichLog(id="system-log", highlight=True, markup=True, wrap=True, min_width=0)
         yield CommandInput(placeholder="输入提示词或命令 (如 :help, :cd)...", id="chat-input")
         yield Footer()
 
     def on_mount(self) -> None:
         self.container = self.query_one("#chat-container", VerticalScroll)
         self.input_box = self.query_one("#chat-input", CommandInput)
+        self.log_panel = self.query_one("#system-log", RichLog)
         self._update_status_bar()
         
+        # =====================================================================
+        # 🔥 全局日志与 Print 管道全量劫持
+        # =====================================================================
+        root_logger = logging.getLogger()
+        for handler in root_logger.handlers[:]:
+            root_logger.removeHandler(handler)
+        
+        tui_handler = TUIAppLoggingHandler(self.write_log)
+        tui_handler.setFormatter(logging.Formatter('%(name)s - %(message)s'))
+        root_logger.addHandler(tui_handler)
+        root_logger.setLevel(logging.INFO) 
+
+        sys.stdout = TUIStreamRedirector(self.write_log, prefix="[STDOUT]")
+        sys.stderr = TUIStreamRedirector(self.write_log, prefix="[STDERR]")
+        # =====================================================================
+
         self.persistent_consumer()
         
         if self.is_cloud_mode:
@@ -402,11 +475,21 @@ class DeepAgentTUI(App):
         else:
             self.container.mount(Static("[bold yellow]ℹ️ 当前运行于：本地直连 Mock 模式[/bold yellow]"))
         
+        self.write_log("[bold green][SYSTEM][/bold green] 日志管道全量接管成功。所有的 print 和 logger 均已重定向至此。")
+
         self.input_box.focus()
 
     def _update_status_bar(self):
         self.sub_title = f"📁 目录: {self.cwd.name} | 🧵 线程: {self.thread_id[:8]}"
 
+    def write_log(self, message: str) -> None:
+        """供系统各个后台任务随时调用，向右侧控制台追加原生格式化日志"""
+        try:
+            if hasattr(self, "log_panel") and self.log_panel:
+                timestamp = datetime.now().strftime("%H:%M:%S")
+                self.log_panel.write(f"[dim]\[{timestamp}][/dim] {message}")
+        except Exception:
+            pass
     # =====================================================================
     # 🌟 快捷键触发动作 (Action)
     # =====================================================================
@@ -421,6 +504,20 @@ class DeepAgentTUI(App):
             
             # 状态切换完毕后，顺滑贴底滚动
             self.container.scroll_end(animate=True)
+
+    def action_toggle_log_panel(self) -> None:
+        """按 Ctrl+B 在三种视窗大小间无缝循环"""
+        current_width = self.log_panel.styles.width.value if self.log_panel.display else 0
+        
+        if current_width == 0:
+            self.log_panel.display = True
+            self.log_panel.styles.width = "30%"  # 🤏 瘦子模式
+        elif current_width == 30:
+            self.log_panel.styles.width = "70%"  # 🐋 胖子模式（左边聊天窗自动被挤压到30%）
+        else:
+            self.log_panel.display = False       # ❌ 隐藏模式
+            
+        self.container.scroll_end(animate=False)
     # =====================================================================
     # 后台常驻统一消费者
     # =====================================================================

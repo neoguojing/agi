@@ -229,17 +229,61 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
     ) -> str:
         """
         Formats structured memory into a human-readable string
-        suitable for LLM context injection.
+        suitable for LLM context injection. Supports both legacy list 
+        and new dict formats.
         """
+        import json
+        from datetime import datetime, timezone # 👈 Ensure timezone is imported
 
         sections: list[str] = []
+
+        # 核心兼容函数：将 dict 或 list 统一标准化为 list
+        def _to_record_list(data: Any) -> list:
+            if isinstance(data, dict):
+                return list(data.values())
+            if isinstance(data, list):
+                return data
+            return []
+
+        # =====================================================
+        # 🩹 修复后的时间戳安全提取器
+        # =====================================================
+        def _get_updated_at(rec: Any) -> datetime:
+            dt: Any = None
+            
+            # 1. 尝试从属性或字典中捞出原始时间数据
+            if hasattr(rec, 'updated_at'):
+                dt = rec.updated_at
+            elif isinstance(rec, dict):
+                val = rec.get('updated_at')
+                if isinstance(val, str):
+                    try:
+                        dt = datetime.fromisoformat(val)
+                    except ValueError:
+                        dt = None
+                elif isinstance(val, datetime):
+                    dt = val
+
+            # 2. 兜底策略：如果没捞到有效时间，返回带 UTC 时区的绝对最小值
+            if dt is None or not isinstance(dt, datetime):
+                return datetime.min.replace(tzinfo=timezone.utc)
+            
+            # 3. 核心对齐：统一抹平有时区和无时区的差距
+            if dt.tzinfo is None:
+                # 如果是 naive，强制贴上 UTC 时区标签
+                return dt.replace(tzinfo=timezone.utc)
+            else:
+                # 如果已经是 aware，统一安全平移到 UTC 时区标准线下
+                return dt.astimezone(timezone.utc)
 
         # =====================================================
         # Profile Memory
         # =====================================================
-        if state.get('profile_records'):
-            # Sort by updated_at descending and take top 50 records to manage context size
-            records = sorted(state.get('profile_records'), key=lambda x: x.updated_at, reverse=True)[:50]
+        profile_data = state.get('profile_records')
+        if profile_data:
+            record_list = _to_record_list(profile_data)
+            records = sorted(record_list, key=_get_updated_at, reverse=True)[:50]
+            
             lines = ["--- PROFILE MEMORY ---"]
             for rec in records:
                 lines.append(f"- {rec.key}: {rec.value}")
@@ -248,26 +292,34 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
         # =====================================================
         # Episodic Memory
         # =====================================================
-        if state.get('episodic_records'):
-            # Sort by updated_at descending and take top 30 for relevance
-            records = sorted(state.get('episodic_records'), key=lambda x: x.updated_at, reverse=True)[:30]
+        episodic_data = state.get('episodic_records')
+        if episodic_data:
+            record_list = _to_record_list(episodic_data)
+            records = sorted(record_list, key=_get_updated_at, reverse=True)[:30]
+            
             lines = ["--- EPISODIC MEMORY ---"]
             for rec in records:
-                event_time = (rec.event_time or "Unknown time")
-                lines.append(f"- [{event_time}] {rec.summary}")
+                event_time = getattr(rec, 'event_time', 'Unknown time') if hasattr(rec, 'event_time') else rec.get('event_time', 'Unknown time')
+                summary = getattr(rec, 'summary', '') if hasattr(rec, 'summary') else rec.get('summary', '')
+                lines.append(f"- [{event_time}] {summary}")
             sections.append("\n".join(lines))
 
         # =====================================================
         # Semantic Memory
         # =====================================================
-        if state.get('semantic_records'):
-            # Sort by updated_at descending and take top 50 to manage context size
-            records = sorted(state.get('semantic_records'), key=lambda x: x.updated_at, reverse=True)[:50]
-            # Use a compact JSON format to minimize token usage while preserving structured knowledge
-            compact_data = [
-                {"s": r.subject, "p": r.predicate, "o": r.object}
-                for r in records
-            ]
+        semantic_data = state.get('semantic_records')
+        if semantic_data:
+            record_list = _to_record_list(semantic_data)
+            records = sorted(record_list, key=_get_updated_at, reverse=True)[:50]
+            
+            # 兼容处理类对象和字典类型数据的读取
+            compact_data = []
+            for r in records:
+                sub = getattr(r, 'subject', '') if hasattr(r, 'subject') else r.get('subject', '')
+                pred = getattr(r, 'predicate', '') if hasattr(r, 'predicate') else r.get('predicate', '')
+                obj = getattr(r, 'object', '') if hasattr(r, 'object') else r.get('object', '')
+                compact_data.append({"s": sub, "p": pred, "o": obj})
+
             sections.append(f"--- SEMANTIC MEMORY ---\n{json.dumps(compact_data, ensure_ascii=False)}")
 
         if not sections:

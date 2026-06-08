@@ -67,6 +67,7 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
 
     def add_index(self, value: int):
         self.offset += value
+        update_state(self.runtime.thread_id,self.runtime.graph,"memory_index",self.offset)
 
     def load_index(self):
         return get_memory_index(self.runtime.thread_id, self.runtime.graph)
@@ -86,21 +87,21 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
             --------------------------------------------------
             * CORE PROFILE (画像记忆):
             {profile_memory}
-            
+
             * EPISODIC LOGS (情节/事件记忆):
             {episodic_memory}
-            
+
             * SEMANTIC KNOWLEDGE (语义知识事实):
             {semantic_memory}
             ==================================================\n\n
-            
+
             CONVERSATION_HISTORY (自增量新对话):\n{messages}\n
-            
+
             INSTRUCTION: {instruction}
             """
         )
-        
-        return prompt.format(
+
+        formatted_prompt = prompt.format(
             system_prompt=MEMORY_SYSTEM_PROMPT,
             profile_memory=self.memories.get("profile", "(none)"),
             episodic_memory=self.memories.get("episodic", "(none)"),
@@ -108,6 +109,8 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
             messages=str(self.messages),
             instruction=order_input
         )
+        logger.info(f"📝 任务 [{self.task_id}] 构建 Prompt 完成, 长度: {len(formatted_prompt)}")
+        return formatted_prompt
     
     def should_trigger(self, store_client: Any) -> bool:
         """准入控制"""
@@ -132,8 +135,10 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
         instruction = TASK_INSTRUCTIONS.get(self.task_type, "Call appropriate consolidate memory tool.")
 
         prompt_text = self.build_prompt(instruction)
+        print(f"&&&&&&&&&&&&&&&&&&&&&&&&{prompt_text}")
         try:
             result = self.llm.invoke(prompt_text)
+            print(f"&&&&&&&&&&&&&&&&&&&&&&&&{result}")
         except Exception as e:
             logger.error(f"❌ LLM invocation failed for task {self.task_id}: {e}")
             return TaskExecutionResult(
@@ -145,17 +150,22 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
         if tool_calls and len(tool_calls) > 0:
             call = tool_calls[0]
             tool_name = call["name"]
+            args = call["args"]
+            logger.info(f"🛠️ LLM 决定调用工具 [{tool_name}]，参数: {args}")
 
             # 从映射中获取对应的工具函数并执行
             func = TOOL_MAP.get(tool_name)
             if func:
                 try:
                     # 调用工具获得 Command 对象 (来自 memory_tools.py)
-                    cmd = func(**call["args"])
+                    tool_result = func.invoke(call)
+                    print(f"&&&&&&&&&&&&&&&&&&&&&&&&{tool_result}")
+
                     # 确认 update 内容存在且为字典，然后更新状态
-                    update_payload = getattr(cmd, "update", None)
+                    update_payload = getattr(tool_result, "update", None)
                     if isinstance(update_payload, dict):
                         record_key = f"{self.task_type}_records"
+                        logger.info(f"💾 准备写入状态 [{record_key}], 载荷大小: {len(str(update_payload))} 字符")
                         update_state(self.runtime.thread_id, self.runtime.graph, record_key, update_payload)
                         logger.info(f"✅ 成功更新状态: {record_key} 使用工具 [{tool_name}] 的输出。")
                     else:
