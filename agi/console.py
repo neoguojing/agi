@@ -243,13 +243,14 @@ class CommandInput(Input):
 # =====================================================================
 class CloudLifecycleManager:
     """全局常驻的云端事件监听服务：负责维护长连接，具备断线自动重连机制"""
-    def __init__(self, client, thread_id: str, assistant_id: str, event_queue: asyncio.Queue):
+    def __init__(self, client, thread_id: str, assistant_id: str, event_queue: asyncio.Queue,logger: Any):
         self.client = client
         self.thread_id = thread_id
         self.assistant_id = assistant_id
         self.event_queue = event_queue
+        self.log = logger
         
-        self.ready = asyncio.Event()     
+        self.ready = asyncio.Event()
 
     def is_run_done(self,event_stream) -> bool:
         """
@@ -271,6 +272,8 @@ class CloudLifecycleManager:
         return False
 
     async def run_forever(self):
+        await self.client.threads.create(thread_id=self.thread_id,graph_id="main",if_exists="do_nothing")
+
         while True:
             try:
                 stream = await self.client.threads.join_stream(
@@ -282,18 +285,23 @@ class CloudLifecycleManager:
                         await self.event_queue.put(STREAM_DONE)
                     await self.event_queue.put(event)
             except Exception as e:
+                self.log.error(f"run_forever:{e}")
                 await self.event_queue.put(StreamError(RuntimeError(f"云端连接异常跌落，正在尝试重连... (Error: {e})")))
                 await asyncio.sleep(3)
 
     async def submit(self, input_data: dict[str, Any]):
         """修复：移除内部多余的 STREAM_DONE 投递，只关注数据层交互"""
         await self.ready.wait()
-        await self.client.runs.create(
-                thread_id=self.thread_id,
-                assistant_id=self.assistant_id,
-                input=input_data,
-                stream_mode=["messages"]
-            )
+        try:
+            await self.client.runs.create(
+                    thread_id=self.thread_id,
+                    assistant_id=self.assistant_id,
+                    input=input_data,
+                    stream_mode=["messages"]
+                )
+        except Exception as e:
+                self.log.error(f"submit:{e}")
+            
 
 
 # =====================================================================
@@ -517,7 +525,8 @@ class DeepAgentTUI(App):
                 client=self.client,
                 thread_id=self.thread_id,
                 assistant_id=self.assistant_id,
-                event_queue=self.event_queue
+                event_queue=self.event_queue,
+                logger=self.log
             )
             await self.cloud_manager.run_forever()
         except Exception as e:

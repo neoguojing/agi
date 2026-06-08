@@ -51,8 +51,8 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
         "model_flavor": "gpt-4o-mini"
     }
 
-    def __init__(self, runtime: MemoryTaskRuntime):
-        super().__init__(runtime)
+    def __init__(self, runtime: MemoryTaskRuntime, task_id: str, target_id: str, params: dict):
+        super().__init__(runtime, task_id, target_id, params)
         self.offset = self.load_index()
         self.messages = None
         
