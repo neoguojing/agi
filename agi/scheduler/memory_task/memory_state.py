@@ -120,14 +120,14 @@ class AgentContextConfig:
 class MemoryManager:
     """结合强类型、策略路由与极简 Token 提取的生产级内存服务"""
 
-    def __init__(self, graph: CompiledStateGraph = None, thread_id: str = None,state: dict = None):
+    def __init__(self, graph: CompiledStateGraph = None,client: Any = None, thread_id: str = None,state: dict = None):
         self.graph = graph
         self.thread_id = thread_id
         self.config = {"configurable": {"thread_id": thread_id}}
         self.state = state
+        self.client = client
         # 初始化时直接完成快照获取与强类型映射
-        if self.graph:
-            self.refresh()
+        self.refresh()
 
     def refresh(self) -> None:
         """刷新状态快照并强制映射为 MemoryState"""
@@ -137,6 +137,10 @@ class MemoryManager:
             
             # 🛡️ 核心映射：将 runtime dict 映射为强类型契约
             self.state: MemoryState = cast(MemoryState, raw_values)
+        if self.client:
+            # self.state = await client.threads.get_state(thread_id=self.thread_id)
+            pass
+
 
     def get_memories(self) -> MemoryState:
         """
@@ -155,10 +159,22 @@ class MemoryManager:
             raise ValueError(f"Invalid state key: {key}")
 
         # 🌟 直接调用，LangGraph 会自动匹配该字段关联的 memory_reducer 或 LastValue
-        self.graph.update_state(self.config, {key: value})
+        if self.graph:
+            self.graph.update_state(self.config, {key: value})
+        
+        if self.client:
+            # await self.client.threads.update_state(
+            #     thread_id=self.thread_id,
+            #     values={key: value},
+            # )
+            pass
+
         
         # 写入后同步更新本地快照，确保 MemoryManager 状态即时最新
-        self.state[key] = value
+        if key in MEMORY_KEY_MAP.values():
+            self.state[key] = memory_reducer(self.state.get(key), value)
+        else:
+            self.state[key] = value
 
     def update_memory_index(self, task_type: MemoryTarget, value: int) -> None:
         """更新指定维度的索引，复用细化的 update_state 逻辑"""

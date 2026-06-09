@@ -35,12 +35,13 @@ logger = logging.getLogger("MemoryTask")
 
 class MemoryTaskRuntime(BaseTaskRuntime):
     """内聚了大模型交互所需要的全部重型环境依赖，让 Store 干净地回归存储本质"""
-    def __init__(self, llm: Any, graph: Any, thread_id: str,user_id:str):
+    def __init__(self, llm: Any, graph: Any, thread_id: str,user_id:str,client: Any):
         super().__init__()
         self.llm = llm
         self.graph = graph
         self.thread_id = thread_id
         self.user_id = user_id
+        self.client = client
 
 
 class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
@@ -53,7 +54,7 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
     def __init__(self, runtime: MemoryTaskRuntime, task_id: str, target_id: str, params: dict):
         super().__init__(runtime, task_id, target_id, params)
         # 初始化管理器，接管图状态读写
-        self.manager = MemoryManager(self.runtime.graph, self.runtime.thread_id)
+        self.manager = MemoryManager(graph=self.runtime.graph,client=self.runtime.client, thread_id=self.runtime.thread_id)
         # 初始化偏移量
         self.offset = self.manager.get_memory_index(self.task_type)
         self.messages = None
@@ -71,7 +72,7 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
         self.manager.update_memory_index(self.task_type, self.offset)
 
     def load_history_messages(self):
-        return get_messages(self.runtime.thread_id, self.runtime.graph, self.offset)
+        return get_messages(thread_id=self.runtime.thread_id, graph=self.runtime.graph, offset = self.offset,client=self.runtime.client)
     
     def build_prompt(self, order_input: str) -> str:
         """构建全量 JSONL 上下文 Prompt"""
