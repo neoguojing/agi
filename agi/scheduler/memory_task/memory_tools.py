@@ -99,7 +99,7 @@ CRITICAL: When items are bloated, you must aggressively compress the graph using
 
 ## Parameter Requirements
 - reason: A concise explanation of the consolidation strategy (e.g., 'Normalizing web framework entities and pruning obsolete v1 config').
-- upserts: List of NEW, MERGED, or HIGHER-CONFIDENCE triples {subject, predicate, object, confidence}.
+- upserts: List of NEW, MERGED, or HIGHER-CONFIDENCE triples {subject(<40 characters), predicate, object(<50 characters), confidence}.
 - deletions: List of STRING keys (format: 'subject:predicate:object') to COMPLETELY REMOVE. You MUST use this to clear out the redundant/old triples that were replaced by the upserts.
 
 ## Example Scenario (Memory Compaction):

@@ -95,7 +95,8 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
     
     def should_trigger(self, store_client: Any) -> bool:
         self.messages = self.load_history_messages()
-        if not self.messages:
+        threshhold = self.default_params.get("activate_message_threshhold",0)
+        if not self.messages or len(self.messages) < threshhold:
             return False
 
         # 刷新状态，确保获取最新内存视图
@@ -117,7 +118,7 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
         instruction = TASK_INSTRUCTIONS.get(self.task_type, "Consolidate memory.")
         try:
             prompt = self.build_prompt(instruction)
-            logger.info("prompt:\n %s",prompt)
+            # logger.info("prompt:\n %s",prompt)
             result = self.llm.invoke(prompt)
         except Exception as e:
             logger.error(f"❌ LLM 调用失败: {e}")
@@ -164,19 +165,25 @@ class ProfileMemoryTask(BaseMemoryExtractionTask):
     """画像记忆整理任务：用户画像通常不需要太频繁，默认每天凌晨 3 点跑一次"""
     task_type = "profile"
     default_cron = "*/1 * * * *"
+    default_params = {
+        "min_confidence": 0.85,             # 语义入库要求极高的置信度
+        "model_flavor": "claude-3-5-sonnet" # 知识沉淀选择推理能力更强的模型
+    }
 
 
 class EpisodicMemoryTask(BaseMemoryExtractionTask):
     """情节/事件记忆提取任务：属于时间敏感型高频任务，默认每 10 分钟盘点一次快照"""
     task_type = "episodic"
-    default_cron = "*/1 * * * *"
+    default_cron = "*/5 * * * *"
+    default_params = {
+        "activate_message_threshhold": 10, 
+    }
 
 
 class SemanticMemoryTask(BaseMemoryExtractionTask):
     """语义知识图谱沉淀任务：属于重型长周期任务，使用更强大的大模型，默认每 1 小时整理一次"""
     task_type = "semantic"
-    default_cron = "*/1 * * * *"
+    default_cron = "0 */1 * * *"
     default_params = {
-        "min_confidence": 0.85,             # 语义入库要求极高的置信度
-        "model_flavor": "claude-3-5-sonnet" # 知识沉淀选择推理能力更强的模型
+        "activate_message_threshhold": 10, 
     }
