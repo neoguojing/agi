@@ -87,7 +87,7 @@ class EpisodicMemoryRecord(BaseModel):
     )
 
     event_time: str = Field(
-        default="",
+        default_factory=lambda: datetime.now(timezone.utc),
         description=(
             "Option. Event occurrence time "
             "in ISO datetime string format. "
@@ -96,21 +96,21 @@ class EpisodicMemoryRecord(BaseModel):
     )
 
     participants: list[str] = Field(
-        ...,
+        default=[],
         min_length=1,
         description=(
-            "REQUIRED. List of entities or people "
+            "Option. List of entities or people "
             "involved in the event. "
             "List must not be empty."
         )
     )
 
     confidence: float = Field(
-        ...,
+        default=0.5,
         ge=0.0,
         le=1.0,
         description=(
-            "REQUIRED. Confidence score "
+            "Option. Confidence score "
             "between 0.0 and 1.0."
         )
     )
@@ -187,11 +187,11 @@ class SemanticMemoryRecord(BaseModel):
     )
 
     confidence: float = Field(
-        ...,
+        default=0.5,
         ge=0.0,
         le=1.0,
         description=(
-            "REQUIRED. Confidence score "
+            "Option. Confidence score "
             "between 0.0 and 1.0."
         )
     )
