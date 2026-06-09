@@ -231,7 +231,7 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
 
         runtime = request.runtime
         
-        memory_manager = MemoryManager(request.state)
+        memory_manager = MemoryManager(state = request.state)
         memory_body = memory_manager.get_agent_context()
 
         memory_context_str = get_middleware_prompt("context").format(agent_memory=memory_body)

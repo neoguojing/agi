@@ -120,21 +120,23 @@ class AgentContextConfig:
 class MemoryManager:
     """结合强类型、策略路由与极简 Token 提取的生产级内存服务"""
 
-    def __init__(self, graph: CompiledStateGraph, thread_id: str):
+    def __init__(self, graph: CompiledStateGraph = None, thread_id: str = None,state: dict = None):
         self.graph = graph
         self.thread_id = thread_id
         self.config = {"configurable": {"thread_id": thread_id}}
-        
+        self.state = state
         # 初始化时直接完成快照获取与强类型映射
-        self.refresh()
+        if self.graph:
+            self.refresh()
 
     def refresh(self) -> None:
         """刷新状态快照并强制映射为 MemoryState"""
-        snapshot = self.graph.get_state(self.config)
-        raw_values = snapshot.values if hasattr(snapshot, "values") else snapshot
-        
-        # 🛡️ 核心映射：将 runtime dict 映射为强类型契约
-        self.state: MemoryState = cast(MemoryState, raw_values)
+        if self.graph:
+            snapshot = self.graph.get_state(self.config)
+            raw_values = snapshot.values if hasattr(snapshot, "values") else snapshot
+            
+            # 🛡️ 核心映射：将 runtime dict 映射为强类型契约
+            self.state: MemoryState = cast(MemoryState, raw_values)
 
     def get_memories(self) -> MemoryState:
         """
