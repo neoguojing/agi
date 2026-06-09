@@ -2,7 +2,7 @@ import abc
 import json
 import logging
 from datetime import datetime
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple,cast
 
 from agi.scheduler.base import BaseTaskRuntime, BaseTaskUnit, TaskExecutionResult
 from agi.scheduler.utils.state import get_memory_index, get_messages, update_state,get_memories,update_memory_index
@@ -12,6 +12,8 @@ from agi.scheduler.memory_task.memory_tools import (
     consolidate_episodic_memory,
     consolidate_semantic_memory
 )
+from agi.scheduler.memory_task.memory_state import MemoryManager,MemoryStateKey
+
 from langchain_core.prompts import ChatPromptTemplate
 
 
@@ -43,157 +45,116 @@ class MemoryTaskRuntime(BaseTaskRuntime):
 
 class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
     """
-    改造后的记忆提取基类。
-    支持全量加载 Profile、Episodic、Semantic 三种维度的上下文。
+    生产级记忆提取基类。
+    利用 MemoryManager 实现原子化状态管理与全量 JSONL 记忆整理。
     """
     task_type: str = "" 
-    default_cron: str = "0 3 * * *"
-    default_params: Dict[str, Any] = {
-        "min_confidence": 0.7,
-        "model_flavor": "gpt-4o-mini"
-    }
-
+    
     def __init__(self, runtime: MemoryTaskRuntime, task_id: str, target_id: str, params: dict):
         super().__init__(runtime, task_id, target_id, params)
-        self.offset = self.load_index()
-        logger.info(f"📂 任务 [{self.task_id}] 初始化完成, 当前内存偏移量 (Index): {self.offset}")
+        # 初始化管理器，接管图状态读写
+        self.manager = MemoryManager(self.runtime.graph, self.runtime.thread_id)
+        # 初始化偏移量
+        self.offset = self.manager.get_memory_index(self.task_type)
         self.messages = None
         
-        # 💡 此时 self.memories 将演变为一个 Dict[str, Any] 结构
-        self.memories: Dict[str, Any] = {}
-        
+        # 绑定工具集
         self.llm = self.runtime.llm.bind_tools([
             consolidate_profile_memory,
             consolidate_episodic_memory,
             consolidate_semantic_memory
         ])
+        logger.info(f"📂 任务 [{self.task_id}] 初始化完成, 当前 Index: {self.offset}")
 
     def add_index(self, value: int):
         self.offset += value
-        update_memory_index(self.runtime.thread_id,self.runtime.graph,self.task_type,self.offset)
-
-    def load_index(self):
-        return get_memory_index(self.runtime.thread_id, self.runtime.graph,self.task_type)
+        self.manager.update_memory_index(self.task_type, self.offset)
 
     def load_history_messages(self):
         return get_messages(self.runtime.thread_id, self.runtime.graph, self.offset)
     
-    # ==============================================================================
-    # 核心变更：重塑 Prompt 模板，建立 3 种记忆的强感知视窗
-    # ==============================================================================
     def build_prompt(self, order_input: str) -> str:
-        """构建面向大模型的全景结构化记忆提取 Prompt"""
-        template = ChatPromptTemplate(
-            [
-                ("system", "{system_prompt}"),
-                ("system", "{profile_memory}"),
-                ("system", "{episodic_memory}"),
-                ("system", "{semantic_memory}"),
-                ("placeholder", "{conversation}"),
-                ("human","{instruction}"),
-            ]
-        )
+        """构建全量 JSONL 上下文 Prompt"""
+        template = ChatPromptTemplate([
+            ("system", "{system_prompt}"),
+            ("system", "--- PROFILE ---\n{profile_memory}"),
+            ("system", "--- EPISODIC ---\n{episodic_memory}"),
+            ("system", "--- SEMANTIC ---\n{semantic_memory}"),
+            ("placeholder", "{conversation}"),
+            ("human", "{instruction}"),
+        ])
 
-        def to_str(memory_dict):
-            if memory_dict is None:
-                return ""
-            json_list_str = json.dumps(
-                [v.model_dump() for v in memory_dict.values()],
-                ensure_ascii=False,
-                default=str
-            )
-            return json_list_str
-
-        prompt_value = template.invoke(
-            {
-                "system_prompt": MEMORY_SYSTEM_PROMPT,
-                "profile_memory": to_str(self.memories.get("profile", None)),
-                "episodic_memory": to_str(self.memories.get("episodic", None)),
-                "semantic_memory": to_str(self.memories.get("semantic", None)),
-                "conversation": self.messages,
-                "instruction": order_input,
-            }
-        )
-
-        logger.info(f"📝 任务 [{self.task_id}] 构建 Prompt 完成 (Index: {self.offset})")
-        return prompt_value
+        return template.invoke({
+            "system_prompt": MEMORY_SYSTEM_PROMPT,
+            "profile_memory": self.manager.export_full_jsonl(["profile"]),
+            "episodic_memory": self.manager.export_full_jsonl(["episodic"]),
+            "semantic_memory": self.manager.export_full_jsonl(["semantic"]),
+            "conversation": self.messages,
+            "instruction": order_input,
+        })
     
     def should_trigger(self, store_client: Any) -> bool:
-        """准入控制"""
         self.messages = self.load_history_messages()
         if not self.messages:
-            logger.info(f" Hobson-Skipped: 任务 [{self.task_id}] 未发现新对话消息，跳过本次触发。")
             return False
 
-        # 🚀 加载全量 3 种记忆上下文并转换为 Dict 以支持 .get() 访问
-        profile_records, episodic_records, semantic_records = get_memories(self.runtime.thread_id, self.runtime.graph)
-        self.memories = {
-            "profile": profile_records,
-            "episodic": episodic_records,
-            "semantic": semantic_records
-        }
-
-        logger.info(f"📝 任务 [{self.task_id}] 加载 memory 完成 (Index: {self.offset}) | Profile: {len(self.memories.get('profile', []))} Episodic: {len(self.memories.get('episodic', []))} Semantic: {len(self.memories.get('semantic', []))}")
-
+        # 刷新状态，确保获取最新内存视图
+        self.manager.refresh()
+        self.offset = self.manager.get_memory_index(self.task_type)
+        
+        mem = self.manager.get_memories()
+        logger.info(f"📝 任务 [{self.task_id}] 准备就绪 | Index: {self.offset} | "
+                    f"P:{len(mem.get('profile_records', {}))} "
+                    f"E:{len(mem.get('episodic_records', {}))} "
+                    f"S:{len(mem.get('semantic_records', {}))}")
         return True
 
     async def execute(self, store_client: Any) -> TaskExecutionResult:
-        """核心生命周期执行流不变，完全兼容全量上下文"""
-        logger.info(f"🎬 启动记忆提取任务: {self.task_id} | 目标类型: {self.task_type}")
-
-        instruction = TASK_INSTRUCTIONS.get(self.task_type, "Call appropriate consolidate memory tool.")
-
-        prompt_text = self.build_prompt(instruction)
+        
+        logger.info(f"🎬 执行任务: {self.task_id} | 类型: {self.task_type}")
+        
+        # 1. 调用 LLM
+        instruction = TASK_INSTRUCTIONS.get(self.task_type, "Consolidate memory.")
         try:
-            result = self.llm.invoke(prompt_text)
+            result = self.llm.invoke(self.build_prompt(instruction))
         except Exception as e:
-            logger.error(f"❌ LLM invocation failed for task {self.task_id}: {e}")
-            return TaskExecutionResult(
-                is_success=False,
-                output_data=f"LLM error during {self.task_type} memory extraction: {str(e)}"
-            )
+            logger.error(f"❌ LLM 调用失败: {e}")
+            return TaskExecutionResult(is_success=False, output_data=str(e))
 
         tool_calls = getattr(result, "tool_calls", [])
-        if tool_calls and len(tool_calls) > 0:
-            call = tool_calls[0]
-            tool_name = call["name"]
-            args = call["args"]
-            logger.info(f"🛠️ LLM 决定调用工具 [{tool_name}]，参数: {args},{call}")
-            # 从映射中获取对应的工具函数并执行
-            func = TOOL_MAP.get(tool_name)
-            if func:
-                try:
-                    # 调用工具获得 Command 对象 (来自 memory_tools.py)
-                    tool_result = func.invoke(args)
-                    logger.info(f"tool_result:{tool_result}")
-                    # records_dict = json.loads(tool_result.content)
-                    # 确认 update 内容存在且为字典，然后更新状态
-                    record_key = f"{self.task_type}_records"
-                    update_records = tool_result.get(record_key, None)
-                    reason = tool_result.get("organization_reason", None)
-                    
-                    logger.info(f"update_records:{update_records}")
-                    logger.info(f"reason:{reason}")
-                    if isinstance(update_records, dict) and len(update_records) > 0:
-                        logger.info(f"💾 准备写入状态 [{record_key}], 载荷大小: {len(str(update_records))} 字符")
-                        update_state(self.runtime.thread_id, self.runtime.graph, record_key, update_records)
-                        update_state(self.runtime.thread_id, self.runtime.graph, "organization_reason", reason)
-                        if self.messages:
-                            self.add_index(len(self.messages))
-                        logger.info(f"✅ 成功更新状态: {record_key} 使用工具 [{tool_name}] 的输出。index:{self.offset}")
-                    else:
-                        logger.warning(f"⚠️ 工具 [{tool_name}] 返回的更新载荷格式不正确 (expected dict, got {update_records})")
-                except Exception as e:
-                    logger.error(f"❌ 执行工具 [{tool_name}] 时发生异常: {e}")
-            else:
-                logger.warning(f"⚠️ 未能在 TOOL_MAP 中找到工具名称: {tool_name}")
-        else:
-            logger.info("ℹ️ LLM 未产生任何 tool_calls，跳过状态更新。")
+        
+        # 2. 处理 Tool Calls (支持多调用并行)
+        if tool_calls:
+            for call in tool_calls:
+                tool_name = call.get("name")
+                args = call.get("args")
+                func = TOOL_MAP.get(tool_name)
+                
+                if not func:
+                    logger.warning(f"⚠️ 工具未找到: {tool_name}")
+                    continue
 
-        return TaskExecutionResult(
-            is_success=True,
-            output_data=f"成功处理用户 [{self.target_id}] 的 {self.task_type} 记忆任务。"
-        )
+                try:
+                    tool_result = func.invoke(args)
+                    record_key = f"{self.task_type}_records"
+                    
+                    # 通过 Manager 原子化更新状态 (利用强类型检查)
+                    if isinstance(tool_result, dict):
+                        update_data = tool_result.get(record_key)
+                        reason = tool_result.get("organization_reason")
+                        
+                        if update_data:
+                            self.manager.update_state(cast(MemoryStateKey, record_key), update_data)
+                            if reason:
+                                self.manager.update_state("organization_reason", reason)
+                            self.add_index(len(self.messages))
+
+                except Exception as e:
+                    logger.error(f"❌ 工具执行异常 [{tool_name}]: {e}")
+                    # 中断执行以保持原子性，不更新索引，等待下次重试
+                    return TaskExecutionResult(is_success=False, output_data=f"Tool error: {str(e)}")
+            
+        return TaskExecutionResult(is_success=True, output_data="Memory successfully consolidated.")
 # ==============================================================================
 # 三个派生出的具体旁路独立原子任务 (极致干净，只声明类型和差异化默认配置)
 # ==============================================================================

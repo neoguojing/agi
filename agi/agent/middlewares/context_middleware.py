@@ -34,7 +34,7 @@ from agi.scheduler.memory_task.memory_models import (
     EpisodicMemoryRecord,
     SemanticMemoryRecord
 )
-from agi.scheduler.memory_task.memory_state import MemoryState
+from agi.scheduler.memory_task.memory_state import MemoryState,MemoryManager
 from agi.scheduler import SchedulerOrchestrator
 
 
@@ -223,113 +223,6 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
             logger.error(f"Failed to build environment context: {e}")
             return "<environment>(failed to load)</environment>"
 
-    def format_memory_for_llm(
-        self,
-        state: AgentState
-    ) -> str:
-        """
-        Formats structured memory into a human-readable string
-        suitable for LLM context injection. Supports legacy list, 
-        new dict formats, and raw string fallback.
-        """
-        import json
-        from datetime import datetime, timezone
-        from typing import Any
-
-        sections: list[str] = []
-
-        # 核心兼容函数：将 dict 或 list 统一标准化为 list
-        def _to_record_list(data: Any) -> list:
-            if isinstance(data, dict):
-                return list(data.values())
-            if isinstance(data, list):
-                return data
-            return []
-
-        # 安全时间戳提取器
-        def _get_updated_at(rec: Any) -> datetime:
-            dt: Any = None
-            if isinstance(rec, str): # 👈 增加字符串拦截，防止后续报错
-                return datetime.min.replace(tzinfo=timezone.utc)
-                
-            if hasattr(rec, 'updated_at'):
-                dt = rec.updated_at
-            elif isinstance(rec, dict):
-                val = rec.get('updated_at')
-                if isinstance(val, str):
-                    try:
-                        dt = datetime.fromisoformat(val)
-                    except ValueError:
-                        dt = None
-                elif isinstance(val, datetime):
-                    dt = val
-
-            if dt is None or not isinstance(dt, datetime):
-                return datetime.min.replace(tzinfo=timezone.utc)
-            
-            return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
-
-        # =====================================================
-        # Profile Memory
-        # =====================================================
-        profile_data = state.get('profile_records')
-        if profile_data:
-            record_list = _to_record_list(profile_data)
-            records = sorted(record_list, key=_get_updated_at, reverse=True)[:50]
-            
-            lines = ["--- PROFILE MEMORY ---"]
-            for rec in records:
-                if isinstance(rec, str): # 🌟 如果本身就是字符串，直接打印
-                    lines.append(f"- {rec}")
-                else:
-                    key = getattr(rec, 'key', '') if hasattr(rec, 'key') else rec.get('key', '') if isinstance(rec, dict) else ''
-                    value = getattr(rec, 'value', '') if hasattr(rec, 'value') else rec.get('value', '') if isinstance(rec, dict) else ''
-                    lines.append(f"- {key}: {value}")
-            sections.append("\n".join(lines))
-
-        # =====================================================
-        # Episodic Memory
-        # =====================================================
-        episodic_data = state.get('episodic_records')
-        if episodic_data:
-            record_list = _to_record_list(episodic_data)
-            records = sorted(record_list, key=_get_updated_at, reverse=True)[:30]
-            
-            lines = ["--- EPISODIC MEMORY ---"]
-            for rec in records:
-                if isinstance(rec, str): # 🌟 如果本身就是字符串，直接打印
-                    lines.append(f"- {rec}")
-                else:
-                    event_time = getattr(rec, 'event_time', 'Unknown time') if hasattr(rec, 'event_time') else rec.get('event_time', 'Unknown time') if isinstance(rec, dict) else 'Unknown time'
-                    summary = getattr(rec, 'summary', '') if hasattr(rec, 'summary') else rec.get('summary', '') if isinstance(rec, dict) else ''
-                    lines.append(f"- [{event_time}] {summary}")
-            sections.append("\n".join(lines))
-
-        # =====================================================
-        # Semantic Memory
-        # =====================================================
-        semantic_data = state.get('semantic_records')
-        if semantic_data:
-            record_list = _to_record_list(semantic_data)
-            records = sorted(record_list, key=_get_updated_at, reverse=True)[:50]
-            
-            compact_data = []
-            for r in records:
-                if isinstance(r, str): # 🌟 针对字符串类型数据的降级处理
-                    compact_data.append({"raw_fact": r})
-                else:
-                    sub = getattr(r, 'subject', '') if hasattr(r, 'subject') else r.get('subject', '') if isinstance(r, dict) else ''
-                    pred = getattr(r, 'predicate', '') if hasattr(r, 'predicate') else r.get('predicate', '') if isinstance(r, dict) else ''
-                    obj = getattr(r, 'object', '') if hasattr(r, 'object') else r.get('object', '') if isinstance(r, dict) else ''
-                    compact_data.append({"s": sub, "p": pred, "o": obj})
-
-            sections.append(f"--- SEMANTIC MEMORY ---\n{json.dumps(compact_data, ensure_ascii=False)}")
-
-        if not sections:
-            return "No memory available."
-
-        return "\n\n".join(sections)
-
     async def awrap_model_call(
         self,
         request: ModelRequest,
@@ -337,8 +230,9 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
     ) -> ModelResponse:
 
         runtime = request.runtime
-            
-        memory_body = self.format_memory_for_llm(request.state)
+        
+        memory_manager = MemoryManager(request.state)
+        memory_body = memory_manager.get_agent_context()
 
         memory_context_str = get_middleware_prompt("context").format(agent_memory=memory_body)
         env_context_str = self._format_environment_context(runtime)
