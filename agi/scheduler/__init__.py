@@ -119,7 +119,8 @@ class SchedulerOrchestrator(metaclass=SingletonMeta):
                 llm=self.llm,
                 graph=self.graph,
                 thread_id=thread_id,
-                user_id=user_id
+                user_id=user_id,
+                client=None,
             )
         
         try:
