@@ -36,7 +36,7 @@ def memory_reducer(
     """
     # 1. 直接继承历史状态，无须再 O(N) 遍历重建
     merged: dict[str, Any] = state.copy() if state else {}
-
+    print(f"******************{writes}")
     # 2. 应用写入
     if isinstance(writes, list):
         # 如果 LLM 或 Tool 传来的是列表 (Upsert)

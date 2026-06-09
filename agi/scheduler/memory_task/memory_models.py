@@ -129,8 +129,7 @@ class EpisodicMemoryRecord(BaseModel):
     def dedup_key(self) -> str:
         """Unique key for deduplication and updates."""
         summary = self.summary.strip().lower() if getattr(self, "summary", None) else ""
-        date_str = self.event_time[:10] if getattr(self, "event_time", None) else "anytime"
-        return f"{summary}_{date_str}" if summary else ""
+        return f"{summary}" if summary else ""
 
 
 # =========================================================

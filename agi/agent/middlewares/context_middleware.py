@@ -72,8 +72,10 @@ ORGANIZE_MEMORY_TOOL_DESCRIPTION = """Use this tool to explicitly upsert (add/up
 
 ## 1. Choose Target
 - `profile`: For persistent preferences, habits, or user identity (e.g., 'I always use VS Code').
-- `episodic`: For significant events, decisions, or milestones (e.g., 'Project architecture finalized').
-- `semantic`: For stable factual knowledge triples (e.g., 'database' -> 'uses' -> 'PostgreSQL').
+- `episodic`: For significant events, decisions, or milestones (e.g., 'Project architecture finalized'). 
+Constraint: Must be tied to explicit user intent or project outcomes; strictly exclude trivial chitchat and intermediate debugging steps.
+- `semantic`: For stable factual knowledge triples (e.g., 'user' -> 'use' -> 'PostgreSQL'). 
+Constraint: Only extract user-provided facts or long-term preferences; strictly ignore AI-generated explanations, generic definitions, and ephemeral context.
 
 ## 2. How to Apply Delta Updates
 - **upserts**: List of full records to ADD or UPDATE. If the key already exists, it will be safely overwritten.

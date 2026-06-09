@@ -72,53 +72,83 @@ CONSOLIDATE_PROFILE_MEMORY_DESCRIPTION = """Use this tool to reconcile persisten
 - deletions: List of STRING keys to COMPLETELY REMOVE (e.g., ['favorite_ide', 'old_habit']). Use this to delete obsolete preferences.
 """
 
-CONSOLIDATE_EPISODIC_MEMORY_DESCRIPTION = """Use this tool to reconcile significant events, project milestones, or historical context.
-CRITICAL: You MUST aggressive deduplicate. If multiple records describe stages of the SAME event (e.g., 'Writing draft v1', 'Writing draft v2'), MERGE them into one high-confidence record and DELETE the old ones.
+CONSOLIDATE_EPISODIC_MEMORY_DESCRIPTION = """
+Use this tool to consolidate, refine, and prune episodic memories. Your goal is to transform raw interaction logs into high-value, intent-aligned historical experiences, preventing memory bloat and noise.
+
+CRITICAL RULES FOR CONSOLIDATION:
+1. INTENT ALIGNMENT: Only retain memories that represent significant user intents, project milestones, critical feedback, or valuable lessons learned. Discard trivial chitchat, intermediate debugging steps, or redundant confirmations.
+2. AGGRESSIVE MERGING: If multiple records describe stages of the SAME event or intent (e.g., 'Writing draft v1', 'Fixing typo in draft'), MERGE them into a single, comprehensive record representing the final outcome or key takeaway. DELETE the fragmented old records.
+3. ABSTRACTION & REFLECTION: When merging, do not just concatenate text. Extract the core insight, user preference, or final resolution. The new summary should answer "Why does this matter?" or "What was achieved?".
+4. CONFIDENCE SCORING: Assign a `confidence` score (0.0 to 1.0) based on the memory's importance and clarity. Low-confidence (< 0.5) or outdated memories should be deleted rather than merged.
 
 ## Parameter Requirements
-- reason: Explanation of the consolidation/deduplication logic.
-- upserts: List of NEW or MERGED records.
-- deletions: List of STRING keys to COMPLETELY REMOVE.
+- reason: A concise explanation of the consolidation logic, explicitly stating WHY certain memories were merged or deleted based on intent and value.
+- upserts: List of NEW or MERGED records. Each record MUST contain:
+  - summary: A refined, intent-focused description.
+  - event_time: The timestamp of the primary event.
+  - confidence: Float between 0.0 and 1.0.
+- deletions: List of STRING keys to COMPLETELY REMOVE (e.g., fragmented steps, low-value noise, superseded records).
 
 ## Example Scenario:
 Existing Memories:
-1. 'write essay_2026-06-01': {summary: 'Started writing essay', event_time: '2026-06-01'}
-2. 'write essay v2_2026-06-01': {summary: 'Finished essay draft v2', event_time: '2026-06-01'}
+1. 'api_debug_2026-06-01_1': {summary: 'User reported 404 error on /users endpoint', event_time: '2026-06-01 10:00'}
+2. 'api_debug_2026-06-01_2': {summary: 'Tried changing API key, still 404', event_time: '2026-06-01 10:05'}
+3. 'api_debug_2026-06-01_3': {summary: 'Found out endpoint changed to /v2/users, fixed it', event_time: '2026-06-01 10:15'}
+4. 'chitchat_2026-06-01': {summary: 'User said thanks and have a good day', event_time: '2026-06-01 10:16'}
 
 Your Tool Call should be:
-- upserts: [{summary: 'Completed essay drafting and revisions', event_time: '2026-06-01', confidence: 0.9}]
-- deletions: ['write essay_2026-06-01', 'write essay v2_2026-06-01']
+- reason: "Merged three fragmented debugging steps into a single resolved milestone regarding the API endpoint change. Deleted trivial chitchat as it lacks long-term intent value."
+- upserts: [{
+    summary: "Resolved 404 error on user API by identifying the endpoint migration from /users to /v2/users.", 
+    event_time: '2026-06-01 10:15', 
+    confidence: 0.95
+  }]
+- deletions: ['api_debug_2026-06-01_1', 'api_debug_2026-06-01_2', 'api_debug_2026-06-01_3', 'chitchat_2026-06-01']
 """
 
-CONSOLIDATE_SEMANTIC_MEMORY_DESCRIPTION = """Use this tool to reconcile, compact, and deduplicate the semantic knowledge graph. 
-CRITICAL: When items are bloated, you must aggressively compress the graph using the following 3 strategies:
+CONSOLIDATE_SEMANTIC_MEMORY_DESCRIPTION = """
+Use this tool to reconcile, compact, and deduplicate the semantic knowledge graph. Your primary goal is to distill high-value, user-aligned facts while aggressively pruning noise, AI-generated ephemeral knowledge, and redundant data.
 
-1. Entity Normalization (实体对齐): Merge synonyms or different versions into a single canonical entity (e.g., merge 'FastAPI framework' and 'fastapi' into 'FastAPI').
-2. Knowledge Generalization (概念泛化): If multiple specific facts imply a general rule, replace them with a single abstract fact (e.g., instead of listing 10 separate python libraries, use 'user:expert_in:Python_ecosystem').
-3. Contradiction & Obsolescence Pruning (冲突与过期剪枝): Delete outdated architectures, old configurations, or lower-confidence historical facts that contradict current reality.
+CRITICAL: CONSOLIDATION & FILTERING STRATEGIES
+You must apply the following 4 strategies to compress and purify the graph:
+
+1. INTENT & SOURCE FILTERING (意图与来源过滤): 
+   ONLY retain facts explicitly provided by the user or confirmed as long-term preferences. 
+   DO NOT extract or consolidate generic knowledge, definitions, or explanations generated by the AI merely to answer a question. Treat AI-generated explanations as ephemeral context.
+
+2. Entity Normalization (实体对齐): 
+   Merge synonyms or different versions into a single canonical entity (e.g., merge 'FastAPI framework' and 'fastapi' into 'FastAPI').
+
+3. Knowledge Generalization (概念泛化): 
+   If multiple specific facts imply a general rule, replace them with a single abstract fact (e.g., instead of listing 10 separate python libraries, use 'user:expert_in:Python_ecosystem').
+
+4. Contradiction & Obsolescence Pruning (冲突与过期剪枝): 
+   Delete outdated architectures, old configurations, or lower-confidence historical facts that contradict current reality.
 
 ## Parameter Requirements
-- reason: A concise explanation of the consolidation strategy (e.g., 'Normalizing web framework entities and pruning obsolete v1 config').
+- reason: A concise explanation of the consolidation strategy, explicitly stating WHY certain facts were retained (user-aligned) or deleted (AI-generated/obsolete).
 - upserts: List of NEW, MERGED, or HIGHER-CONFIDENCE triples {subject(<40 characters), predicate, object(<50 characters), confidence}.
-- deletions: List of STRING keys (format: 'subject:predicate:object') to COMPLETELY REMOVE. You MUST use this to clear out the redundant/old triples that were replaced by the upserts.
+- deletions: List of STRING keys (format: 'subject:predicate:object') to COMPLETELY REMOVE. You MUST use this to clear out redundant, obsolete, or AI-generated noise that was replaced or discarded.
 
-## Example Scenario (Memory Compaction):
+## Example Scenario (Memory Compaction & Purification):
 [Before Consolidation]:
-- 'python3:is:programming_language'
-- 'python_language:used_for:backend'
+- 'user:uses:FastAPI'
+- 'fastapi:is_a:web_framework' (AI-generated explanation)
 - 'user:configured:merlin_clash_v1' (Obsolete)
 - 'user:configured:merlin_clash_v2' (Current)
+- 'user:mentioned:COX-2_inhibitors' (AI-generated medical context, irrelevant to user's core profile)
 
 [Your Tool Call Output]:
-- reason: 'Normalizing Python entities into canonical forms and pruning obsolete Merlin router configurations.'
+- reason: 'Retained user-specific FastAPI usage and current Merlin config. Pruned AI-generated generic definitions and irrelevant medical context. Merged obsolete config.'
 - upserts: [
-    {"subject": "Python", "predicate": "is_a", "object": "programming_language", "confidence": 1.0},
+    {"subject": "user", "predicate": "uses_framework", "object": "FastAPI", "confidence": 1.0},
     {"subject": "user", "predicate": "uses_config", "object": "merlin_clash_v2", "confidence": 1.0}
   ]
 - deletions: [
-    "python3:is:programming_language", 
-    "python_language:used_for:backend", 
-    "user:configured:merlin_clash_v1"
+    "user:uses:FastAPI", 
+    "fastapi:is_a:web_framework", 
+    "user:configured:merlin_clash_v1",
+    "user:mentioned:COX-2_inhibitors"
   ]
 """
 
