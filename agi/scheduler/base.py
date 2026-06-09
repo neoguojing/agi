@@ -58,6 +58,10 @@ class BaseTaskUnit(abc.ABC):
         self.target_id: str = target_id
         self.params: Dict[str, Any] = params
 
+        if not self.task_id:
+            logger.warning(f"⚠️  [Invalid State] 实例化了 ID 为空的任务单元! ObjAddr: {id(self)}")
+
+
     @abc.abstractmethod
     def should_trigger(self, store_client: Any) -> bool:
         """准入控制流"""

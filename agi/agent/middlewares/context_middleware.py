@@ -116,6 +116,9 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
             )
         ]
 
+        self.scheduler = None
+
+
     def _organize_memory(
         self,
         runtime: ToolRuntime[ContextT, MemoryState[ResponseT]],
@@ -279,9 +282,9 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
         Returns:
             State update with memory_contents populated.
         """
-        scheduler = SchedulerOrchestrator()
-        scheduler.load_and_register_tasks(runtime.context.user_id,config['metadata']['thread_id'])
-        scheduler.dispatch_user_mission(runtime.context.user_id)
+        self.scheduler = SchedulerOrchestrator()
+        self.scheduler.load_and_register_tasks(runtime.context.user_id,config['metadata']['thread_id'])
+        self.scheduler.dispatch_user_mission(runtime.context.user_id)
 
     async def abefore_agent(self, state: MemoryState, runtime: Runtime, config: RunnableConfig) -> None:  # ty: ignore[invalid-method-override]
         """Load memory content before agent execution.

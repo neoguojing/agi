@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional, Tuple,cast
 
 from agi.scheduler.base import BaseTaskRuntime, BaseTaskUnit, TaskExecutionResult
-from agi.scheduler.utils.state import get_memory_index, get_messages, update_state,get_memories,update_memory_index
+from agi.scheduler.utils.state import get_messages
 from agi.scheduler.memory_task.memory_tools import (
     MEMORY_SYSTEM_PROMPT,
     consolidate_profile_memory,
@@ -86,9 +86,9 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
 
         return template.invoke({
             "system_prompt": MEMORY_SYSTEM_PROMPT,
-            "profile_memory": self.manager.export_full_jsonl(["profile"]),
-            "episodic_memory": self.manager.export_full_jsonl(["episodic"]),
-            "semantic_memory": self.manager.export_full_jsonl(["semantic"]),
+            "profile_memory": self.manager.export_full_jsonl(["profile"]) if self.task_type == "profile" else "None",
+            "episodic_memory": self.manager.export_full_jsonl(["episodic"]) if self.task_type == "episodic" else "None",
+            "semantic_memory": self.manager.export_full_jsonl(["semantic"]) if self.task_type == "semantic" else "None",
             "conversation": self.messages,
             "instruction": order_input,
         })
@@ -110,13 +110,15 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
         return True
 
     async def execute(self, store_client: Any) -> TaskExecutionResult:
-        
+
         logger.info(f"🎬 执行任务: {self.task_id} | 类型: {self.task_type}")
         
         # 1. 调用 LLM
         instruction = TASK_INSTRUCTIONS.get(self.task_type, "Consolidate memory.")
         try:
-            result = self.llm.invoke(self.build_prompt(instruction))
+            prompt = self.build_prompt(instruction)
+            logger.info("prompt:\n %s",prompt)
+            result = self.llm.invoke(prompt)
         except Exception as e:
             logger.error(f"❌ LLM 调用失败: {e}")
             return TaskExecutionResult(is_success=False, output_data=str(e))

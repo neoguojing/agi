@@ -256,39 +256,35 @@ class MemoryManager:
     # 【极致 Token 节省排版策略】严格仅提取必要字段
     # -------------------------------------------------
     def _format_profile(self, records: List[Any]) -> str:
-        lines = ["--- PROFILE MEMORY ---"]
+        lines = [f"--- PROFILE MEMORY （{len(records)}） ---"]
         for rec in records:
-            if isinstance(rec, str): 
-                lines.append(f"- {rec}")
-            else:
-                k = self._get_v(rec, 'key')
-                v = self._get_v(rec, 'value')
-                lines.append(f"- {k}: {v}")
+            item = {
+                "key": self._get_v(rec, 'key'),
+                "value": self._get_v(rec, 'value')
+            }
+            lines.append(json.dumps(item, ensure_ascii=False))
         return "\n".join(lines)
 
     def _format_episodic(self, records: List[Any]) -> str:
-        lines = ["--- EPISODIC MEMORY ---"]
+        lines = [f"--- EPISODIC MEMORY （{len(records)}）---"]
         for rec in records:
-            if isinstance(rec, str): 
-                lines.append(f"- {rec}")
-            else:
-                t = self._get_v(rec, 'event_time', 'Unknown time')
-                s = self._get_v(rec, 'summary')
-                lines.append(f"- [{t}] {s}")
+            item = {
+                "event_time": self._get_v(rec, 'event_time', 'Unknown time'),
+                "summary": self._get_v(rec, 'summary')
+            }
+            lines.append(json.dumps(item, ensure_ascii=False))
         return "\n".join(lines)
 
     def _format_semantic(self, records: List[Any]) -> str:
-        compact_data = []
+        lines = [f"--- SEMANTIC MEMORY （{len(records)}）---"]
         for rec in records:
-            if isinstance(rec, str): 
-                compact_data.append({"raw_fact": rec})
-            else:
-                compact_data.append({
-                    "s": self._get_v(rec, 'subject'),
-                    "p": self._get_v(rec, 'predicate'),
-                    "o": self._get_v(rec, 'object')
-                })
-        return f"--- SEMANTIC MEMORY ---\n{json.dumps(compact_data, ensure_ascii=False)}"
+            item = {
+                "subject": self._get_v(rec, 'subject'),
+                "predicate": self._get_v(rec, 'predicate'),
+                "object": self._get_v(rec, 'object')
+            }
+            lines.append(json.dumps(item, ensure_ascii=False))
+        return "\n".join(lines)
 
     # =====================================================
     # 场景 1 生产接口：全量提取 JSONL 数据 (离线任务/辅助整理)

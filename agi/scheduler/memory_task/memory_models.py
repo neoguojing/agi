@@ -28,13 +28,6 @@ MemoryTarget = Literal["profile", "episodic", "semantic"]
 
 class ProfileMemoryRecord(BaseModel):
 
-    id: str = Field(
-        default_factory=lambda: str(uuid4()),
-        description=(
-            "System-generated unique memory identifier."
-        )
-    )
-
     key: str = Field(
         ...,
         min_length=1,
@@ -83,15 +76,6 @@ class ProfileMemoryRecord(BaseModel):
 # =========================================================
 
 class EpisodicMemoryRecord(BaseModel):
-
-    id: str = Field(
-        default_factory=lambda: str(uuid4()),
-        min_length=1,
-        description=(
-            "REQUIRED. Unique episodic memory identifier. "
-            "Must not be empty."
-        )
-    )
 
     summary: str = Field(
         ...,
@@ -172,42 +156,33 @@ AgentMemoryPredicate = Literal[
 
 class SemanticMemoryRecord(BaseModel):
 
-    id: str = Field(
-        default_factory=lambda: str(uuid4()),
-        min_length=1,
-        description=(
-            "REQUIRED. Unique semantic memory identifier. "
-            "Must not be empty."
-        )
-    )
-
     subject: str = Field(
         ...,
         min_length=1,
+        max_length=40,
+        pattern=r"^[^.。!?！？\n]+$",  # 🛑 禁用句号和换行，逼迫它输出短语
         description=(
-            "REQUIRED. Canonical subject entity name. "
-            "Must be a short noun-style entity, not a sentence. "
-            "Use concise reusable names such as "
-            "'OpenAI', 'Python', 'Tokyo', 'FastAPI'. "
-            "Avoid pronouns, full sentences, and excessive details."
+            "REQUIRED. Canonical subject entity name (e.g., 'OpenAI', 'Python'). "
+            "Must be a single noun or short noun-phrase. MAXIMUM 40 characters. NO sentences."
         )
     )
 
     predicate: AgentMemoryPredicate = Field(
         ...,
         description=(
-            "REQUIRED. Target entity or value of the relationship. "
-            "Prefer short canonical entity names or concise literal values. "
-            "Examples: 'OpenAI', 'Python', 'Tokyo', 'backend_development'. "
-            "Avoid long natural language sentences."
+            "REQUIRED. The relationship link verb between subject and object. "
+            "Examples: 'is_a', 'developed_by', 'located_in', 'supports'."
         )
     )
 
     object: str = Field(
         ...,
         min_length=1,
+        max_length=50,  # 🛑 宾语通常可能稍长（如特定概念），但也必须限制
+        pattern=r"^[^.。!?！？\n]+$",
         description=(
-            "REQUIRED. Target entity or value of the relationship."
+            "REQUIRED. Target entity, concept, or literal value. "
+            "Examples: 'San_Francisco', 'v4.0', 'Artificial_Intelligence'."
         )
     )
 

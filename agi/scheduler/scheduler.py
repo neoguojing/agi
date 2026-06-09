@@ -20,6 +20,12 @@ def _pure_code_task_proxy(task_id: str, task_type: str, target_id: str, cron_exp
     """
     时钟代理执行器：负责悲观锁校验与全异步事件循环拉起。
     """
+
+    if not task_id:
+        logger.error(f"❌ [Execution Aborted] 触发的任务 ID 为空! Type: {task_type}, Target: {target_id}")
+        return
+
+
     ns = SchedulerStorageContract.TASK_NAMESPACE
 
     logger.info("⏰ [Clock Trigger] 尝试触发任务 [%s] (Type: %s, Target: %s)", task_id, task_type, target_id)
@@ -152,6 +158,12 @@ class ConfigurationMergedScheduler:
                     self._mount_to_clock_line(task_id=item.key, task_type=task_type, db_plan=data.get("plan", {}))
 
     def _mount_to_clock_line(self, task_id: str, task_type: str, db_plan: dict):
+        if not task_id:
+            logger.error(
+                f"🚨 [CRITICAL] 尝试挂载空 ID 任务! 拦截成功。 "
+                f"任务类型: {task_type}, 计划详情: {db_plan}"
+            )
+            return
         reg = self.registry[task_type]
         cron_expr = db_plan.get("cron_expr") or reg["class"].default_cron
         cron_parts = cron_expr.split()
@@ -207,6 +219,65 @@ class ConfigurationMergedScheduler:
             
         return task_id
 
+    def remove_job_by_id(self, task_id: str) -> bool:
+        """
+        [底层接口] 根据绝对的 task_id 删除并卸载任务
+        适用于：清理旧版的脏数据、僵尸任务，或者监控面版上的强制介入
+        """
+        ns = SchedulerStorageContract.TASK_NAMESPACE
+        
+        # 1. 物理删除：先斩断数据库的根，防止未来重启后再次加载
+        self.store_client.delete(ns, key=task_id)
+        
+        # 2. 内存卸载：从正在运行的时钟线上实时摘除
+        try:
+            if self._scheduler.get_job(task_id):
+                self._scheduler.remove_job(task_id)
+                logger.info("🗑️ [DELETE] 任务 %s 已从数据库抹除，并安全摘除内存时钟线。", task_id)
+                return True
+            else:
+                logger.info("🗑️ [DELETE] 任务 %s 已从数据库抹除 (当前内存中未挂载)。", task_id)
+                return True
+        except Exception as e:
+            logger.error("❌ [DELETE FAILED] 卸载任务 %s 时发生异常: %s", task_id, str(e))
+            return False
+
+    def remove_job(self, task_type: str, target_id: str) -> bool:
+        """
+        [业务接口] 根据业务语义 (任务类型 + 目标主体) 优雅删除任务
+        适用于：业务端常规的任务注销调用
+        """
+        # 严格复用创建时的 task_id 合成规则
+        task_id = SchedulerStorageContract.generate_task_key(task_type, target_id)
+        return self.remove_job_by_id(task_id)
+    
+    def clear_all_jobs(self) -> int:
+        """
+        [核弹级接口] 清空系统中所有的定时任务记录与执行线
+        适用于：环境重置、灾难恢复、或者彻底的测试初始化
+        """
+        ns = SchedulerStorageContract.TASK_NAMESPACE
+        
+        # 1. 物理层：扫描并逐一抹除数据库中的记录
+        # 如果你的 Store 原生支持基于 namespace_prefix 的批量 delete，可以直接替换为批量调用以提升性能
+        all_instances = self.store_client.search(ns, limit=10000)
+        deleted_count = 0
+        
+        for item in all_instances:
+            try:
+                self.store_client.delete(namespace=ns, key=item.key)
+                deleted_count += 1
+            except Exception as e:
+                logger.error("❌ 清理任务 %s 的持久化数据时失败: %s", item.key, str(e))
+                
+        # 2. 内存层：调用 APScheduler 原生接口，一键清空所有挂载的时钟线
+        if self._scheduler.running:
+            self._scheduler.remove_all_jobs()
+            
+        logger.warning("☢️ [CLEAR ALL] 调度器已被重置，共清理了 %d 个持久化任务。", deleted_count)
+        
+        return deleted_count
+    
     def shutdown(self):
         if self._scheduler.running:
             self._scheduler.shutdown()
