@@ -9,6 +9,7 @@ from agi.agent.models import ModelProvider
 import logging
 from functools import wraps
 import threading
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -32,25 +33,42 @@ class SingletonMeta(type):
     
 def run_once(func):
     """
-    装饰器：确保被装饰的实例方法在当前生命周期内仅能执行一次。
+    🎯 生产级两栖装饰器：完美兼容同步实例方法与异步实例方法。
+    确保被装饰的方法在当前对象生命周期内仅能执行一次。
     """
-    @wraps(func)
-    def wrapper(self, *args, **kwargs):
-        # 在实例上初始化一个私有集合，用于存储已执行的方法名
-        if not hasattr(self, '_executed_methods'):
-            # 使用 object.__setattr__ 确保在 __init__ 执行前就能安全注入属性
-            object.__setattr__(self, '_executed_methods', set())
-        
-        # 检查当前方法是否已经执行过
-        if func.__name__ in self._executed_methods:
-            error_msg = f"❌ 违反单次执行策略：方法 '{self.__class__.__name__}.{func.__name__}' 只能被执行一次！"
-            logger.warning(error_msg)
-            return
+    
+    # 🏎️ 路由分支 A：如果被装饰的方法是 async def
+    if asyncio.iscoroutinefunction(func):
+        @wraps(func)
+        async def async_wrapper(self, *args, **kwargs):
+            if not hasattr(self, '_executed_methods'):
+                object.__setattr__(self, '_executed_methods', set())
             
-        # 记录并执行
-        self._executed_methods.add(func.__name__)
-        return func(self, *args, **kwargs)
-    return wrapper
+            if func.__name__ in self._executed_methods:
+                error_msg = f"❌ 违反单次执行策略：异步方法 '{self.__class__.__name__}.{func.__name__}' 只能被执行一次！"
+                logger.warning(error_msg)
+                return
+                
+            self._executed_methods.add(func.__name__)
+            # 🌟 核心：使用 await 真正驱动异步方法的执行
+            return await func(self, *args, **kwargs)
+        return async_wrapper
+
+    # 🐢 路由分支 B：如果被装饰的方法是普通的 def
+    else:
+        @wraps(func)
+        def sync_wrapper(self, *args, **kwargs):
+            if not hasattr(self, '_executed_methods'):
+                object.__setattr__(self, '_executed_methods', set())
+            
+            if func.__name__ in self._executed_methods:
+                error_msg = f"❌ 违反单次执行策略：同步方法 '{self.__class__.__name__}.{func.__name__}' 只能被执行一次！"
+                logger.warning(error_msg)
+                return
+                
+            self._executed_methods.add(func.__name__)
+            return func(self, *args, **kwargs)
+        return sync_wrapper
 
 # 内部私有变量，对外部模块隐藏
 _GLOBAL_GRAPH: Optional[Any] = None
