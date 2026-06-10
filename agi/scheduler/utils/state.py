@@ -6,7 +6,7 @@ async def get_messages(thread_id: str,offset: int,graph: CompiledStateGraph = No
     messages = None
     if graph:
         config = {"configurable": {"thread_id": thread_id}}
-        snapshot = graph.get_state(config)
+        snapshot = await graph.aget_state(config)
         # 假设你的状态定义中有一个名为 "messages" 的 channel
         messages = snapshot.values.get("messages", None)
     

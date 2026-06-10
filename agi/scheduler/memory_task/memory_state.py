@@ -292,8 +292,15 @@ class MemoryManager:
     def _format_episodic(self, records: List[Any]) -> str:
         lines = [f"--- EPISODIC MEMORY （{len(records)}）---"]
         for rec in records:
+            event_time = self._get_v(rec, 'event_time', 'Unknown time'),
+            if isinstance(event_time, datetime):
+                event_time = event_time.isoformat()
+            elif hasattr(event_time, "isoformat"):  # 兜底支持其他自定义的时间对象
+                event_time = event_time.isoformat()
+                
             item = {
-                "event_time": self._get_v(rec, 'event_time', 'Unknown time'),
+                "id": self._get_v(rec, 'id'),
+                "event_time": event_time,
                 "summary": self._get_v(rec, 'summary')
             }
             lines.append(json.dumps(item, ensure_ascii=False))

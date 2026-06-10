@@ -77,6 +77,11 @@ class ProfileMemoryRecord(BaseModel):
 
 class EpisodicMemoryRecord(BaseModel):
 
+    id: str = Field(
+        default_factory=lambda: f"ep_{uuid4().hex[:8]}",
+        description="Unique identifier for the memory record. Permanent and immutable."
+    )
+
     summary: str = Field(
         ...,
         min_length=1,
@@ -86,7 +91,7 @@ class EpisodicMemoryRecord(BaseModel):
         )
     )
 
-    event_time: str = Field(
+    event_time: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         description=(
             "Option. Event occurrence time "
@@ -127,9 +132,8 @@ class EpisodicMemoryRecord(BaseModel):
 
     @property
     def dedup_key(self) -> str:
-        """Unique key for deduplication and updates."""
-        summary = self.summary.strip().lower() if getattr(self, "summary", None) else ""
-        return f"{summary}" if summary else ""
+        # 🌟 现在的去重/检索主键直接绑定 ID
+        return self.id
 
 
 # =========================================================

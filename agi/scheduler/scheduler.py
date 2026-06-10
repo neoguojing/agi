@@ -1,4 +1,5 @@
 import asyncio
+import traceback
 import json
 import logging
 from datetime import datetime
@@ -81,7 +82,7 @@ async def _pure_code_task_proxy(task_id: str, task_type: str, target_id: str, cr
             "error_log": f"Fatal Proxy Panic: {str(e)}",
             "finished_at": datetime.now().isoformat()
         }
-        logger.exception("💥 任务 [%s] 发生致命崩溃: %s", task_id, e)
+        logger.exception("💥 任务 [%s] 发生致命崩溃: %s\n %s", task_id, e, traceback.format_exc())
 
     # 6. 回写持久化存储（切换为 异步方法 aput）
     try:

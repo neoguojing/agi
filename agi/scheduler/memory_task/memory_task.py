@@ -1,7 +1,7 @@
 import abc
 import json
 import logging
-from datetime import datetime
+import traceback
 from typing import Any, Dict, Optional, Tuple,cast
 
 from agi.scheduler.base import BaseTaskRuntime, BaseTaskUnit, TaskExecutionResult
@@ -136,7 +136,7 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
             return True
             
         except Exception as e:
-            logger.error(f"❌ 任务 [{self.task_id}] 准入检查阶段发生致命异常: {e}")
+            logger.error(f"❌ 任务 [{self.task_id}] 准入检查阶段发生致命异常: {e}\n {traceback.format_exc()}")
             return False
 
     async def execute(self, store_client: Any) -> TaskExecutionResult:

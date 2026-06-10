@@ -81,7 +81,7 @@ Constraint: Only extract user-provided facts or long-term preferences; strictly 
 - **upserts**: List of full records to ADD or UPDATE. If the key already exists, it will be safely overwritten.
 - **deletions**: List of STRING keys to REMOVE. Use this to delete obsolete, conflicting, or redundant memories.
   - For `profile`: Use the exact key (e.g., ["favorite_ide"]).
-  - For `episodic`: Use "summary_date" format (e.g., ["beta tested_2026-06-05"]).
+  - For `episodic`: Use "id" format (e.g., ["ep_7c8d2e1a"]).
   - For `semantic`: Use "subject:predicate:object" format (e.g., ["db:uses:mysql"]).
 
 ## Guarantees

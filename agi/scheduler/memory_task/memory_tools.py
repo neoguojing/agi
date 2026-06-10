@@ -87,14 +87,12 @@ CRITICAL RULES FOR CONSOLIDATION:
   - summary: A refined, intent-focused description.
   - event_time: The timestamp of the primary event.
   - confidence: Float between 0.0 and 1.0.
-- deletions: List of STRING keys to COMPLETELY REMOVE (e.g., fragmented steps, low-value noise, superseded records).
+- deletions: List of STRING IDs to COMPLETELY REMOVE (e.g., ['ep_a3f8b912', 'ep_7c8d2e1a'])..
 
 ## Example Scenario:
 Existing Memories:
-1. 'api_debug_2026-06-01_1': {summary: 'User reported 404 error on /users endpoint', event_time: '2026-06-01 10:00'}
-2. 'api_debug_2026-06-01_2': {summary: 'Tried changing API key, still 404', event_time: '2026-06-01 10:05'}
-3. 'api_debug_2026-06-01_3': {summary: 'Found out endpoint changed to /v2/users, fixed it', event_time: '2026-06-01 10:15'}
-4. 'chitchat_2026-06-01': {summary: 'User said thanks and have a good day', event_time: '2026-06-01 10:16'}
+1. 'ep_a3f8b912': {summary: 'User reported 404 error on /users endpoint', event_time: '2026-06-01 10:00'}
+2. 'ep_7c8d2e1a': {summary: 'Tried changing API key, still 404', event_time: '2026-06-01 10:05'}
 
 Your Tool Call should be:
 - reason: "Merged three fragmented debugging steps into a single resolved milestone regarding the API endpoint change. Deleted trivial chitchat as it lacks long-term intent value."
@@ -103,7 +101,7 @@ Your Tool Call should be:
     event_time: '2026-06-01 10:15', 
     confidence: 0.95
   }]
-- deletions: ['api_debug_2026-06-01_1', 'api_debug_2026-06-01_2', 'api_debug_2026-06-01_3', 'chitchat_2026-06-01']
+- deletions: ['ep_a3f8b912', 'ep_7c8d2e1a']
 """
 
 CONSOLIDATE_SEMANTIC_MEMORY_DESCRIPTION = """
