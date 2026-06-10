@@ -88,8 +88,8 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
         #     offset=self.offset,
         #     client=self.runtime.client
         # )
-        state = self.manager.get_memories()
-        return state.get("messages", None)
+        return self.manager.get_messages()
+         
     
     def build_prompt(self, order_input: str) -> str:
         """
