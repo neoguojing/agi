@@ -36,7 +36,6 @@ def memory_reducer(
     """
     # 1. 直接继承历史状态，无须再 O(N) 遍历重建
     merged: dict[str, Any] = state.copy() if state else {}
-    print(f"******************{writes}")
     # 2. 应用写入
     if isinstance(writes, list):
         # 如果 LLM 或 Tool 传来的是列表 (Upsert)
@@ -289,21 +288,15 @@ class MemoryManager:
             lines.append(json.dumps(item, ensure_ascii=False))
         return "\n".join(lines)
 
-    def _format_episodic(self, records: List[Any]) -> str:
+    def _format_episodic(self, records: List[EpisodicMemoryRecord]) -> str:
         lines = [f"--- EPISODIC MEMORY （{len(records)}）---"]
         for rec in records:
-            event_time = self._get_v(rec, 'event_time', 'Unknown time'),
-            if isinstance(event_time, datetime):
-                event_time = event_time.isoformat()
-            elif hasattr(event_time, "isoformat"):  # 兜底支持其他自定义的时间对象
-                event_time = event_time.isoformat()
-                
-            item = {
-                "id": self._get_v(rec, 'id'),
-                "event_time": event_time,
-                "summary": self._get_v(rec, 'summary')
-            }
-            lines.append(json.dumps(item, ensure_ascii=False))
+            # 🌟 关键优化：使用 Pydantic 的 mode="json" 自动将内部的 datetime 转为字符串
+            rec_json_dict = rec.model_dump(mode="json", include={"id", "event_time", "summary"})
+            
+            # 此时 rec_json_dict["event_time"] 已经是完美的 ISO 字符串了
+            lines.append(json.dumps(rec_json_dict, ensure_ascii=False))
+            
         return "\n".join(lines)
 
     def _format_semantic(self, records: List[Any]) -> str:

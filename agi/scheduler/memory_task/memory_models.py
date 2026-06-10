@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import uuid4
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field,field_validator, field_serializer
 # =========================================================
 # Type Aliases
 # =========================================================
@@ -99,6 +99,70 @@ class EpisodicMemoryRecord(BaseModel):
             "Must not be empty."
         )
     )
+
+    # =====================================================
+    # 1. 入向拦截（Validation 防御）：把各种妖魔鬼怪的输入转为 datetime
+    # =====================================================
+    @field_validator('event_time', mode='before')
+    @classmethod
+    def normalize_datetime(cls, v: Any) -> Any:
+        # 情况 A：如果已经是 datetime 对象（比如从内部代码直接传入）
+        if isinstance(v, datetime):
+            # 强行补充时区，防止 naive datetime 报错
+            if v.tzinfo is None:
+                return v.replace(tzinfo=timezone.utc)
+            return v
+            
+        # 情况 B：如果是 Unix 时间戳（int 或 float，比如来自某些缓存或数据库）
+        if isinstance(v, (int, float)):
+            return datetime.fromtimestamp(v, tz=timezone.utc)
+            
+        # 情况 C：如果是字符串（最常遇到，比如大模型输出或 JSON 文件）
+        if isinstance(v, str):
+            v = v.strip()
+            # 兜底：处理非法的空字符串占位符
+            if not v or v.lower() in ('unknown time', 'none', 'null', ''):
+                return datetime.now(timezone.utc)
+                
+            try:
+                # 尝试标准的 ISO 格式解析（兼容带 Z 或不带 Z 的格式）
+                normalized_str = v.replace('Z', '+00:00')
+                dt = datetime.fromisoformat(normalized_str)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
+            except ValueError:
+                # 极端兜底：如果大模型胡乱写了一个非 ISO 格式（如 "2026/06/10 10:00"）
+                # 可以借用 dateutil.parser 库，或者直接返回当前时间防止崩掉
+                try:
+                    from dateutil import parser
+                    dt = parser.parse(v)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    return dt
+                except Exception:
+                    # 实在解析不了，用当前时间兜底，保证系统不死
+                    return datetime.now(timezone.utc)
+                    
+        # 其他完全无法识别的类型，直接交给 Pydantic 原生报错，或者直接兜底
+        return v
+
+    # =====================================================
+    # 2. 出向规范（Serialization 统一）：确保吐出给外面的一定是标准 ISO 字符串
+    # =====================================================
+    @field_serializer('event_time')
+    def serialize_datetime(self, v: Any, _info) -> str:
+        # 情况 A：如果是完美的 datetime 对象，正常序列化
+        if isinstance(v, datetime):
+            return v.isoformat().replace('+00:00', 'Z')
+            
+        # 情况 B：如果由于某些黑魔法（如 reducer 合并、手动赋值）它已经变成了 str
+        if isinstance(v, str):
+            # 顺手帮它把时区尾缀标准化，防止大模型看着难受
+            return v.strip().replace('+00:00', 'Z')
+            
+        # 情况 C：极端兜底
+        return str(v)
 
     participants: list[str] = Field(
         default=[],
