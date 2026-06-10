@@ -3,8 +3,9 @@ from agi.scheduler.memory_task.memory_task import *
 from agi.scheduler.system_monitor import SystemMonitorTask,SystemTaskRuntime
 from langgraph.store.postgres import PostgresStore
 from langgraph.store.postgres.aio import AsyncPostgresStore
+from langgraph_sdk import get_client
+from agi.config import LANGGRAPH_MAIN_URL,CLOUD_MODE,DEFAULT_DB_URI
 from psycopg_pool import  ConnectionPool,AsyncConnectionPool
-from agi.config import DEFAULT_DB_URI
 from agi.agent.models import ModelProvider
 import logging
 from functools import wraps
@@ -114,7 +115,13 @@ class SchedulerOrchestrator(metaclass=SingletonMeta):
         pool = AsyncConnectionPool(conninfo=DEFAULT_DB_URI, open=True)
         store = AsyncPostgresStore(conn=pool)
         self.llm = ModelProvider.get_falback_model()  # 顺手修正了原代码的 falback 拼写
-        self.graph = get_global_graph()
+        self.graph = None
+        self.client = None
+        if CLOUD_MODE:
+            self.client = get_client(url=LANGGRAPH_MAIN_URL)
+        else:
+            self.graph = get_global_graph()
+
         
         # 初始化底层的通用旁路调度内核
         self.scheduler = ConfigurationMergedScheduler(store_client=store)
@@ -145,7 +152,7 @@ class SchedulerOrchestrator(metaclass=SingletonMeta):
             graph=self.graph,
             thread_id=thread_id,
             user_id=user_id,
-            client=None,
+            client=self.client,
         )
         
         try:

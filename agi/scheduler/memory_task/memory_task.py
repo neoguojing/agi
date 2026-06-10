@@ -82,12 +82,14 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
     async def load_history_messages(self):
         """🌟 已改为 async：从远程客户端或图存储中异步拉取历史消息"""
         # 假设底层的 get_messages 在全链路异步化后也升级为了支持 aget_messages 或 async def
-        return await get_messages(
-            thread_id=self.runtime.thread_id, 
-            graph=self.runtime.graph, 
-            offset=self.offset,
-            client=self.runtime.client
-        )
+        # return await get_messages(
+        #     thread_id=self.runtime.thread_id, 
+        #     graph=self.runtime.graph, 
+        #     offset=self.offset,
+        #     client=self.runtime.client
+        # )
+        state = self.manager.get_memories()
+        return state.get("messages", None)
     
     def build_prompt(self, order_input: str) -> str:
         """

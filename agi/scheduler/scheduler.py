@@ -103,7 +103,7 @@ class ConfigurationMergedScheduler:
         self.registry: Dict[str, Dict[str, Any]] = {}
         
         # 🌟 核心变更 3：使用 AsyncIOScheduler，无需再配置 ThreadPoolExecutor
-        self._scheduler = AsyncIOScheduler()
+        self._scheduler = AsyncIOScheduler(timezone=self.tz)
 
     async def register_task_type(self, task_cls: Type[BaseTaskUnit], runtime_handle: Any):
         """🚀 动态注册接口（支持启动前/启动后随时调用）"""

@@ -135,13 +135,16 @@ class MemoryManager:
                 # 🌟 切换为 LangGraph 的异步获取状态方法 aget_state
                 snapshot = await self.graph.aget_state(self.config)
                 raw_values = snapshot.values if hasattr(snapshot, "values") else snapshot
-                self.state = cast(MemoryState, raw_values)
+                # self.state = cast(MemoryState, raw_values)
+                self.state = raw_values
                 
             elif self.client:
                 # 🌟 激活并解锁底层远程客户端的异步状态拉取
                 snapshot = await self.client.threads.get_state(thread_id=self.thread_id)
-                raw_values = snapshot.values if hasattr(snapshot, "values") else snapshot
-                self.state = cast(MemoryState, raw_values)
+                raw_values = snapshot.get('values')
+                if raw_values:
+                    # self.state = cast(MemoryState, raw_values)
+                    self.state = raw_values
                 
             logger.debug("🔄 [MemoryManager] 异步状态快照刷新成功。")
         except Exception as e:

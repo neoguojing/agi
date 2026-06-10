@@ -12,7 +12,8 @@ async def get_messages(thread_id: str,offset: int,graph: CompiledStateGraph = No
     
     if client:
         state = await client.threads.get_state(thread_id=thread_id)
-        messages = state.values.get("messages", None)
+        if state.get("values"):
+            messages = state.get("values").get("messages", None)
 
     if messages is None or len(messages) <= offset:
         return None

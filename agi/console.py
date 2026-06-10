@@ -39,7 +39,7 @@ from agi.agent.context import Context
 from agi.agent.stream_processor import StreamProcessor
 from agi.api.media import process_multimodal_content
 from agi.apps.common import FileObject, ImageURL, MessageContent
-from agi.config import LANGGRAPH_MAIN_URL
+from agi.config import LANGGRAPH_MAIN_URL,CLOUD_MODE
 
 STATE_CACHE = ".cli_session.json"
 PROMPT_HISTORY_CACHE = ".cli_prompt_history"
@@ -429,8 +429,7 @@ class DeepAgentTUI(App):
         self.client = get_client(url=LANGGRAPH_MAIN_URL)
         self.assistant_id = "main"
         
-        # self.is_cloud_mode = bool(LANGGRAPH_MAIN_URL and self.assistant_id)
-        self.is_cloud_mode = False
+        self.is_cloud_mode = CLOUD_MODE
         self.cloud_manager: Optional[CloudLifecycleManager] = None
         
         self.event_queue = asyncio.Queue()
