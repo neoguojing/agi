@@ -2,67 +2,64 @@ import asyncio
 import json
 import logging
 from datetime import datetime
-from typing import Any, Dict, Type
+from typing import Any, Dict, Type, Optional
 from langgraph.store.base import BaseStore
 from agi.scheduler.memory_task.memory_task import *
-from apscheduler.executors.pool import ThreadPoolExecutor
-from apscheduler.schedulers.background import BackgroundScheduler
 from pytz import timezone
 
+# 🌟 核心变更 1：切换为 APScheduler 的 异步IOScheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 # 引入基类和存储契约
 from agi.scheduler.base import BaseTaskUnit, SchedulerStorageContract, TaskExecutionResult
 
 logger = logging.getLogger("SchedulerKernel")
 
-def _pure_code_task_proxy(task_id: str, task_type: str, target_id: str, cron_expr: str,
-                          merged_params: dict, task_class: Type[BaseTaskUnit],
-                          runtime_handle: BaseTaskRuntime, store_client: Any):
-    """
-    时钟代理执行器：负责悲观锁校验与全异步事件循环拉起。
-    """
 
+# 🌟 核心变更 2：代理执行器全面改为 async def，彻底抛弃 run_until_complete
+async def _pure_code_task_proxy(task_id: str, task_type: str, target_id: str, cron_expr: str,
+                                merged_params: dict, task_class: Type[BaseTaskUnit],
+                                runtime_handle: Any, store_client: BaseStore):
+    """
+    时钟代理执行器：由 AsyncIOScheduler 原生驱动的异步协程任务。
+    """
     if not task_id:
         logger.error(f"❌ [Execution Aborted] 触发的任务 ID 为空! Type: {task_type}, Target: {target_id}")
         return
 
-
     ns = SchedulerStorageContract.TASK_NAMESPACE
-
     logger.info("⏰ [Clock Trigger] 尝试触发任务 [%s] (Type: %s, Target: %s)", task_id, task_type, target_id)
 
-    # 1. 悲观锁校验
-    current_meta = store_client.get(namespace=ns, key=task_id)
-    payload = dict(current_meta.value) if current_meta else {}
-    if payload.get("status") == "PROCESSING":
-        logger.warning("🔒 任务 [%s] 正处于 PROCESSING 状态，放弃本次并发触发。", task_id)
-        return
-
-    # 2. 实例化任务单元并注入合规的 runtime
-    instance = task_class(
-        runtime=runtime_handle,
-        task_id=task_id,
-        target_id=target_id,
-        params=merged_params
-    )
-
     try:
-        # 3. 准入校验
-        if not instance.should_trigger(store_client):
+        # 1. 悲观锁校验（切换为 LangGraph Store 异步方法 aget）
+        current_meta = await store_client.aget(namespace=ns, key=task_id)
+        payload = dict(current_meta.value) if current_meta else {}
+        if payload.get("status") == "PROCESSING":
+            logger.warning("🔒 任务 [%s] 正处于 PROCESSING 状态，放弃本次并发触发。", task_id)
+            return
+
+        # 2. 实例化任务单元并注入合规的 runtime
+        instance = task_class(
+            runtime=runtime_handle,
+            task_id=task_id,
+            target_id=target_id,
+            params=merged_params
+        )
+
+        # 3. 准入校验（既然全链路异步化，准入校验也应支持 await）
+        should_trigger = await instance.should_trigger(store_client)
+  
+        if not should_trigger:
             logger.info("⏭️ 任务 [%s] 准入校验未通过 (should_trigger=False)，跳过执行。", task_id)
             return
 
-        # 4. 抢占状态锁
+        # 4. 抢占状态锁（切换为 异步方法 aput）
         payload.update({"status": "PROCESSING", "updated_at": datetime.now().isoformat()})
-        store_client.put(namespace=ns, key=task_id, value=payload)
+        await store_client.aput(namespace=ns, key=task_id, value=payload)
         logger.info("⚡ 任务 [%s] 成功抢占状态锁，开始进入执行阶段...", task_id)
 
-        # 5. 驱动异步循环
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result: TaskExecutionResult = loop.run_until_complete(instance.execute(store_client))
-        finally:
-            loop.close()
+        # 5. 驱动异步任务（原生 await，不再创建新 loop）
+        result: TaskExecutionResult = await instance.execute(store_client)
 
         next_status = "COMPLETED" if result.is_success else "FAILED"
         log_data = {
@@ -86,14 +83,17 @@ def _pure_code_task_proxy(task_id: str, task_type: str, target_id: str, cron_exp
         }
         logger.exception("💥 任务 [%s] 发生致命崩溃: %s", task_id, e)
 
-    # 6. 回写持久化存储
-    payload.update({"status": next_status, "last_result": log_data, "updated_at": datetime.now().isoformat()})
-    store_client.put(namespace=ns, key=task_id, value=payload)
-    logger.info("💾 任务 [%s] 状态已同步至存储, 最终状态: %s", task_id, next_status)
+    # 6. 回写持久化存储（切换为 异步方法 aput）
+    try:
+        payload.update({"status": next_status, "last_result": log_data, "updated_at": datetime.now().isoformat()})
+        await store_client.aput(namespace=ns, key=task_id, value=payload)
+        logger.info("💾 任务 [%s] 状态已同步至存储, 最终状态: %s", task_id, next_status)
+    except Exception as store_err:
+        logger.error("❌ 任务 [%s] 最终状态回写持久化失败: %s", task_id, str(store_err))
 
 
 # ==============================================================================
-# 5. 旁路调度内核（支持启动后安全、动态注册）
+# 5. 旁路调度内核（全异步自驱版本）
 # ==============================================================================
 class ConfigurationMergedScheduler:
     def __init__(self, store_client: BaseStore, tz_str: str = "Asia/Shanghai"):
@@ -101,22 +101,15 @@ class ConfigurationMergedScheduler:
         self.tz = timezone(tz_str)
         self.registry: Dict[str, Dict[str, Any]] = {}
         
-        self._scheduler = BackgroundScheduler(
-            executors={'default': ThreadPoolExecutor(max_workers=30)},
-            job_defaults={'coalesce': True, 'max_instances': 1}, 
-            timezone=self.tz
-        )
+        # 🌟 核心变更 3：使用 AsyncIOScheduler，无需再配置 ThreadPoolExecutor
+        self._scheduler = AsyncIOScheduler()
 
-    def register_task_type(self, task_cls: Type[BaseTaskUnit], runtime_handle: BaseTaskRuntime):
-        """
-        🚀 动态注册接口（支持启动前/启动后随时调用）
-        🔒 强约束点：严密校验 runtime_handle 是否合规，拒绝任意不合规的外部依赖对象。
-        """
+    async def register_task_type(self, task_cls: Type[BaseTaskUnit], runtime_handle: Any):
+        """🚀 动态注册接口（支持启动前/启动后随时调用）"""
         task_type = task_cls.task_type
         if not task_type:
             raise ValueError(f"❌ 注册失败: 类 {task_cls.__name__} 未定义静态 task_type")
             
-        # 【关键校验】检查注入的运行时依赖，是否是该任务声明的 BaseTaskRuntime 子类
         if not isinstance(runtime_handle, task_cls.runtime_schema):
             raise TypeError(
                 f"❌ [依赖注入拦截] 任务类型 [{task_type}] 要求的运行时契约为 "
@@ -124,18 +117,17 @@ class ConfigurationMergedScheduler:
                 f"'{type(runtime_handle).__name__}'！"
             )
             
-        # 写入注册表
         self.registry[task_type] = {
             "class": task_cls,
             "runtime": runtime_handle
         }
         logger.info("🔌 依赖校验通过！任务类型 [%s] 成功挂载至内核槽位。", task_type)
 
-        # 联动恢复：如果调度器已经在运行，动态追溯属于该新类型的存量 ACTIVE 任务
+        # 🌟 核心变更 4：动态追溯使用异步 asearch
         if self._scheduler.running:
             logger.info("⚡ 检测到引擎正在运行，开始自动激活持久化层中 [%s] 的历史存量任务...", task_type)
             ns = SchedulerStorageContract.TASK_NAMESPACE
-            all_instances = self.store_client.search(ns, limit=2000)
+            all_instances = await self.store_client.asearch(ns, limit=2000)
             
             for item in all_instances:
                 data = item.value
@@ -143,14 +135,16 @@ class ConfigurationMergedScheduler:
                     self._mount_to_clock_line(task_id=item.key, task_type=task_type, db_plan=data.get("plan", {}))
                     logger.info("🚀 存量任务 [%s] 已成功被动态追溯并挂载至时钟线！", item.key)
 
-    def start(self):
+    async def start(self):
         """启动调度内核并自驱加载历史任务"""
         if not self._scheduler.running:
+            # 启动调度器监听
             self._scheduler.start()
-            logger.info("⏰ 后台调度引擎已激活，执行冷启动数据恢复...")
+            logger.info("⏰ 后台异步调度引擎已激活，执行冷启动数据恢复...")
             
+            # 🌟 核心变更 5：冷启动数据扫描改用 asearch
             ns = SchedulerStorageContract.TASK_NAMESPACE
-            all_instances = self.store_client.search(ns, limit=2000)
+            all_instances = await self.store_client.asearch(ns, limit=2000)
             for item in all_instances:
                 data = item.value
                 task_type = data.get("task_type")
@@ -158,17 +152,19 @@ class ConfigurationMergedScheduler:
                     self._mount_to_clock_line(task_id=item.key, task_type=task_type, db_plan=data.get("plan", {}))
 
     def _mount_to_clock_line(self, task_id: str, task_type: str, db_plan: dict):
+        """
+        将任务向调度器注册（纯内存操作，不涉及 I/O，因此保持同步方法定义即可）
+        """
         if not task_id:
-            logger.error(
-                f"🚨 [CRITICAL] 尝试挂载空 ID 任务! 拦截成功。 "
-                f"任务类型: {task_type}, 计划详情: {db_plan}"
-            )
+            logger.error(f"🚨 [CRITICAL] 尝试挂载空 ID 任务! 拦截成功。")
             return
         reg = self.registry[task_type]
         cron_expr = db_plan.get("cron_expr") or reg["class"].default_cron
         cron_parts = cron_expr.split()
 
         logger.info("📡 正在将任务 [%s] (%s) 挂载至时钟线, Cron: [%s]", task_id, task_type, cron_expr)
+        
+        # ⚠️ 注意：这里添加的是 async 代理函数
         self._scheduler.add_job(
             func=_pure_code_task_proxy,
             trigger='cron',
@@ -178,17 +174,17 @@ class ConfigurationMergedScheduler:
             replace_existing=True
         )
 
-    def add_job(self, task_type: str, target_id: str, cron_expr: Optional[str] = None, params: Optional[dict] = None) -> str:
-        """动态任务派发（必须先通过 register_task_type 注册，才能成功派发）"""
+    async def add_job(self, task_type: str, target_id: str, cron_expr: Optional[str] = None, params: Optional[dict] = None) -> str:
+        """动态任务派发"""
         if task_type not in self.registry:
-            raise ValueError(f"❌ 调度器未注册此任务类型: '{task_type}'，请先注册该类型及其 Runtime 依赖。")
+            raise ValueError(f"❌ 调度器未注册此任务类型: '{task_type}'")
 
         task_cls = self.registry[task_type]["class"]
         task_id = SchedulerStorageContract.generate_task_key(task_type, target_id)
         final_cron = cron_expr or task_cls.default_cron
         final_params = {**task_cls.default_params, **(params or {})}
 
-        # 1. 业务参数与类型的强一致性验证
+        # 业务参数强验证
         for key, val in (params or {}).items():
             if key not in task_cls.default_params:
                 raise KeyError(f"❌ 参数越界: '{key}' 不是任务 [{task_type}] 允许的业务参数项")
@@ -196,13 +192,12 @@ class ConfigurationMergedScheduler:
             if not isinstance(val, expected_type):
                 raise TypeError(f"❌ 参数类型不一致: 项 '{key}' 期望类型为 {expected_type.__name__}。")
 
-        # 2. 序列化防呆检查
         try:
             json.dumps(final_params)
         except TypeError as e:
             raise ValueError(f"❌ params 中包含无法落库的复杂对象! 原因: {str(e)}")
 
-        # 3. 持久化落库
+        # 🌟 核心变更 6：落库改用 aput
         ns = SchedulerStorageContract.TASK_NAMESPACE
         payload = {
             "task_type": task_type,
@@ -210,26 +205,21 @@ class ConfigurationMergedScheduler:
             "plan": {"target_id": target_id, "cron_expr": final_cron, "params": final_params},
             "updated_at": datetime.now().isoformat()
         }
-        self.store_client.put(namespace=ns, key=task_id, value=payload)
+        await self.store_client.aput(namespace=ns, key=task_id, value=payload)
 
-        # 4. 如果调度引擎在线，直接送入生产环境时钟线
         if self._scheduler.running:
             self._mount_to_clock_line(task_id, task_type, payload["plan"])
             logger.info("🚀 任务 [%s] 已实时挂载至后台时钟线！", task_id)
             
         return task_id
 
-    def remove_job_by_id(self, task_id: str) -> bool:
-        """
-        [底层接口] 根据绝对的 task_id 删除并卸载任务
-        适用于：清理旧版的脏数据、僵尸任务，或者监控面版上的强制介入
-        """
+    async def remove_job_by_id(self, task_id: str) -> bool:
+        """[底层接口] 根据绝对的 task_id 删除并卸载任务"""
         ns = SchedulerStorageContract.TASK_NAMESPACE
         
-        # 1. 物理删除：先斩断数据库的根，防止未来重启后再次加载
-        self.store_client.delete(ns, key=task_id)
+        # 🌟 核心变更 7：删除改用 adelete
+        await self.store_client.adelete(ns, key=task_id)
         
-        # 2. 内存卸载：从正在运行的时钟线上实时摘除
         try:
             if self._scheduler.get_job(task_id):
                 self._scheduler.remove_job(task_id)
@@ -242,42 +232,54 @@ class ConfigurationMergedScheduler:
             logger.error("❌ [DELETE FAILED] 卸载任务 %s 时发生异常: %s", task_id, str(e))
             return False
 
-    def remove_job(self, task_type: str, target_id: str) -> bool:
-        """
-        [业务接口] 根据业务语义 (任务类型 + 目标主体) 优雅删除任务
-        适用于：业务端常规的任务注销调用
-        """
-        # 严格复用创建时的 task_id 合成规则
+    async def remove_job(self, task_type: str, target_id: str) -> bool:
+        """[业务接口] 根据业务语义优雅删除任务"""
         task_id = SchedulerStorageContract.generate_task_key(task_type, target_id)
-        return self.remove_job_by_id(task_id)
+        return await self.remove_job_by_id(task_id)
     
-    def clear_all_jobs(self) -> int:
-        """
-        [核弹级接口] 清空系统中所有的定时任务记录与执行线
-        适用于：环境重置、灾难恢复、或者彻底的测试初始化
-        """
+    async def clear_all_jobs(self) -> int:
+        """[核弹级接口] 清空系统中所有的定时任务记录与执行线"""
         ns = SchedulerStorageContract.TASK_NAMESPACE
         
-        # 1. 物理层：扫描并逐一抹除数据库中的记录
-        # 如果你的 Store 原生支持基于 namespace_prefix 的批量 delete，可以直接替换为批量调用以提升性能
-        all_instances = self.store_client.search(ns, limit=10000)
+        # 🌟 核心变更 8：批量检索与物理删除改用 asearch + adelete
+        all_instances = await self.store_client.asearch(ns, limit=10000)
         deleted_count = 0
         
         for item in all_instances:
             try:
-                self.store_client.delete(namespace=ns, key=item.key)
+                await self.store_client.adelete(namespace=ns, key=item.key)
                 deleted_count += 1
             except Exception as e:
                 logger.error("❌ 清理任务 %s 的持久化数据时失败: %s", item.key, str(e))
                 
-        # 2. 内存层：调用 APScheduler 原生接口，一键清空所有挂载的时钟线
         if self._scheduler.running:
             self._scheduler.remove_all_jobs()
             
         logger.warning("☢️ [CLEAR ALL] 调度器已被重置，共清理了 %d 个持久化任务。", deleted_count)
-        
         return deleted_count
     
-    def shutdown(self):
+    async def shutdown(self, wait: bool = True):
+        """🛑 纯异步优雅下线接口"""
         if self._scheduler.running:
-            self._scheduler.shutdown()
+            # AsyncIOScheduler 的 shutdown 会等待当前事件循环里激活的协程完毕
+            self._scheduler.shutdown(wait=wait)
+            logger.warning("🛑 异步调度内核已发出停机指令...")
+            
+            # 如果不等待强制关闭，顺手清理正在 PROCESSING 状态的幽灵状态锁
+            if not wait:
+                try:
+                    ns = SchedulerStorageContract.TASK_NAMESPACE
+                    all_instances = await self.store_client.asearch(ns, limit=2000)
+                    for item in all_instances:
+                        if item.value.get("status") == "PROCESSING":
+                            payload = dict(item.value)
+                            payload.update({
+                                "status": "FAILED", 
+                                "last_result": {"is_success": False, "error_log": "System forced shutdown."},
+                                "updated_at": datetime.now().isoformat()
+                            })
+                            await self.store_client.aput(namespace=ns, key=item.key, value=payload)
+                except Exception as e:
+                    logger.error("❌ 优雅停机释放锁时发生异常: %s", str(e))
+                    
+            logger.info("✨ 异步内核安全退出。")

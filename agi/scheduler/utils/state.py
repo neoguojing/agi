@@ -2,7 +2,7 @@
 from langgraph.graph.state import CompiledStateGraph
 from typing import Any
 
-def get_messages(thread_id: str,offset: int,graph: CompiledStateGraph = None,client: Any = None):
+async def get_messages(thread_id: str,offset: int,graph: CompiledStateGraph = None,client: Any = None):
     messages = None
     if graph:
         config = {"configurable": {"thread_id": thread_id}}
@@ -11,9 +11,8 @@ def get_messages(thread_id: str,offset: int,graph: CompiledStateGraph = None,cli
         messages = snapshot.values.get("messages", None)
     
     if client:
-        # state = await client.threads.get_state(thread_id=thread_id)
-        # messages = state.values.get("messages", None)
-        pass
+        state = await client.threads.get_state(thread_id=thread_id)
+        messages = state.values.get("messages", None)
 
     if messages is None or len(messages) <= offset:
         return None

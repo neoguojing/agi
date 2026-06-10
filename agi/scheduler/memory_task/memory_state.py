@@ -126,78 +126,86 @@ class MemoryManager:
         self.config = {"configurable": {"thread_id": thread_id}}
         self.state = state
         self.client = client
-        # 初始化时直接完成快照获取与强类型映射
-        self.refresh()
 
-    def refresh(self) -> None:
-        """刷新状态快照并强制映射为 MemoryState"""
-        if self.graph:
-            snapshot = self.graph.get_state(self.config)
-            raw_values = snapshot.values if hasattr(snapshot, "values") else snapshot
-            
-            # 🛡️ 核心映射：将 runtime dict 映射为强类型契约
-            self.state: MemoryState = cast(MemoryState, raw_values)
-        if self.client:
-            # self.state = await client.threads.get_state(thread_id=self.thread_id)
-            pass
-
+    async def refresh(self) -> None:
+        """
+        🔄 刷新状态快照并强制映射为 MemoryState（🌟 已改为 async）
+        """
+        try:
+            if self.graph:
+                # 🌟 切换为 LangGraph 的异步获取状态方法 aget_state
+                snapshot = await self.graph.aget_state(self.config)
+                raw_values = snapshot.values if hasattr(snapshot, "values") else snapshot
+                self.state = cast(MemoryState, raw_values)
+                
+            elif self.client:
+                # 🌟 激活并解锁底层远程客户端的异步状态拉取
+                snapshot = await self.client.threads.get_state(thread_id=self.thread_id)
+                raw_values = snapshot.values if hasattr(snapshot, "values") else snapshot
+                self.state = cast(MemoryState, raw_values)
+                
+            logger.debug("🔄 [MemoryManager] 异步状态快照刷新成功。")
+        except Exception as e:
+            logger.error("❌ 刷新内存快照时发生异常: %s", str(e))
+            raise e
 
     def get_memories(self) -> MemoryState:
         """
-        不再返回 tuple，直接返回强类型化的 MemoryState 对象。
-        后续逻辑通过 typed_state.get('profile_records') 访问，获得完整补全。
+        直接返回内存中的强类型化 MemoryState 对象。
+        💡 由于它只读取本地成员变量，不涉及 I/O，因此保持高效率的同步定义即可。
         """
         return self.state
     
-    def update_state(self, key: MemoryStateKey, value: Any) -> None:
+    async def update_state(self, key: MemoryStateKey, value: Any) -> None:
         """
-        向图引擎提交符合 MemoryState 契约的状态更新。
+        向图引擎提交符合 MemoryState 契约的状态更新（🌟 已改为 async）
         🛡️ 防御性检查：仅允许更新 MemoryState 中定义的合法字段。
         """
         if key not in ALLOWED_MEMORY_KEYS:
             logger.error(f"❌ 非法状态键访问尝试: {key}。仅允许更新: {ALLOWED_MEMORY_KEYS}")
             raise ValueError(f"Invalid state key: {key}")
 
-        # 🌟 直接调用，LangGraph 会自动匹配该字段关联的 memory_reducer 或 LastValue
-        if self.graph:
-            self.graph.update_state(self.config, {key: value})
-        
-        if self.client:
-            # await self.client.threads.update_state(
-            #     thread_id=self.thread_id,
-            #     values={key: value},
-            # )
-            pass
+        try:
+            if self.graph:
+                # 🌟 切换为 LangGraph 的异步状态更新方法 aupdate_state
+                await self.graph.aupdate_state(self.config, {key: value})
+            
+            if self.client:
+                # 🌟 激活远程客户端的异步状态写回
+                await self.client.threads.update_state(
+                    thread_id=self.thread_id,
+                    values={key: value},
+                )
 
-        
-        # 写入后同步更新本地快照，确保 MemoryManager 状态即时最新
-        if key in MEMORY_KEY_MAP.values():
-            self.state[key] = memory_reducer(self.state.get(key), value)
-        else:
-            self.state[key] = value
+            # 写入后同步更新本地快照，确保 MemoryManager 状态即时最新
+            if key in MEMORY_KEY_MAP.values():
+                self.state[key] = memory_reducer(self.state.get(key), value)
+            else:
+                self.state[key] = value
+                
+            logger.info("💾 状态字段 [%s] 已异步写入持久化层并同步至本地缓存。", key)
+        except Exception as e:
+            logger.error("❌ 异步更新状态字段 [%s] 失败: %s", key, str(e))
+            raise e
 
-    def update_memory_index(self, task_type: MemoryTarget, value: int) -> None:
-        """更新指定维度的索引，复用细化的 update_state 逻辑"""
+    async def update_memory_index(self, task_type: MemoryTarget, value: int) -> None:
+        """更新指定维度的索引，复用细化的 update_state 逻辑（🌟 已改为 async）"""
         state_key = INDEX_KEY_MAP.get(task_type)
         if state_key:
-            # 这里调用上面重构后的 update_state，获得强类型保护
-            self.update_state(cast(MemoryStateKey, state_key), value)
+            # 🌟 await 上面重构后的异步 update_state
+            await self.update_state(cast(MemoryStateKey, state_key), value)
 
     def get_memory_index(self, task_type: MemoryTarget) -> int:
         """
         根据任务类型获取当前记忆的消费偏移量。
-        消除了硬编码的 if-else，使用映射表统一管理。
+        💡 纯本地内存字典查找，保持同步方法，避免非必要的异步调度开销。
         """
-        # 1. 从映射表中获取对应的状态键 (例如 'profile_message_index')
         state_key = INDEX_KEY_MAP.get(task_type)
-        
         if not state_key:
             logger.warning(f"⚠️ 未知的任务类型: {task_type}，返回默认索引 0")
             return 0
-            
-        # 2. 从当前状态快照中读取，不存在时默认为 0
-        # 这里的 self.state 已经是 cast 后的 MemoryState 类型
         return self.state.get(cast(MemoryStateKey, state_key), 0)
+    
     # -------------------------------------------------
     # 底层私有工具链
     # -------------------------------------------------

@@ -63,7 +63,7 @@ class BaseTaskUnit(abc.ABC):
 
 
     @abc.abstractmethod
-    def should_trigger(self, store_client: Any) -> bool:
+    async def should_trigger(self, store_client: Any) -> bool:
         """准入控制流"""
         pass
 

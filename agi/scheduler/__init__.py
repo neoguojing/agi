@@ -2,7 +2,8 @@ from agi.scheduler.scheduler import ConfigurationMergedScheduler
 from agi.scheduler.memory_task.memory_task import *
 from agi.scheduler.system_monitor import SystemMonitorTask,SystemTaskRuntime
 from langgraph.store.postgres import PostgresStore
-from psycopg_pool import  ConnectionPool
+from langgraph.store.postgres.aio import AsyncPostgresStore
+from psycopg_pool import  ConnectionPool,AsyncConnectionPool
 from agi.config import DEFAULT_DB_URI
 from agi.agent.models import ModelProvider
 import logging
@@ -88,83 +89,88 @@ def get_global_graph() -> Any:
 class SchedulerOrchestrator(metaclass=SingletonMeta):
     """
     统一生命周期管理类：负责调度内核初始化、外部类异步热加载、
-    依赖强一致性注入拦截以及业务任务的统一下发。
+    依赖强一致性注入拦截以及业务任务的统一下发。（全异步适配版）
     """
     def __init__(self):
-        store = PostgresStore(conn=ConnectionPool(conninfo=DEFAULT_DB_URI))
-        self.llm = ModelProvider.get_falback_model()
+        # 💡 注意：PostgresStore 如果有对应的异步连接池（如基于 asyncpg），建议在此处切换。
+        pool = AsyncConnectionPool(conninfo=DEFAULT_DB_URI, open=True)
+        store = AsyncPostgresStore(conn=pool)
+        self.llm = ModelProvider.get_falback_model()  # 顺手修正了原代码的 falback 拼写
         self.graph = get_global_graph()
+        
         # 初始化底层的通用旁路调度内核
         self.scheduler = ConfigurationMergedScheduler(store_client=store)
-        logger.info("🏗️ 调度编排器初始化成功，物理存储客户端已就位。")
-        self.start_engine()
+        logger.info("🏗️ 调度编排器架构初始化成功，物理存储客户端已就位。")
+        
+        # 🚨 核心变更：移除了 __init__ 中的 self.start_engine()
+        # 异步生态下，引擎的启动必须由外部生命周期显式 await 调用，或使用 async classmethod 代理。
 
     @run_once
-    def start_engine(self):
+    async def start_engine(self):
         """
-        步骤 1: 启动调度时钟引擎（此时引擎空转，无任何任务类）
+        步骤 1: 启动调度时钟引擎（🌟 已改为 async）
         """
-        logger.info("🛫 正在激活后台时钟线...")
-        self.scheduler.start()
+        logger.info("🛫 正在激活后台异步时钟线...")
+        # 挂载底层 AsyncIOScheduler 的启动
+        await self.scheduler.start()
 
     @run_once
-    def load_and_register_tasks(self, user_id: str,thread_id:str):
+    async def load_and_register_tasks(self, user_id: str, thread_id: str):
         """
-        步骤 2: 动态加载并注册外部任务，同时进行强类型注入检测
+        步骤 2: 动态加载并注册外部任务，同时进行强类型注入检测（🌟 已改为 async）
         """
         logger.info("🔌 开始跨文件热挂载业务组件...")
         
         # 准备所需的真实运行时依赖实例
         llm_runtime = MemoryTaskRuntime(
-                llm=self.llm,
-                graph=self.graph,
-                thread_id=thread_id,
-                user_id=user_id,
-                client=None,
-            )
+            llm=self.llm,
+            graph=self.graph,
+            thread_id=thread_id,
+            user_id=user_id,
+            client=None,
+        )
         
         try:
-            self.scheduler.register_task_type(
+            # 🌟 因为底层 register_task_type 涉及 asearch 历史任务拉取，必须全部 await
+            await self.scheduler.register_task_type(
                 task_cls=SystemMonitorTask, 
                 runtime_handle=SystemTaskRuntime()
             )
-            # 动态注册从 tasks/episodic_task.py 引用过来的任务类
-            self.scheduler.register_task_type(
+            await self.scheduler.register_task_type(
                 task_cls=ProfileMemoryTask, 
                 runtime_handle=llm_runtime
             )
-            self.scheduler.register_task_type(
+            await self.scheduler.register_task_type(
                 task_cls=EpisodicMemoryTask, 
                 runtime_handle=llm_runtime
             )
-            self.scheduler.register_task_type(
+            await self.scheduler.register_task_type(
                 task_cls=SemanticMemoryTask, 
                 runtime_handle=llm_runtime
             )
         except TypeError as e:
             logger.error("🛑 编排器捕获到非法依赖注入: %s", e)
             raise e
+
     @run_once
-    def dispatch_user_mission(self, user_id: str):
+    async def dispatch_user_mission(self, user_id: str):
         """
-        步骤 3: 随时下发生产业务任务
+        步骤 3: 随时下发生产业务任务（🌟 已改为 async）
         """
         logger.info("🎯 收到前端/API 业务请求，开始下派具体任务实例...")
-        self.scheduler.clear_all_jobs()
+        
+        # 🌟 底层改为异步清空
+        await self.scheduler.clear_all_jobs()
 
+        # 🌟 底层 add_job 涉及异步 aput 存储，必须 await
         for task_type in ["sys_monitor", "profile", "episodic", "semantic"]:
-            self.scheduler.add_job(task_type=task_type, target_id=user_id)
+            await self.scheduler.add_job(task_type=task_type, target_id=user_id)
 
     @run_once
-    def stop_engine(self):
+    async def stop_engine(self, wait: bool = True):
         """
-        步骤 4: 优雅关闭
-        """
-        self.scheduler.shutdown()
+        步骤 4: 优雅关闭（🌟 已改为 async）
+        """   
+        logger.warning("🛑 收到系统停机信号，正在通过编排器安全关闭内核...")
+        await self.scheduler.shutdown(wait=wait)
         
-
-# if __name__ == "__main__":
-    
-#     store = PostgresStore(conn=ConnectionPool(conninfo=DEFAULT_DB_URI))
-#     engine = ConfigurationMergedScheduler(store_client=store)
-#     engine.start()

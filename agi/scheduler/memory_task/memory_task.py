@@ -46,36 +46,55 @@ class MemoryTaskRuntime(BaseTaskRuntime):
 
 class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
     """
-    生产级记忆提取基类。
+    生产级记忆提取基类（全异步适配版）。
     利用 MemoryManager 实现原子化状态管理与全量 JSONL 记忆整理。
     """
     task_type: str = "" 
     
     def __init__(self, runtime: MemoryTaskRuntime, task_id: str, target_id: str, params: dict):
         super().__init__(runtime, task_id, target_id, params)
-        # 初始化管理器，接管图状态读写
-        self.manager = MemoryManager(graph=self.runtime.graph,client=self.runtime.client, thread_id=self.runtime.thread_id)
-        # 初始化偏移量
-        self.offset = self.manager.get_memory_index(self.task_type)
+        
+        # 1. 实例化管理器（此时内部不进行任何阻塞 I/O，仅分配内存占位）
+        self.manager = MemoryManager(
+            graph=self.runtime.graph,
+            client=self.runtime.client,
+            thread_id=self.runtime.thread_id
+        )
+        
+        # 2. 💡 核心变更：构造函数中不再强行刷新获取状态。
+        # 先安全初始化为默认值，真正的 Index 追溯由 should_trigger 的门禁流接管
+        self.offset: int = 0
         self.messages = None
         
-        # 绑定工具集
+        # 3. 绑定工具集（CPU 密集型绑定，保持同步）
         self.llm = self.runtime.llm.bind_tools([
             consolidate_profile_memory,
             consolidate_episodic_memory,
             consolidate_semantic_memory
         ])
-        logger.info(f"📂 任务 [{self.task_id}] 初始化完成, 当前 Index: {self.offset}")
+        logger.info(f"📂 任务 [{self.task_id}] 内存实例构建完成，等待时钟线异步准入触发...")
 
-    def add_index(self, value: int):
+    async def add_index(self, value: int):
+        """🌟 已改为 async：增加偏移量并异步回写状态"""
         self.offset += value
-        self.manager.update_memory_index(self.task_type, self.offset)
+        await self.manager.update_memory_index(self.task_type, self.offset)
 
-    def load_history_messages(self):
-        return get_messages(thread_id=self.runtime.thread_id, graph=self.runtime.graph, offset = self.offset,client=self.runtime.client)
+    async def load_history_messages(self):
+        """🌟 已改为 async：从远程客户端或图存储中异步拉取历史消息"""
+        # 假设底层的 get_messages 在全链路异步化后也升级为了支持 aget_messages 或 async def
+        return await get_messages(
+            thread_id=self.runtime.thread_id, 
+            graph=self.runtime.graph, 
+            offset=self.offset,
+            client=self.runtime.client
+        )
     
     def build_prompt(self, order_input: str) -> str:
-        """构建全量 JSONL 上下文 Prompt"""
+        """
+        构建全量 JSONL 上下文 Prompt。
+        💡 保持同步方法：因为 manager.export_full_jsonl 在上一步重构中处理的是
+        本地内存快照的数据清洗，属于 CPU 运算，不涉及 I/O。
+        """
         template = ChatPromptTemplate([
             ("system", "{system_prompt}"),
             ("system", "--- PROFILE ---\n{profile_memory}"),
@@ -94,33 +113,40 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
             "instruction": order_input,
         })
     
-    def should_trigger(self, store_client: Any) -> bool:
-        self.messages = self.load_history_messages()
-        threshhold = self.default_params.get("activate_message_threshhold",0)
-        if not self.messages or len(self.messages) < threshhold:
+    async def should_trigger(self, store_client: Any) -> bool:
+        """🚦 异步准入控制流"""
+        try:
+            # 1. 🌟 首先发起异步状态刷新，接管图状态并同步本地视图
+            await self.manager.refresh()
+            self.offset = self.manager.get_memory_index(self.task_type)
+
+            # 2. 🌟 异步拉取历史消息
+            self.messages = await self.load_history_messages()
+            
+            # 顺手帮你修正了 threshold 的拼写错误 🔧
+            threshold = self.default_params.get("activate_message_threshold", 0)
+            if not self.messages or len(self.messages) < threshold:
+                return False
+
+            mem = self.manager.get_memories()
+            logger.info(f"📝 任务 [{self.task_id}] 准入校验通过 | Index: {self.offset} | "
+                        f"P:{len(mem.get('profile_records', {}))} "
+                        f"E:{len(mem.get('episodic_records', {}))} "
+                        f"S:{len(mem.get('semantic_records', {}))}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ 任务 [{self.task_id}] 准入检查阶段发生致命异常: {e}")
             return False
 
-        # 刷新状态，确保获取最新内存视图
-        self.manager.refresh()
-        self.offset = self.manager.get_memory_index(self.task_type)
-        
-        mem = self.manager.get_memories()
-        logger.info(f"📝 任务 [{self.task_id}] 准备就绪 | Index: {self.offset} | "
-                    f"P:{len(mem.get('profile_records', {}))} "
-                    f"E:{len(mem.get('episodic_records', {}))} "
-                    f"S:{len(mem.get('semantic_records', {}))}")
-        return True
-
     async def execute(self, store_client: Any) -> TaskExecutionResult:
-
         logger.info(f"🎬 执行任务: {self.task_id} | 类型: {self.task_type}")
         
-        # 1. 调用 LLM
+        # 1. 异步调用 LLM (切换为 LangChain 的非阻塞 ainvoke)
         instruction = TASK_INSTRUCTIONS.get(self.task_type, "Consolidate memory.")
         try:
             prompt = self.build_prompt(instruction)
-            # logger.info("prompt:\n %s",prompt)
-            result = self.llm.invoke(prompt)
+            result = await self.llm.ainvoke(prompt)
         except Exception as e:
             logger.error(f"❌ LLM 调用失败: {e}")
             return TaskExecutionResult(is_success=False, output_data=str(e))
@@ -139,19 +165,22 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
                     continue
 
                 try:
-                    tool_result = func.invoke(args)
+                    # 🌟 核心变更：工具执行切换为异步 ainvoke
+                    tool_result = await func.ainvoke(args)
                     record_key = f"{self.task_type}_records"
                     
-                    # 通过 Manager 原子化更新状态 (利用强类型检查)
                     if isinstance(tool_result, dict):
                         update_data = tool_result.get(record_key)
                         reason = tool_result.get("organization_reason")
                         
+                        # 🌟 通过 Manager 原子化异步回写状态与更新索引
                         if update_data:
-                            self.manager.update_state(cast(MemoryStateKey, record_key), update_data)
+                            await self.manager.update_state(cast(MemoryStateKey, record_key), update_data)
                             if reason:
-                                self.manager.update_state("organization_reason", reason)
-                            self.add_index(len(self.messages))
+                                await self.manager.update_state("organization_reason", reason)
+                            
+                            # 🌟 升级为 await 驱动的索引推进
+                            await self.add_index(len(self.messages))
 
                 except Exception as e:
                     logger.error(f"❌ 工具执行异常 [{tool_name}]: {e}")
@@ -159,6 +188,7 @@ class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
                     return TaskExecutionResult(is_success=False, output_data=f"Tool error: {str(e)}")
             
         return TaskExecutionResult(is_success=True, output_data="Memory successfully consolidated.")
+    
 # ==============================================================================
 # 三个派生出的具体旁路独立原子任务 (极致干净，只声明类型和差异化默认配置)
 # ==============================================================================

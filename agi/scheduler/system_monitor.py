@@ -16,12 +16,12 @@ class SystemMonitorTask(BaseTaskUnit):
     default_cron = "* * * * *"
     runtime_schema = BaseTaskRuntime
 
-    def should_trigger(self, store_client: Any) -> bool:
+    async def should_trigger(self, store_client: Any) -> bool:
         return True
 
     async def execute(self, store_client: Any) -> TaskExecutionResult:
         ns = ("sys", "scheduler", "tasks")
-        all_instances = store_client.search(ns, limit=5000)
+        all_instances = await store_client.asearch(ns, limit=5000)
         
         stats = {
             "TOTAL": 0, "SCHEDULED": 0, "PROCESSING": 0, 
