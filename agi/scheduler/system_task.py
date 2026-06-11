@@ -3,8 +3,7 @@ from typing import Any
 import logging
 from datetime import datetime
 # 确保从你的核心内核包中导入了 TaskContext
-from agi.scheduler import hub
-from agi.scheduler.task_hub import TaskContext 
+from agi.scheduler.task_hub import TaskContext,hub
 from datetime import timedelta
 logger = logging.getLogger(__name__)
 
@@ -51,7 +50,7 @@ class SystemMonitorSchema(BaseModel):
 @hub.cron(
     task_type="sys_monitor", 
     runtime=None,                            # 实际生产中请传入继承自 BaseRuntime 的实例
-    cron_expr="* * * * *",           
+    cron_expr="*/1 * * * *",           
     target_id="global",     
     params={"verbose": True, "limit": 5000}, 
     timeout=45.0                    

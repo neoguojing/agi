@@ -14,12 +14,7 @@ from agi.scheduler.memory_task.memory_state import MemoryManager, MemoryStateKey
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph_sdk import get_client
 # 🔄 核心对齐：引入标准上下文容器与基类
-from agi.scheduler import (
-    hub,
-    ExternalStateBridge,
-    runtime_state_bridge
-)
-from agi.scheduler.task_hub import TaskContext, BaseRuntime
+from agi.scheduler.task_hub import TaskContext, BaseRuntime,hub,ExternalStateBridge,runtime_state_bridge
 from agi.agent.models import ModelProvider
 from agi.config import LANGGRAPH_MAIN_URL,CLOUD_MODE
 
@@ -135,12 +130,12 @@ async def execute_memory_consolidation_pipeline(
     
     if not messages or len(messages) < threshold:
         logger.info("[%s] ⏳ 任务 [%s:%s] 未达消息触发阈值 (%d/%d)，跳过本次内存提取。", 
-                    ctx.trace_id, task_type, ctx.target_id, len(messages) if messages else 0, threshold)
+                    ctx.trace_id, ctx.target_id, task_type, len(messages) if messages else 0, threshold)
         return
 
     mem = manager.get_memories()
     logger.info("[%s] 📝 任务 [%s:%s] 准入校验通过 | 准备调用 LLM | profile:%d episodic:%d semantic:%d", 
-                ctx.trace_id, task_type, ctx.target_id,
+                ctx.trace_id,ctx.target_id, task_type, 
                 len(mem.get('profile_records', {})), 
                 len(mem.get('episodic_records', {})), 
                 len(mem.get('semantic_records', {})))
@@ -161,7 +156,7 @@ async def execute_memory_consolidation_pipeline(
     
     # 4. 处理 Tool Calls 工具路由链
     if not tool_calls:
-        logger.info("[%s] ℹ️ 任务 [%s:%s] 大模型未建议任何记忆工具调用。", ctx.trace_id, task_type, ctx.target_id)
+        logger.info("[%s] ℹ️ 任务 [%s:%s] 大模型未建议任何记忆工具调用。", ctx.trace_id,ctx.target_id, task_type)
         return
 
     for call in tool_calls:
@@ -191,7 +186,7 @@ async def execute_memory_consolidation_pipeline(
                 new_offset = offset + len(messages)
                 await manager.update_memory_index(task_type, new_offset)
                 logger.info("[%s] ✅ 任务 [%s:%s] 状态同步成功，Index 成功推进至 -> %d", 
-                            ctx.trace_id, task_type, ctx.target_id, new_offset)
+                            ctx.trace_id, ctx.target_id,task_type, new_offset)
 
 
 # ------------------------------------------------------------------------------
@@ -201,7 +196,7 @@ async def execute_memory_consolidation_pipeline(
 @hub.cron(
     task_type="profile",
     runtime=memory_runtime,  # 外部注入的 MemoryTaskRuntime 单例
-    cron_expr="0 3 * * *",   
+    cron_expr="*/1 * * * *",   
     target_id="global",
     params={"activate_message_threshold": 0, "min_confidence": 0.85, "model_flavor": "claude-3-5-sonnet"},
     timeout=120.0
@@ -219,7 +214,7 @@ async def profile_memory_job(ctx: TaskContext, payload: ProfileMemorySchema):
 @hub.cron(
     task_type="episodic",
     runtime=memory_runtime,
-    cron_expr="*/10 * * * *",  
+    cron_expr="*/1 * * * *",  
     target_id="global",
     params={"activate_message_threshold": 10},
     timeout=60.0
@@ -237,7 +232,7 @@ async def episodic_memory_job(ctx: TaskContext, payload: EpisodicMemorySchema):
 @hub.cron(
     task_type="semantic",
     runtime=memory_runtime,
-    cron_expr="0 * * * *",  
+    cron_expr="*/1 * * * *",  
     target_id="global",
     params={"activate_message_threshold": 10},
     timeout=180.0

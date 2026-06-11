@@ -218,6 +218,7 @@ AgentMemoryPredicate = Literal[
     "learned",
     "depends_on",
     "related_to",
+    "interested_in"
 ]
 
 class SemanticMemoryRecord(BaseModel):
@@ -237,7 +238,9 @@ class SemanticMemoryRecord(BaseModel):
         ...,
         description=(
             "REQUIRED. The relationship link verb between subject and object. "
-            "Examples: 'is_a', 'developed_by', 'located_in', 'supports'."
+            "MUST be one of these exact tokens: 'is_a', 'same_as', 'likes', 'prefers', "
+            "'uses', 'owns', 'knows', 'member_of', 'works_at', 'created', 'located_in', "
+            "'learned', 'depends_on', 'related_to','interested_in'."
         )
     )
 

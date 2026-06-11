@@ -1,5 +1,4 @@
-from agi.scheduler import hub
-from agi.scheduler.task_hub import TaskContext
+from agi.scheduler.task_hub import TaskContext,hub
 from pydantic import BaseModel, Field
 
 
@@ -9,12 +8,12 @@ class ContextSummarySchema(BaseModel):
 
 
 @hub.event(
-    event_name="context.summay", 
+    event_name="event_summary", 
     runtime=None, 
     max_retries=3,
     timeout=60
 )
-async def handle_context_summay(ctx: TaskContext, payload: ContextSummarySchema):
+async def handle_context_summary(ctx: TaskContext, payload: ContextSummarySchema):
     # 与 Cron 任务拥有完全一致的函数签名！
     print(f"[{ctx.trace_id}] 收到用户注册事件: {payload.user_id}")
     db = ctx.runtime.db_conn

@@ -35,7 +35,7 @@ from agi.scheduler.memory_task.memory_models import (
     SemanticMemoryRecord
 )
 from agi.scheduler.memory_task.memory_state import MemoryState,MemoryManager
-from agi.scheduler import hub,runtime_state_bridge
+from agi.scheduler import runtime_state_bridge,hub
 
 
 class OrganizeMemoryInput(BaseModel):
