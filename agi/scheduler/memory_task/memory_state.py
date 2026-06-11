@@ -301,16 +301,26 @@ class MemoryManager:
             lines.append(json.dumps(item, ensure_ascii=False))
         return "\n".join(lines)
 
-    def _format_episodic(self, records: List[EpisodicMemoryRecord]) -> str:
+    def _format_episodic(self, records: List[Any]) -> str:
         lines = [f"--- EPISODIC MEMORY （{len(records)}）---"]
         for rec in records:
-            # 🌟 关键优化：使用 Pydantic 的 mode="json" 自动将内部的 datetime 转为字符串
-            rec_json_dict = rec.model_dump(mode="json", include={"id", "event_time", "summary"})
+            # Check if the record is a dictionary or a model instance
+            if isinstance(rec, dict):
+                # Re-hydrate the dict into a Pydantic model
+                rec_obj = EpisodicMemoryRecord.model_validate(rec)
+            else:
+                rec_obj = rec
+                
+            # Now we are guaranteed to have the .model_dump method available
+            rec_json_dict = rec_obj.model_dump(
+                mode="json", 
+                include={"id", "event_time", "summary"}
+            )
             
-            # 此时 rec_json_dict["event_time"] 已经是完美的 ISO 字符串了
             lines.append(json.dumps(rec_json_dict, ensure_ascii=False))
             
         return "\n".join(lines)
+
 
     def _format_semantic(self, records: List[Any]) -> str:
         lines = [f"--- SEMANTIC MEMORY （{len(records)}）---"]

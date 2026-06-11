@@ -35,7 +35,7 @@ from agi.scheduler.memory_task.memory_models import (
     SemanticMemoryRecord
 )
 from agi.scheduler.memory_task.memory_state import MemoryState,MemoryManager
-from agi.scheduler import SchedulerOrchestrator
+from agi.scheduler import hub,runtime_state_bridge
 
 
 class OrganizeMemoryInput(BaseModel):
@@ -300,8 +300,9 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
         Returns:
             State update with memory_contents populated.
         """
-        self.scheduler = SchedulerOrchestrator()
-        await self.scheduler.start_engine()
-        await self.scheduler.load_and_register_tasks(runtime.context.user_id,config['metadata']['thread_id'])
-        await self.scheduler.dispatch_user_mission(runtime.context.user_id)
+        # 启动job调度
+        await hub.start()
+        # 注入运行时参数
+        runtime_state_bridge.update_dynamic_deps("thread_id",config['metadata']['thread_id'])
+        runtime_state_bridge.update_dynamic_deps("user_id",runtime.context.user_id)
 

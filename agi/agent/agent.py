@@ -33,7 +33,7 @@ from langgraph.store.postgres.aio import AsyncPostgresStore
 from langchain_core.runnables import RunnableConfig
 from agi.config import DEFAULT_DB_URI
 from agi.agent.deep_agent import create_deep_agent
-from agi.scheduler import set_global_graph
+from agi.scheduler import runtime_state_bridge
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +125,7 @@ async def get_async_agent():
             checkpointer=resources["checkpointer"],
             store=resources["store"],
         )
-        set_global_graph(_async_agent)
+        runtime_state_bridge.update_dynamic_deps("graph",_async_agent)
     return _async_agent
 
 

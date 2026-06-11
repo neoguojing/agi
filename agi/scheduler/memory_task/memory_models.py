@@ -165,8 +165,7 @@ class EpisodicMemoryRecord(BaseModel):
         return str(v)
 
     participants: list[str] = Field(
-        default=[],
-        min_length=1,
+        default_factory=list,
         description=(
             "Option. List of entities or people "
             "involved in the event. "

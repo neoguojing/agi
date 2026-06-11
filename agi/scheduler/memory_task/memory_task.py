@@ -1,222 +1,252 @@
-import abc
-import json
 import logging
 import traceback
-from typing import Any, Dict, Optional, Tuple,cast
+import uuid
+from typing import Any, Dict, Optional, List, cast
+from pydantic import BaseModel, Field
 
-from agi.scheduler.base import BaseTaskRuntime, BaseTaskUnit, TaskExecutionResult
-from agi.scheduler.utils.state import get_messages
 from agi.scheduler.memory_task.memory_tools import (
     MEMORY_SYSTEM_PROMPT,
     consolidate_profile_memory,
     consolidate_episodic_memory,
     consolidate_semantic_memory
 )
-from agi.scheduler.memory_task.memory_state import MemoryManager,MemoryStateKey
-
+from agi.scheduler.memory_task.memory_state import MemoryManager, MemoryStateKey
 from langchain_core.prompts import ChatPromptTemplate
+from langgraph_sdk import get_client
+# 🔄 核心对齐：引入标准上下文容器与基类
+from agi.scheduler import (
+    hub,
+    ExternalStateBridge,
+    runtime_state_bridge
+)
+from agi.scheduler.task_hub import TaskContext, BaseRuntime
+from agi.agent.models import ModelProvider
+from agi.config import LANGGRAPH_MAIN_URL,CLOUD_MODE
 
+logger = logging.getLogger("MemoryTask")
 
+# ------------------------------------------------------------------------------
+# 📝 静态元数据与核心映射表 (保持不变)
+# ------------------------------------------------------------------------------
 TASK_INSTRUCTIONS = {
     "profile": "Call 'consolidate_profile_memory' tool to analyze user core profile based on history and existing memory.",
     "episodic": "Call 'consolidate_episodic_memory' tool to structure recent lifecycle events without repeating semantic or profile items.",
     "semantic": "Call 'consolidate_semantic_memory' tool to extract new declarative knowledge facts that do not overlap with profile/episodic data."
 }
 
-# Mapping of tool names to their corresponding functions
 TOOL_MAP = {
     "consolidate_profile_memory": consolidate_profile_memory,
     "consolidate_episodic_memory": consolidate_episodic_memory,
     "consolidate_semantic_memory": consolidate_semantic_memory,
 }
 
-logger = logging.getLogger("MemoryTask")
 
-
-class MemoryTaskRuntime(BaseTaskRuntime):
-    """内聚了大模型交互所需要的全部重型环境依赖，让 Store 干净地回归存储本质"""
-    def __init__(self, llm: Any, graph: Any, thread_id: str,user_id:str,client: Any):
+# ------------------------------------------------------------------------------
+# 🧱 1. 环境依赖容器定义 (适配显式继承自 BaseRuntime)
+# ------------------------------------------------------------------------------
+class MemoryTaskRuntime(BaseRuntime):
+    """
+    重型环境依赖容器。
+    静态依赖（LLM、Client）通过构造函数直接注入；
+    动态依赖（Graph、Thread_id、User_id）通过 @property 从桥接器实时拉取。
+    """
+    def __init__(self, state_bridge: ExternalStateBridge):
         super().__init__()
-        self.llm = llm
-        self.graph = graph
-        self.thread_id = thread_id
-        self.user_id = user_id
-        self.client = client
+        self.llm = ModelProvider.get_falback_model()              # 🤖 静态单例依赖
+        self.client = get_client(url=LANGGRAPH_MAIN_URL)        # 🔌 静态单例依赖
+        self._bridge = state_bridge # 🌁 动态中转桥接器
+
+    @property
+    def graph(self) -> Any:
+        """动态感知外部线程传入的图实例"""
+        return self._bridge.get_value("graph")
+
+    @property
+    def thread_id(self) -> str:
+        """动态感知外部线程传入的 Thread ID"""
+        return self._bridge.get_value("thread_id")
+
+    @property
+    def user_id(self) -> str:
+        """动态感知外部线程传入的 User ID"""
+        return self._bridge.get_value("user_id")
+
+memory_runtime = MemoryTaskRuntime(
+    state_bridge=runtime_state_bridge
+)
+# ------------------------------------------------------------------------------
+# 📐 2. 声明式参数契约模型 (Pydantic Schemas 保持不变)
+# ------------------------------------------------------------------------------
+class ProfileMemorySchema(BaseModel):
+    activate_message_threshold: int = Field(default=0, description="触发记忆提取的消息数阈值")
+    min_confidence: float = Field(default=0.85, description="语义入库要求极高的置信度")
+    model_flavor: str = Field(default="claude-3-5-sonnet", description="知识沉淀选择推理能力更强的模型")
+
+class EpisodicMemorySchema(BaseModel):
+    activate_message_threshold: int = Field(default=10, description="触发记忆提取的消息数阈值")
+
+class SemanticMemorySchema(BaseModel):
+    activate_message_threshold: int = Field(default=10, description="触发记忆提取的消息数阈值")
 
 
-class BaseMemoryExtractionTask(BaseTaskUnit, abc.ABC):
-    """
-    生产级记忆提取基类（全异步适配版）。
-    利用 MemoryManager 实现原子化状态管理与全量 JSONL 记忆整理。
-    """
-    task_type: str = "" 
+# ------------------------------------------------------------------------------
+# ⛓️ 3. 核心复用逻辑管线 (全面适配 TaskContext)
+# ------------------------------------------------------------------------------
+def build_memory_prompt(task_type: str, manager: MemoryManager, messages: Any, instruction: str) -> Any:
+    """构建全量 JSONL 上下文 Prompt (纯 CPU 密集运算)"""
+    template = ChatPromptTemplate([
+        ("system", "{system_prompt}"),
+        ("system", "--- PROFILE ---\n{profile_memory}"),
+        ("system", "--- EPISODIC ---\n{episodic_memory}"),
+        ("system", "--- SEMANTIC ---\n{semantic_memory}"),
+        ("placeholder", "{conversation}"),
+        ("human", "{instruction}"),
+    ])
+    return template.invoke({
+        "system_prompt": MEMORY_SYSTEM_PROMPT,
+        "profile_memory": manager.export_full_jsonl(["profile"]) if task_type == "profile" else "None",
+        "episodic_memory": manager.export_full_jsonl(["episodic"]) if task_type == "episodic" else "None",
+        "semantic_memory": manager.export_full_jsonl(["semantic"]) if task_type == "semantic" else "None",
+        "conversation": messages,
+        "instruction": instruction,
+    })
+
+# 🔄 适配：直接引入 ctx 上下文容器，彻底消除松散入参
+async def execute_memory_consolidation_pipeline(
+    task_type: str, 
+    threshold: int, 
+    ctx: TaskContext
+):
+    """通用异步记忆提取核心驱动管线"""
+    # 强类型断言提示（便于 IDE 补全 runtime 内部的独有属性）
+    runtime = cast(MemoryTaskRuntime, ctx.runtime)
     
-    def __init__(self, runtime: MemoryTaskRuntime, task_id: str, target_id: str, params: dict):
-        super().__init__(runtime, task_id, target_id, params)
-        
-        # 1. 实例化管理器（此时内部不进行任何阻塞 I/O，仅分配内存占位）
-        self.manager = MemoryManager(
-            graph=self.runtime.graph,
-            client=self.runtime.client,
-            thread_id=self.runtime.thread_id
-        )
-        
-        # 2. 💡 核心变更：构造函数中不再强行刷新获取状态。
-        # 先安全初始化为默认值，真正的 Index 追溯由 should_trigger 的门禁流接管
-        self.offset: int = 0
-        self.messages = None
-        
-        # 3. 绑定工具集（CPU 密集型绑定，保持同步）
-        self.llm = self.runtime.llm.bind_tools([
-            consolidate_profile_memory,
-            consolidate_episodic_memory,
-            consolidate_semantic_memory
-        ])
-        logger.info(f"📂 任务 [{self.task_id}] 内存实例构建完成，等待时钟线异步准入触发...")
-
-    async def add_index(self, value: int):
-        """🌟 已改为 async：增加偏移量并异步回写状态"""
-        self.offset += value
-        await self.manager.update_memory_index(self.task_type, self.offset)
-
-    async def load_history_messages(self):
-        """🌟 已改为 async：从远程客户端或图存储中异步拉取历史消息"""
-        # 假设底层的 get_messages 在全链路异步化后也升级为了支持 aget_messages 或 async def
-        # return await get_messages(
-        #     thread_id=self.runtime.thread_id, 
-        #     graph=self.runtime.graph, 
-        #     offset=self.offset,
-        #     client=self.runtime.client
-        # )
-        return self.manager.get_messages()
-         
+    # 1. 执行期动态实例化管理器（全部从 ctx.runtime 中无缝解包依赖）
+    manager = MemoryManager(
+        graph=runtime.graph,
+        client=runtime.client,
+        thread_id=runtime.thread_id
+    )
     
-    def build_prompt(self, order_input: str) -> str:
-        """
-        构建全量 JSONL 上下文 Prompt。
-        💡 保持同步方法：因为 manager.export_full_jsonl 在上一步重构中处理的是
-        本地内存快照的数据清洗，属于 CPU 运算，不涉及 I/O。
-        """
-        template = ChatPromptTemplate([
-            ("system", "{system_prompt}"),
-            ("system", "--- PROFILE ---\n{profile_memory}"),
-            ("system", "--- EPISODIC ---\n{episodic_memory}"),
-            ("system", "--- SEMANTIC ---\n{semantic_memory}"),
-            ("placeholder", "{conversation}"),
-            ("human", "{instruction}"),
-        ])
-
-        return template.invoke({
-            "system_prompt": MEMORY_SYSTEM_PROMPT,
-            "profile_memory": self.manager.export_full_jsonl(["profile"]) if self.task_type == "profile" else "None",
-            "episodic_memory": self.manager.export_full_jsonl(["episodic"]) if self.task_type == "episodic" else "None",
-            "semantic_memory": self.manager.export_full_jsonl(["semantic"]) if self.task_type == "semantic" else "None",
-            "conversation": self.messages,
-            "instruction": order_input,
-        })
+    # 2. 🚦 准入控制流守卫
+    await manager.refresh()
+    offset = manager.get_memory_index(task_type)
+    messages = manager.get_messages()
     
-    async def should_trigger(self, store_client: Any) -> bool:
-        """🚦 异步准入控制流"""
-        try:
-            # 1. 🌟 首先发起异步状态刷新，接管图状态并同步本地视图
-            await self.manager.refresh()
-            self.offset = self.manager.get_memory_index(self.task_type)
+    if not messages or len(messages) < threshold:
+        logger.info("[%s] ⏳ 任务 [%s:%s] 未达消息触发阈值 (%d/%d)，跳过本次内存提取。", 
+                    ctx.trace_id, task_type, ctx.target_id, len(messages) if messages else 0, threshold)
+        return
 
-            # 2. 🌟 异步拉取历史消息
-            self.messages = await self.load_history_messages()
+    mem = manager.get_memories()
+    logger.info("[%s] 📝 任务 [%s:%s] 准入校验通过 | 准备调用 LLM | profile:%d episodic:%d semantic:%d", 
+                ctx.trace_id, task_type, ctx.target_id,
+                len(mem.get('profile_records', {})), 
+                len(mem.get('episodic_records', {})), 
+                len(mem.get('semantic_records', {})))
+
+    # 3. 绑定工具集并执行非阻塞 LLM 调用
+    bound_llm = runtime.llm.bind_tools([
+        consolidate_profile_memory,
+        consolidate_episodic_memory,
+        consolidate_semantic_memory
+    ])
+    
+    instruction = TASK_INSTRUCTIONS.get(task_type, "Consolidate memory.")
+    prompt = build_memory_prompt(task_type, manager, messages, instruction)
+    
+    # 异步非阻塞调用大模型
+    result = await bound_llm.ainvoke(prompt)
+    tool_calls = getattr(result, "tool_calls", [])
+    
+    # 4. 处理 Tool Calls 工具路由链
+    if not tool_calls:
+        logger.info("[%s] ℹ️ 任务 [%s:%s] 大模型未建议任何记忆工具调用。", ctx.trace_id, task_type, ctx.target_id)
+        return
+
+    for call in tool_calls:
+        tool_name = call.get("name")
+        args = call.get("args")
+        func = TOOL_MAP.get(tool_name)
+        
+        if not func:
+            logger.warning("[%s] ⚠️ 任务 [%s] 找不到对应的工具映射: %s", ctx.trace_id, task_type, tool_name)
+            continue
+
+        # 工具异步调用执行
+        tool_result = await func.ainvoke(args)
+        record_key = f"{task_type}_records"
+        
+        if isinstance(tool_result, dict):
+            update_data = tool_result.get(record_key)
+            reason = tool_result.get("organization_reason")
             
-            # 顺手帮你修正了 threshold 的拼写错误 🔧
-            threshold = self.default_params.get("activate_message_threshold", 0)
-            if not self.messages or len(self.messages) < threshold:
-                return False
-
-            mem = self.manager.get_memories()
-            logger.info(f"📝 任务 [{self.task_id}] 准入校验通过 | Index: {self.offset} | "
-                        f"P:{len(mem.get('profile_records', {}))} "
-                        f"E:{len(mem.get('episodic_records', {}))} "
-                        f"S:{len(mem.get('semantic_records', {}))}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ 任务 [{self.task_id}] 准入检查阶段发生致命异常: {e}\n {traceback.format_exc()}")
-            return False
-
-    async def execute(self, store_client: Any) -> TaskExecutionResult:
-        logger.info(f"🎬 执行任务: {self.task_id} | 类型: {self.task_type}")
-        
-        # 1. 异步调用 LLM (切换为 LangChain 的非阻塞 ainvoke)
-        instruction = TASK_INSTRUCTIONS.get(self.task_type, "Consolidate memory.")
-        try:
-            prompt = self.build_prompt(instruction)
-            result = await self.llm.ainvoke(prompt)
-        except Exception as e:
-            logger.error(f"❌ LLM 调用失败: {e}")
-            return TaskExecutionResult(is_success=False, output_data=str(e))
-
-        tool_calls = getattr(result, "tool_calls", [])
-        
-        # 2. 处理 Tool Calls (支持多调用并行)
-        if tool_calls:
-            for call in tool_calls:
-                tool_name = call.get("name")
-                args = call.get("args")
-                func = TOOL_MAP.get(tool_name)
+            # 5. 通过 Manager 原子化异步回写图状态，并推进索引偏移量
+            if update_data:
+                await manager.update_state(cast(MemoryStateKey, record_key), update_data)
+                if reason:
+                    await manager.update_state("organization_reason", reason)
                 
-                if not func:
-                    logger.warning(f"⚠️ 工具未找到: {tool_name}")
-                    continue
-
-                try:
-                    # 🌟 核心变更：工具执行切换为异步 ainvoke
-                    tool_result = await func.ainvoke(args)
-                    record_key = f"{self.task_type}_records"
-                    
-                    if isinstance(tool_result, dict):
-                        update_data = tool_result.get(record_key)
-                        reason = tool_result.get("organization_reason")
-                        
-                        # 🌟 通过 Manager 原子化异步回写状态与更新索引
-                        if update_data:
-                            await self.manager.update_state(cast(MemoryStateKey, record_key), update_data)
-                            if reason:
-                                await self.manager.update_state("organization_reason", reason)
-                            
-                            # 🌟 升级为 await 驱动的索引推进
-                            await self.add_index(len(self.messages))
-
-                except Exception as e:
-                    logger.error(f"❌ 工具执行异常 [{tool_name}]: {e}")
-                    # 中断执行以保持原子性，不更新索引，等待下次重试
-                    return TaskExecutionResult(is_success=False, output_data=f"Tool error: {str(e)}")
-            
-        return TaskExecutionResult(is_success=True, output_data="Memory successfully consolidated.")
-    
-# ==============================================================================
-# 三个派生出的具体旁路独立原子任务 (极致干净，只声明类型和差异化默认配置)
-# ==============================================================================
-class ProfileMemoryTask(BaseMemoryExtractionTask):
-    """画像记忆整理任务：用户画像通常不需要太频繁，默认每天凌晨 3 点跑一次"""
-    task_type = "profile"
-    default_cron = "*/1 * * * *"
-    default_params = {
-        "min_confidence": 0.85,             # 语义入库要求极高的置信度
-        "model_flavor": "claude-3-5-sonnet" # 知识沉淀选择推理能力更强的模型
-    }
+                # 索引位置向前安全跃迁
+                new_offset = offset + len(messages)
+                await manager.update_memory_index(task_type, new_offset)
+                logger.info("[%s] ✅ 任务 [%s:%s] 状态同步成功，Index 成功推进至 -> %d", 
+                            ctx.trace_id, task_type, ctx.target_id, new_offset)
 
 
-class EpisodicMemoryTask(BaseMemoryExtractionTask):
-    """情节/事件记忆提取任务：属于时间敏感型高频任务，默认每 10 分钟盘点一次快照"""
-    task_type = "episodic"
-    default_cron = "*/5 * * * *"
-    default_params = {
-        "activate_message_threshhold": 10, 
-    }
+# ------------------------------------------------------------------------------
+# 🚀 4. 旁路原子任务外显层 (彻底对齐为标准双参异步纯函数)
+# ------------------------------------------------------------------------------
+
+@hub.cron(
+    task_type="profile",
+    runtime=memory_runtime,  # 外部注入的 MemoryTaskRuntime 单例
+    cron_expr="0 3 * * *",   
+    target_id="global",
+    params={"activate_message_threshold": 0, "min_confidence": 0.85, "model_flavor": "claude-3-5-sonnet"},
+    timeout=120.0
+)
+# 🔄 适配签名：统一为 (ctx, payload)
+async def profile_memory_job(ctx: TaskContext, payload: ProfileMemorySchema):
+    """画像记忆整理任务"""
+    await execute_memory_consolidation_pipeline(
+        task_type="profile",
+        threshold=payload.activate_message_threshold,
+        ctx=ctx
+    )
 
 
-class SemanticMemoryTask(BaseMemoryExtractionTask):
-    """语义知识图谱沉淀任务：属于重型长周期任务，使用更强大的大模型，默认每 1 小时整理一次"""
-    task_type = "semantic"
-    default_cron = "0 */1 * * *"
-    default_params = {
-        "activate_message_threshhold": 10, 
-    }
+@hub.cron(
+    task_type="episodic",
+    runtime=memory_runtime,
+    cron_expr="*/10 * * * *",  
+    target_id="global",
+    params={"activate_message_threshold": 10},
+    timeout=60.0
+)
+# 🔄 适配签名：统一为 (ctx, payload)
+async def episodic_memory_job(ctx: TaskContext, payload: EpisodicMemorySchema):
+    """情节/事件记忆提取任务"""
+    await execute_memory_consolidation_pipeline(
+        task_type="episodic",
+        threshold=payload.activate_message_threshold,
+        ctx=ctx
+    )
+
+
+@hub.cron(
+    task_type="semantic",
+    runtime=memory_runtime,
+    cron_expr="0 * * * *",  
+    target_id="global",
+    params={"activate_message_threshold": 10},
+    timeout=180.0
+)
+# 🔄 适配签名：统一为 (ctx, payload)
+async def semantic_memory_job(ctx: TaskContext, payload: SemanticMemorySchema):
+    """语义知识图谱沉淀任务"""
+    await execute_memory_consolidation_pipeline(
+        task_type="semantic",
+        threshold=payload.activate_message_threshold,
+        ctx=ctx
+    )
