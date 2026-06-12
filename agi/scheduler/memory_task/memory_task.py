@@ -16,7 +16,7 @@ from langgraph_sdk import get_client
 # 🔄 核心对齐：引入标准上下文容器与基类
 from agi.scheduler.task_hub import TaskContext, BaseRuntime,hub,ExternalStateBridge,runtime_state_bridge
 from agi.agent.models import ModelProvider
-from agi.config import LANGGRAPH_MAIN_URL
+from agi.config import LANGGRAPH_MAIN_URL,CLOUD_MODE
 
 logger = logging.getLogger("MemoryTask")
 
@@ -48,7 +48,9 @@ class MemoryTaskRuntime(BaseRuntime):
     def __init__(self, state_bridge: ExternalStateBridge):
         super().__init__()
         self.llm = ModelProvider.get_falback_model()              # 🤖 静态单例依赖
-        self.client = get_client(url=LANGGRAPH_MAIN_URL)        # 🔌 静态单例依赖
+        self.client = None
+        if CLOUD_MODE:
+            self.client = get_client(url=LANGGRAPH_MAIN_URL)        # 🔌 静态单例依赖
         self._bridge = state_bridge # 🌁 动态中转桥接器
 
     @property
