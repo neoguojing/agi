@@ -34,8 +34,8 @@ from agi.scheduler.memory_task.memory_models import (
     EpisodicMemoryRecord,
     SemanticMemoryRecord
 )
-from agi.scheduler.memory_task.memory_state import MemoryState,MemoryManager
-from agi.scheduler import runtime_state_bridge,hub
+from agi.scheduler.memory_task.memory_state import MemoryState
+from agi.scheduler import runtime_state_bridge,hub,memory_manager
 
 
 class OrganizeMemoryInput(BaseModel):
@@ -105,7 +105,6 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
     ):
         self.backend = backend
         self.llm = llm
-        self.memory_manager = None
         self.memory_cache = None
         self.tools = [
             StructuredTool.from_function(
@@ -236,7 +235,6 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
 
         runtime = request.runtime
         
-        memory_manager = MemoryManager(state = request.state)
         memory_body = memory_manager.get_agent_context()
 
         memory_context_str = get_middleware_prompt("context").format(agent_memory=memory_body)
@@ -260,11 +258,6 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
         except Exception as e:
             logger.exception("ContextEngineeringMiddleware model call failed: %s", e)
             return ModelResponse(result=[AIMessage(content=f"Model call failed: {type(e).__name__}: {e}")])
-
-    async def stop(self):
-        """Clean up memory manager and flush final state."""
-        if self.memory_manager:
-            await self.memory_manager.stop()
 
     def _log_debug_info(self, ctx_data: str, total_count: int):
         print(f"--- [Context Engine] 注入数据: {ctx_data} | 消息流长度: {total_count} ---")

@@ -172,13 +172,13 @@ my_model_pool = [
         # extra_params={"project": GOOGLE_CLOUD_PROJECT}
     ),
 
-    ModelNode(
-        provider="openrouter",
-        model_name="deepseek/deepseek-v4-flash",
-        priority=3,
-        api_key=OPENROUTER_API_KEY,
-        extra_params={"temperature": 0.2,"base_url": "https://openrouter.ai/api/v1"}
-    ),
+    # ModelNode(
+    #     provider="openrouter",
+    #     model_name="deepseek/deepseek-v4-flash",
+    #     priority=3,
+    #     api_key=OPENROUTER_API_KEY,
+    #     extra_params={"temperature": 0.2,"base_url": "https://openrouter.ai/api/v1"}
+    # ),
     
     # ModelNode(
     #     provider="ollama",

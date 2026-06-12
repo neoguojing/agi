@@ -73,6 +73,7 @@ MEMORY_KEY_MAP: Dict[MemoryTarget, str] = {
     "semantic": "semantic_records"
 }
 
+MemoryRecordT = Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord, dict]
 MemoryFilterFn = Callable[[Any], bool]
 
 MemoryStateKey = Literal[
@@ -93,6 +94,7 @@ INDEX_KEY_MAP: Dict[MemoryTarget, str] = {
     "episodic": "episodic_message_index",
     "semantic": "semantic_message_index"
 }
+
 # =====================================================
 # 2. 场景 2 专用：在线上下文配置对象
 # =====================================================
@@ -117,131 +119,235 @@ class AgentContextConfig:
 # 3. 核心内存管理服务 (MemoryManager)
 # =====================================================
 class MemoryManager:
-    """结合强类型、策略路由与极简 Token 提取的生产级内存服务"""
+    CURSOR_RECOVERY_RESET = "reset"
+    CURSOR_RECOVERY_CLAMP = "clamp"
+    CURSOR_RECOVERY_MODE = CURSOR_RECOVERY_RESET
 
-    def __init__(self, graph: CompiledStateGraph = None,client: Any = None, thread_id: str = None,state: dict = None):
-        self.graph = graph
-        self.thread_id = thread_id
-        self.config = {"configurable": {"thread_id": thread_id}}
-        self.state = state
-        self.client = client
+    def __init__(self, runtime:'MemoryTaskRuntime'):
+        self.runtime = runtime
+        self.state: MemoryState = {}
 
-        self.values = None
-
+    @property
+    def config(self):
+        return {"configurable": {"thread_id": self.runtime.thread_id}}
 
     async def refresh(self) -> None:
-        """
-        🔄 刷新状态快照并强制映射为 MemoryState（🌟 已改为 async）
-        """
         try:
-            if self.graph:
-                # 🌟 切换为 LangGraph 的异步获取状态方法 aget_state
-                snapshot = await self.graph.aget_state(self.config)
-                raw_values = snapshot.values if hasattr(snapshot, "values") else snapshot
-                self.values = raw_values
-                self.state = cast(MemoryState, raw_values)
-                
-            elif self.client:
-                # 🌟 激活并解锁底层远程客户端的异步状态拉取
-                snapshot = await self.client.threads.get_state(thread_id=self.thread_id)
-                raw_values = snapshot.get('values')
-                self.values = raw_values
-                if raw_values:
-                    self.state = cast(MemoryState, raw_values)
-                
-            logger.debug("🔄 [MemoryManager] 异步状态快照刷新成功。")
-        except Exception as e:
-            logger.error("❌ 刷新内存快照时发生异常: %s", str(e))
-            raise e
+            if self.runtime.graph:
+                snapshot = await self.runtime.graph.aget_state(self.config)
+                self.state = snapshot.values if hasattr(snapshot, "values") else snapshot
+            elif self.runtime.client:
+                snapshot = await self.runtime.client.threads.get_state(thread_id=self.runtime.thread_id)
+                self.state = snapshot.get("values") if isinstance(snapshot, dict) else getattr(snapshot, "values", {})
 
-    def get_memories(self) -> MemoryState:
+            self.state = cast(MemoryState, self.state or {})
+            self.log_state_summary()
+
+        except Exception:
+            logger.exception("memory refresh failed thread_id=%s", self.runtime.thread_id)
+            raise
+
+    def get_messages(self, limit: Optional[int] = None) -> list:
+        messages = self.state.get("messages", [])
+        return messages[-limit:] if limit and isinstance(messages, list) else messages
+
+    async def repair_memory_index(self, task_type: MemoryTarget) -> int:
         """
-        直接返回内存中的强类型化 MemoryState 对象。
-        💡 由于它只读取本地成员变量，不涉及 I/O，因此保持高效率的同步定义即可。
+        修复异常Cursor
+
+        场景:
+            cursor > len(messages)
+
+        原因:
+            - Message Trimming
+            - Summary压缩
+            - Thread恢复
+            - State迁移
         """
-        return self.state
-    
-    def get_messages(self):
-        """
-        直接返回内存中的强类型化 MemoryState 对象。
-        💡 由于它只读取本地成员变量，不涉及 I/O，因此保持高效率的同步定义即可。
-        """
-        return self.values.get("messages", None)
-    
-    async def update_state(self, key: MemoryStateKey, value: Any) -> None:
-        """
-        向图引擎提交符合 MemoryState 契约的状态更新（🌟 已改为 async）
-        🛡️ 防御性检查：仅允许更新 MemoryState 中定义的合法字段。
-        """
-        if key not in ALLOWED_MEMORY_KEYS:
-            logger.error(f"❌ 非法状态键访问尝试: {key}。仅允许更新: {ALLOWED_MEMORY_KEYS}")
-            raise ValueError(f"Invalid state key: {key}")
+
+        cursor_key = INDEX_KEY_MAP.get(task_type)
+
+        if not cursor_key:
+            return 0
+
+        messages = self.get_messages(limit=None)
+        message_count = len(messages)
+
+        cursor = self.state.get(cursor_key, 0)
+
+        if cursor <= message_count:
+            return cursor
+
+        repaired_cursor = (
+            0
+            if self.CURSOR_RECOVERY_MODE == self.CURSOR_RECOVERY_RESET
+            else message_count
+        )
+
+        logger.warning(
+            "cursor overflow detected task=%s cursor=%s message_count=%s repaired=%s",
+            task_type, cursor, message_count, repaired_cursor
+        )
 
         try:
-            if self.graph:
-                # 🌟 切换为 LangGraph 的异步状态更新方法 aupdate_state
-                await self.graph.aupdate_state(self.config, {key: value})
-            
-            if self.client:
-                # 🌟 激活远程客户端的异步状态写回
-                await self.client.threads.update_state(
-                    thread_id=self.thread_id,
-                    values={key: value},
+            if self.runtime.graph:
+                await self.runtime.graph.aupdate_state(self.config, {cursor_key: repaired_cursor})
+            elif self.runtime.client:
+                await self.runtime.client.threads.update_state(
+                    thread_id=self.runtime.thread_id,
+                    values={cursor_key: repaired_cursor},
                 )
 
-            # 写入后同步更新本地快照，确保 MemoryManager 状态即时最新
-            if key in MEMORY_KEY_MAP.values():
-                self.state[key] = memory_reducer(self.state.get(key), value)
-            else:
-                self.state[key] = value
-                
-            logger.info("💾 状态字段 [%s] 已异步写入持久化层并同步至本地缓存。", key)
-        except Exception as e:
-            logger.error("❌ 异步更新状态字段 [%s] 失败: %s", key, str(e))
-            raise e
+            self.state[cursor_key] = repaired_cursor
 
-    async def update_memory_index(self, task_type: MemoryTarget, value: int) -> None:
-        """更新指定维度的索引，复用细化的 update_state 逻辑（🌟 已改为 async）"""
-        state_key = INDEX_KEY_MAP.get(task_type)
-        if state_key:
-            # 🌟 await 上面重构后的异步 update_state
-            await self.update_state(cast(MemoryStateKey, state_key), value)
+            logger.info(
+                "cursor repaired task=%s old=%s new=%s",
+                task_type, cursor, repaired_cursor
+            )
 
-    def get_memory_index(self, task_type: MemoryTarget) -> int:
+        except Exception:
+            logger.exception("cursor repair failed task=%s", task_type)
+            raise
+
+        return repaired_cursor
+
+    async def get_incremental_messages(self, task_type: MemoryTarget) -> list:
         """
-        根据任务类型获取当前记忆的消费偏移量。
-        💡 纯本地内存字典查找，保持同步方法，避免非必要的异步调度开销。
+        获取增量消息
+        自动修复异常Cursor
         """
-        state_key = INDEX_KEY_MAP.get(task_type)
+
+        cursor = await self.repair_memory_index(task_type)
+
+        messages = self.get_messages(limit=None)
+
+        if cursor >= len(messages):
+            return []
+
+        incremental = messages[cursor:]
+        next_cursor = len(messages)
+
+        logger.info(
+            "incremental messages fetched task=%s cursor=%s count=%s next_cursor=%s",
+            task_type, cursor, len(incremental), next_cursor
+        )
+
+        return incremental
+
+    async def commit_memory(self, task_type: MemoryTarget, memory_value: object, cursor: int,reason: str) -> None:
+        cursor_key = INDEX_KEY_MAP.get(task_type)
+
+        if not cursor_key:
+            raise ValueError(f"cursor key not found: {task_type}")
+
+        current_cursor = self.state.get(cursor_key, 0)
+
+        if cursor <= current_cursor:
+            logger.warning(
+                "cursor rollback ignored task=%s current=%s new=%s",
+                task_type, current_cursor, cursor
+            )
+            return
+
+        memory_key = MEMORY_KEY_MAP.get(task_type)
+        if not memory_key:
+            raise ValueError(f"memory key not found: {task_type}")
+        
+        current_memory = self.state.get(memory_key, {})
+
+        merged_memory = (
+            memory_reducer(current_memory, memory_value)
+            if memory_key in MEMORY_KEY_MAP.values()
+            else memory_value
+        )
+
+        payload = {memory_key: merged_memory, cursor_key: cursor,"organization_reason":reason}
+
+        try:
+            if self.runtime.graph:
+                await self.runtime.graph.aupdate_state(self.config, payload)
+            elif self.runtime.client:
+                await self.runtime.client.threads.update_state(thread_id=self.runtime.thread_id, values=payload)
+
+            self.state[memory_key] = merged_memory
+            self.state[cursor_key] = cursor
+            self.state["organization_reason"] = reason
+
+            logger.info(
+                "memory committed thread_id=%s task=%s cursor=%s",
+                self.runtime.thread_id, task_type, cursor
+            )
+
+        except Exception:
+            logger.exception(
+                "memory commit failed thread_id=%s task=%s",
+                self.runtime.thread_id, task_type
+            )
+            raise
+
+    async def commit_incremental_memory(self, task_type: MemoryTarget, memory_value: object,reason: str) -> None:
+        await self.commit_memory(
+            task_type=task_type,
+            memory_value=memory_value,
+            cursor=len(self.get_messages(limit=None)),
+            reason=reason
+        )
+    # =====================================================
+    # 🛠️ 底层私有工具链
+    # =====================================================
+
+    def log_state_summary(self) -> None:
+        """
+        🚀 极简一行流：使用 logger.info 打印所有记忆条数与消息消费偏移量
+        """
+        # 内部安全取值辅助
+        def _get(k: str, default: object) -> Any:
+            return self.state.get(k, default) if isinstance(self.state, dict) else getattr(self.state, k, default)
+
+        # 1. 提取各个 dict[str, Record] 的长度
+        p_dict = _get("profile_records", {})
+        e_dict = _get("episodic_records", {})
+        s_dict = _get("semantic_records", {})
+        m_list = _get("messages", [])
+        
+        print()
+        p_count = len(p_dict) if isinstance(p_dict, dict) else 0
+        e_count = len(e_dict) if isinstance(e_dict, dict) else 0
+        s_count = len(s_dict) if isinstance(s_dict, dict) else 0
+        m_list = len(m_list) if isinstance(m_list, list) else 0
+        # 2. 提取各个游标偏移量
+        p_idx = _get("profile_message_index", 0)
+        e_idx = _get("episodic_message_index", 0)
+        s_idx = _get("semantic_message_index", 0)
+
+        # 3. 严格单行输出，包含指标前缀，方便正则/ELK 提取
+        logger.info(
+            "🧠 [Memory State] Count -> Profile: %d, Episodic: %d, Semantic: %d | Offset -> Profile: %d, Episodic: %d, Semantic: %d, Messages: %d",
+            p_count, e_count, s_count, p_idx, e_idx, s_idx,m_list
+        )
+    def _to_record_list(self, target: MemoryTarget) -> List[MemoryRecordT]:
+        """核心适配器：返回强类型的记录列表"""
+        state_key = MEMORY_KEY_MAP.get(target)
         if not state_key:
-            logger.warning(f"⚠️ 未知的任务类型: {task_type}，返回默认索引 0")
-            return 0
-        return self.state.get(cast(MemoryStateKey, state_key), 0)
-    
-    # -------------------------------------------------
-    # 底层私有工具链
-    # -------------------------------------------------
-    def _to_record_list(self, target: MemoryTarget) -> List[Any]:
-        state_key = MEMORY_KEY_MAP[target]
-        # 兼容 Pydantic BaseConfig、TypedDict 或标准 Class 对象的属性读取
-        data = self.state.get(state_key) if isinstance(self.state, dict) else getattr(self.state, state_key, None)
+            return []
             
+        data = self.state.get(state_key) if isinstance(self.state, dict) else getattr(self.state, state_key, None)
         if not data:
             return []
+            
         if isinstance(data, dict):
-            return list(data.values())
-        if isinstance(data, list):
-            return data
-        return []
+            data = list(data.values())
 
-    def _get_utc_timestamp(self, rec: Any) -> datetime:
-        """安全提取时间戳用于排序"""
+        logger.info(f"_to_record_list got {target}:{len(data)}")
+        return data
+
+    def _get_utc_timestamp(self, rec: MemoryRecordT) -> datetime:
         if isinstance(rec, str): 
             return datetime.min.replace(tzinfo=timezone.utc)
             
-        dt: Any = None
+        dt: Optional[object] = None
         if hasattr(rec, 'updated_at'):
-            dt = rec.updated_at
+            dt = getattr(rec, 'updated_at')
         elif isinstance(rec, dict):
             val = rec.get('updated_at')
             if isinstance(val, str):
@@ -262,23 +368,24 @@ class MemoryManager:
             return None
         return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
 
-    def _get_v(self, rec: Any, key: str, default: str = "") -> str:
-        """【唯一核心工具】依照类型契约，平铺提取对象或字典的属性值，替代 hasattr/getattr 嵌套"""
+    def _get_v(self, rec: MemoryRecordT, key: str, default: str = "") -> str:
         if isinstance(rec, dict):
-            return rec.get(key, default)
-        return getattr(rec, key, default)
+            return str(rec.get(key, default))
+        return str(getattr(rec, key, default))
 
-    def _serialize_to_dict(self, rec: Any, target: MemoryTarget) -> Dict[str, Any]:
-        """场景 1 专用：将任意 Record 序列化为平铺的标准 Dict"""
+    def _serialize_to_dict(self, rec: MemoryRecordT, target: MemoryTarget) -> Dict[str, object]:
+        """返回严格的 Dict[str, object] 而非 Dict[str, Any]"""
         updated_at = self._get_utc_timestamp(rec).isoformat()
-        meta = {"memory_type": target, "updated_at": updated_at}
+        meta = {"memory_type": str(target), "updated_at": updated_at}
         
         if isinstance(rec, str):
             return {**meta, "raw_data": rec}
             
-        data_dict = {}
+        data_dict: Dict[str, object] = {}
         if isinstance(rec, dict):
             data_dict = rec.copy()
+        elif hasattr(rec, 'model_dump'):
+            data_dict = rec.model_dump(mode="json")
         elif hasattr(rec, '__dict__'):
             data_dict = {k: v for k, v in rec.__dict__.items() if not k.startswith('_')}
             
@@ -288,42 +395,32 @@ class MemoryManager:
                 
         return {**meta, **data_dict}
 
-    # -------------------------------------------------
-    # 【极致 Token 节省排版策略】严格仅提取必要字段
-    # -------------------------------------------------
-    def _format_profile(self, records: List[Any]) -> str:
-        lines = [f"--- PROFILE MEMORY （{len(records)}） ---"]
+    # =====================================================
+    # 🎨 格式化路由
+    # =====================================================
+    def _format_profile(self, records: List[MemoryRecordT]) -> str:
+        lines = [f"--- PROFILE MEMORY ({len(records)}) ---"]
         for rec in records:
-            item = {
-                "key": self._get_v(rec, 'key'),
-                "value": self._get_v(rec, 'value')
-            }
+            item = {"key": self._get_v(rec, 'key'), "value": self._get_v(rec, 'value')}
             lines.append(json.dumps(item, ensure_ascii=False))
         return "\n".join(lines)
 
-    def _format_episodic(self, records: List[Any]) -> str:
-        lines = [f"--- EPISODIC MEMORY （{len(records)}）---"]
+    def _format_episodic(self, records: List[MemoryRecordT]) -> str:
+        lines = [f"--- EPISODIC MEMORY ({len(records)}) ---"]
         for rec in records:
-            # Check if the record is a dictionary or a model instance
-            if isinstance(rec, dict):
-                # Re-hydrate the dict into a Pydantic model
-                rec_obj = EpisodicMemoryRecord.model_validate(rec)
-            else:
-                rec_obj = rec
-                
-            # Now we are guaranteed to have the .model_dump method available
-            rec_json_dict = rec_obj.model_dump(
-                mode="json", 
-                include={"id", "event_time", "summary"}
-            )
-            
-            lines.append(json.dumps(rec_json_dict, ensure_ascii=False))
-            
+            try:
+                rec_json_dict = {
+                    "id": self._get_v(rec, 'id'),
+                    "event_time": str(self._get_v(rec, 'event_time')),
+                    "summary": self._get_v(rec, 'summary')
+                }
+                lines.append(json.dumps(rec_json_dict, ensure_ascii=False))
+            except Exception as e:
+                logger.warning("⚠️ 传记记忆记录解析失败。Error: %s", str(e))
         return "\n".join(lines)
 
-
-    def _format_semantic(self, records: List[Any]) -> str:
-        lines = [f"--- SEMANTIC MEMORY （{len(records)}）---"]
+    def _format_semantic(self, records: List[MemoryRecordT]) -> str:
+        lines = [f"--- SEMANTIC MEMORY ({len(records)}) ---"]
         for rec in records:
             item = {
                 "subject": self._get_v(rec, 'subject'),
@@ -334,10 +431,10 @@ class MemoryManager:
         return "\n".join(lines)
 
     # =====================================================
-    # 场景 1 生产接口：全量提取 JSONL 数据 (离线任务/辅助整理)
+    # 🌟 场景 1：全量提取 JSONL 数据
     # =====================================================
     def export_full_jsonl_stream(self, targets: Optional[List[MemoryTarget]] = None) -> Generator[str, None, None]:
-        # 如果未指定，自动拉取当前支持的所有类型
+        """targets 参数现在被严格约束为 List[MemoryTarget]"""
         selected_targets = list(MEMORY_KEY_MAP.keys()) if targets is None else targets
         for target in selected_targets:
             records = self._to_record_list(target)
@@ -348,28 +445,28 @@ class MemoryManager:
         return "\n".join(self.export_full_jsonl_stream(targets))
 
     # =====================================================
-    # 场景 2 生产接口：在线 Agent 上下文组装 (带动态过滤/裁剪)
+    # 🌟 场景 2：在线 Agent 上下文组装
     # =====================================================
     def get_agent_context(self, config: Optional[AgentContextConfig] = None) -> str:
-        """
-        生成严格控制上下文 Token 的格式化字符串。
-        通过流式过滤 -> 时间倒序 -> 安全切片 -> 动态策略分发
-        """
+        """config 参数现在被严格约束为 AgentContextConfig 实例"""
         cfg = config or AgentContextConfig()
         sections: List[str] = []
         
         start_utc = self._ensure_utc(cfg.start_time)
         end_utc = self._ensure_utc(cfg.end_time)
-
-        # 如果 Config 中未指定 targets，默认拉取所有类型
         selected_targets = list(MEMORY_KEY_MAP.keys()) if cfg.targets is None else cfg.targets
+
+        formatter_map: Dict[str, Callable[[List[MemoryRecordT]], str]] = {
+            "profile": self._format_profile,
+            "episodic": self._format_episodic,
+            "semantic": self._format_semantic
+        }
 
         for target in selected_targets:
             raw_records = self._to_record_list(target)
             if not raw_records:
                 continue
 
-            # 1. 统一管道过滤
             filtered = [
                 r for r in raw_records
                 if (not cfg.custom_filters or all(f(r) for f in cfg.custom_filters)) and
@@ -379,12 +476,10 @@ class MemoryManager:
             if not filtered:
                 continue
 
-            # 2. 排序与安全切片
             filtered.sort(key=self._get_utc_timestamp, reverse=True)
             sliced = filtered[:cfg.limits.get(target, 50)]
 
-            # 3. 动态路由排版分发
-            formatter = getattr(self, f"_format_{target}", None)
+            formatter = formatter_map.get(str(target))
             if formatter:
                 sections.append(formatter(sliced))
 

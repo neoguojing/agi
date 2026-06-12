@@ -10,13 +10,13 @@ from agi.scheduler.memory_task.memory_tools import (
     consolidate_episodic_memory,
     consolidate_semantic_memory
 )
-from agi.scheduler.memory_task.memory_state import MemoryManager, MemoryStateKey
+from agi.scheduler.memory_task.memory_state import MemoryManager, MEMORY_KEY_MAP
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph_sdk import get_client
 # 🔄 核心对齐：引入标准上下文容器与基类
 from agi.scheduler.task_hub import TaskContext, BaseRuntime,hub,ExternalStateBridge,runtime_state_bridge
 from agi.agent.models import ModelProvider
-from agi.config import LANGGRAPH_MAIN_URL,CLOUD_MODE
+from agi.config import LANGGRAPH_MAIN_URL
 
 logger = logging.getLogger("MemoryTask")
 
@@ -69,6 +69,10 @@ class MemoryTaskRuntime(BaseRuntime):
 memory_runtime = MemoryTaskRuntime(
     state_bridge=runtime_state_bridge
 )
+
+memory_manager = MemoryManager(
+    runtime=memory_runtime
+)
 # ------------------------------------------------------------------------------
 # 📐 2. 声明式参数契约模型 (Pydantic Schemas 保持不变)
 # ------------------------------------------------------------------------------
@@ -97,7 +101,8 @@ def build_memory_prompt(task_type: str, manager: MemoryManager, messages: Any, i
         ("placeholder", "{conversation}"),
         ("human", "{instruction}"),
     ])
-    return template.invoke({
+
+    ret = template.invoke({
         "system_prompt": MEMORY_SYSTEM_PROMPT,
         "profile_memory": manager.export_full_jsonl(["profile"]) if task_type == "profile" else "None",
         "episodic_memory": manager.export_full_jsonl(["episodic"]) if task_type == "episodic" else "None",
@@ -105,6 +110,11 @@ def build_memory_prompt(task_type: str, manager: MemoryManager, messages: Any, i
         "conversation": messages,
         "instruction": instruction,
     })
+
+    logger.info(f"build_memory_prompt {task_type}: use prompt={len(MEMORY_SYSTEM_PROMPT)},messages={len(messages)},total={len(ret.to_string())}")
+
+    return ret
+
 
 # 🔄 适配：直接引入 ctx 上下文容器，彻底消除松散入参
 async def execute_memory_consolidation_pipeline(
@@ -117,28 +127,15 @@ async def execute_memory_consolidation_pipeline(
     runtime = cast(MemoryTaskRuntime, ctx.runtime)
     
     # 1. 执行期动态实例化管理器（全部从 ctx.runtime 中无缝解包依赖）
-    manager = MemoryManager(
-        graph=runtime.graph,
-        client=runtime.client,
-        thread_id=runtime.thread_id
-    )
     
     # 2. 🚦 准入控制流守卫
-    await manager.refresh()
-    offset = manager.get_memory_index(task_type)
-    messages = manager.get_messages()
+    await memory_manager.refresh()
+    messages = await memory_manager.get_incremental_messages(task_type)
     
     if not messages or len(messages) < threshold:
         logger.info("[%s] ⏳ 任务 [%s:%s] 未达消息触发阈值 (%d/%d)，跳过本次内存提取。", 
                     ctx.trace_id, ctx.target_id, task_type, len(messages) if messages else 0, threshold)
         return
-
-    mem = manager.get_memories()
-    logger.info("[%s] 📝 任务 [%s:%s] 准入校验通过 | 准备调用 LLM | profile:%d episodic:%d semantic:%d", 
-                ctx.trace_id,ctx.target_id, task_type, 
-                len(mem.get('profile_records', {})), 
-                len(mem.get('episodic_records', {})), 
-                len(mem.get('semantic_records', {})))
 
     # 3. 绑定工具集并执行非阻塞 LLM 调用
     bound_llm = runtime.llm.bind_tools([
@@ -148,8 +145,7 @@ async def execute_memory_consolidation_pipeline(
     ])
     
     instruction = TASK_INSTRUCTIONS.get(task_type, "Consolidate memory.")
-    prompt = build_memory_prompt(task_type, manager, messages, instruction)
-    
+    prompt = build_memory_prompt(task_type, memory_manager, messages, instruction)
     # 异步非阻塞调用大模型
     result = await bound_llm.ainvoke(prompt)
     tool_calls = getattr(result, "tool_calls", [])
@@ -170,7 +166,7 @@ async def execute_memory_consolidation_pipeline(
 
         # 工具异步调用执行
         tool_result = await func.ainvoke(args)
-        record_key = f"{task_type}_records"
+        record_key = MEMORY_KEY_MAP.get(task_type)
         
         if isinstance(tool_result, dict):
             update_data = tool_result.get(record_key)
@@ -178,15 +174,7 @@ async def execute_memory_consolidation_pipeline(
             
             # 5. 通过 Manager 原子化异步回写图状态，并推进索引偏移量
             if update_data:
-                await manager.update_state(cast(MemoryStateKey, record_key), update_data)
-                if reason:
-                    await manager.update_state("organization_reason", reason)
-                
-                # 索引位置向前安全跃迁
-                new_offset = offset + len(messages)
-                await manager.update_memory_index(task_type, new_offset)
-                logger.info("[%s] ✅ 任务 [%s:%s] 状态同步成功，Index 成功推进至 -> %d", 
-                            ctx.trace_id, ctx.target_id,task_type, new_offset)
+                await memory_manager.commit_incremental_memory(task_type,update_data,reason)
 
 
 # ------------------------------------------------------------------------------
@@ -196,7 +184,7 @@ async def execute_memory_consolidation_pipeline(
 @hub.cron(
     task_type="profile",
     runtime=memory_runtime,  # 外部注入的 MemoryTaskRuntime 单例
-    cron_expr="*/1 * * * *",   
+    cron_expr="*/10 * * * *",   
     target_id="global",
     params={"activate_message_threshold": 0, "min_confidence": 0.85, "model_flavor": "claude-3-5-sonnet"},
     timeout=120.0
@@ -232,7 +220,7 @@ async def episodic_memory_job(ctx: TaskContext, payload: EpisodicMemorySchema):
 @hub.cron(
     task_type="semantic",
     runtime=memory_runtime,
-    cron_expr="*/1 * * * *",  
+    cron_expr="*/2 * * * *",  
     target_id="global",
     params={"activate_message_threshold": 10},
     timeout=180.0
