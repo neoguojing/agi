@@ -151,6 +151,27 @@ class MemoryManager:
 
     # ==================== 核心内部生命周期 ====================
 
+    async def refresh_messages(self) -> list:
+        """
+        强制从远程状态机刷新当前线程的消息历史。
+        绕过懒加载锁，确保每次调用都能获取最新消息。
+        """
+        local_messages = []
+        if self.runtime.client:
+            snapshot = await self.runtime.client.threads.get_state(thread_id=self.runtime.thread_id)
+            state = snapshot.get("values") if isinstance(snapshot, dict) else getattr(snapshot, "values", {})
+            local_messages = state.get("messages", []) if isinstance(state, dict) else getattr(state, "messages", [])
+        elif self.runtime.graph:
+            snapshot = await self.runtime.graph.aget_state(self.config)
+            state = snapshot.values if hasattr(snapshot, "values") else snapshot
+            local_messages = state.get("messages", []) if isinstance(state, dict) else getattr(state, "messages", [])
+
+        # 安全地更新本地消息缓存
+        async with self._lock.writer:
+            self._messages = local_messages
+            
+        return self._messages
+    
     async def ensure_initialized(self) -> None:
         """
         确保内存管理器已初始化（懒加载设计）。
@@ -166,18 +187,7 @@ class MemoryManager:
                 return
 
             logger.info("Initializing memory manager from remote store... thread_id=%s", self.runtime.thread_id)
-            local_messages = []
             local_state_updates = {}
-
-            # 1. 加载线程消息历史
-            if self.runtime.client:
-                snapshot = await self.runtime.client.threads.get_state(thread_id=self.runtime.thread_id)
-                state = snapshot.get("values") if isinstance(snapshot, dict) else getattr(snapshot, "values", {})
-                local_messages = state.get("messages", []) if isinstance(state, dict) else getattr(state, "messages", [])
-            elif self.runtime.graph:
-                snapshot = await self.runtime.graph.aget_state(self.config)
-                state = snapshot.values if hasattr(snapshot, "values") else snapshot
-                local_messages = state.get("messages", []) if isinstance(state, dict) else getattr(state, "messages", [])
 
             # 2. 统一加载所有相关的自定义存储 Key（包含记忆主体、游标索引、提交原因）
             keys_to_load = ALLOWED_MEMORY_KEYS
@@ -215,11 +225,9 @@ class MemoryManager:
                         else:
                             local_state_updates[key] = {} # 记忆体类 Key 挂了，安全兜底为空字典
 
-            self._messages = local_messages
             self._state.update(local_state_updates)
             self._is_initialized = True
             
-            print("*******************{}*******************".format(local_messages))
             print("*******************{}*******************".format(local_state_updates))
             self.log_state_summary()
 
@@ -263,6 +271,9 @@ class MemoryManager:
         🌟 游标完全在类内部闭环：自动在内存中记录本次处理的“终点线边界”，外部完全不需要感知游标。
         """
         await self.ensure_initialized()
+        
+        await self.refresh_messages()  # 强制刷新消息，确保拿到最新的消息列表
+        
         cursor = await self.repair_memory_index(task_type)
 
         async with self._lock.writer:
