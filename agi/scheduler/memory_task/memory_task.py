@@ -49,8 +49,8 @@ class MemoryTaskRuntime(BaseRuntime):
         super().__init__()
         self.llm = ModelProvider.get_falback_model()              # 🤖 静态单例依赖
         self.client = None
-        # if CLOUD_MODE:
-        #     self.client = get_client(url=LANGGRAPH_MAIN_URL)        # 🔌 静态单例依赖
+        if CLOUD_MODE:
+            self.client = get_client(url=LANGGRAPH_MAIN_URL)        # 🔌 静态单例依赖
         self._bridge = state_bridge # 🌁 动态中转桥接器
 
     @property

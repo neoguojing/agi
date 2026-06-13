@@ -133,13 +133,13 @@ class MemoryManager:
 
     async def refresh(self) -> None:
         try:
-            if self.runtime.graph:
-                snapshot = await self.runtime.graph.aget_state(self.config)
-                self.state = snapshot.values if hasattr(snapshot, "values") else snapshot
-            elif self.runtime.client:
+            if self.runtime.client:
                 snapshot = await self.runtime.client.threads.get_state(thread_id=self.runtime.thread_id)
                 self.state = snapshot.get("values") if isinstance(snapshot, dict) else getattr(snapshot, "values", {})
-
+            elif self.runtime.graph:
+                snapshot = await self.runtime.graph.aget_state(self.config)
+                self.state = snapshot.values if hasattr(snapshot, "values") else snapshot
+            
             self.state = cast(MemoryState, self.state or {})
             self.log_state_summary()
 
@@ -190,13 +190,14 @@ class MemoryManager:
         )
 
         try:
-            if self.runtime.graph:
-                await self.runtime.graph.aupdate_state(self.config, {cursor_key: repaired_cursor})
-            elif self.runtime.client:
+            if self.runtime.client:
                 await self.runtime.client.threads.update_state(
                     thread_id=self.runtime.thread_id,
                     values={cursor_key: repaired_cursor},
                 )
+            elif self.runtime.graph:
+                await self.runtime.graph.aupdate_state(self.config, {cursor_key: repaired_cursor})
+            
 
             self.state[cursor_key] = repaired_cursor
 
@@ -264,11 +265,11 @@ class MemoryManager:
         payload = {memory_key: merged_memory, cursor_key: cursor,"organization_reason":reason}
 
         try:
-            if self.runtime.graph:
-                await self.runtime.graph.aupdate_state(self.config, payload)
-            elif self.runtime.client:
+            if self.runtime.client:
                 await self.runtime.client.threads.update_state(thread_id=self.runtime.thread_id, values=payload)
-
+            elif self.runtime.graph:
+                await self.runtime.graph.aupdate_state(self.config, payload)
+            
             self.state[memory_key] = merged_memory
             self.state[cursor_key] = cursor
             self.state["organization_reason"] = reason
