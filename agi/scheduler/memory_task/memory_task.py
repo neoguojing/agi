@@ -12,6 +12,8 @@ from agi.scheduler.memory_task.memory_tools import (
 )
 from agi.scheduler.memory_task.memory_state import MemoryManager, MEMORY_KEY_MAP
 from langchain_core.prompts import ChatPromptTemplate
+from langgraph.store.base import BaseStore
+from langgraph.graph.state import CompiledStateGraph
 from langgraph_sdk import get_client
 # 🔄 核心对齐：引入标准上下文容器与基类
 from agi.scheduler.task_hub import TaskContext, BaseRuntime,hub,ExternalStateBridge,runtime_state_bridge
@@ -54,9 +56,14 @@ class MemoryTaskRuntime(BaseRuntime):
         self._bridge = state_bridge # 🌁 动态中转桥接器
 
     @property
-    def graph(self) -> Any:
+    def graph(self) -> CompiledStateGraph:
         """动态感知外部线程传入的图实例"""
         return self._bridge.get_value("graph")
+    
+    @property
+    def store(self) -> BaseStore:
+        """动态感知外部线程传入的图实例"""
+        return self._bridge.get_value("store")
 
     @property
     def thread_id(self) -> str:

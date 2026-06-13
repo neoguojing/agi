@@ -129,6 +129,17 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
         deletions: Optional[list[str]] = None
     ) -> Command[MemoryState]:
         """Synchronously persist key information into long-term memory."""
+        pass
+        
+    async def _aorganize_memory(
+        self,
+        runtime: ToolRuntime[ContextT, MemoryState[ResponseT]],
+        target: MemoryTarget,
+        reason: Optional[str],
+        upserts: Optional[List[Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord]]] = Field(default=[], description="Records to add or update."),
+        deletions: Optional[List[str]] = Field(default=[], description="String keys of memories to completely remove.")
+    ) -> Command[Any]:
+        """Persist key information from the current conversation into long-term memory."""
         try:
             target_dict = {}
             upserts = upserts or []
@@ -145,52 +156,42 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
                 if delete_key:
                     target_dict[delete_key.strip().lower()] = None
 
-            # 3. 构造强类型且无冗余字段的 Update Payload
+            # 3. Persist to Store via MemoryManager
+            # Ensure manager has latest state for cursor calculation if needed,
+            # though commit_incremental_memory handles most of the heavy lifting.
+            await memory_manager.refresh()
+            await memory_manager.commit_incremental_memory(
+                task_type=target,
+                memory_value=target_dict,
+                reason=reason or "Explicit request to organize memory"
+            )
+
+            # 4. Construct strong-typed update payload for LangGraph state
             update_payload: MemoryState = {
-                "organization_reason": reason,
+                "organization_reason": reason or "Explicit request to organize memory",
                 "messages": [
                     ToolMessage(
-                        content=f"Memory reorganized for target '{target}'. Upserted {len(upserts)} items, Deleted {len(deletions)} items. Reason: {reason}", 
+                        content=f"Memory reorganized for target '{target}'. Upserted {len(upserts)} items, Deleted {len(deletions)} items. Reason: {reason}",
                         tool_call_id=runtime.tool_call_id
                     )
                 ]
             }
 
-            # 4. 根据 Target 将重组好的数据写入 State 对应的字段
-            if target == "profile":
-                update_payload["profile_records"] = target_dict  # type: ignore
-            elif target == "episodic":
-                update_payload["episodic_records"] = target_dict # type: ignore
-            elif target == "semantic":
-                update_payload["semantic_records"] = target_dict # type: ignore
-
             return Command(update=update_payload, graph="main")
 
         except Exception as e:
             logger.exception(f"Failed to organize memory for target {target}. Error: {e}")
-            
-            # 异常情况也遵循强类型的 State 返回
+
             error_payload: MemoryState = {
                 "messages": [
                     ToolMessage(
-                        content=f"Failed to organize memory for {target}. Error: {e}", 
+                        content=f"Failed to organize memory for {target}. Error: {e}",
                         tool_call_id=runtime.tool_call_id,
-                        status="error" 
+                        status="error"
                     )
                 ]
             }
             return Command(update=error_payload)
-        
-    async def _aorganize_memory(
-        self,
-        runtime: ToolRuntime[ContextT, MemoryState[ResponseT]],
-        target: MemoryTarget,
-        reason: Optional[str],
-        upserts: Optional[List[Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord]]] = Field(default=[], description="Records to add or update."),
-        deletions: Optional[List[str]] = Field(default=[], description="String keys of memories to completely remove.")
-    ) -> Command[Any]:
-        """Persist key information from the current conversation into long-term memory."""
-        return self._organize_memory(runtime, target=target,reason=reason,upserts=upserts,deletions=deletions)
 
     def _get_backend(self, runtime) -> BackendProtocol:
         if callable(self.backend):
