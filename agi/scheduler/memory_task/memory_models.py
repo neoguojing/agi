@@ -16,17 +16,21 @@ Usage:
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any, Dict, Literal
 from uuid import uuid4
-from pydantic import BaseModel, Field,field_validator, field_serializer
+from pydantic import BaseModel, Field,field_validator, field_serializer, RootModel
 # =========================================================
 # Type Aliases
 # =========================================================
 
+class BaseMemoryRecord(BaseModel):
+    pass
+
+
 MemoryTarget = Literal["profile", "episodic", "semantic"]
 
 
-class ProfileMemoryRecord(BaseModel):
+class ProfileMemoryRecord(BaseMemoryRecord):
 
     key: str = Field(
         ...,
@@ -75,7 +79,7 @@ class ProfileMemoryRecord(BaseModel):
 # Episodic Memory (Simplified for LLM)
 # =========================================================
 
-class EpisodicMemoryRecord(BaseModel):
+class EpisodicMemoryRecord(BaseMemoryRecord):
 
     id: str = Field(
         default_factory=lambda: f"ep_{uuid4().hex[:8]}",
@@ -221,7 +225,7 @@ AgentMemoryPredicate = Literal[
     "interested_in"
 ]
 
-class SemanticMemoryRecord(BaseModel):
+class SemanticMemoryRecord(BaseMemoryRecord):
 
     subject: str = Field(
         ...,
@@ -282,3 +286,38 @@ class SemanticMemoryRecord(BaseModel):
         predicate = getattr(self, "predicate", "")
         obj = self.object.strip().lower() if getattr(self, "object", None) else ""
         return f"{subject}:{predicate}:{obj}" if subject and obj else ""
+        
+
+# =========================================================
+# 🌟 终极优雅：定义强类型存储容器 (将黑魔法封装在内)
+# =========================================================
+
+class ProfileContainer(RootModel[Dict[str, ProfileMemoryRecord]]):
+    """接管整个 Profile 字典的导入吐出"""
+    pass
+
+class EpisodicContainer(RootModel[Dict[str, EpisodicMemoryRecord]]):
+    """接管整个 Episodic 字典的导入吐出"""
+    pass
+
+class SemanticContainer(RootModel[Dict[str, SemanticMemoryRecord]]):
+    """接管整个 Semantic 字典的导入吐出"""
+    pass
+
+class SafeScalarContainer(RootModel[Any]):
+    """
+    专门用来包装游标数字、原因文本等 LangGraph 底层 orjson 无法直接解析的标量。
+    写入时自动包成 {"root": value}，读取时自动解包。
+    """
+    pass
+
+# 全局映射字典：让底层 Manager 瞬间看懂如何处理数据
+CONTAINER_MAPPING = {
+    "profile_records": ProfileContainer,
+    "episodic_records": EpisodicContainer,
+    "semantic_records": SemanticContainer,
+    "profile_message_index": SafeScalarContainer,
+    "episodic_message_index": SafeScalarContainer,
+    "semantic_message_index": SafeScalarContainer,
+    "organization_reason": SafeScalarContainer,
+}

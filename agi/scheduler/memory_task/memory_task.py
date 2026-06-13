@@ -138,7 +138,6 @@ async def execute_memory_consolidation_pipeline(
     # 1. 执行期动态实例化管理器（全部从 ctx.runtime 中无缝解包依赖）
     
     # 2. 🚦 准入控制流守卫
-    await memory_manager.refresh()
     messages = await memory_manager.get_incremental_messages(task_type)
     
     if not messages or len(messages) < threshold:

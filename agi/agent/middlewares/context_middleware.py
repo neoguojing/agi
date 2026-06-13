@@ -159,7 +159,6 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
             # 3. Persist to Store via MemoryManager
             # Ensure manager has latest state for cursor calculation if needed,
             # though commit_incremental_memory handles most of the heavy lifting.
-            await memory_manager.refresh()
             await memory_manager.commit_incremental_memory(
                 task_type=target,
                 memory_value=target_dict,
@@ -236,7 +235,7 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
 
         runtime = request.runtime
         
-        memory_body = memory_manager.get_agent_context()
+        memory_body = await memory_manager.get_agent_context()
 
         memory_context_str = get_middleware_prompt("context").format(agent_memory=memory_body)
         env_context_str = self._format_environment_context(runtime)

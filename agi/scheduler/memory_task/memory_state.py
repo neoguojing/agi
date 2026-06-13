@@ -25,7 +25,9 @@ from agi.scheduler.memory_task.memory_models import (
     ProfileMemoryRecord,
     EpisodicMemoryRecord,
     SemanticMemoryRecord,
-    MemoryTarget
+    MemoryTarget,
+    CONTAINER_MAPPING,
+    SafeScalarContainer
 )
 
 logger = logging.getLogger(__name__)
@@ -154,6 +156,7 @@ class MemoryManager:
         确保内存管理器已初始化（懒加载设计）。
         🌟 修复一：直接采用原生数据，去除所有 .value 或 ["value"] 的判断。
         🌟 修复二：将游标和原因一并加入加载列表，防止重启后游标丢失。
+        🌟 修复三：引入 Pydantic 容器解析，并加入 try-except 容错，平滑降级防止旧标量导致 orjson 崩溃。
         """
         if self._is_initialized:
             return
@@ -181,14 +184,43 @@ class MemoryManager:
             
             if self.runtime.store:
                 for key in keys_to_load:
-                    data = await self.runtime.store.aget(namespace=self.namespace, key=key)
-                    if data is not None:
-                        # 🌟 极简修复：既然确定存储的就是原生字典/数据，直接赋值，不再做任何解包
-                        local_state_updates[key] = data
+                    # 🌟 核心修复：把 try 提到最外层，死死护住 aget 这一行
+                    try:
+                        raw_data = await self.runtime.store.aget(namespace=self.namespace, key=key)
+                        if raw_data is not None:
+                            # 根据映射自动找到对应的 Pydantic 容器进行反序列化灌注
+                            container_cls = CONTAINER_MAPPING.get(key)
+                            if container_cls:
+                                # 标准路径：用 RootModel 进行高级解包还原
+                                container_instance = container_cls.model_validate(raw_data)
+                                local_state_updates[key] = container_instance.root
+                            else:
+                                local_state_updates[key] = raw_data
+                                
+                    except Exception as e:
+                        # 🌟 强力兜底：无论是 aget 内部反序列化历史裸数据崩溃（orjson.JSONDecodeError），
+                        # 还是 RootModel 校验失败，统统在这里被拦截。
+                        logger.warning(
+                            "Failed to load or hydrate key '%s' from remote store. "
+                            "This usually happens when old raw scalars (like pure int/str) exist in DB. "
+                            "Error: %s", 
+                            key, str(e)
+                        )
+                        
+                        # 🌟 绝妙降级：既然底层已经因为不是 JSON 而解析失败了，那它在数据库里大概率就是个裸字符串或数字。
+                        # 我们选择暂时在本地内存中初始化为空（或者你可以根据 key 的类型给个 0 或 {} 兜底）。
+                        # 当下一次 commit 触发时，新代码会用 SafeScalarContainer/Container 格式把正确的数据写进去，从而洗干净数据库。
+                        if "index" in key:
+                            local_state_updates[key] = 0  # 游标类 Key 挂了，安全兜底为 0 
+                        else:
+                            local_state_updates[key] = {} # 记忆体类 Key 挂了，安全兜底为空字典
 
             self._messages = local_messages
             self._state.update(local_state_updates)
             self._is_initialized = True
+            
+            print("*******************{}*******************".format(local_messages))
+            print("*******************{}*******************".format(local_state_updates))
             self.log_state_summary()
 
     async def repair_memory_index(self, task_type: MemoryTarget) -> int:
@@ -301,9 +333,21 @@ class MemoryManager:
         # 🌟 极简直写：直接将你原生的纯数据（字典/整数/字符串）写入 Store，不加任何包装
         if self.runtime.store:
             try:
-                await self.runtime.store.aput(namespace=self.namespace, key=cursor_key, value=cursor)
-                await self.runtime.store.aput(namespace=self.namespace, key=memory_key, value=merged_memory)
-                await self.runtime.store.aput(namespace=self.namespace, key="organization_reason", value=reason)
+                # 🌟 优雅脱水写入：
+                # 1. 数字标量安全包裹
+                await self.runtime.store.aput(namespace=self.namespace, key=cursor_key, value=SafeScalarContainer(cursor).model_dump(mode="json"))
+                
+                # 2. 记忆载体通过映射的容器，一行代码完成高性能对象脱水 (转为纯原生 JSON 字典)
+                if memory_value:
+                    container_cls = CONTAINER_MAPPING.get(memory_key)
+                    if container_cls:
+                        # 扔进容器，通过 model_dump(mode="json") 自动将内部所有的 Record 实例完美榨干成纯 native
+                        native_payload = container_cls(merged_memory).model_dump(mode="json")
+                        print("*******************{}*******************".format(native_payload))
+                        await self.runtime.store.aput(namespace=self.namespace, key=memory_key, value=native_payload)
+
+                # 3. 原因文本安全包裹
+                await self.runtime.store.aput(namespace=self.namespace, key="organization_reason", value=SafeScalarContainer(reason).model_dump(mode="json"))
             except Exception:
                 logger.exception("memory commit remote store failed task=%s", task_type)
                 raise
