@@ -164,7 +164,7 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
             elif target == "semantic":
                 update_payload["semantic_records"] = target_dict # type: ignore
 
-            return Command(update=update_payload)
+            return Command(update=update_payload, graph="main")
 
         except Exception as e:
             logger.exception(f"Failed to organize memory for target {target}. Error: {e}")
@@ -212,7 +212,7 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
             if runtime:
                 env_info.update({
                     "user_id": getattr(runtime.context, "user_id", None),
-                    "conversation_id": getattr(runtime.context, "conversation_id", None),
+                    "thread_id": getattr(runtime.context, "thread_id", None),
                 })
 
             env_str = json.dumps(env_info, indent=2, ensure_ascii=False)
@@ -296,6 +296,6 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
         # 启动job调度
         await hub.start()
         # 注入运行时参数
-        runtime_state_bridge.update_dynamic_deps("thread_id",config['metadata']['thread_id'])
+        runtime_state_bridge.update_dynamic_deps("thread_id",config['configurable']['thread_id'])
         runtime_state_bridge.update_dynamic_deps("user_id",runtime.context.user_id)
 

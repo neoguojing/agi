@@ -78,7 +78,7 @@ class ChatCompletionRequest(BaseModel):
     db_ids: Optional[List[str]] = Field(default=None, description="知识库列表", optional=True)
     need_speech: Optional[bool] = Field(default=False, description="是否需要语音输出", optional=True)
     feature: Optional[str] = Field(default="", description="支持的特性：agent,web,rag", optional=True)
-    conversation_id: Optional[str] = Field(default="", description="会话id" , optional=True)
+    thread_id: Optional[str] = Field(default="", description="会话id" , optional=True)
 
 # ======== 响应格式 ========
 

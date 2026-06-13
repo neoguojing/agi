@@ -49,8 +49,8 @@ class MemoryTaskRuntime(BaseRuntime):
         super().__init__()
         self.llm = ModelProvider.get_falback_model()              # 🤖 静态单例依赖
         self.client = None
-        if CLOUD_MODE:
-            self.client = get_client(url=LANGGRAPH_MAIN_URL)        # 🔌 静态单例依赖
+        # if CLOUD_MODE:
+        #     self.client = get_client(url=LANGGRAPH_MAIN_URL)        # 🔌 静态单例依赖
         self._bridge = state_bridge # 🌁 动态中转桥接器
 
     @property
@@ -186,7 +186,7 @@ async def execute_memory_consolidation_pipeline(
 @hub.cron(
     task_type="profile",
     runtime=memory_runtime,  # 外部注入的 MemoryTaskRuntime 单例
-    cron_expr="*/10 * * * *",   
+    cron_expr="*/3 * * * *",   
     target_id="global",
     params={"activate_message_threshold": 0, "min_confidence": 0.85, "model_flavor": "claude-3-5-sonnet"},
     timeout=120.0

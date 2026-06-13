@@ -77,7 +77,7 @@ class TestTaskMultiModalFactory(unittest.TestCase):
         self.assertEqual(resp["messages"][-1].content[0].get("type"),"image")
         
     def test_user_understand(self):
-        config={"configurable": {"user_id": "test", "conversation_id": "6"}}
+        config={"configurable": {"user_id": "test"}}
         input = State(
             messages=[HumanMessage(content=[{"type":"text","text":"画一幅水墨画"}])],
         )

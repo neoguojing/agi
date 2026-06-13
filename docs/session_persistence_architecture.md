@@ -53,7 +53,7 @@ Client/API
    |
 SessionGateway
    |-- 生成/绑定 thread_id
-   |-- 注入 user_id/org_id/conversation_id
+   |-- 注入 user_id/org_id/thread_id
    v
 DeepAgent Runtime (create_deep_agent)
    |-- TodoListMiddleware（任务规划）
@@ -78,7 +78,6 @@ CompositeBackend Router
 - `user_id`（用户级）
 - `assistant_id`（Agent 实例）
 - `thread_id`（会话线程）
-- `conversation_id`（业务会话，可选）
 
 ### 4.2 Configurable 规范
 
@@ -90,7 +89,6 @@ config = {
     "tenant_id": "org_xxx",
     "user_id": "u_xxx",
     "assistant_id": "deepagent_main",
-    "conversation_id": "conv_xxx",
     "thread_id": "th_xxx"
   }
 }

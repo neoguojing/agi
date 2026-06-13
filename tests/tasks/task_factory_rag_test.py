@@ -35,7 +35,7 @@ class TestTaskRagFactory(unittest.TestCase):
         self.assertIn("平衡计算模块",docs[0].page_content)
 
     def test_rag(self):
-        config={"configurable": {"user_id": "default_tenant", "conversation_id": "2"}}
+        config={"configurable": {"user_id": "default_tenant", "thread_id": "2"}}
         input = State(
             messages=[HumanMessage(content="NTP3000Plus")],
             collection_names = ["test"]
@@ -56,7 +56,7 @@ class TestTaskRagFactory(unittest.TestCase):
         self.assertIsNotNone(ret.content)
 
     def test_web_search_chat(self):
-        config={"configurable": {"user_id": "default_tenant", "conversation_id": "3"}}
+        config={"configurable": {"user_id": "default_tenant", "thread_id": "3"}}
         input = State(
             messages=[HumanMessage(content="今天的科技新闻")],
         )

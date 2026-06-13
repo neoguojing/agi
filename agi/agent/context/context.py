@@ -12,13 +12,6 @@ def get_session_context_id(session_id):
 def get_session_entity_id(session_id):
     return f'{session_id}_entities'
 
-class Context(BaseModel):
-    user_id: Optional[str] = "admin"
-    conversation_id: Optional[str] = str(uuid.uuid4())
-
-    def model_dump(self, *args, **kwargs):
-        return super().model_dump(*args, **kwargs)
-    
 class UserPersona(BaseModel):
     full_name: Optional[str] = None
     job_role: Optional[str] = None

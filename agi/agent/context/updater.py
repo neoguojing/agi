@@ -28,7 +28,7 @@ class UnifiedContextManager:
         返回 JSON 字符串（不再是 Markdown）
         """
         user_id = runtime.context.user_id
-        session_id = runtime.context.conversation_id
+        session_id = runtime.context.thread_id
         cache_key = f"{user_id}:{session_id}"
 
         # 1. cache
@@ -77,7 +77,7 @@ class UnifiedContextManager:
             return
 
         user_id = runtime.context.user_id
-        session_id = runtime.context.conversation_id
+        session_id = runtime.context.thread_id
         cache_key = f"{user_id}:{session_id}"
 
         # 1. 读取当前数据

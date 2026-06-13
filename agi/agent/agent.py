@@ -16,6 +16,7 @@ from collections.abc import AsyncGenerator, Mapping, Sequence
 from typing import Any,Optional
 from pydantic import BaseModel, Field
 from psycopg_pool import AsyncConnectionPool, ConnectionPool
+from dataclasses import dataclass
 
 from agi.agent.middlewares import (
     ContextEngineeringMiddleware,
@@ -31,6 +32,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres import PostgresStore
 from langgraph.store.postgres.aio import AsyncPostgresStore
 from langchain_core.runnables import RunnableConfig
+from langgraph.graph.state import CompiledStateGraph
 from agi.config import DEFAULT_DB_URI
 from agi.agent.deep_agent import create_deep_agent
 from agi.scheduler import runtime_state_bridge
@@ -43,12 +45,11 @@ RuntimeResources = dict[str, Any]
 _async_agent: Any = None
 _async_connections: list[Any] = []
 
-class Context(BaseModel):
-    user_id: Optional[str] = "admin"
-    conversation_id: Optional[str] = str(uuid.uuid4())
+@dataclass
+class Context:
+    user_id: Optional[str]
+    thread_id: Optional[str]
 
-    def model_dump(self, *args, **kwargs):
-        return super().model_dump(*args, **kwargs)
     
 async def create_async_resources(db_uri: str = DB_URI) -> RuntimeResources:
     pool = AsyncConnectionPool(conninfo=db_uri, open=True)
@@ -116,7 +117,7 @@ def create_main_agent(
     return create_deep_agent(**kwargs)
 
 
-async def get_async_agent():
+async def get_async_agent() -> CompiledStateGraph:
     global _async_agent, _async_connections
     if _async_agent is None:
         resources = await create_async_resources()
@@ -137,7 +138,7 @@ def _prepare_config(config: dict[str, Any] | None, state: Mapping[str, Any]) -> 
 def _prepare_context(context: Context | None, state: Mapping[str, Any]) -> Context:
     if context is not None:
         return context
-    return Context(user_id=state.get("user_id"), conversation_id=state.get("conversation_id"))
+    return Context(user_id=state.get("user_id"), thread_id=state.get("thread_id"))
 
 
 async def invoke_agent_async(state: dict[str, Any], config: dict[str, Any] | None = None, context: Context | None = None, **kwargs: Any):

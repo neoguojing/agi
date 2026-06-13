@@ -30,7 +30,6 @@ def build_state(request: ChatCompletionRequest) -> Dict[str, Any]:
         "messages": messages,
         "need_speech": request.need_speech,
         "user_id": request.user or "default",
-        "conversation_id": request.conversation_id,
         "feature": request.feature,
         "collection_names": request.db_ids,
     }

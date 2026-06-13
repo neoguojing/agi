@@ -56,8 +56,7 @@ async def save_file(
         # await kmanager.store(collection_name,default_storage.to_local_path(unique_name),tenant=user_id,**param)
         async def run_doc_db():
             try:
-                config={"configurable": {"conversation_id": str(uuid.uuid4()),
-                                 "thread_id": str(uuid.uuid4())}}
+                config={"configurable": {"thread_id": str(uuid.uuid4())}}
                 state = State()
                 state['user_id'] = user_id
                 if collection_name:

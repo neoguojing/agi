@@ -32,7 +32,7 @@ hay: Haya — 指的是坦桑尼亚的一种语言，由Haya人使用，属于�
         self.input = HumanMessage(content=content)
 
     def test_text2speech(self):
-        config={"configurable": {"user_id": "cosyvoice", "conversation_id": "",
+        config={"configurable": {"user_id": "cosyvoice", 
                                  "thread_id": "tools"}}
         output = self.instance.invoke(self.input,config=config)
         self.assertIsNotNone(output)

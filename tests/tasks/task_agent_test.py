@@ -10,7 +10,7 @@ class TestAgent(unittest.TestCase):
     def setUp(self):
         self.agent = TaskFactory.create_task(TASK_AGENT)
         self.RECURSION_LIMIT = 5
-        self.config={"configurable": {"user_id": "test", "conversation_id": "1","thread_id": str(uuid.uuid4())},
+        self.config={"configurable": {"user_id": "test", "thread_id": str(uuid.uuid4())},
                      "recursion_limit": self.RECURSION_LIMIT }
     def test_agent(self):
         query = "查询tesla股票价格"

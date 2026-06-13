@@ -28,7 +28,7 @@ class TestLLMFactory(unittest.TestCase):
         self.assertIsInstance(resp,list)
         
     def test_llm_with_history(self):
-        config={"configurable": {"user_id": "test", "conversation_id": "1"}}
+        config={"configurable": {"user_id": "test"}}
         llm_task = TaskFactory.create_task(TASK_LLM_WITH_HISTORY)
         
         resp = llm_task.invoke([HumanMessage(content="你好，我是neo")],config=config)

@@ -34,8 +34,7 @@ from rich.panel import Panel
 from langgraph_sdk import get_client
 from langgraph.graph.message import add_messages
 
-from agi.agent.agent import stream_agent_async
-from agi.agent.context import Context
+from agi.agent.agent import stream_agent_async,Context
 from agi.agent.stream_processor import StreamProcessor
 from agi.api.media import process_multimodal_content
 from agi.apps.common import FileObject, ImageURL, MessageContent
@@ -289,9 +288,10 @@ class CommandInput(Input):
 # =====================================================================
 class CloudLifecycleManager:
     """全局常驻的云端事件监听服务：负责维护长连接，具备断线自动重连机制"""
-    def __init__(self, client, thread_id: str, assistant_id: str, event_queue: asyncio.Queue,logger: Any):
+    def __init__(self, client, thread_id: str,user_id: str, assistant_id: str, event_queue: asyncio.Queue,logger: Any):
         self.client = client
         self.thread_id = thread_id
+        self.user_id = user_id
         self.assistant_id = assistant_id
         self.event_queue = event_queue
         self.log = logger
@@ -343,6 +343,7 @@ class CloudLifecycleManager:
                     thread_id=self.thread_id,
                     assistant_id=self.assistant_id,
                     input=input_data,
+                    context={"thread_id": self.thread_id,"user_id": self.user_id},
                     stream_mode=["messages"]
                 )
         except Exception as e:
@@ -421,7 +422,6 @@ class DeepAgentTUI(App):
         self.current_status_badge: Optional[Static] = None
         self.current_agent_markdown: Optional[Markdown] = None
         self.user_id: str = ""
-        self.conversation_id: str = ""
         self.thread_id: str = ""
         self.state: Dict[str, Any] = {"messages": []}
         
@@ -479,7 +479,7 @@ class DeepAgentTUI(App):
         self.input_box.focus()
 
     def _update_status_bar(self):
-        self.sub_title = f"📁 目录: {self.cwd.name} | 🧵 线程: {self.thread_id[:8]}"
+        self.sub_title = f"📁 目录: {self.cwd.name} | 🧵 线程: {self.thread_id}"
 
     def write_log(self, message: str) -> None:
         """供系统各个后台任务随时调用，向右侧控制台追加原生格式化日志"""
@@ -619,6 +619,7 @@ class DeepAgentTUI(App):
         try:
             self.cloud_manager = CloudLifecycleManager(
                 client=self.client,
+                user_id=self.user_id,
                 thread_id=self.thread_id,
                 assistant_id=self.assistant_id,
                 event_queue=self.event_queue,
@@ -681,7 +682,7 @@ class DeepAgentTUI(App):
         await self.event_queue.put(STREAM_START)
         try:
             config = {"configurable": {"thread_id": self.thread_id}}
-            context = Context(user_id=self.user_id, conversation_id=self.conversation_id)
+            context = Context(user_id=self.user_id, thread_id=self.thread_id)
             input_messages = self._prepare_input_data()
             if not input_messages:
                 # 及时抛出错误，看是不是这里把输入吞了
@@ -789,19 +790,17 @@ class DeepAgentTUI(App):
                 with open(STATE_CACHE, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     self.user_id = data.get("user_id", current_user)
-                    self.conversation_id = data.get("conversation_id", str(uuid.uuid4()))
-                    self.thread_id = self.conversation_id
+                    self.thread_id = data.get("thread_id", str(uuid.uuid4()))
                     return
             except Exception:
                 pass
         self.user_id = current_user
-        self.conversation_id = str(uuid.uuid4())
-        self.thread_id = self.conversation_id
+        self.thread_id = str(uuid.uuid4())
 
     def _save_session(self):
         tmp_path = STATE_CACHE + ".tmp"
         try:
-            data = {"user_id": self.user_id, "thread_id": self.thread_id, "conversation_id": self.conversation_id}
+            data = {"user_id": self.user_id, "thread_id": self.thread_id}
             with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
             os.replace(tmp_path, STATE_CACHE)

@@ -500,7 +500,7 @@
 - **功能概述**：LLM 相关任务编排。
 - **模块函数**：
   - `def is_valid_url(url)`
-  - `def get_session_history(user_id, conversation_id)`
+  - `def get_session_history(user_id, thread_id)`
   - `def create_llm_with_history(runnable, dict_input)`
   - `def create_stuff_documents_chain(llm, prompt, output_parser, document_prompt, document_separator)`
   - `def create_websearch(km)`

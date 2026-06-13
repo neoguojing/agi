@@ -284,14 +284,13 @@ class StockMiddleware(AgentMiddleware):
         """Get stable session key.
 
         Priority:
-        conversation_id > thread_id > session_id > user_id
+        thread_id > session_id > user_id
         """
 
         if hasattr(runtime, "context"):
             ctx = runtime.context
 
             for field in [
-                "conversation_id",
                 "thread_id",
                 "session_id",
                 "user_id",
