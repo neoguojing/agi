@@ -202,7 +202,7 @@ class MemoryManager:
                             container_cls = CONTAINER_MAPPING.get(key)
                             if container_cls:
                                 # 标准路径：用 RootModel 进行高级解包还原
-                                container_instance = container_cls.model_validate(raw_data)
+                                container_instance = container_cls.model_validate(raw_data.value)
                                 local_state_updates[key] = container_instance.root
                             else:
                                 local_state_updates[key] = raw_data
@@ -228,7 +228,6 @@ class MemoryManager:
             self._state.update(local_state_updates)
             self._is_initialized = True
             
-            print("*******************{}*******************".format(local_state_updates))
             self.log_state_summary()
 
     async def repair_memory_index(self, task_type: MemoryTarget) -> int:
@@ -354,7 +353,6 @@ class MemoryManager:
                     if container_cls:
                         # 扔进容器，通过 model_dump(mode="json") 自动将内部所有的 Record 实例完美榨干成纯 native
                         native_payload = container_cls(merged_memory).model_dump(mode="json")
-                        print("*******************{}*******************".format(native_payload))
                         await self.runtime.store.aput(namespace=self.namespace, key=memory_key, value=native_payload)
 
                 # 3. 原因文本安全包裹

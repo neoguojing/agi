@@ -322,16 +322,21 @@ class CloudLifecycleManager:
 
         while True:
             try:
+                
                 stream = await self.client.threads.join_stream(
                     thread_id=self.thread_id
                 )
                 self.ready.set()
+                self.log.info("云端连接已建立，开始监听事件流...")
                 async for event in stream:
                     if self.is_run_done(event):
                         await self.event_queue.put(STREAM_DONE)
-                    await self.event_queue.put(event)
+                    else:
+                        await self.event_queue.put(event)
             except Exception as e:
+                traceback_str = traceback.format_exc()
                 self.log.error(f"run_forever:{e}")
+                self.log.error(f"Traceback: {traceback_str}")
                 await self.event_queue.put(StreamError(RuntimeError(f"云端连接异常跌落，正在尝试重连... (Error: {e})")))
                 await asyncio.sleep(3)
 
@@ -670,7 +675,6 @@ class DeepAgentTUI(App):
             input_data = {"messages": self._prepare_input_data()}
             # 踢出临门一脚，并在此处同步挂起，直到本次运行彻底返回
             await self.cloud_manager.submit(input_data)
-            
             # 修复：有且仅有这里负责投递单次运行结束状态
             # await self.event_queue.put(STREAM_DONE)
         except Exception as e:

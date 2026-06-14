@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, Literal
 from uuid import uuid4
-from pydantic import BaseModel, Field,field_validator, field_serializer, RootModel
+from pydantic import BaseModel, Field,field_validator, field_serializer, RootModel,model_serializer, model_validator
 # =========================================================
 # Type Aliases
 # =========================================================
@@ -309,7 +309,26 @@ class SafeScalarContainer(RootModel[Any]):
     专门用来包装游标数字、原因文本等 LangGraph 底层 orjson 无法直接解析的标量。
     写入时自动包成 {"root": value}，读取时自动解包。
     """
-    pass
+
+    # 1. 读入（反序列化）时触发：拦截输入数据进行拆箱
+    @model_validator(mode='before')
+    @classmethod
+    def unwrap_root(cls, data: Any) -> Any:
+        # 如果读取到的是我们包装过的字典格式 {"root": value}，则直接把 value 提取出来
+        # 加入 len(data) == 1 的判断是为了防止误伤本身就带有 "root" 键的正常字典 payload
+        if isinstance(data, dict) and "root" in data and len(data) == 1:
+            return data["root"]
+        return data
+
+    # 2. 写入（序列化）时触发：强制装箱成字典
+    @model_serializer
+    def wrap_into_dict(self) -> dict[str, Any]:
+        # 不论内部包裹的是 int, str 还是其他标量，输出给 orjson 时一律包一层字典
+        return {"root": self.root}
+
+    # 可选：重写 __str__ 或 __repr__ 让调试打印更直观
+    def __str__(self):
+        return str(self.root)
 
 # 全局映射字典：让底层 Manager 瞬间看懂如何处理数据
 CONTAINER_MAPPING = {
