@@ -1,6 +1,4 @@
 import logging
-import traceback
-import uuid
 from typing import Any, Dict, Optional, List, cast
 from pydantic import BaseModel, Field
 
@@ -10,15 +8,15 @@ from agi.scheduler.memory_task.memory_tools import (
     consolidate_episodic_memory,
     consolidate_semantic_memory
 )
-from agi.scheduler.memory_task.memory_state import MemoryManager, MEMORY_KEY_MAP
+from agi.scheduler.memory_task.memory_state import MemoryManager, MEMORY_KEY_MAP,memory_manager
+from agi.scheduler.memory_task.runtime import memory_runtime, MemoryTaskRuntime
 from langchain_core.prompts import ChatPromptTemplate
-from langgraph.store.base import BaseStore
-from langgraph.graph.state import CompiledStateGraph
 from langgraph_sdk import get_client
+
 # 🔄 核心对齐：引入标准上下文容器与基类
-from agi.scheduler.task_hub import TaskContext, BaseRuntime,hub,ExternalStateBridge,runtime_state_bridge
+from agi.scheduler.task_hub import TaskContext,hub
 from agi.agent.models import ModelProvider
-from agi.config import LANGGRAPH_MAIN_URL,CLOUD_MODE
+from agi.config import LANGGRAPH_MAIN_URL, CLOUD_MODE
 
 logger = logging.getLogger("MemoryTask")
 
@@ -37,51 +35,6 @@ TOOL_MAP = {
     "consolidate_semantic_memory": consolidate_semantic_memory,
 }
 
-
-# ------------------------------------------------------------------------------
-# 🧱 1. 环境依赖容器定义 (适配显式继承自 BaseRuntime)
-# ------------------------------------------------------------------------------
-class MemoryTaskRuntime(BaseRuntime):
-    """
-    重型环境依赖容器。
-    静态依赖（LLM、Client）通过构造函数直接注入；
-    动态依赖（Graph、Thread_id、User_id）通过 @property 从桥接器实时拉取。
-    """
-    def __init__(self, state_bridge: ExternalStateBridge):
-        super().__init__()
-        self.llm = ModelProvider.get_falback_model()              # 🤖 静态单例依赖
-        self.client = None
-        if CLOUD_MODE:
-            self.client = get_client(url=LANGGRAPH_MAIN_URL)        # 🔌 静态单例依赖
-        self._bridge = state_bridge # 🌁 动态中转桥接器
-
-    @property
-    def graph(self) -> CompiledStateGraph:
-        """动态感知外部线程传入的图实例"""
-        return self._bridge.get_value("graph")
-    
-    @property
-    def store(self) -> BaseStore:
-        """动态感知外部线程传入的图实例"""
-        return self._bridge.get_value("store")
-
-    @property
-    def thread_id(self) -> str:
-        """动态感知外部线程传入的 Thread ID"""
-        return self._bridge.get_value("thread_id")
-
-    @property
-    def user_id(self) -> str:
-        """动态感知外部线程传入的 User ID"""
-        return self._bridge.get_value("user_id")
-
-memory_runtime = MemoryTaskRuntime(
-    state_bridge=runtime_state_bridge
-)
-
-memory_manager = MemoryManager(
-    runtime=memory_runtime
-)
 # ------------------------------------------------------------------------------
 # 📐 2. 声明式参数契约模型 (Pydantic Schemas 保持不变)
 # ------------------------------------------------------------------------------
@@ -127,21 +80,21 @@ def build_memory_prompt(task_type: str, manager: MemoryManager, messages: Any, i
 
 # 🔄 适配：直接引入 ctx 上下文容器，彻底消除松散入参
 async def execute_memory_consolidation_pipeline(
-    task_type: str, 
-    threshold: int, 
+    task_type: str,
+    threshold: int,
     ctx: TaskContext
 ):
     """通用异步记忆提取核心驱动管线"""
     # 强类型断言提示（便于 IDE 补全 runtime 内部的独有属性）
     runtime = cast(MemoryTaskRuntime, ctx.runtime)
-    
+
     # 1. 执行期动态实例化管理器（全部从 ctx.runtime 中无缝解包依赖）
-    
+
     # 2. 🚦 准入控制流守卫
     messages = await memory_manager.get_incremental_messages(task_type)
-    
+
     if not messages or len(messages) < threshold:
-        logger.info("[%s] ⏳ 任务 [%s:%s] 未达消息触发阈值 (%d/%d)，跳过本次内存提取。", 
+        logger.info("[%s] ⏳ 任务 [%s:%s] 未达消息触发阈值 (%d/%d)，跳过本次内存提取。",
                     ctx.trace_id, ctx.target_id, task_type, len(messages) if messages else 0, threshold)
         return
 
@@ -151,13 +104,13 @@ async def execute_memory_consolidation_pipeline(
         consolidate_episodic_memory,
         consolidate_semantic_memory
     ])
-    
+
     instruction = TASK_INSTRUCTIONS.get(task_type, "Consolidate memory.")
     prompt = build_memory_prompt(task_type, memory_manager, messages, instruction)
     # 异步非阻塞调用大模型
     result = await bound_llm.ainvoke(prompt)
     tool_calls = getattr(result, "tool_calls", [])
-    
+
     # 4. 处理 Tool Calls 工具路由链
     if not tool_calls:
         logger.info("[%s] ℹ️ 任务 [%s:%s] 大模型未建议任何记忆工具调用。", ctx.trace_id,ctx.target_id, task_type)
@@ -167,7 +120,7 @@ async def execute_memory_consolidation_pipeline(
         tool_name = call.get("name")
         args = call.get("args")
         func = TOOL_MAP.get(tool_name)
-        
+
         if not func:
             logger.warning("[%s] ⚠️ 任务 [%s] 找不到对应的工具映射: %s", ctx.trace_id, task_type, tool_name)
             continue
@@ -175,11 +128,11 @@ async def execute_memory_consolidation_pipeline(
         # 工具异步调用执行
         tool_result = await func.ainvoke(args)
         record_key = MEMORY_KEY_MAP.get(task_type)
-        
+
         if isinstance(tool_result, dict):
             update_data = tool_result.get(record_key)
             reason = tool_result.get("organization_reason")
-            
+
             # 5. 通过 Manager 原子化异步回写图状态，并推进索引偏移量
             if update_data:
                 await memory_manager.commit_incremental_memory(task_type,update_data,reason)
@@ -192,7 +145,7 @@ async def execute_memory_consolidation_pipeline(
 @hub.cron(
     task_type="profile",
     runtime=memory_runtime,  # 外部注入的 MemoryTaskRuntime 单例
-    cron_expr="*/3 * * * *",   
+    cron_expr="*/3 * * * *",
     target_id="global",
     params={"activate_message_threshold": 0, "min_confidence": 0.85, "model_flavor": "claude-3-5-sonnet"},
     timeout=120.0
@@ -210,7 +163,7 @@ async def profile_memory_job(ctx: TaskContext, payload: ProfileMemorySchema):
 @hub.cron(
     task_type="episodic",
     runtime=memory_runtime,
-    cron_expr="*/1 * * * *",  
+    cron_expr="*/1 * * * *",
     target_id="global",
     params={"activate_message_threshold": 10},
     timeout=60.0
@@ -228,7 +181,7 @@ async def episodic_memory_job(ctx: TaskContext, payload: EpisodicMemorySchema):
 @hub.cron(
     task_type="semantic",
     runtime=memory_runtime,
-    cron_expr="*/2 * * * *",  
+    cron_expr="*/2 * * * *",
     target_id="global",
     params={"activate_message_threshold": 10},
     timeout=180.0

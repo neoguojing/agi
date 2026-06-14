@@ -18,7 +18,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, Literal
 from uuid import uuid4
-from pydantic import BaseModel, Field,field_validator, field_serializer, RootModel,model_serializer, model_validator
+from pydantic import BaseModel, Field, field_validator, field_serializer, RootModel, model_serializer, model_validator
+
 # =========================================================
 # Type Aliases
 # =========================================================
@@ -26,9 +27,11 @@ from pydantic import BaseModel, Field,field_validator, field_serializer, RootMod
 class BaseMemoryRecord(BaseModel):
     pass
 
+MemoryTarget = Literal["profile", "episodic", "semantic", "summary"]
 
-MemoryTarget = Literal["profile", "episodic", "semantic"]
-
+# =========================================================
+# Profile Memory
+# =========================================================
 
 class ProfileMemoryRecord(BaseMemoryRecord):
 
@@ -54,7 +57,7 @@ class ProfileMemoryRecord(BaseMemoryRecord):
     confidence: float = Field(
         default=0.5,
         description=(
-            "OPTION. Confidence score between "
+            "Option. Confidence score between "
             "0.0 and 1.0."
         )
     )
@@ -73,7 +76,6 @@ class ProfileMemoryRecord(BaseMemoryRecord):
     def dedup_key(self) -> str:
         """Unique key for deduplication and updates."""
         return self.key.strip().lower() if self.key else ""
-
 
 # =========================================================
 # Episodic Memory (Simplified for LLM)
@@ -116,18 +118,18 @@ class EpisodicMemoryRecord(BaseMemoryRecord):
             if v.tzinfo is None:
                 return v.replace(tzinfo=timezone.utc)
             return v
-            
+
         # 情况 B：如果是 Unix 时间戳（int 或 float，比如来自某些缓存或数据库）
         if isinstance(v, (int, float)):
             return datetime.fromtimestamp(v, tz=timezone.utc)
-            
+
         # 情况 C：如果是字符串（最常遇到，比如大模型输出或 JSON 文件）
         if isinstance(v, str):
             v = v.strip()
             # 兜底：处理非法的空字符串占位符
             if not v or v.lower() in ('unknown time', 'none', 'null', ''):
                 return datetime.now(timezone.utc)
-                
+
             try:
                 # 尝试标准的 ISO 格式解析（兼容带 Z 或不带 Z 的格式）
                 normalized_str = v.replace('Z', '+00:00')
@@ -137,7 +139,6 @@ class EpisodicMemoryRecord(BaseMemoryRecord):
                 return dt
             except ValueError:
                 # 极端兜底：如果大模型胡乱写了一个非 ISO 格式（如 "2026/06/10 10:00"）
-                # 可以借用 dateutil.parser 库，或者直接返回当前时间防止崩掉
                 try:
                     from dateutil import parser
                     dt = parser.parse(v)
@@ -147,7 +148,7 @@ class EpisodicMemoryRecord(BaseMemoryRecord):
                 except Exception:
                     # 实在解析不了，用当前时间兜底，保证系统不死
                     return datetime.now(timezone.utc)
-                    
+
         # 其他完全无法识别的类型，直接交给 Pydantic 原生报错，或者直接兜底
         return v
 
@@ -159,12 +160,12 @@ class EpisodicMemoryRecord(BaseMemoryRecord):
         # 情况 A：如果是完美的 datetime 对象，正常序列化
         if isinstance(v, datetime):
             return v.isoformat().replace('+00:00', 'Z')
-            
+
         # 情况 B：如果由于某些黑魔法（如 reducer 合并、手动赋值）它已经变成了 str
         if isinstance(v, str):
             # 顺手帮它把时区尾缀标准化，防止大模型看着难受
             return v.strip().replace('+00:00', 'Z')
-            
+
         # 情况 C：极端兜底
         return str(v)
 
@@ -281,12 +282,25 @@ class SemanticMemoryRecord(BaseMemoryRecord):
 
     @property
     def dedup_key(self) -> str:
-        """Unique key for deduplication and updates."""
         subject = self.subject.strip().lower() if getattr(self, "subject", None) else ""
         predicate = getattr(self, "predicate", "")
         obj = self.object.strip().lower() if getattr(self, "object", None) else ""
         return f"{subject}:{predicate}:{obj}" if subject and obj else ""
-        
+
+
+# =========================================================
+# Summary Memory (Added for event_tasks)
+# =========================================================
+
+class SummaryRecord(BaseMemoryRecord):
+    summary: str = Field(...)
+    source_conversation_id: str = Field(...) # Reference to the conversation that triggered this
+    confidence: float = Field(default=0.8, ge=0.0, le=1.0)
+
+    @property
+    def dedup_key(self) -> str:
+        return self.source_conversation_id
+
 
 # =========================================================
 # 🌟 终极优雅：定义强类型存储容器 (将黑魔法封装在内)
@@ -304,6 +318,10 @@ class SemanticContainer(RootModel[Dict[str, SemanticMemoryRecord]]):
     """接管整个 Semantic 字典的导入吐出"""
     pass
 
+class SummaryContainer(RootModel[Dict[str, SummaryRecord]]):
+    """接管整个 Summary 字典的导入吐出"""
+    pass
+
 class SafeScalarContainer(RootModel[Any]):
     """
     专门用来包装游标数字、原因文本等 LangGraph 底层 orjson 无法直接解析的标量。
@@ -315,7 +333,6 @@ class SafeScalarContainer(RootModel[Any]):
     @classmethod
     def unwrap_root(cls, data: Any) -> Any:
         # 如果读取到的是我们包装过的字典格式 {"root": value}，则直接把 value 提取出来
-        # 加入 len(data) == 1 的判断是为了防止误伤本身就带有 "root" 键的正常字典 payload
         if isinstance(data, dict) and "root" in data and len(data) == 1:
             return data["root"]
         return data
@@ -335,6 +352,7 @@ CONTAINER_MAPPING = {
     "profile_records": ProfileContainer,
     "episodic_records": EpisodicContainer,
     "semantic_records": SemanticContainer,
+    "summary_records": SummaryContainer,
     "profile_message_index": SafeScalarContainer,
     "episodic_message_index": SafeScalarContainer,
     "semantic_message_index": SafeScalarContainer,

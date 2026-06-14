@@ -25,10 +25,12 @@ from agi.scheduler.memory_task.memory_models import (
     ProfileMemoryRecord,
     EpisodicMemoryRecord,
     SemanticMemoryRecord,
+    SummaryRecord,
     MemoryTarget,
     CONTAINER_MAPPING,
     SafeScalarContainer
 )
+from agi.scheduler.memory_task.runtime import MemoryTaskRuntime,memory_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +64,7 @@ class MemoryState(AgentState[ResponseT]):
     profile_records: Annotated[NotRequired[dict[str, ProfileMemoryRecord]], memory_reducer]
     episodic_records: Annotated[NotRequired[dict[str, EpisodicMemoryRecord]], memory_reducer]
     semantic_records: Annotated[NotRequired[dict[str, SemanticMemoryRecord]], memory_reducer]
+    summary_records: Annotated[NotRequired[dict[str, SummaryRecord]], memory_reducer]
     organization_reason: Annotated[NotRequired[str], LastValue]
     profile_message_index: Annotated[NotRequired[int], LastValue]
     episodic_message_index: Annotated[NotRequired[int], LastValue]
@@ -70,16 +73,18 @@ class MemoryState(AgentState[ResponseT]):
 MEMORY_KEY_MAP: Dict[MemoryTarget, str] = {
     "profile": "profile_records",
     "episodic": "episodic_records",
-    "semantic": "semantic_records"
+    "semantic": "semantic_records",
+    "summary": "summary_records"
 }
 
-MemoryRecordT = Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord, dict]
+MemoryRecordT = Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord, SummaryRecord, dict]
 MemoryFilterFn = Callable[[Any], bool]
 
 MemoryStateKey = Literal[
     "profile_records",
     "episodic_records",
     "semantic_records",
+    "summary_records",
     "organization_reason",
     "profile_message_index",
     "episodic_message_index",
@@ -91,7 +96,8 @@ ALLOWED_MEMORY_KEYS = set(get_args(MemoryStateKey))
 INDEX_KEY_MAP: Dict[MemoryTarget, str] = {
     "profile": "profile_message_index",
     "episodic": "episodic_message_index",
-    "semantic": "semantic_message_index"
+    "semantic": "semantic_message_index",
+    "summary": "summary_message_index"
 }
 
 MEMORY_KEY = "memories"
@@ -107,7 +113,8 @@ class AgentContextConfig:
     limits: Dict[MemoryTarget, int] = field(default_factory=lambda: {
         "profile": 50,
         "episodic": 30,
-        "semantic": 50
+        "semantic": 50,
+        "summary": 100
     })
 
     custom_filters: List[MemoryFilterFn] = field(default_factory=list)
@@ -120,14 +127,14 @@ class MemoryManager:
     CURSOR_RECOVERY_CLAMP = "clamp"
     CURSOR_RECOVERY_MODE = CURSOR_RECOVERY_CLAMP
 
-    def __init__(self, runtime: 'MemoryTaskRuntime'):
+    def __init__(self, runtime: MemoryTaskRuntime):
         self.runtime = runtime
         self._state: Dict[str, Any] = {}
         self._messages: List[Any] = []
-        self._lock = RWLock()  
-        
+        self._lock = RWLock()
+
         # 状态控制
-        self._is_initialized = False 
+        self._is_initialized = False
         # 内部游标追踪器：Key 是 task_type，Value 是当前正在处理的终点游标边界
         self._processing_cursors: Dict[str, int] = {}
 
@@ -169,9 +176,9 @@ class MemoryManager:
         # 安全地更新本地消息缓存
         async with self._lock.writer:
             self._messages = local_messages
-            
+
         return self._messages
-    
+
     async def ensure_initialized(self) -> None:
         """
         确保内存管理器已初始化（懒加载设计）。
@@ -191,7 +198,7 @@ class MemoryManager:
 
             # 2. 统一加载所有相关的自定义存储 Key（包含记忆主体、游标索引、提交原因）
             keys_to_load = ALLOWED_MEMORY_KEYS
-            
+
             if self.runtime.store:
                 for key in keys_to_load:
                     # 🌟 核心修复：把 try 提到最外层，死死护住 aget 这一行
@@ -206,28 +213,28 @@ class MemoryManager:
                                 local_state_updates[key] = container_instance.root
                             else:
                                 local_state_updates[key] = raw_data
-                                
+
                     except Exception as e:
                         # 🌟 强力兜底：无论是 aget 内部反序列化历史裸数据崩溃（orjson.JSONDecodeError），
                         # 还是 RootModel 校验失败，统统在这里被拦截。
                         logger.warning(
                             "Failed to load or hydrate key '%s' from remote store. "
                             "This usually happens when old raw scalars (like pure int/str) exist in DB. "
-                            "Error: %s", 
+                            "Error: %s",
                             key, str(e)
                         )
-                        
+
                         # 🌟 绝妙降级：既然底层已经因为不是 JSON 而解析失败了，那它在数据库里大概率就是个裸字符串或数字。
                         # 我们选择暂时在本地内存中初始化为空（或者你可以根据 key 的类型给个 0 或 {} 兜底）。
                         # 当下一次 commit 触发时，新代码会用 SafeScalarContainer/Container 格式把正确的数据写进去，从而洗干净数据库。
                         if "index" in key:
-                            local_state_updates[key] = 0  # 游标类 Key 挂了，安全兜底为 0 
+                            local_state_updates[key] = 0  # 游标类 Key 挂了，安全兜底为 0
                         else:
                             local_state_updates[key] = {} # 记忆体类 Key 挂了，安全兜底为空字典
 
             self._state.update(local_state_updates)
             self._is_initialized = True
-            
+
             self.log_state_summary()
 
     async def repair_memory_index(self, task_type: MemoryTarget) -> int:
@@ -252,7 +259,7 @@ class MemoryManager:
         if self.runtime.store:
             try:
                 # 写入纯数字游标
-                await self.runtime.store.aput(namespace=self.namespace, key=cursor_key, value=repaired_cursor)
+                await self.runtime.store.aput(namespace=self.namespace, key=cursor_key, value=SafeScalarContainer(repaired_cursor).model_dump(mode="json"))
             except Exception:
                 logger.exception("cursor repair remote store failed")
                 raise
@@ -270,9 +277,9 @@ class MemoryManager:
         🌟 游标完全在类内部闭环：自动在内存中记录本次处理的“终点线边界”，外部完全不需要感知游标。
         """
         await self.ensure_initialized()
-        
+
         await self.refresh_messages()  # 强制刷新消息，确保拿到最新的消息列表
-        
+
         cursor = await self.repair_memory_index(task_type)
 
         async with self._lock.writer:
@@ -280,12 +287,12 @@ class MemoryManager:
             if cursor >= current_len:
                 self._processing_cursors[task_type] = current_len
                 return []
-            
+
             incremental = self._messages[cursor:current_len]
-            
+
             # 🌟 内部闭环：静默默契地记下这一轮大模型处理的截止位置
             self._processing_cursors[task_type] = current_len
-            
+
             logger.info("Fetched incremental messages. task=%s, from_cursor=%s, locked_to_boundary=%s",
                         task_type, cursor, current_len)
             return incremental.copy()
@@ -296,11 +303,11 @@ class MemoryManager:
         🌟 外部调用无需传游标：内部自动对齐 get 时记录的终点线，实现完美解耦。
         """
         await self.ensure_initialized()
-        
+
         # 1. 从内部“记事本”获取刚才 get 锁定的目标游标
         async with self._lock.reader:
             target_cursor = self._processing_cursors.get(task_type)
-            
+
         if target_cursor is None:
             # 异常兜底：如果外部直接调 commit 而没调 get，采用当前已知游标
             async with self._lock.reader:
@@ -329,7 +336,7 @@ class MemoryManager:
 
         # 拦截过期/回滚的提交
         if cursor <= current_cursor:
-            logger.warning("cursor rollback ignored task=%s current=%s incoming_commit_cursor=%s", 
+            logger.warning("cursor rollback ignored task=%s current=%s incoming_commit_cursor=%s",
                            task_type, current_cursor, cursor)
             return
 
@@ -346,8 +353,8 @@ class MemoryManager:
                 # 🌟 优雅脱水写入：
                 # 1. 数字标量安全包裹
                 await self.runtime.store.aput(namespace=self.namespace, key=cursor_key, value=SafeScalarContainer(cursor).model_dump(mode="json"))
-                
-                # 2. 记忆载体通过映射的容器，一行代码完成高性能对象脱水 (转为纯原生 JSON 字典)
+
+                # 2. 记忆载体通过映射的容器，一行代码完成高性能对象脱水 (转为纯 native JSON 字典)
                 if memory_value:
                     container_cls = CONTAINER_MAPPING.get(memory_key)
                     if container_cls:
@@ -366,19 +373,19 @@ class MemoryManager:
             self._state[memory_key] = merged_memory
             self._state[cursor_key] = cursor
             self._state["organization_reason"] = reason
-            
+
             # 如果追踪器的任务已经顺利落地，将其移出记事本
             if self._processing_cursors.get(task_type) == cursor:
                 self._processing_cursors.pop(task_type, None)
-                
+
             logger.info("memory committed successfully. task=%s cursor=%s", task_type, cursor)
 
     def _to_record_list(self, target: MemoryTarget) -> list:
         state_key = MEMORY_KEY_MAP.get(target)
-        if not state_key: 
+        if not state_key:
             return []
         data = self._state.get(state_key)
-        if not data: 
+        if not data:
             return []
         return list(data.values()) if isinstance(data, dict) else data
 
@@ -389,16 +396,18 @@ class MemoryManager:
         p_dict = _get("profile_records", {})
         e_dict = _get("episodic_records", {})
         s_dict = _get("semantic_records", {})
+        sum_dict = _get("summary_records", {})
         m_list = self.messages
-        
+
         p_count = len(p_dict) if isinstance(p_dict, dict) else 0
         e_count = len(e_dict) if isinstance(e_dict, dict) else 0
         s_count = len(s_dict) if isinstance(s_dict, dict) else 0
+        sum_count = len(sum_dict) if isinstance(sum_dict, dict) else 0
         m_list_len = len(m_list) if isinstance(m_list, list) else 0
 
         logger.info(
-            "🧠 [Memory State] Count -> Profile: %d, Episodic: %d, Semantic: %d | Offset -> Profile: %d, Episodic: %d, Semantic: %d, Messages: %d",
-            p_count, e_count, s_count, _get("profile_message_index", 0), _get("episodic_message_index", 0), _get("semantic_message_index", 0), m_list_len
+            "🧠 [Memory State] Count -> Profile: %d, Episodic: %d, Semantic: %d, Summary: %d | Offset -> Profile: %d, Episodic: %d, Semantic: %d, Messages: %d",
+            p_count, e_count, s_count, sum_count, _get("profile_message_index", 0), _get("episodic_message_index", 0), _get("semantic_message_index", 0), m_list_len
         )
 
 
@@ -494,7 +503,8 @@ class MemoryManager:
         formatter_map: Dict[str, Callable[[List[MemoryRecordT]], str]] = {
             "profile": self._format_profile,
             "episodic": self._format_episodic,
-            "semantic": self._format_semantic
+            "semantic": self._format_semantic,
+            "summary": lambda records: f"--- SUMMARY MEMORY ({len(records)}) ---\n" + "\n".join([json.dumps({"id": self._get_v(r, 'id'), "summary": self._get_v(r, 'summary')}, ensure_ascii=False) for r in records])
         }
 
         for target in selected_targets:
@@ -517,3 +527,7 @@ class MemoryManager:
                 sections.append(formatter(sliced))
 
         return "\n\n".join(sections) if sections else "No memory available."
+
+memory_manager = MemoryManager(
+    runtime=memory_runtime
+)
