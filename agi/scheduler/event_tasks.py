@@ -30,8 +30,6 @@ logger = logging.getLogger(__name__)
 # 📐 1. Parameter Contracts & Constants
 # ------------------------------------------------------------------------------
 class ContextSummarySchema(BaseModel):
-    verbose: bool = Field(default=True, description="是否打印微观全量明细表")
-    limit: int = Field(default=5000, ge=1, le=10000, description="单次最大扫描的任务实例数")
     current_message_count: int = Field(..., description="当前会话中的总消息条数")
     current_token_count: int = Field(..., description="当前会话的总 Token 数")
     msg_threshold: Optional[int] = Field(None, description="触发摘要的消息条数阈值 (若为 None 则使用默认值 100)")
