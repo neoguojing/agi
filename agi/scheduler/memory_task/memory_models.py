@@ -203,7 +203,6 @@ class EpisodicMemoryRecord(BaseMemoryRecord):
         # 🌟 现在的去重/检索主键直接绑定 ID
         return self.id
 
-
 # =========================================================
 # Semantic Memory (Simplified for LLM)
 # =========================================================
@@ -287,7 +286,6 @@ class SemanticMemoryRecord(BaseMemoryRecord):
         obj = self.object.strip().lower() if getattr(self, "object", None) else ""
         return f"{subject}:{predicate}:{obj}" if subject and obj else ""
 
-
 # =========================================================
 # Summary Memory (Added for event_tasks)
 # =========================================================
@@ -296,11 +294,12 @@ class SummaryRecord(BaseMemoryRecord):
     summary: str = Field(...)
     source_conversation_id: str = Field(...) # Reference to the conversation that triggered this
     confidence: float = Field(default=0.8, ge=0.0, le=1.0)
+    cutoff_index: int = Field(default=0, description="The index in the original history where truncation occurred.")
+    new_messages: list[AnyMessage] = Field(default_factory=list, description="The summarized conversation flow.")
 
     @property
     def dedup_key(self) -> str:
         return self.source_conversation_id
-
 
 # =========================================================
 # 🌟 终极优雅：定义强类型存储容器 (将黑魔法封装在内)

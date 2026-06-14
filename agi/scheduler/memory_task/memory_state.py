@@ -65,16 +65,19 @@ class MemoryState(AgentState[ResponseT]):
     episodic_records: Annotated[NotRequired[dict[str, EpisodicMemoryRecord]], memory_reducer]
     semantic_records: Annotated[NotRequired[dict[str, SemanticMemoryRecord]], memory_reducer]
     summary_records: Annotated[NotRequired[dict[str, SummaryRecord]], memory_reducer]
+    summarized_context_records: Annotated[NotRequired[dict[str, SummarizedContextRecord]], memory_reducer]
     organization_reason: Annotated[NotRequired[str], LastValue]
     profile_message_index: Annotated[NotRequired[int], LastValue]
     episodic_message_index: Annotated[NotRequired[int], LastValue]
     semantic_message_index: Annotated[NotRequired[int], LastValue]
+    summarized_context_message_index: Annotated[NotRequired[int], LastValue]
 
 MEMORY_KEY_MAP: Dict[MemoryTarget, str] = {
     "profile": "profile_records",
     "episodic": "episodic_records",
     "semantic": "semantic_records",
-    "summary": "summary_records"
+    "summary": "summary_records",
+    "summarized_context": "summarized_context_records"
 }
 
 MemoryRecordT = Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord, SummaryRecord, dict]
@@ -85,10 +88,12 @@ MemoryStateKey = Literal[
     "episodic_records",
     "semantic_records",
     "summary_records",
+    "summarized_context_records",
     "organization_reason",
     "profile_message_index",
     "episodic_message_index",
-    "semantic_message_index"
+    "semantic_message_index",
+    "summarized_context_message_index"
 ]
 
 ALLOWED_MEMORY_KEYS = set(get_args(MemoryStateKey))
@@ -97,7 +102,8 @@ INDEX_KEY_MAP: Dict[MemoryTarget, str] = {
     "profile": "profile_message_index",
     "episodic": "episodic_message_index",
     "semantic": "semantic_message_index",
-    "summary": "summary_message_index"
+    "summary": "summary_message_index",
+    "summarized_context": "summarized_context_message_index"
 }
 
 MEMORY_KEY = "memories"
