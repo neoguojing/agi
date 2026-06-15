@@ -281,22 +281,45 @@ class MemoryManager:
         """
         await self.ensure_initialized()
         await self.refresh_messages()
-        if not self._messages: return []
-
-        full_messages = convert_to_messages(self._messages.copy())
-        first_msg = full_messages[0]
-        if isinstance(first_msg, HumanMessage) and getattr(first_msg, "additional_kwargs", {}).get("lc_source") == "summarization":
-            return full_messages
-
+        if not self._messages: 
+            return []
+        
         summary_rec = await self.get_current_summary()
         if not summary_rec:
-            return full_messages
+            return convert_to_messages(self._messages.copy())
 
-        cutoff = getattr(summary_rec, "cutoff_index", 0)
+        # 1. 提取原始截断点
+        raw_cutoff = getattr(summary_rec, "cutoff_index", 0)
         summary = getattr(summary_rec, "summary", None)
-        file_path = getattr(summary_rec, "file_path", 0)
-        summary_msg = self._build_summary_message(summary,file_path)
-        return summary_msg + full_messages[cutoff:]
+        
+        # 🐛 Bug 修复：file_path 的默认值不应该是数字 0，改为 None 或空字符串更安全
+        file_path = getattr(summary_rec, "file_path", None) 
+
+        # 2. 🛡️ 【核心修复】边界防御性裁剪，确保 cutoff 安全落入 [0, msg_len] 区间
+        msg_len = len(self._messages)
+        if raw_cutoff < 0:
+            logger.warning("⚠️ [Memory] Negative cutoff_index detected: %d. Resetting to 0.", raw_cutoff)
+            cutoff = 0
+        elif raw_cutoff > msg_len:
+            logger.error(
+                "🔥 [Memory] Cutoff_index (%d) exceeds current message length (%d). "
+                "Data desync detected! Clamping to %d.", 
+                raw_cutoff, msg_len, msg_len
+            )
+            cutoff = msg_len
+        else:
+            cutoff = raw_cutoff
+
+        # 3. 组装上下文
+        summary_msg = self._build_summary_message(summary, file_path)
+        
+        # 确保 summary_msg 是列表格式，以便进行列表拼接
+        if not isinstance(summary_msg, list):
+            summary_msg = [summary_msg] if summary_msg else []
+
+        target_message = convert_to_messages(self._messages.copy()[cutoff:])
+        
+        return summary_msg + target_message
 
     # ==================== Structured Memory Flow ====================
 
