@@ -294,9 +294,9 @@ class SemanticMemoryRecord(BaseMemoryRecord):
 class SummaryRecord(BaseMemoryRecord):
     summary: str = Field(...)
     source_conversation_id: str = Field(...) # Reference to the conversation that triggered this
-    confidence: float = Field(default=0.8, ge=0.0, le=1.0)
     cutoff_index: int = Field(default=0, description="The index in the original history where truncation occurred.")
     new_messages: list[AnyMessage] = Field(default_factory=list, description="The summarized conversation flow.")
+    reason: str = Field(...)
 
 # =========================================================
 # 🌟 终极优雅：定义强类型存储容器 (将黑魔法封装在内)
@@ -348,7 +348,7 @@ CONTAINER_MAPPING = {
     "profile_records": ProfileContainer,
     "episodic_records": EpisodicContainer,
     "semantic_records": SemanticContainer,
-    "summary_records": SummaryContainer,
+    "summary_record": SummaryContainer,
     "profile_message_index": SafeScalarContainer,
     "episodic_message_index": SafeScalarContainer,
     "semantic_message_index": SafeScalarContainer,

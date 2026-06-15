@@ -13,7 +13,9 @@ from agi.scheduler.memory_task.runtime import MemoryTaskRuntime, memory_runtime
 from agi.scheduler.memory_task.memory_models import SummaryRecord
 from agi.scheduler.task_hub import TaskContext, hub
 
+from __future__ import annotations
 from langchain_core.language_models import BaseChatModel
+from deepagents.backends.protocol import BackendProtocol
 from langchain_core.messages import (
     AIMessage,
     HumanMessage,
@@ -128,12 +130,6 @@ def _find_safe_cutoff_point(messages: List[AnyMessage], cutoff_index: int) -> in
     """
     【算法：AI/Tool 消息对保护】
     确保截断点不会将 AIMessage (Tool Call) 和对应的 ToolMessage (Tool Response) 分离开。
-
-    逻辑：
-    1. 如果当前索引处是 ToolMessage，则向后扫描所有连续的 ToolMessages。
-    2. 记录这些 ToolMessages 涉及的所有 tool_call_id。
-    3. 向前回溯搜索，直到找到包含这些 ID 的 AIMessage。
-    4. 将截断点移动到该 AIMessage 之前，确保调用链完整。
     """
     if cutoff_index >= len(messages) or not isinstance(messages[cutoff_index], ToolMessage):
         return cutoff_index
@@ -156,14 +152,6 @@ def _determine_cutoff_index(messages: List[AnyMessage], token_counter: Callable,
     """
     【算法：动态截断点计算】
     计算需要保留的上下文窗口边界。
-
-    策略：
-    - 基于消息数：直接计算 (总数 - 保留数)。
-    - 基于 Token 数：
-        采用 二分查找 (Binary Search) 算法。在消息列表中寻找最小索引 i，
-        使得 messages[i:] 的 Token 总数 <= 目标保留 Token 数。
-        时间复杂度 O(log N * T)，其中 T 为 Token 计数开销。
-    - 最后调用 _find_safe_cutoff_point 确保不破坏 Tool 调用链。
     """
     kind, value = keep_policy
     if kind == "messages":
@@ -197,10 +185,6 @@ def _determine_cutoff_index(messages: List[AnyMessage], token_counter: Callable,
     return _find_safe_cutoff_point(messages, max(0, len(messages) - _DEFAULT_MESSAGES_TO_KEEP))
 
 def _truncate_tool_call(tool_call: dict[str, Any]) -> dict[str, Any]:
-    """
-    对单个工具调用进行参数裁剪。
-    针对写文件等可能产生海量文本的工具，将参数截断至 2000 字符，防止摘要 LLM 崩溃。
-    """
     args = tool_call.get("args", {})
     truncated_args = {}
     modified = False
@@ -215,11 +199,6 @@ def _truncate_tool_call(tool_call: dict[str, Any]) -> dict[str, Any]:
     return tool_call
 
 def _truncate_args(messages: List[AnyMessage]) -> tuple[List[AnyMessage], bool]:
-    """
-    【特性：工具参数预截断】
-    扫描消息列表，对处于保留窗口之外的旧消息中的特定工具调用进行参数裁剪。
-    仅针对 'write_file' 和 'edit_file' 工具，因为这些工具最容易产生上下文爆炸。
-    """
     cutoff_index = len(messages) - _DEFAULT_MESSAGES_TO_KEEP
     if cutoff_index <= 0:
         return messages, False
@@ -250,13 +229,7 @@ def _truncate_args(messages: List[AnyMessage]) -> tuple[List[AnyMessage], bool]:
     return truncated_messages, modified
 
 async def _offload_to_backend(backend: Any, messages: List[AnyMessage], thread_id: str) -> Optional[str]:
-    """
-    【特性：历史离线存储】
-    在消息被摘要替换前，将其持久化到后端文件。
-    采用追加模式，每个摘要事件产生一个带时间戳的章节，确保历史可追溯且不丢失。
-    """
     path = f"/conversation_history/{thread_id}.md"
-    # 过滤掉之前的摘要消息，防止存储递归摘要
     filtered_messages = [msg for msg in messages if not (isinstance(msg, HumanMessage) and msg.additional_kwargs.get("lc_source") == "summarization")]
     timestamp = datetime.now(UTC).isoformat()
     new_section = f"## Summarized at {timestamp}\n\n{get_buffer_string(filtered_messages)}\n\n"
@@ -281,10 +254,6 @@ async def _offload_to_backend(backend: Any, messages: List[AnyMessage], thread_i
         return None
 
 def _build_summary_message(summary: str, file_path: Optional[str]) -> List[AnyMessage]:
-    """
-    构建最终插入会话的摘要消息。
-    如果离线存储成功，会在消息中加入文件路径引用，允许 Agent 在需要时通过工具读取历史细节。
-    """
     if file_path is not None:
         content = f"You are in the middle of a conversation that has been summarized.\n\nThe full conversation history has been saved to {file_path} should you need to refer back to it for details.\n\nA condensed summary follows:\n\n<summary>\n{summary}\n</summary>"
     else:
@@ -296,35 +265,16 @@ def _build_summary_message(summary: str, file_path: Optional[str]) -> List[AnyMe
 # ------------------------------------------------------------------------------
 
 async def execute_context_summary_pipeline(ctx: TaskContext, payload: ContextSummarySchema):
-    """
-    【核心执行流水线】
-    实现从有效上下文提取 $\rightarrow$ 摘要生成 $\rightarrow$ 状态同步的完整链路。
-
-    详细步骤：
-    1. 获取有效上下文：[上一次摘要消息 + 之后的所有增量消息]。
-    2. 参数截断：对旧消息中的巨量工具参数进行裁剪，降低摘要 LLM 负载。
-    3. 计算截断索引：
-       - 计算相对索引 (relative_cutoff)：决定当前有效列表中哪些部分需要被再次压缩。
-       - 映射绝对索引 (absolute_cutoff)：将相对位置转换回原始全量消息流的索引，用于后端存储。
-    4. 离线存储：将 [0, absolute_cutoff] 的原始消息流持久化到 Markdown 文件。
-    5. 生成摘要：将有效列表中的 [0, relative_cutoff] 部分发送给 LLM。
-    6. 状态同步：
-       - 更新 SummaryRecord (包含摘要文本和绝对截断点)。
-       - 更新 session 消息列表为 [新摘要消息, 保留的增量消息]。
-    """
     runtime = cast(MemoryTaskRuntime, ctx.runtime)
     token_counter = _get_approximate_token_counter(runtime.llm)
 
-    # 1. 获取当前有效消息 (Reflects the actual window the LLM sees)
     effective_messages = await memory_manager.get_effective_summary_context()
     if not effective_messages:
         logger.info("[event_summary] ⏭️ No messages to summarize.")
         return
 
-    # 2. 工具参数截断 (Feature from summarization.py)
     effective_messages, _ = _truncate_args(effective_messages)
 
-    # 3. 计算截断位置
     keep_policy = ("messages", _DEFAULT_MESSAGES_TO_KEEP)
     relative_cutoff = _determine_cutoff_index(effective_messages, token_counter, keep_policy)
 
@@ -332,26 +282,28 @@ async def execute_context_summary_pipeline(ctx: TaskContext, payload: ContextSum
         logger.info("[event_summary] ⏭️ Cutoff index 0, nothing to compress.")
         return
 
-    # 将相对索引映射回原始消息流的绝对索引
     thread_id = runtime.thread_id or "unknown"
-    prev_summary = memory_manager._state.get("summary_records", {}).get(thread_id)
+    prev_summary = await memory_manager.get_current_summary()
 
     if prev_summary:
         prev_cutoff = getattr(prev_summary, "cutoff_index", 0)
-        # relative_cutoff - 1 是因为 effective_messages[0] 是之前的摘要消息
         absolute_cutoff = prev_cutoff + max(0, relative_cutoff - 1)
     else:
         absolute_cutoff = relative_cutoff
 
-    # 4. 离线存储原始消息
     full_messages = await memory_manager.refresh_messages()
     messages_to_summarize = full_messages[:absolute_cutoff]
     preserved_messages = full_messages[absolute_cutoff:]
 
-    backend = runtime.backend
+    def _get_backend(runtime) -> BackendProtocol:
+        backend = runtime.backend
+        if callable(backend):
+            return backend(runtime)
+        return backend
+    
+    backend = _get_backend(runtime)
     file_path = await _offload_to_backend(backend, messages_to_summarize, thread_id)
 
-    # 5. 生成摘要 (Summarize the "effective" part that was cut off)
     summarize_input = effective_messages[:relative_cutoff]
     trimmed = trim_messages(
         summarize_input,
@@ -374,23 +326,20 @@ async def execute_context_summary_pipeline(ctx: TaskContext, payload: ContextSum
         logger.error("[event_summary] ❌ LLM Summary Error: %s", e)
         return
 
-    # 6. 状态提交与同步
+    summary_msgs = _build_summary_message(summary_text, file_path)
+    new_messages = [*summary_msgs, *preserved_messages]
+
     new_record = SummaryRecord(
         summary=summary_text,
         source_conversation_id=thread_id,
-        confidence=0.9 if payload.current_token_count < 100000 else 0.7,
-        cutoff_index=absolute_cutoff
+        cutoff_index=absolute_cutoff,
+        new_messages=new_messages,
+        reason = f"Event summary triggered {payload}. Absolute cutoff: {absolute_cutoff} messages."
     )
 
-    await memory_manager.commit_incremental_memory(
-        task_type="summary",
-        memory_value=new_record,
-        reason=f"Event summary triggered. Absolute cutoff: {absolute_cutoff} messages."
-    )
+    await memory_manager.set_current_summary(record=new_record)
 
-    if hasattr(ctx, "messages"):
-        summary_msgs = _build_summary_message(summary_text, file_path)
-        ctx.messages = [*summary_msgs, *preserved_messages]
+    
 
 # ------------------------------------------------------------------------------
 # 📡 Event Entry Point
@@ -403,36 +352,22 @@ async def execute_context_summary_pipeline(ctx: TaskContext, payload: ContextSum
     timeout=60
 )
 async def handle_context_summary(ctx: TaskContext, payload: ContextSummarySchema):
-    """
-    处理上下文摘要事件的入口。
-
-    逻辑分流：
-    1. 准备有效上下文 $\rightarrow$ 2. 阈值决策 $\rightarrow$ 3. 执行压缩流水线。
-    """
     logger.info("[%s] 📩 Received 'event_summary' trigger.", ctx.trace_id)
-
     runtime = cast(MemoryTaskRuntime, ctx.runtime)
-
-    # 决策步骤：通过有效上下文和 Payload 统计值判定是否需要压缩
     effective_messages = await memory_manager.get_effective_summary_context()
     if not effective_messages:
         return
-
     triggers = []
     if payload.msg_threshold is not None:
         triggers.append(("messages", payload.msg_threshold))
     else:
         triggers.append(("messages", 100))
-
     if payload.token_threshold is not None:
         triggers.append(("tokens", payload.token_threshold))
     else:
         triggers.append(("tokens", 60000))
-
-    # 仅在满足触发条件时启动昂贵的执行流水线
     if not _should_summarize(effective_messages, payload.current_token_count, triggers, runtime.llm):
         logger.info("[event_summary] ⏳ Skipping: Thresholds not met (Tokens: %d, Msgs: %d)",
                     payload.current_token_count, len(effective_messages))
         return
-
     await execute_context_summary_pipeline(ctx, payload)

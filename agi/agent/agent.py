@@ -128,6 +128,7 @@ async def get_async_agent() -> CompiledStateGraph:
         )
         runtime_state_bridge.update_dynamic_deps("graph",_async_agent)
         runtime_state_bridge.update_dynamic_deps("store",resources["store"])
+        runtime_state_bridge.update_dynamic_deps("backend",make_backend)
     return _async_agent
 
 

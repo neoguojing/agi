@@ -133,8 +133,15 @@ The below <agent_memory> was loaded in from files in your filesystem. As you lea
     
 def make_backend(runtime):
     root = Path(CACHE_DIR).resolve()
-    user_id = runtime.context.user_id
-    session_id = runtime.context.thread_id
+    user_id = None
+    session_id = None
+    if hasattr(runtime, 'context') and hasattr(runtime.context, 'user_id'):
+        user_id = runtime.context.user_id
+        session_id = getattr(runtime.context, 'thread_id', None)
+    else:
+        # 降级从 runtime 直接获取
+        user_id = getattr(runtime, 'user_id', None)
+        session_id = getattr(runtime, 'thread_id', None)
     return CompositeBackend(
         default=FilesystemBackend(root ,virtual_mode=False),
         routes={

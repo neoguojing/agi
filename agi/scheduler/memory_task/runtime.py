@@ -3,7 +3,6 @@ from typing import cast
 from langgraph.store.base import BaseStore
 from langgraph.graph.state import CompiledStateGraph
 from langgraph_sdk import get_client
-
 # 🔄 核心对齐：引入标准上下文容器与基类
 from agi.scheduler.task_hub import TaskContext, BaseRuntime, hub, ExternalStateBridge, runtime_state_bridge
 from agi.agent.models import ModelProvider
@@ -46,7 +45,7 @@ class MemoryTaskRuntime(BaseRuntime):
         return self._bridge.get_value("user_id")
     
     @property
-    def backend(self) -> str:
+    def backend(self):
         """动态感知外部线程传入的backend"""
         return self._bridge.get_value("backend")
     
