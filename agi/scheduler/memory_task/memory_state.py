@@ -1,15 +1,11 @@
 from typing import Any, Callable, Dict, Generator, List, Literal, Optional, TypeVar, Annotated,Union
 from typing import cast,get_args
 from langgraph.channels import LastValue
-from langgraph.graph.state import CompiledStateGraph
-
 from aiorwlock import RWLock
 import json
 import logging
-import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from contextlib import asynccontextmanager
 
 try:
     from typing import NotRequired
@@ -31,6 +27,7 @@ from agi.scheduler.memory_task.memory_models import (
     SafeScalarContainer
 )
 from agi.scheduler.memory_task.runtime import MemoryTaskRuntime,memory_runtime
+from langchain_core.messages import HumanMessage
 
 logger = logging.getLogger(__name__)
 
@@ -64,20 +61,17 @@ class MemoryState(AgentState[ResponseT]):
     profile_records: Annotated[NotRequired[dict[str, ProfileMemoryRecord]], memory_reducer]
     episodic_records: Annotated[NotRequired[dict[str, EpisodicMemoryRecord]], memory_reducer]
     semantic_records: Annotated[NotRequired[dict[str, SemanticMemoryRecord]], memory_reducer]
-    summary_records: Annotated[NotRequired[dict[str, SummaryRecord]], memory_reducer]
-    summarized_context_records: Annotated[NotRequired[dict[str, SummarizedContextRecord]], memory_reducer]
+    summary_records: Annotated[NotRequired[dict[str, SummaryRecord]], LastValue]
     organization_reason: Annotated[NotRequired[str], LastValue]
     profile_message_index: Annotated[NotRequired[int], LastValue]
     episodic_message_index: Annotated[NotRequired[int], LastValue]
     semantic_message_index: Annotated[NotRequired[int], LastValue]
-    summarized_context_message_index: Annotated[NotRequired[int], LastValue]
 
 MEMORY_KEY_MAP: Dict[MemoryTarget, str] = {
     "profile": "profile_records",
     "episodic": "episodic_records",
     "semantic": "semantic_records",
     "summary": "summary_records",
-    "summarized_context": "summarized_context_records"
 }
 
 MemoryRecordT = Union[ProfileMemoryRecord, EpisodicMemoryRecord, SemanticMemoryRecord, SummaryRecord, dict]
@@ -88,12 +82,10 @@ MemoryStateKey = Literal[
     "episodic_records",
     "semantic_records",
     "summary_records",
-    "summarized_context_records",
     "organization_reason",
     "profile_message_index",
     "episodic_message_index",
     "semantic_message_index",
-    "summarized_context_message_index"
 ]
 
 ALLOWED_MEMORY_KEYS = set(get_args(MemoryStateKey))
@@ -102,8 +94,6 @@ INDEX_KEY_MAP: Dict[MemoryTarget, str] = {
     "profile": "profile_message_index",
     "episodic": "episodic_message_index",
     "semantic": "semantic_message_index",
-    "summary": "summary_message_index",
-    "summarized_context": "summarized_context_message_index"
 }
 
 MEMORY_KEY = "memories"
@@ -120,7 +110,6 @@ class AgentContextConfig:
         "profile": 50,
         "episodic": 30,
         "semantic": 50,
-        "summary": 100
     })
 
     custom_filters: List[MemoryFilterFn] = field(default_factory=list)
@@ -188,9 +177,6 @@ class MemoryManager:
     async def ensure_initialized(self) -> None:
         """
         确保内存管理器已初始化（懒加载设计）。
-        🌟 修复一：直接采用原生数据，去除所有 .value 或 ["value"] 的判断。
-        🌟 修复二：将游标和原因一并加入加载列表，防止重启后游标丢失。
-        🌟 修复三：引入 Pydantic 容器解析，并加入 try-except 容错，平滑降级防止旧标量导致 orjson 崩溃。
         """
         if self._is_initialized:
             return
@@ -202,41 +188,29 @@ class MemoryManager:
             logger.info("Initializing memory manager from remote store... thread_id=%s", self.runtime.thread_id)
             local_state_updates = {}
 
-            # 2. 统一加载所有相关的自定义存储 Key（包含记忆主体、游标索引、提交原因）
             keys_to_load = ALLOWED_MEMORY_KEYS
 
             if self.runtime.store:
                 for key in keys_to_load:
-                    # 🌟 核心修复：把 try 提到最外层，死死护住 aget 这一行
                     try:
                         raw_data = await self.runtime.store.aget(namespace=self.namespace, key=key)
                         if raw_data is not None:
-                            # 根据映射自动找到对应的 Pydantic 容器进行反序列化灌注
                             container_cls = CONTAINER_MAPPING.get(key)
                             if container_cls:
-                                # 标准路径：用 RootModel 进行高级解包还原
                                 container_instance = container_cls.model_validate(raw_data.value)
                                 local_state_updates[key] = container_instance.root
                             else:
                                 local_state_updates[key] = raw_data
 
                     except Exception as e:
-                        # 🌟 强力兜底：无论是 aget 内部反序列化历史裸数据崩溃（orjson.JSONDecodeError），
-                        # 还是 RootModel 校验失败，统统在这里被拦截。
                         logger.warning(
-                            "Failed to load or hydrate key '%s' from remote store. "
-                            "This usually happens when old raw scalars (like pure int/str) exist in DB. "
-                            "Error: %s",
+                            "Failed to load or hydrate key '%s' from remote store. Error: %s",
                             key, str(e)
                         )
-
-                        # 🌟 绝妙降级：既然底层已经因为不是 JSON 而解析失败了，那它在数据库里大概率就是个裸字符串或数字。
-                        # 我们选择暂时在本地内存中初始化为空（或者你可以根据 key 的类型给个 0 或 {} 兜底）。
-                        # 当下一次 commit 触发时，新代码会用 SafeScalarContainer/Container 格式把正确的数据写进去，从而洗干净数据库。
                         if "index" in key:
-                            local_state_updates[key] = 0  # 游标类 Key 挂了，安全兜底为 0
+                            local_state_updates[key] = 0
                         else:
-                            local_state_updates[key] = {} # 记忆体类 Key 挂了，安全兜底为空字典
+                            local_state_updates[key] = {}
 
             self._state.update(local_state_updates)
             self._is_initialized = True
@@ -264,7 +238,6 @@ class MemoryManager:
 
         if self.runtime.store:
             try:
-                # 写入纯数字游标
                 await self.runtime.store.aput(namespace=self.namespace, key=cursor_key, value=SafeScalarContainer(repaired_cursor).model_dump(mode="json"))
             except Exception:
                 logger.exception("cursor repair remote store failed")
@@ -280,12 +253,9 @@ class MemoryManager:
     async def get_incremental_messages(self, task_type: MemoryTarget) -> list:
         """
         获取增量消息。
-        🌟 游标完全在类内部闭环：自动在内存中记录本次处理的“终点线边界”，外部完全不需要感知游标。
         """
         await self.ensure_initialized()
-
-        await self.refresh_messages()  # 强制刷新消息，确保拿到最新的消息列表
-
+        await self.refresh_messages()
         cursor = await self.repair_memory_index(task_type)
 
         async with self._lock.writer:
@@ -295,33 +265,73 @@ class MemoryManager:
                 return []
 
             incremental = self._messages[cursor:current_len]
-
-            # 🌟 内部闭环：静默默契地记下这一轮大模型处理的截止位置
             self._processing_cursors[task_type] = current_len
 
             logger.info("Fetched incremental messages. task=%s, from_cursor=%s, locked_to_boundary=%s",
                         task_type, cursor, current_len)
             return incremental.copy()
 
+    async def get_effective_summary_context(self) -> list:
+        """
+        组装 [当前摘要消息 + 增量消息] 的有效上下文。
+        用于摘要任务，确保 LLM 看到的是经过压缩的历史 + 最新增量。
+
+        算法细节：
+        1. 如果当前消息流为空，直接返回。
+        2. 检查消息流的第一条消息是否为摘要消息 (lc_source == 'summarization')。
+           - 如果是，说明状态已经是压缩后的，直接返回全量消息。
+        3. 如果不是，但内存中存在摘要记录 (SummaryRecord)：
+           - 说明当前消息流是全量的，但需要根据记录中的 cutoff_index 进行压缩。
+           - 返回 [摘要消息] + [原始消息[cutoff_index:]]。
+        4. 否则，返回全量消息。
+        """
+        await self.ensure_initialized()
+        await self.refresh_messages()
+
+        if not self._messages:
+            return []
+
+        # 1. 检查是否已经是压缩状态 (First message is summary)
+        first_msg = self._messages[0]
+        if isinstance(first_msg, HumanMessage) and getattr(first_msg, "additional_kwargs", {}).get("lc_source") == "summarization":
+            return self._messages.copy()
+
+        # 2. 检查是否有可用的摘要记录来执行压缩
+        thread_id = self.runtime.thread_id
+        summary_rec = self._state.get("summary_records", {}).get(thread_id)
+
+        if not summary_rec:
+            # 没有摘要记录 -> 返回全量
+            return self._messages.copy()
+
+        # 从摘要记录中提取索引和内容
+        cutoff = getattr(summary_rec, "cutoff_index", 0)
+        summary_text = getattr(summary_rec, "summary", "")
+
+        # 组装摘要消息
+        summary_msg = HumanMessage(
+            content=f"Here is a summary of the conversation to date:\n\n{summary_text}",
+            additional_kwargs={"lc_source": "summarization"}
+        )
+
+        # 返回 [摘要消息] + [原始消息流中截断点之后的所有消息]
+        return [summary_msg] + self._messages[cutoff:]
+
     async def commit_incremental_memory(self, task_type: MemoryTarget, memory_value: object, reason: str) -> None:
         """
         提交增量记忆。
-        🌟 外部调用无需传游标：内部自动对齐 get 时记录的终点线，实现完美解耦。
         """
         await self.ensure_initialized()
 
-        # 1. 从内部“记事本”获取刚才 get 锁定的目标游标
         async with self._lock.reader:
             target_cursor = self._processing_cursors.get(task_type)
 
         if target_cursor is None:
-            # 异常兜底：如果外部直接调 commit 而没调 get，采用当前已知游标
             async with self._lock.reader:
                 cursor_key = INDEX_KEY_MAP.get(task_type)
                 target_cursor = self._state.get(cursor_key, 0)
             logger.warning("No active processing cursor found for %s, falling back to current cursor: %s", task_type, target_cursor)
 
-        # 2. 推进核心提交
         await self.commit_memory(
             task_type=task_type,
             memory_value=memory_value,
@@ -340,47 +350,37 @@ class MemoryManager:
             current_cursor = self._state.get(cursor_key, 0)
             current_memory = self._state.get(memory_key, {})
 
-        # 拦截过期/回滚的提交
         if cursor <= current_cursor:
             logger.warning("cursor rollback ignored task=%s current=%s incoming_commit_cursor=%s",
                            task_type, current_cursor, cursor)
             return
 
-        # 锁外合并字典数据
         merged_memory = (
             memory_reducer(current_memory, memory_value)
             if memory_key in MEMORY_KEY_MAP.values()
             else memory_value
         )
 
-        # 🌟 极简直写：直接将你原生的纯数据（字典/整数/字符串）写入 Store，不加任何包装
         if self.runtime.store:
             try:
-                # 🌟 优雅脱水写入：
-                # 1. 数字标量安全包裹
                 await self.runtime.store.aput(namespace=self.namespace, key=cursor_key, value=SafeScalarContainer(cursor).model_dump(mode="json"))
 
-                # 2. 记忆载体通过映射的容器，一行代码完成高性能对象脱水 (转为纯 native JSON 字典)
                 if memory_value:
                     container_cls = CONTAINER_MAPPING.get(memory_key)
                     if container_cls:
-                        # 扔进容器，通过 model_dump(mode="json") 自动将内部所有的 Record 实例完美榨干成纯 native
                         native_payload = container_cls(merged_memory).model_dump(mode="json")
                         await self.runtime.store.aput(namespace=self.namespace, key=memory_key, value=native_payload)
 
-                # 3. 原因文本安全包裹
                 await self.runtime.store.aput(namespace=self.namespace, key="organization_reason", value=SafeScalarContainer(reason).model_dump(mode="json"))
             except Exception:
                 logger.exception("memory commit remote store failed task=%s", task_type)
                 raise
 
-        # 进写锁，极速同步本地内存，并清除追踪器
         async with self._lock.writer:
             self._state[memory_key] = merged_memory
             self._state[cursor_key] = cursor
             self._state["organization_reason"] = reason
 
-            # 如果追踪器的任务已经顺利落地，将其移出记事本
             if self._processing_cursors.get(task_type) == cursor:
                 self._processing_cursors.pop(task_type, None)
 
@@ -416,7 +416,6 @@ class MemoryManager:
             p_count, e_count, s_count, sum_count, _get("profile_message_index", 0), _get("episodic_message_index", 0), _get("semantic_message_index", 0), m_list_len
         )
 
-
     def _get_utc_timestamp(self, rec: MemoryRecordT) -> datetime:
         if isinstance(rec, str): return datetime.min.replace(tzinfo=timezone.utc)
         dt = None
@@ -449,7 +448,7 @@ class MemoryManager:
         if isinstance(rec, dict): data_dict = rec.copy()
         elif hasattr(rec, 'model_dump'): data_dict = rec.model_dump(mode="json")
         elif hasattr(rec, '__dict__'):
-            data_dict = {k: v for k, v in rec.__dict__.items() if not k.startswith('_')}
+            data_dict = {k: v for k, v in rec.__dict__.copy() if not k.startswith('_')}
 
         for k, v in data_dict.items():
             if isinstance(v, datetime): data_dict[k] = v.isoformat()
@@ -487,7 +486,7 @@ class MemoryManager:
             lines.append(json.dumps(item, ensure_ascii=False))
         return "\n".join(lines)
 
-    def export_full_jsonl_stream(self, targets: Optional[List[MemoryTarget]] = None) -> Generator[str, None, None]:
+    def export_full_jsonl_stream(self, targets: Optional[List[MemoryTarget]] = None) -> Generator[str, None]:
         selected_targets = list(MEMORY_KEY_MAP.keys()) if targets is None else targets
         for target in selected_targets:
             records = self._to_record_list(target)
@@ -534,6 +533,6 @@ class MemoryManager:
 
         return "\n\n".join(sections) if sections else "No memory available."
 
-memory_manager = MemoryManager(
-    runtime=memory_runtime
-)
+
+memory_manager = MemoryManager(runtime=memory_runtime)
+

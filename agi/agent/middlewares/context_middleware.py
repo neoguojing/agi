@@ -4,13 +4,15 @@ import platform
 from datetime import datetime, timedelta, timezone
 from typing import Callable, List, Awaitable, Any, Annotated, Union, Optional
 from venv import logger
-from langchain_core.messages import BaseMessage, AIMessage, ToolMessage
+from langchain_core.messages import BaseMessage, AIMessage, ToolMessage, HumanMessage
 from langchain_core.tools import StructuredTool, InjectedToolCallId
 from langgraph.types import Command
 from langchain.tools import ToolRuntime,tool
 from langgraph.channels import LastValue
 from langgraph.runtime import Runtime
 from langchain_core.runnables import RunnableConfig
+from langchain_core.messages.utils import get_buffer_string
+from langchain_core.messages import AnyMessage
 
 from pydantic import BaseModel, Field
 
@@ -59,7 +61,7 @@ class OrganizeMemoryInput(BaseModel):
 # --- Prompts ---
 
 ORGANIZE_MEMORY_SYSTEM_PROMPT = """## Long-Term Memory Manager
-You can proactively manage your long-term memory using the `organize_memory` tool. 
+You can proactively manage your long-term memory using the `organize_memory` tool.
 Treat this tool as your "Memory Maintenance" interface. It supports simultaneous adding/updating (Upsert) and removing (Deletion) of memories.
 
 Whenever you encounter new 'golden' information, notice a shift in user preferences, or need to consolidate conflicting facts, use this tool immediately to keep your memory state accurate, compact, and deduplicated.
@@ -72,9 +74,9 @@ ORGANIZE_MEMORY_TOOL_DESCRIPTION = """Use this tool to explicitly upsert (add/up
 
 ## 1. Choose Target
 - `profile`: For persistent preferences, habits, or user identity (e.g., 'I always use VS Code').
-- `episodic`: For significant events, decisions, or milestones (e.g., 'Project architecture finalized'). 
+- `episodic`: For significant events, decisions, or milestones (e.g., 'Project architecture finalized').
 Constraint: Must be tied to explicit user intent or project outcomes; strictly exclude trivial chitchat and intermediate debugging steps.
-- `semantic`: For stable factual knowledge triples (e.g., 'user' -> 'use' -> 'PostgreSQL'). 
+- `semantic`: For stable factual knowledge triples (e.g., 'user' -> 'use' -> 'PostgreSQL').
 Constraint: Only extract user-provided facts or long-term preferences; strictly ignore AI-generated explanations, generic definitions, and ephemeral context.
 
 ## 2. How to Apply Delta Updates
@@ -95,6 +97,7 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
     2. 后台异步执行记忆提取 (MemoryMaintenanceManager)
     3. 动态注入最新记忆 (format_memory_for_llm)
     4. 拦截 `organize_memory` 工具调用，将模型直接提供的记录同步刷入记忆存储
+    5. 实现压缩会话覆盖：将全量消息流替换为 [摘要消息 + 增量消息]
     """
     state_schema = MemoryState
 
@@ -130,7 +133,7 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
     ) -> Command[MemoryState]:
         """Synchronously persist key information into long-term memory."""
         pass
-        
+
     async def _aorganize_memory(
         self,
         runtime: ToolRuntime[ContextT, MemoryState[ResponseT]],
@@ -157,8 +160,6 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
                     target_dict[delete_key.strip().lower()] = None
 
             # 3. Persist to Store via MemoryManager
-            # Ensure manager has latest state for cursor calculation if needed,
-            # though commit_incremental_memory handles most of the heavy lifting.
             await memory_manager.commit_incremental_memory(
                 task_type=target,
                 memory_value=target_dict,
@@ -227,16 +228,62 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
             logger.error(f"Failed to build environment context: {e}")
             return "<environment>(failed to load)</environment>"
 
+    def _truncate_tool_args(self, messages: List[AnyMessage]) -> List[AnyMessage]:
+        """
+        Runtime optimization: Truncate large tool arguments for a leaner context.
+        Implements the logic from summarization.py to clip 'write_file' and 'edit_file' args.
+        """
+        MAX_ARG_LENGTH = 2000
+        TRUNCATION_TEXT = "...(argument truncated)"
+
+        # We only truncate messages that are not in the most recent window (approx 20)
+        cutoff = len(messages) - 20
+        if cutoff <= 0:
+            return messages
+
+        truncated_messages = []
+        for i, msg in enumerate(messages):
+            if i < cutoff and isinstance(msg, AIMessage) and msg.tool_calls:
+                new_tool_calls = []
+                for tc in msg.tool_calls:
+                    if tc.get("name") in {"write_file", "edit_file"}:
+                        args = tc.get("args", {})
+                        if isinstance(args, dict):
+                            new_args = {}
+                            for k, v in args.items():
+                                if isinstance(v, str) and len(v) > MAX_ARG_LENGTH:
+                                    new_args[k] = v[:20] + TRUNCATION_TEXT
+                                else:
+                                    new_args[k] = v
+                            new_tool_calls.append({**tc, "args": new_args})
+                        else:
+                            new_tool_calls.append(tc)
+                    else:
+                        new_tool_calls.append(tc)
+
+                truncated_msg = msg.model_copy()
+                truncated_msg.tool_calls = new_tool_calls
+                truncated_messages.append(truncated_msg)
+            else:
+                truncated_messages.append(msg)
+        return truncated_messages
+
     async def awrap_model_call(
         self,
         request: ModelRequest,
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse:
-
         runtime = request.runtime
-        
-        memory_body = await memory_manager.get_agent_context()
 
+        # 1. [Conversation Compaction] Replace full history with effective context: [Summary + Incremental]
+        # This implements the core logic from summarization.py to prevent context bloat.
+        effective_messages = await memory_manager.get_effective_summary_context()
+
+        # 2. [Runtime Optimization] Truncate large tool arguments in the effective window
+        effective_messages = self._truncate_tool_args(effective_messages)
+
+        # 3. Build injected context (Memory + Environment)
+        memory_body = await memory_manager.get_agent_context()
         memory_context_str = get_middleware_prompt("context").format(agent_memory=memory_body)
         env_context_str = self._format_environment_context(runtime)
 
@@ -248,21 +295,29 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
         {memory_context_str}
         """.strip()
 
+        # 4. Override both messages and system prompt for the final LLM call
         request = request.override(
+            messages=effective_messages,
             system_message=append_to_system_message(request.system_message, injected_context_str)
         )
 
         try:
             response = await handler(request)
+            print(f"********************{response}")
+            await hub.emit(
+                "event_summary",
+                {
+                    "current_message_count": len(response.results),
+                    "current_token_count": 0,
+                    "msg_threshold": 20,
+                    "token_threshold": 20000
+                }
+            )
             return response
         except Exception as e:
             logger.exception("ContextEngineeringMiddleware model call failed: %s", e)
             return ModelResponse(result=[AIMessage(content=f"Model call failed: {type(e).__name__}: {e}")])
 
-    def _log_debug_info(self, ctx_data: str, total_count: int):
-        print(f"--- [Context Engine] 注入数据: {ctx_data} | 消息流长度: {total_count} ---")
-        
-    
     def before_agent(self, state: MemoryState, runtime: Runtime, config: RunnableConfig) -> None:  # ty: ignore[invalid-method-override]
         """Load memory content before agent execution (synchronous).
 
@@ -298,4 +353,3 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
         # 注入运行时参数
         runtime_state_bridge.update_dynamic_deps("thread_id",config['configurable']['thread_id'])
         runtime_state_bridge.update_dynamic_deps("user_id",runtime.context.user_id)
-

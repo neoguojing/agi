@@ -45,6 +45,11 @@ class MemoryTaskRuntime(BaseRuntime):
         """动态感知外部线程传入的 User ID"""
         return self._bridge.get_value("user_id")
     
+    @property
+    def backend(self) -> str:
+        """动态感知外部线程传入的backend"""
+        return self._bridge.get_value("backend")
+    
 memory_runtime = MemoryTaskRuntime(
     state_bridge=runtime_state_bridge
 )

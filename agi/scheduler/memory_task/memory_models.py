@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Literal
 from uuid import uuid4
 from pydantic import BaseModel, Field, field_validator, field_serializer, RootModel, model_serializer, model_validator
+from langchain_core.messages import AnyMessage
 
 # =========================================================
 # Type Aliases
@@ -296,10 +297,6 @@ class SummaryRecord(BaseMemoryRecord):
     confidence: float = Field(default=0.8, ge=0.0, le=1.0)
     cutoff_index: int = Field(default=0, description="The index in the original history where truncation occurred.")
     new_messages: list[AnyMessage] = Field(default_factory=list, description="The summarized conversation flow.")
-
-    @property
-    def dedup_key(self) -> str:
-        return self.source_conversation_id
 
 # =========================================================
 # 🌟 终极优雅：定义强类型存储容器 (将黑魔法封装在内)

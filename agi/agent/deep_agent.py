@@ -553,7 +553,7 @@ def create_deep_agent(  # noqa: C901, PLR0912, PLR0915  # Complex graph assembly
                     custom_tool_descriptions=_subagent_profile.tool_description_overrides,
                     _permissions=subagent_permissions,
                 ),
-                create_summarization_middleware(subagent_model, backend),
+                # create_summarization_middleware(subagent_model, backend),
                 PatchToolCallsMiddleware(),
             ]
             subagent_skills = spec.get("skills")
@@ -625,7 +625,7 @@ def create_deep_agent(  # noqa: C901, PLR0912, PLR0915  # Complex graph assembly
                 custom_tool_descriptions=_profile.tool_description_overrides,
                 _permissions=permissions,
             ),
-            create_summarization_middleware(model, backend),
+            # create_summarization_middleware(model, backend),
             PatchToolCallsMiddleware(),
         ]
         if skills is not None:
@@ -697,7 +697,7 @@ def create_deep_agent(  # noqa: C901, PLR0912, PLR0915  # Complex graph assembly
         deepagent_middleware.append(sub_agent_middleware)
     deepagent_middleware.extend(
         [
-            create_summarization_middleware(model, backend),
+            # create_summarization_middleware(model, backend),
             PatchToolCallsMiddleware(),
         ]
     )
