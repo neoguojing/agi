@@ -278,9 +278,15 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
         # 1. [Conversation Compaction] Replace full history with effective context: [Summary + Incremental]
         # This implements the core logic from summarization.py to prevent context bloat.
         effective_messages = await memory_manager.get_effective_summary_context()
+        
+        import pdb;pdb.set_trace()
 
+        if len(effective_messages) > 0:
         # 2. [Runtime Optimization] Truncate large tool arguments in the effective window
-        effective_messages = self._truncate_tool_args(effective_messages)
+            effective_messages = self._truncate_tool_args(effective_messages)
+            request = request.override(
+                messages=effective_messages
+            )
 
         # 3. Build injected context (Memory + Environment)
         memory_body = await memory_manager.get_agent_context()
@@ -297,22 +303,25 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
 
         # 4. Override both messages and system prompt for the final LLM call
         request = request.override(
-            messages=effective_messages,
             system_message=append_to_system_message(request.system_message, injected_context_str)
         )
 
         try:
             response = await handler(request)
             print(f"********************{response}")
-            await hub.emit(
-                "event_summary",
-                {
-                    "current_message_count": len(response.results),
-                    "current_token_count": 0,
+            last_message = response.result[-1]
+            finish_reason = ((last_message.get('response_metadata') if isinstance(last_message, dict) else getattr(last_message, 'response_metadata', {})) or {}).get('finish_reason')
+            if finish_reason: 
+                payload = {
+                    "current_message_count": len(response.result) + len(request.messages),
+                    "current_token_count": ((last_message.get('usage_metadata') if isinstance(last_message, dict) else getattr(last_message, 'usage_metadata', {})) or {}).get('total_tokens', 0),
                     "msg_threshold": 20,
                     "token_threshold": 20000
                 }
-            )
+                await hub.emit(
+                    "event_summary",
+                    payload
+                )
             return response
         except Exception as e:
             logger.exception("ContextEngineeringMiddleware model call failed: %s", e)

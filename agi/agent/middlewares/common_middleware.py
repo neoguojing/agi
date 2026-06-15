@@ -11,6 +11,9 @@ from langchain_core.messages.content import (
     create_audio_block,
 )
 
+import logging
+logger = logging.getLogger(__name__)
+
 class MultimodalBase64Middleware(AgentMiddleware):
     """
     中间件：仅当最后一条消息是 HumanMessage 时，将消息中的 image/audio 转换为 Base64。
@@ -98,6 +101,7 @@ class MultimodalBase64Middleware(AgentMiddleware):
 
             return await handler(request.override(messages=new_messages))
         except Exception as e:
+            logger.exception("Multimodal middleware 发生未预期异常")
             return ModelResponse(
                 result=[AIMessage(content=f"Multimodal middleware failed: {type(e).__name__}: {e}")]
             )

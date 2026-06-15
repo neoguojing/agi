@@ -1,19 +1,15 @@
+from __future__ import annotations
 from typing import Any, List, cast, Mapping, Optional, Literal, Callable, Iterable
 from pydantic import BaseModel, Field
-import uuid
 import logging
-import warnings
-from dataclasses import dataclass
 from functools import partial
 from datetime import UTC, datetime
-from collections.abc import Iterable as IterableABC
 
 from agi.scheduler.memory_task.memory_state import memory_manager
 from agi.scheduler.memory_task.runtime import MemoryTaskRuntime, memory_runtime
 from agi.scheduler.memory_task.memory_models import SummaryRecord
 from agi.scheduler.task_hub import TaskContext, hub
 
-from __future__ import annotations
 from langchain_core.language_models import BaseChatModel
 from deepagents.backends.protocol import BackendProtocol
 from langchain_core.messages import (
@@ -253,13 +249,6 @@ async def _offload_to_backend(backend: Any, messages: List[AnyMessage], thread_i
         logger.warning("Offload failed: %s", e)
         return None
 
-def _build_summary_message(summary: str, file_path: Optional[str]) -> List[AnyMessage]:
-    if file_path is not None:
-        content = f"You are in the middle of a conversation that has been summarized.\n\nThe full conversation history has been saved to {file_path} should you need to refer back to it for details.\n\nA condensed summary follows:\n\n<summary>\n{summary}\n</summary>"
-    else:
-        content = f"Here is a summary of the conversation to date:\n\n{summary}"
-    return [HumanMessage(content=content, additional_kwargs={"lc_source": "summarization"})]
-
 # ------------------------------------------------------------------------------
 # 🚀 3. Event-Driven Pipeline
 # ------------------------------------------------------------------------------
@@ -293,7 +282,6 @@ async def execute_context_summary_pipeline(ctx: TaskContext, payload: ContextSum
 
     full_messages = await memory_manager.refresh_messages()
     messages_to_summarize = full_messages[:absolute_cutoff]
-    preserved_messages = full_messages[absolute_cutoff:]
 
     def _get_backend(runtime) -> BackendProtocol:
         backend = runtime.backend
@@ -326,14 +314,11 @@ async def execute_context_summary_pipeline(ctx: TaskContext, payload: ContextSum
         logger.error("[event_summary] ❌ LLM Summary Error: %s", e)
         return
 
-    summary_msgs = _build_summary_message(summary_text, file_path)
-    new_messages = [*summary_msgs, *preserved_messages]
-
     new_record = SummaryRecord(
         summary=summary_text,
         source_conversation_id=thread_id,
         cutoff_index=absolute_cutoff,
-        new_messages=new_messages,
+        file_path=file_path,
         reason = f"Event summary triggered {payload}. Absolute cutoff: {absolute_cutoff} messages."
     )
 

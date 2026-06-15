@@ -19,7 +19,6 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Literal
 from uuid import uuid4
 from pydantic import BaseModel, Field, field_validator, field_serializer, RootModel, model_serializer, model_validator
-from langchain_core.messages import AnyMessage
 
 # =========================================================
 # Type Aliases
@@ -295,8 +294,8 @@ class SummaryRecord(BaseMemoryRecord):
     summary: str = Field(...)
     source_conversation_id: str = Field(...) # Reference to the conversation that triggered this
     cutoff_index: int = Field(default=0, description="The index in the original history where truncation occurred.")
-    new_messages: list[AnyMessage] = Field(default_factory=list, description="The summarized conversation flow.")
-    reason: str = Field(...)
+    reason: str = Field(default=None)
+    file_path : str = Field(default=None)
 
 # =========================================================
 # 🌟 终极优雅：定义强类型存储容器 (将黑魔法封装在内)

@@ -4,17 +4,13 @@ This module builds the main agent directly with ``create_deep_agent``.  Async
 subagent graphs are constructed in ``agi.agent.subagents`` so their lifecycle
 and dependencies stay independent from the main-agent helpers here.
 """
-
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import logging
 import os
 import uuid
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from typing import Any,Optional
-from pydantic import BaseModel, Field
 from psycopg_pool import AsyncConnectionPool, ConnectionPool
 from dataclasses import dataclass
 
@@ -47,8 +43,9 @@ _async_connections: list[Any] = []
 
 @dataclass
 class Context:
-    user_id: Optional[str]
-    thread_id: Optional[str]
+    user_id: Optional[str] = "admin"
+    thread_id: Optional[str] = str(uuid.uuid4())
+
 
     
 async def create_async_resources(db_uri: str = DB_URI) -> RuntimeResources:

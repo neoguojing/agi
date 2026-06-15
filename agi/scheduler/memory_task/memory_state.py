@@ -1,15 +1,11 @@
-from typing import Any, Callable, Dict, Generator, List, Literal, Optional, TypeVar, Annotated,Union
+from typing import Any, Callable, Dict, Iterator, List, Literal, Optional, TypeVar, Annotated,Union
 from typing import cast,get_args
 from langgraph.channels import LastValue
-from langgraph.graph.state import CompiledStateGraph
-
 from aiorwlock import RWLock
 import json
 import logging
-import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from contextlib import asynccontextmanager
 
 try:
     from typing import NotRequired
@@ -31,7 +27,7 @@ from agi.scheduler.memory_task.memory_models import (
     SafeScalarContainer
 )
 from agi.scheduler.memory_task.runtime import MemoryTaskRuntime,memory_runtime
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage,AnyMessage,messages_from_dict
 
 logger = logging.getLogger(__name__)
 
@@ -271,6 +267,14 @@ class MemoryManager:
             except Exception as e:
                 logger.exception("summary snapshot persist failed {e}")
 
+
+    def _build_summary_message(self,summary: str, file_path: Optional[str]) -> List[AnyMessage]:
+        if file_path is not None:
+            content = f"You are in the middle of a conversation that has been summarized.\n\nThe full conversation history has been saved to {file_path} should you need to refer back to it for details.\n\nA condensed summary follows:\n\n<summary>\n{summary}\n</summary>"
+        else:
+            content = f"Here is a summary of the conversation to date:\n\n{summary}"
+        return [HumanMessage(content=content, additional_kwargs={"lc_source": "summarization"})]
+
     async def get_effective_summary_context(self) -> list:
         """
         Assemble [SummaryMsg + Incremental Messages].
@@ -279,17 +283,20 @@ class MemoryManager:
         await self.refresh_messages()
         if not self._messages: return []
 
-        first_msg = self._messages[0]
+        full_messages = messages_from_dict(self._messages.copy())
+        first_msg = full_messages[0]
         if isinstance(first_msg, HumanMessage) and getattr(first_msg, "additional_kwargs", {}).get("lc_source") == "summarization":
-            return self._messages.copy()
+            return full_messages
 
         summary_rec = await self.get_current_summary()
         if not summary_rec:
-            return self._messages.copy()
+            return full_messages
 
         cutoff = getattr(summary_rec, "cutoff_index", 0)
-        summary_msg = getattr(summary_rec, "new_messages", [])
-        return summary_msg + self._messages[cutoff:]
+        summary = getattr(summary_rec, "summary", None)
+        file_path = getattr(summary_rec, "file_path", 0)
+        summary_msg = self._build_summary_message(summary,file_path)
+        return summary_msg + full_messages[cutoff:]
 
     # ==================== Structured Memory Flow ====================
 
@@ -413,7 +420,7 @@ class MemoryManager:
             lines.append(json.dumps(item, ensure_ascii=False))
         return "\n".join(lines)
 
-    def export_full_jsonl_stream(self, targets: Optional[List[MemoryTarget]] = None) -> Generator[str, None]:
+    def export_full_jsonl_stream(self, targets: Optional[List[MemoryTarget]] = None) -> Iterator[str]:
         selected_targets = list(MEMORY_KEY_MAP.keys()) if targets is None else targets
         for target in selected_targets:
             records = self._to_record_list(target)
