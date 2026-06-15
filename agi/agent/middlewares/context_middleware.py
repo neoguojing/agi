@@ -312,9 +312,7 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
             if finish_reason:
                 payload = {
                     "current_message_count": len(response.result) + len(effective_messages),
-                    "current_token_count": ((last_message.get('usage_metadata') if isinstance(last_message, dict) else getattr(last_message, 'usage_metadata', {})) or {}).get('total_tokens', 0),
-                    "msg_threshold": 30,
-                    "token_threshold": 20000
+                    "current_token_count": ((last_message.get('usage_metadata') if isinstance(last_message, dict) else getattr(last_message, 'usage_metadata', {})) or {}).get('total_tokens', 0)
                 }
                 await hub.emit(
                     "event_summary",

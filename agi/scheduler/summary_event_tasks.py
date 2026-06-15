@@ -87,8 +87,8 @@ _TRUNCATION_TEXT = "...(argument truncated)"
 class ContextSummarySchema(BaseModel):
     current_message_count: int = Field(..., description="当前会话中的总消息条数")
     current_token_count: int = Field(..., description="当前会话的总 Token 数")
-    msg_threshold: Optional[int] = Field(None, description="触发摘要的消息条数阈值")
-    token_threshold: Optional[int] = Field(None, description="触发摘要的 Token 数量阈值")
+    msg_threshold: Optional[int] = Field(30, description="触发摘要的消息条数阈值")
+    token_threshold: Optional[int] = Field(20000, description="触发摘要的 Token 数量阈值")
 
 # ------------------------------------------------------------------------------
 # ⚙️ 2. Core Logic Helpers
@@ -377,7 +377,7 @@ async def handle_context_summary(ctx: TaskContext, payload: ContextSummarySchema
     if payload.token_threshold is not None:
         triggers.append(("tokens", payload.token_threshold))
     else:
-        triggers.append(("tokens", 60000))
+        triggers.append(("tokens", 20000))
     if not _should_summarize(effective_messages, payload.current_token_count, triggers, runtime.llm):
         logger.info("[event_summary] ⏳ Skipping: Thresholds not met (Tokens: %d, Msgs: %d)",
                     payload.current_token_count, len(effective_messages))
