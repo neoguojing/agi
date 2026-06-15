@@ -325,7 +325,15 @@ async def execute_context_summary_pipeline(ctx: TaskContext, payload: ContextSum
     prompt = DEFAULT_SUMMARY_PROMPT.format(messages=get_buffer_string(trimmed))
     try:
         response = await runtime.llm.ainvoke(prompt)
-        summary_text = response.text.strip()
+        summary_text = ""
+        if isinstance(response.content, list):
+            # 完美兼容常规字符串列表或 OpenAI/Anthropic 风格的文本字典列表
+            summary_text = "".join(
+                item if isinstance(item, str) else item.get("text", "") 
+                for item in response.content
+            ).strip()
+        else:
+            summary_text = str(response.content).strip()
         logger.info("[%s] [event_summary] ✨ Summary generated. Length: %d chars", ctx.trace_id, len(summary_text))
     except Exception as e:
         logger.error("[%s] [event_summary] ❌ LLM Summary Error: %s", ctx.trace_id, e)
