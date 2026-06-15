@@ -27,7 +27,7 @@ from agi.scheduler.memory_task.memory_models import (
     SafeScalarContainer
 )
 from agi.scheduler.memory_task.runtime import MemoryTaskRuntime,memory_runtime
-from langchain_core.messages import HumanMessage,AnyMessage,messages_from_dict
+from langchain_core.messages import HumanMessage,AnyMessage,convert_to_messages
 
 logger = logging.getLogger(__name__)
 
@@ -283,7 +283,7 @@ class MemoryManager:
         await self.refresh_messages()
         if not self._messages: return []
 
-        full_messages = messages_from_dict(self._messages.copy())
+        full_messages = convert_to_messages(self._messages.copy())
         first_msg = full_messages[0]
         if isinstance(first_msg, HumanMessage) and getattr(first_msg, "additional_kwargs", {}).get("lc_source") == "summarization":
             return full_messages

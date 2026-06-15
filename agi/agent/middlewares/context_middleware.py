@@ -278,8 +278,6 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
         # 1. [Conversation Compaction] Replace full history with effective context: [Summary + Incremental]
         # This implements the core logic from summarization.py to prevent context bloat.
         effective_messages = await memory_manager.get_effective_summary_context()
-        
-        import pdb;pdb.set_trace()
 
         if len(effective_messages) > 0:
         # 2. [Runtime Optimization] Truncate large tool arguments in the effective window
@@ -308,7 +306,6 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
 
         try:
             response = await handler(request)
-            print(f"********************{response}")
             last_message = response.result[-1]
             finish_reason = ((last_message.get('response_metadata') if isinstance(last_message, dict) else getattr(last_message, 'response_metadata', {})) or {}).get('finish_reason')
             if finish_reason: 
