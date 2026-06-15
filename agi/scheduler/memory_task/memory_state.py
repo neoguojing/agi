@@ -284,9 +284,10 @@ class MemoryManager:
         if not self._messages: 
             return []
         
+        origin_messages = self._messages.copy()
         summary_rec = await self.get_current_summary()
         if not summary_rec:
-            return convert_to_messages(self._messages.copy())
+            return convert_to_messages(origin_messages)  # No summary, return all messages as-is
 
         # 1. 提取原始截断点
         raw_cutoff = getattr(summary_rec, "cutoff_index", 0)
@@ -296,7 +297,7 @@ class MemoryManager:
         file_path = getattr(summary_rec, "file_path", None) 
 
         # 2. 🛡️ 【核心修复】边界防御性裁剪，确保 cutoff 安全落入 [0, msg_len] 区间
-        msg_len = len(self._messages)
+        msg_len = len(origin_messages)
         if raw_cutoff < 0:
             logger.warning("⚠️ [Memory] Negative cutoff_index detected: %d. Resetting to 0.", raw_cutoff)
             cutoff = 0
@@ -317,8 +318,9 @@ class MemoryManager:
         if not isinstance(summary_msg, list):
             summary_msg = [summary_msg] if summary_msg else []
 
-        target_message = convert_to_messages(self._messages.copy()[cutoff:])
-        
+        target_message = convert_to_messages(origin_messages[cutoff:])
+        logger.info("📋 ********************[Memory] Assembled effective summary context. Original length: %d chars. Target length: %d. cutoff: %d", 
+                    len(origin_messages),len(target_message), cutoff)
         return summary_msg + target_message
 
     # ==================== Structured Memory Flow ====================

@@ -156,21 +156,21 @@ class DynamicModelRouter:
 
 # 1. 业务人员手动编排模型节点池与绝对优先级
 my_model_pool = [
-    ModelNode(
-        provider="google",
-        model_name="gemini-3.1-flash-lite",
-        priority=1,
-        api_key=GOOGLE_API_KEY,
-        # extra_params={"project": GOOGLE_CLOUD_PROJECT}
-    ),
+    # ModelNode(
+    #     provider="google",
+    #     model_name="gemini-3.1-flash-lite",
+    #     priority=1,
+    #     api_key=GOOGLE_API_KEY,
+    #     # extra_params={"project": GOOGLE_CLOUD_PROJECT}
+    # ),
 
-    ModelNode(
-        provider="google",
-        model_name="gemma-4-31b-it",
-        priority=2,
-        api_key=GOOGLE_API_KEY,
-        # extra_params={"project": GOOGLE_CLOUD_PROJECT}
-    ),
+    # ModelNode(
+    #     provider="google",
+    #     model_name="gemma-4-31b-it",
+    #     priority=2,
+    #     api_key=GOOGLE_API_KEY,
+    #     # extra_params={"project": GOOGLE_CLOUD_PROJECT}
+    # ),
 
     # ModelNode(
     #     provider="openrouter",
@@ -189,13 +189,13 @@ my_model_pool = [
     #     extra_params={"base_url": OLLAMA_API_BASE_URL, "temperature": 0.2}
     # ),
 
-    # ModelNode(
-    #     provider="ollama",
-    #     model_name="gemma4:12b-it-q8_0",
-    #     priority=6,
-    #     api_key="",
-    #     extra_params={"base_url": OLLAMA_API_BASE_URL, "temperature": 0.2,'num_ctx': OLLAMA_CONTEXT_SIZE}
-    # ),
+    ModelNode(
+        provider="ollama",
+        model_name="gemma4:12b-it-q8_0",
+        priority=6,
+        api_key="",
+        extra_params={"base_url": OLLAMA_API_BASE_URL, "temperature": 0.2,'num_ctx': OLLAMA_CONTEXT_SIZE}
+    ),
     
     
 ]

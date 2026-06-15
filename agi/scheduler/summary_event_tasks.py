@@ -111,7 +111,7 @@ def _should_summarize(messages: List[AnyMessage], total_tokens: int, trigger_con
     if not trigger_conditions:
         return False
     for kind, value in trigger_conditions:
-        if kind == "messages" and len(messages) >= value:
+        if kind == "messages" and len(messages) > value:
             return True
         if kind == "tokens" and total_tokens >= value:
             return True
@@ -373,7 +373,7 @@ async def handle_context_summary(ctx: TaskContext, payload: ContextSummarySchema
     if payload.msg_threshold is not None:
         triggers.append(("messages", payload.msg_threshold))
     else:
-        triggers.append(("messages", 100))
+        triggers.append(("messages", 30))
     if payload.token_threshold is not None:
         triggers.append(("tokens", payload.token_threshold))
     else:
