@@ -313,7 +313,7 @@ class SemanticContainer(RootModel[Dict[str, SemanticMemoryRecord]]):
     """接管整个 Semantic 字典的导入吐出"""
     pass
 
-class SummaryContainer(RootModel[Dict[str, SummaryRecord]]):
+class SummaryContainer(RootModel[SummaryRecord]):
     """接管整个 Summary 字典的导入吐出"""
     pass
 

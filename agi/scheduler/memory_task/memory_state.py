@@ -351,16 +351,48 @@ class MemoryManager:
     def log_state_summary(self) -> None:
         def _get(k: str, default: object) -> Any:
             return self.state.get(k, default) if isinstance(self.state, dict) else getattr(self.state, k, default)
+        
         p_dict = _get("profile_records", {})
         e_dict = _get("episodic_records", {})
         s_dict = _get("semantic_records", {})
         sum_rec = _get("summary_record", None)
         m_list = self.messages
-        logger.info(
-            "🧠 [Memory State] Count -> Profile: %d, Episodic: %d, Semantic: %d, Summary: %s | Offset -> Profile: %d, Episodic: %d, Semantic: %d, Messages: %d",
-            len(p_dict), len(e_dict), len(s_dict), "Exist" if sum_rec else "None",
-            _get("profile_message_index", 0), _get("episodic_message_index", 0), _get("semantic_message_index", 0), len(m_list)
+
+        # --- 🔍 智能解析 SummaryRecord 的完整内容 ---
+        if sum_rec:
+            if hasattr(sum_rec, "model_dump_json"): # Pydantic v2
+                try:
+                    # 转换为美化的 JSON 字符串
+                    sum_content = json.dumps(json.loads(sum_rec.model_dump_json()), indent=4, ensure_ascii=False)
+                except Exception:
+                    sum_content = str(sum_rec)
+            elif hasattr(sum_rec, "dict"): # Pydantic v1
+                try:
+                    sum_content = json.dumps(sum_rec.dict(), indent=4, ensure_ascii=False)
+                except Exception:
+                    sum_content = str(sum_rec)
+            elif isinstance(sum_rec, dict):
+                sum_content = json.dumps(sum_rec, indent=4, ensure_ascii=False)
+            else:
+                sum_content = str(sum_rec)
+        else:
+            sum_content = "None"
+
+        # --- 🚨 高显眼度、易读性多行日志排版 ---
+        log_message = (
+            "\n"
+            "==================================================================================================\n"
+            "🧠 [MEMORY STATE SNAPSHOT]\n"
+            "--------------------------------------------------------------------------------------------------\n"
+            f"📊 [RECORD COUNTS]  => Profile: {len(p_dict)} | Episodic: {len(e_dict)} | Semantic: {len(s_dict)} | Total Messages: {len(m_list)}\n"
+            f"📍 [MESSAGE INDEX]  => Profile: {_get('profile_message_index', 0)} | Episodic: {_get('episodic_message_index', 0)} | Semantic: {_get('semantic_message_index', 0)}\n"
+            "--------------------------------------------------------------------------------------------------\n"
+            f"📝 [SUMMARY RECORD FULL DETAIL]:\n"
+            f"{sum_content}\n"
+            "=================================================================================================="
         )
+    
+        logger.info(log_message)
 
     def _get_utc_timestamp(self, rec: MemoryRecordT) -> datetime:
         if isinstance(rec, str): return datetime.min.replace(tzinfo=timezone.utc)

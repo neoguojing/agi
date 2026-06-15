@@ -306,9 +306,9 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
             response = await handler(request)
             last_message = response.result[-1]
             finish_reason = ((last_message.get('response_metadata') if isinstance(last_message, dict) else getattr(last_message, 'response_metadata', {})) or {}).get('finish_reason')
-            if finish_reason: 
+            if finish_reason:
                 payload = {
-                    "current_message_count": len(response.result) + len(request.messages),
+                    "current_message_count": len(response.result) + len(effective_messages),
                     "current_token_count": ((last_message.get('usage_metadata') if isinstance(last_message, dict) else getattr(last_message, 'usage_metadata', {})) or {}).get('total_tokens', 0),
                     "msg_threshold": 20,
                     "token_threshold": 20000
