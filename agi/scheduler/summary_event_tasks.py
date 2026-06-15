@@ -18,8 +18,10 @@ from langchain_core.messages import (
     ToolMessage,
     AnyMessage,
     get_buffer_string,
+    convert_to_messages,
 )
 from langchain_core.messages.utils import trim_messages, count_tokens_approximately
+
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 
 import logging
@@ -257,9 +259,11 @@ async def execute_context_summary_pipeline(ctx: TaskContext, payload: ContextSum
     runtime = cast(MemoryTaskRuntime, ctx.runtime)
     token_counter = _get_approximate_token_counter(runtime.llm)
 
+    logger.info("[%s] [event_summary] 🚀 Starting context summary pipeline...", ctx.trace_id)
+
     effective_messages = await memory_manager.get_effective_summary_context()
     if not effective_messages:
-        logger.info("[event_summary] ⏭️ No messages to summarize.")
+        logger.info("[%s] [event_summary] ⏭️ No messages to summarize.", ctx.trace_id)
         return
 
     effective_messages, _ = _truncate_args(effective_messages)
@@ -268,8 +272,10 @@ async def execute_context_summary_pipeline(ctx: TaskContext, payload: ContextSum
     relative_cutoff = _determine_cutoff_index(effective_messages, token_counter, keep_policy)
 
     if relative_cutoff <= 0:
-        logger.info("[event_summary] ⏭️ Cutoff index 0, nothing to compress.")
+        logger.info("[%s] [event_summary] ⏭️ Cutoff index 0, nothing to compress.", ctx.trace_id)
         return
+
+    logger.info("[%s] [event_summary] ✂️ Relative cutoff: %d", ctx.trace_id, relative_cutoff)
 
     thread_id = runtime.thread_id or "unknown"
     prev_summary = await memory_manager.get_current_summary()
@@ -280,17 +286,24 @@ async def execute_context_summary_pipeline(ctx: TaskContext, payload: ContextSum
     else:
         absolute_cutoff = relative_cutoff
 
+    logger.info("[%s] [event_summary] 🎯 Absolute cutoff: %d (prev_cutoff: %d)",
+                ctx.trace_id, absolute_cutoff, getattr(prev_summary, "cutoff_index", 0) if prev_summary else 0)
+
     full_messages = await memory_manager.refresh_messages()
+    full_messages = convert_to_messages(full_messages)
+
     messages_to_summarize = full_messages[:absolute_cutoff]
+    logger.info("[%s] [event_summary] 📦 Offloading %d messages to backend...", ctx.trace_id, len(messages_to_summarize))
 
     def _get_backend(runtime) -> BackendProtocol:
         backend = runtime.backend
         if callable(backend):
             return backend(runtime)
         return backend
-    
+
     backend = _get_backend(runtime)
     file_path = await _offload_to_backend(backend, messages_to_summarize, thread_id)
+    logger.info("[%s] [event_summary] ✅ Offload complete. Path: %s", ctx.trace_id, file_path)
 
     summarize_input = effective_messages[:relative_cutoff]
     trimmed = trim_messages(
@@ -306,12 +319,16 @@ async def execute_context_summary_pipeline(ctx: TaskContext, payload: ContextSum
     if not trimmed:
         trimmed = summarize_input[-_DEFAULT_FALLBACK_MESSAGE_COUNT:]
 
+    logger.info("[%s] [event_summary] 📝 Sending %d messages to LLM for summary (approx %d tokens)",
+                ctx.trace_id, len(trimmed), token_counter(trimmed))
+
     prompt = DEFAULT_SUMMARY_PROMPT.format(messages=get_buffer_string(trimmed))
     try:
         response = await runtime.llm.ainvoke(prompt)
         summary_text = response.text.strip()
+        logger.info("[%s] [event_summary] ✨ Summary generated. Length: %d chars", ctx.trace_id, len(summary_text))
     except Exception as e:
-        logger.error("[event_summary] ❌ LLM Summary Error: %s", e)
+        logger.error("[%s] [event_summary] ❌ LLM Summary Error: %s", ctx.trace_id, e)
         return
 
     new_record = SummaryRecord(
@@ -323,6 +340,8 @@ async def execute_context_summary_pipeline(ctx: TaskContext, payload: ContextSum
     )
 
     await memory_manager.set_current_summary(record=new_record)
+    logger.info("[%s] [event_summary] 💾 New summary record saved. Cutoff: %d", ctx.trace_id, absolute_cutoff)
+
 
     
 
@@ -337,7 +356,7 @@ async def execute_context_summary_pipeline(ctx: TaskContext, payload: ContextSum
     timeout=60
 )
 async def handle_context_summary(ctx: TaskContext, payload: ContextSummarySchema):
-    logger.info("[%s] 📩 Received 'event_summary' trigger.", ctx.trace_id)
+    logger.info("[%s] 📩 Received 'event_summary' trigger.payload=%s", ctx.trace_id,payload)
     runtime = cast(MemoryTaskRuntime, ctx.runtime)
     effective_messages = await memory_manager.get_effective_summary_context()
     if not effective_messages:

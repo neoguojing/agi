@@ -11,12 +11,8 @@ from agi.scheduler.memory_task.memory_tools import (
 from agi.scheduler.memory_task.memory_state import MemoryManager, MEMORY_KEY_MAP,memory_manager
 from agi.scheduler.memory_task.runtime import memory_runtime, MemoryTaskRuntime
 from langchain_core.prompts import ChatPromptTemplate
-from langgraph_sdk import get_client
-
 # 🔄 核心对齐：引入标准上下文容器与基类
 from agi.scheduler.task_hub import TaskContext,hub
-from agi.agent.models import ModelProvider
-from agi.config import LANGGRAPH_MAIN_URL, CLOUD_MODE
 
 logger = logging.getLogger("MemoryTask")
 
