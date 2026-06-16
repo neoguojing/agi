@@ -2,9 +2,9 @@ import os
 from dotenv import load_dotenv
 import logging
 
-# -----------------------------
-# 工具函数
-# -----------------------------
+# ==========================================
+# 1. 工具函数与基础加载
+# ==========================================
 def get_env(name: str, default: str = None) -> str:
     """从环境变量读取值，未设置则使用默认值"""
     return os.getenv(name, default)
@@ -14,26 +14,52 @@ def get_env_bool(name: str, default: bool = False) -> bool:
     val = os.getenv(name, str(default))
     return val.lower() in ("1", "true", "yes", "on")
 
-# -----------------------------
+def get_env_int(name: str, default: int = 0) -> int:
+    """从环境变量读取整数值"""
+    val = os.getenv(name)
+    if val is None:
+        return default
+    try:
+        return int(val)
+    except ValueError:
+        return default
+
 # 加载 .env 文件
-# -----------------------------
 load_dotenv(override=True)
 
-# -----------------------------
-# 服务相关
-# -----------------------------
+
+# ==========================================
+# 2. 系统全局与运行模式配置
+# ==========================================
+CLOUD_MODE = get_env_bool("CLOUD_MODE", True)
+AGI_DEBUG = get_env_bool("AGI_DEBUG")
+STOP_WORDS_PATH = get_env("STOP_WORDS_PATH", "./asset/stopwords.txt")
+
+# 租户与 Agent 标识
+AGI_ASSISTANT_ID = get_env("AGI_ASSISTANT_ID", "deepagent_main")
+AGI_TENANT_ID = get_env("AGI_TENANT_ID", "default_tenant")
+
+
+# ==========================================
+# 3. 基础网络与服务网关
+# ==========================================
 BASE_URL = get_env("BASE_URL", "http://localhost:8000")
 API_KEY = get_env("API_KEY", "123")  # 请替换为实际的 API 密钥
+LANGGRAPH_MAIN_URL = get_env("LANGGRAPH_MAIN_URL", "http://127.0.0.1:2024")
 
-# -----------------------------
-# 存储相关
-# -----------------------------
+
+# ==========================================
+# 4. 存储与数据库配置
+# ==========================================
 CACHE_DIR = os.path.abspath(get_env("CACHE_DIR", "/data/agi"))
 os.makedirs(CACHE_DIR, exist_ok=True)
 
+# 关系型与图数据库
+DEFAULT_DB_URI = os.getenv("DEFAULT_DB_URI", "postgres://admin:123456@localhost:5432/langchain?sslmode=disable")
 langchain_db_path = os.path.join(CACHE_DIR, "langchain.db")
 LANGCHAIN_DB_PATH = get_env("LANGCHAIN_DB_PATH", f"sqlite:///{langchain_db_path}")
 
+# 文件与浏览器存储
 FILE_STORAGE_PATH = os.path.join(CACHE_DIR, "files")
 os.makedirs(FILE_STORAGE_PATH, exist_ok=True)
 FILE_STORAGE_URL = get_env("FILE_STORAGE_URL", f"file://{FILE_STORAGE_PATH}")
@@ -41,45 +67,53 @@ FILE_STORAGE_URL = get_env("FILE_STORAGE_URL", f"file://{FILE_STORAGE_PATH}")
 BROWSER_STORAGE_PATH = os.path.join(CACHE_DIR, "browser")
 os.makedirs(BROWSER_STORAGE_PATH, exist_ok=True)
 
-DEFAULT_DB_URI = os.getenv("DEFAULT_DB_URI", "postgres://admin:123456@localhost:5432/langchain?sslmode=disable")
-CLOUD_MODE = get_env_bool("CLOUD_MODE", False)
 
-# -----------------------------
-# 模型相关
-# -----------------------------
+# ==========================================
+# 5. 核心大语言模型 (LLM) 与上下文管理
+# ==========================================
 MODEL_PATH = get_env("MODEL_PATH", "/data/model")
 
-LANGGRAPH_MAIN_URL = get_env("LANGGRAPH_MAIN_URL", "http://127.0.0.1:2024")
-# LLM
+# Ollama 本地模型配置
 OLLAMA_API_BASE_URL = get_env("OLLAMA_API_BASE_URL", "http://localhost:11434")
-# OLLAMA_DEFAULT_MODE = get_env("OLLAMA_DEFAULT_MODE", "qwen3.5:9b")
 OLLAMA_DEFAULT_MODE = get_env("OLLAMA_DEFAULT_MODE", "gemma4:31b-cloud")
 OLLAMA_CONTEXT_SIZE = get_env("OLLAMA_CONTEXT_SIZE", 131072)
 OLLAMA_THINKING_MODE = get_env("OLLAMA_SMALL_MODE", "qwen3:4b-thinking")
 LLM_WITH_NO_THINKING = get_env("LLM_WITH_NO_THINKING", "/no_think")
 
-OPENAI_API_KEY = get_env("OPENAI_API_KEY", "xxx")
-GOOGLE_API_KEY = get_env("GOOGLE_API_KEY", "xxx")
-GOOGLE_CLOUD_PROJECT = get_env("GOOGLE_CLOUD_PROJECT", "xxx")
-OPENROUTER_API_KEY = get_env("OPENROUTER_API_KEY", "xxx")
+# LLM 上下文与 Token 裁剪策略
+CONTEXT_MESSAGES_TO_KEEP = get_env_int("CONTEXT_MESSAGES_TO_KEEP", 20)
+CONTEXT_TRIM_TOKEN_LIMIT = get_env_int("CONTEXT_TRIM_TOKEN_LIMIT", 4000)
+CONTEXT_FALLBACK_MESSAGE_COUNT = get_env_int("CONTEXT_FALLBACK_MESSAGE_COUNT", 15)
+CONTEXT_TOOL_ARG_LENGTH = get_env_int("CONTEXT_TOOL_ARG_LENGTH", 2000)
+CONTEXT_TOOL_TRUNCATION_TEXT = get_env("CONTEXT_TOOL_TRUNCATION_TEXT", "...(argument truncated)")
 
 
+# ==========================================
+# 6. 记忆系统配置 (Memory)
+# ==========================================
+AGI_LONG_TERM_MEMORY_ENABLED = get_env_bool("AGI_LONG_TERM_MEMORY_ENABLED", True)
+AGI_MEMORY_PATH_PREFIX = get_env("AGI_MEMORY_PATH_PREFIX", "/memories/")
 
-# Embedding
+
+# ==========================================
+# 7. 领域模型与多模态组件 (Specialized & Multimodal Models)
+# ==========================================
+
+# --- 向量嵌入 (Embedding & RAG) ---
 RAG_EMBEDDING_MODEL = get_env("RAG_EMBEDDING_MODEL", "bge")
 RAG_EMBEDDING_MODEL_PATH = get_env("RAG_EMBEDDING_MODEL_PATH", os.path.join(MODEL_PATH, "Qwen3-Embedding-0.6B"))
 EMBEDDING_BASE_URL = get_env("EMBEDDING_BASE_URL", "http://localhost:8006")
 CLUSTER_ALGO = get_env("CLUSTER_ALGO", "dpmeans")
 COMPUTE_TYPE = get_env("COMPUTE_TYPE", "float16")
 
-# Speech-to-Text
+# --- 语音识别 (STT - Whisper) ---
 WHISPER_GPU_ENABLE = get_env_bool("WHISPER_GPU_ENABLE", True)
 WHISPER_MODEL_DIR = os.path.join(MODEL_PATH, "wisper-v3-turbo-c2") if WHISPER_GPU_ENABLE \
     else os.path.join(MODEL_PATH, "models--Systran--faster-whisper-base")
 WHISPER_MODLE_NAME = get_env("WHISPER_MODLE_NAME", "large")
 WHISPER_BASE_URL = get_env("WHISPER_BASE_URL", "http://localhost:8003/v1/")
 
-# TTS
+# --- 语音合成 (TTS - CosyVoice) ---
 TTS_SPEAKER_WAV = get_env("TTS_SPEAKER_WAV", "asset/zero_shot_prompt.wav")
 TTS_GPU_ENABLE = get_env_bool("TTS_GPU_ENABLE", True)
 TTS_MODEL_DIR = os.path.join(MODEL_PATH, "cosyvoice/CosyVoice2-0.5B") if TTS_GPU_ENABLE \
@@ -87,37 +121,40 @@ TTS_MODEL_DIR = os.path.join(MODEL_PATH, "cosyvoice/CosyVoice2-0.5B") if TTS_GPU
 TTS_MODLE_NAME = get_env("TTS_MODLE_NAME", "cosyvoice")
 TTS_BASE_URL = get_env("TTS_BASE_URL", "http://localhost:8002/v1/")
 
-# Image
+# --- 图像生成与处理 (Image - SDXL) ---
 IMAGE_TO_IMAGE_MODEL_PATH = get_env("IMAGE_TO_IMAGE_MODEL_PATH", os.path.join(MODEL_PATH, "sdxl-turbo"))
 TEXT_TO_IMAGE_MODEL_PATH = get_env("TEXT_TO_IMAGE_MODEL_PATH", os.path.join(MODEL_PATH, "sdxl-turbo"))
 IMAGE_GEN_BASE_URL = get_env("IMAGE_GEN_BASE_URL", "http://localhost:8001/v1/")
 TEXT_TO_IMAGE_MODEL_NAME = get_env("TEXT_TO_IMAGE_MODEL_NAME", "sdxl")
 
-# Multi-model
+# --- 原生多模态/端到端模型 (Multi-Modal / Omni) ---
 MULTI_MODEL_PATH = get_env("MULTI_MODEL_PATH", os.path.join(MODEL_PATH, "Qwen2.5-Omni-3B"))
 MULTI_MODEL_BASE_URL = get_env("MULTI_MODEL_BASE_URL", "http://localhost:8005/v1/")
 MULTI_MODEL_NAME = get_env("MULTI_MODEL_NAME", "gemma")
 
-# Web
+
+# ==========================================
+# 8. 第三方云端服务与工具 API 密钥
+# ==========================================
+
+# 外部大模型供应商 API
+OPENAI_API_KEY = get_env("OPENAI_API_KEY", "xxx")
+GOOGLE_API_KEY = get_env("GOOGLE_API_KEY", "xxx")
+GOOGLE_CLOUD_PROJECT = get_env("GOOGLE_CLOUD_PROJECT", "xxx")
+OPENROUTER_API_KEY = get_env("OPENROUTER_API_KEY", "xxx")
+
+# 联网搜索与工具 API
 EXA_API_KEY = get_env("EXA_API_KEY", "")
 TAVILY_API_KEY = get_env("TAVILY_API_KEY", "")
 SEARXNG_BASE_URL = get_env("SEARXNG_BASE_URL", "http://localhost:8091")
 
-# Stock
+# 金融数据 API
 ALPHAVANTAGE_API_KEY = get_env("ALPHAVANTAGE_API_KEY", "")
 
-# 系统参数
-STOP_WORDS_PATH = get_env("STOP_WORDS_PATH", "./asset/stopwords.txt")
-AGI_DEBUG = get_env_bool("AGI_DEBUG")
-AGI_LONG_TERM_MEMORY_ENABLED = get_env_bool("AGI_LONG_TERM_MEMORY_ENABLED", True)
-AGI_MEMORY_PATH_PREFIX = get_env("AGI_MEMORY_PATH_PREFIX", "/memories/")
-AGI_ASSISTANT_ID = get_env("AGI_ASSISTANT_ID", "deepagent_main")
-AGI_TENANT_ID = get_env("AGI_TENANT_ID", "default_tenant")
 
-
-# -----------------------------
-# LangChain 调试
-# -----------------------------
+# ==========================================
+# 9. LangChain 调试与追踪
+# ==========================================
 os.environ["LANGSMITH_API_KEY"] = get_env("LANGSMITH_API_KEY", "")
 
 def init_langchain_debug():
@@ -133,9 +170,10 @@ def init_langchain_debug():
     os.environ["LANGSMITH_ENDPOINT"] = "https://api.smith.langchain.com"
     os.environ["LANGSMITH_PROJECT"] = get_env("LANGSMITH_PROJECT", "agi")
 
-# -----------------------------
-# Logger 初始化
-# -----------------------------
+
+# ==========================================
+# 10. 日志系统初始化
+# ==========================================
 def init_logger() -> logging.Logger:
     log = logging.getLogger()
     if not log.handlers:
@@ -149,14 +187,15 @@ def init_logger() -> logging.Logger:
         handler.setFormatter(formatter)
         log.addHandler(handler)
 
-        # 降低冗余库日志
+        # 降低高频第三方库的日志噪点
         for noisy_logger in ["chromadb", "httpcore", "httpx", "cosyvoice_tts"]:
             logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
     return log
 
-# -----------------------------
-# 初始化
-# -----------------------------
+
+# ==========================================
+# 11. 运行时初始化触发
+# ==========================================
 log = init_logger()
 init_langchain_debug()

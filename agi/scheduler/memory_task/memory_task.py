@@ -143,7 +143,7 @@ async def execute_memory_consolidation_pipeline(
     runtime=memory_runtime,  # 外部注入的 MemoryTaskRuntime 单例
     cron_expr="*/3 * * * *",
     target_id="global",
-    params={"activate_message_threshold": 0, "min_confidence": 0.85, "model_flavor": "claude-3-5-sonnet"},
+    params={"activate_message_threshold": 10, "min_confidence": 0.85, "model_flavor": "claude-3-5-sonnet"},
     timeout=120.0
 )
 # 🔄 适配签名：统一为 (ctx, payload)
@@ -162,7 +162,7 @@ async def profile_memory_job(ctx: TaskContext, payload: ProfileMemorySchema):
     cron_expr="*/1 * * * *",
     target_id="global",
     params={"activate_message_threshold": 10},
-    timeout=60.0
+    timeout=120.0
 )
 # 🔄 适配签名：统一为 (ctx, payload)
 async def episodic_memory_job(ctx: TaskContext, payload: EpisodicMemorySchema):

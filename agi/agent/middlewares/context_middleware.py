@@ -36,7 +36,11 @@ from agi.scheduler.memory_task.memory_models import (
 )
 from agi.scheduler.memory_task.memory_state import MemoryState
 from agi.scheduler import runtime_state_bridge,hub,memory_manager
-
+from agi.config import (
+    CONTEXT_TOOL_ARG_LENGTH,
+    CONTEXT_TOOL_TRUNCATION_TEXT,
+    CONTEXT_MESSAGES_TO_KEEP,
+)
 
 class OrganizeMemoryInput(BaseModel):
     """Input schema for the `organize_memory` tool."""
@@ -226,45 +230,50 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
             logger.error(f"Failed to build environment context: {e}")
             return "<environment>(failed to load)</environment>"
 
-    def _truncate_tool_args(self, messages: List[AnyMessage]) -> List[AnyMessage]:
-        """
-        Runtime optimization: Truncate large tool arguments for a leaner context.
-        Implements the logic from summarization.py to clip 'write_file' and 'edit_file' args.
-        """
-        MAX_ARG_LENGTH = 2000
-        TRUNCATION_TEXT = "...(argument truncated)"
+    def _truncate_tool_call(self,tool_call: dict[str, Any]) -> dict[str, Any]:
+        args = tool_call.get("args", {})
+        truncated_args = {}
+        modified = False
+        for key, value in args.items():
+            if isinstance(value, str) and len(value) > CONTEXT_TOOL_ARG_LENGTH:
+                truncated_args[key] = value[:20] + CONTEXT_TOOL_TRUNCATION_TEXT
+                modified = True
+            else:
+                truncated_args[key] = value
+        if modified:
+            return {**tool_call, "args": truncated_args}
+        return tool_call
 
-        # We only truncate messages that are not in the most recent window (approx 20)
-        cutoff = len(messages) - 20
-        if cutoff <= 0:
-            return messages
+    def _truncate_args(self,messages: List[AnyMessage]) -> tuple[List[AnyMessage], bool]:
+        cutoff_index = len(messages) - CONTEXT_MESSAGES_TO_KEEP
+        if cutoff_index <= 0:
+            return messages, False
 
         truncated_messages = []
+        modified = False
         for i, msg in enumerate(messages):
-            if i < cutoff and isinstance(msg, AIMessage) and msg.tool_calls:
-                new_tool_calls = []
-                for tc in msg.tool_calls:
-                    if tc.get("name") in {"write_file", "edit_file"}:
-                        args = tc.get("args", {})
-                        if isinstance(args, dict):
-                            new_args = {}
-                            for k, v in args.items():
-                                if isinstance(v, str) and len(v) > MAX_ARG_LENGTH:
-                                    new_args[k] = v[:20] + TRUNCATION_TEXT
-                                else:
-                                    new_args[k] = v
-                            new_tool_calls.append({**tc, "args": new_args})
-                        else:
-                            new_tool_calls.append(tc)
+            if i < cutoff_index and isinstance(msg, AIMessage) and msg.tool_calls:
+                truncated_tool_calls = []
+                msg_modified = False
+                for tool_call in msg.tool_calls:
+                    if tool_call.get("name") in {"write_file", "edit_file"}:
+                        truncated_call = self._truncate_tool_call(tool_call)
+                        if truncated_call != tool_call:
+                            msg_modified = True
+                        truncated_tool_calls.append(truncated_call)
                     else:
-                        new_tool_calls.append(tc)
-
-                truncated_msg = msg.model_copy()
-                truncated_msg.tool_calls = new_tool_calls
-                truncated_messages.append(truncated_msg)
+                        truncated_tool_calls.append(tool_call)
+                if msg_modified:
+                    truncated_msg = msg.model_copy()
+                    truncated_msg.tool_calls = truncated_tool_calls
+                    truncated_messages.append(truncated_msg)
+                    modified = True
+                else:
+                    truncated_messages.append(msg)
             else:
                 truncated_messages.append(msg)
-        return truncated_messages
+        return truncated_messages, modified
+
 
     async def awrap_model_call(
         self,
@@ -279,7 +288,7 @@ class ContextEngineeringMiddleware(AgentMiddleware[MemoryState[ResponseT],Contex
 
         if len(effective_messages) > 0:
         # 2. [Runtime Optimization] Truncate large tool arguments in the effective window
-            effective_messages = self._truncate_tool_args(effective_messages)
+            effective_messages,_ = self._truncate_args(effective_messages)
             request = request.override(
                 messages=effective_messages
             )

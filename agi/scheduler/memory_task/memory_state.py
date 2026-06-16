@@ -319,7 +319,7 @@ class MemoryManager:
             summary_msg = [summary_msg] if summary_msg else []
 
         target_message = convert_to_messages(origin_messages[cutoff:])
-        logger.info("📋 ********************[Memory] Assembled effective summary context. Original length: %d chars. Target length: %d. cutoff: %d", 
+        logger.info("📋 [Memory] Assembled effective summary context. Original length: %d. Target length: %d. cutoff: %d", 
                     len(origin_messages),len(target_message), cutoff)
         return summary_msg + target_message
 

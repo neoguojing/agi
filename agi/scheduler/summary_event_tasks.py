@@ -24,6 +24,12 @@ from langchain_core.messages.utils import trim_messages, count_tokens_approximat
 
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 
+from agi.config import (
+    CONTEXT_MESSAGES_TO_KEEP,
+    CONTEXT_TRIM_TOKEN_LIMIT,
+    CONTEXT_FALLBACK_MESSAGE_COUNT,
+)
+
 import logging
 logger = logging.getLogger(__name__)
 
@@ -78,12 +84,6 @@ Messages to summarize:
 {messages}
 </messages>"""
 
-_DEFAULT_MESSAGES_TO_KEEP = 20
-_DEFAULT_TRIM_TOKEN_LIMIT = 4000
-_DEFAULT_FALLBACK_MESSAGE_COUNT = 15
-_MAX_ARG_LENGTH = 2000
-_TRUNCATION_TEXT = "...(argument truncated)"
-
 class ContextSummarySchema(BaseModel):
     current_message_count: int = Field(..., description="当前会话中的总消息条数")
     current_token_count: int = Field(..., description="当前会话的总 Token 数")
@@ -92,8 +92,20 @@ class ContextSummarySchema(BaseModel):
 
 # ------------------------------------------------------------------------------
 # ⚙️ 2. Core Logic Helpers
-# ------------------------------------------------------------------------------
+# # ------------------------------------------------------------------------------
+# 工具折算：将工具 Schema 转为 JSON 字符串，按 字符数/4（默认比例）向上取整累加 Token。
 
+# 消息遍历：
+
+# 文本与属性：统计纯文本正文、角色(Role)、名称(Name)及工具调用字符串的字符总数。
+
+# 多模态图片：跳过 Base64 字符统计，直接按固定值（默认 85 Token）累加。
+
+# 单条结算：将单条消息的总字符数按 字符数/4 向上取整，并附加固定基础开销（默认 3 Token）。
+
+# 动态校准（可选）：读取历史 AI 消息真实的 API 消耗数据，计算比例 (真实值/估算值)，将总 Token 乘以该比例（限制在 1.0~1.25）进行修正。
+
+# 最终结算：总数再次向上取整并返回。
 def _get_approximate_token_counter(model: BaseChatModel) -> Callable:
     """
     获取一个近似的 Token 计数器。
@@ -161,7 +173,7 @@ def _determine_cutoff_index(messages: List[AnyMessage], token_counter: Callable,
     if kind in {"tokens", "fraction"}:
         target_token_count = value if kind == "tokens" else 0
         if target_token_count <= 0:
-            return _find_safe_cutoff_point(messages, max(0, len(messages) - _DEFAULT_MESSAGES_TO_KEEP))
+            return _find_safe_cutoff_point(messages, max(0, len(messages) - CONTEXT_MESSAGES_TO_KEEP))
 
         if token_counter(messages) <= target_token_count:
             return 0
@@ -180,51 +192,7 @@ def _determine_cutoff_index(messages: List[AnyMessage], token_counter: Callable,
             cutoff_candidate = max(0, len(messages) - 1)
         return _find_safe_cutoff_point(messages, cutoff_candidate)
 
-    return _find_safe_cutoff_point(messages, max(0, len(messages) - _DEFAULT_MESSAGES_TO_KEEP))
-
-def _truncate_tool_call(tool_call: dict[str, Any]) -> dict[str, Any]:
-    args = tool_call.get("args", {})
-    truncated_args = {}
-    modified = False
-    for key, value in args.items():
-        if isinstance(value, str) and len(value) > _MAX_ARG_LENGTH:
-            truncated_args[key] = value[:20] + _TRUNCATION_TEXT
-            modified = True
-        else:
-            truncated_args[key] = value
-    if modified:
-        return {**tool_call, "args": truncated_args}
-    return tool_call
-
-def _truncate_args(messages: List[AnyMessage]) -> tuple[List[AnyMessage], bool]:
-    cutoff_index = len(messages) - _DEFAULT_MESSAGES_TO_KEEP
-    if cutoff_index <= 0:
-        return messages, False
-
-    truncated_messages = []
-    modified = False
-    for i, msg in enumerate(messages):
-        if i < cutoff_index and isinstance(msg, AIMessage) and msg.tool_calls:
-            truncated_tool_calls = []
-            msg_modified = False
-            for tool_call in msg.tool_calls:
-                if tool_call.get("name") in {"write_file", "edit_file"}:
-                    truncated_call = _truncate_tool_call(tool_call)
-                    if truncated_call != tool_call:
-                        msg_modified = True
-                    truncated_tool_calls.append(truncated_call)
-                else:
-                    truncated_tool_calls.append(tool_call)
-            if msg_modified:
-                truncated_msg = msg.model_copy()
-                truncated_msg.tool_calls = truncated_tool_calls
-                truncated_messages.append(truncated_msg)
-                modified = True
-            else:
-                truncated_messages.append(msg)
-        else:
-            truncated_messages.append(msg)
-    return truncated_messages, modified
+    return _find_safe_cutoff_point(messages, max(0, len(messages) - CONTEXT_MESSAGES_TO_KEEP))
 
 async def _offload_to_backend(backend: Any, messages: List[AnyMessage], thread_id: str) -> Optional[str]:
     path = f"/conversation_history/{thread_id}.md"
@@ -266,9 +234,7 @@ async def execute_context_summary_pipeline(ctx: TaskContext, payload: ContextSum
         logger.info("[%s] [event_summary] ⏭️ No messages to summarize.", ctx.trace_id)
         return
 
-    effective_messages, _ = _truncate_args(effective_messages)
-
-    keep_policy = ("messages", _DEFAULT_MESSAGES_TO_KEEP)
+    keep_policy = ("messages", CONTEXT_MESSAGES_TO_KEEP)
     relative_cutoff = _determine_cutoff_index(effective_messages, token_counter, keep_policy)
 
     if relative_cutoff <= 0:
@@ -279,9 +245,9 @@ async def execute_context_summary_pipeline(ctx: TaskContext, payload: ContextSum
 
     thread_id = runtime.thread_id or "unknown"
     prev_summary = await memory_manager.get_current_summary()
+    prev_cutoff = getattr(prev_summary, "cutoff_index", 0)
 
     if prev_summary:
-        prev_cutoff = getattr(prev_summary, "cutoff_index", 0)
         absolute_cutoff = prev_cutoff + max(0, relative_cutoff - 1)
     else:
         absolute_cutoff = relative_cutoff
@@ -292,7 +258,7 @@ async def execute_context_summary_pipeline(ctx: TaskContext, payload: ContextSum
     full_messages = await memory_manager.refresh_messages()
     full_messages = convert_to_messages(full_messages)
 
-    messages_to_summarize = full_messages[:absolute_cutoff]
+    messages_to_summarize = full_messages[prev_cutoff:absolute_cutoff]
     logger.info("[%s] [event_summary] 📦 Offloading %d messages to backend...", ctx.trace_id, len(messages_to_summarize))
 
     def _get_backend(runtime) -> BackendProtocol:
@@ -306,9 +272,18 @@ async def execute_context_summary_pipeline(ctx: TaskContext, payload: ContextSum
     logger.info("[%s] [event_summary] ✅ Offload complete. Path: %s", ctx.trace_id, file_path)
 
     summarize_input = effective_messages[:relative_cutoff]
+    # 精准计量 (max_tokens / token_counter)：支持调用模型自带的分词器精确计算 Token，或按对话条数计算。
+
+    # 方向选择 (strategy)：通常用于保留“最新”（last）的上下文，自动丢弃最旧的记忆。
+
+    # 合法性兜底 (start_on / end_on)：强制截断后的对话列必定以人类消息（HumanMessage）开头，避免因截断导致消息顺序错乱从而触发大模型 API 报错。
+
+    # 人设保护 (include_system)：锁定并保留对话最开头的系统提示词（SystemMessage），防止大模型在长对话后“失忆”或忘记初始指令。
+
+    # 精细切割 (allow_partial)：当遇到单条超长消息时，支持将其从中间切断以填满 Token 额度，而不是粗暴地整条丢弃。
     trimmed = trim_messages(
         summarize_input,
-        max_tokens=_DEFAULT_TRIM_TOKEN_LIMIT,
+        max_tokens=CONTEXT_TRIM_TOKEN_LIMIT,
         token_counter=token_counter,
         strategy="last",
         start_on="human",
@@ -317,7 +292,7 @@ async def execute_context_summary_pipeline(ctx: TaskContext, payload: ContextSum
     )
 
     if not trimmed:
-        trimmed = summarize_input[-_DEFAULT_FALLBACK_MESSAGE_COUNT:]
+        trimmed = summarize_input[-CONTEXT_FALLBACK_MESSAGE_COUNT:]
 
     logger.info("[%s] [event_summary] 📝 Sending %d messages to LLM for summary (approx %d tokens)",
                 ctx.trace_id, len(trimmed), token_counter(trimmed))
