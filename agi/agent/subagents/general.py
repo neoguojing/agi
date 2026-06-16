@@ -6,7 +6,6 @@ from agi.agent.middlewares import BrowserMiddleware,FfmpegMiddleware,StockMiddle
 from agi.agent.models import ModelProvider
 from agi.agent.sandbox.docker import DockerSandbox
 from agi.agent.prompt import get_subagent_prompt
-from agi.agent.middlewares.memory_middleware import MemoryMiddleware
 from agi.agent.middlewares.pdf_middleware import PDFMiddleware
 from pathlib import Path
 from deepagents.backends import CompositeBackend,StateBackend,FilesystemBackend
@@ -96,41 +95,6 @@ ffmpeg_subagent = {
     ]
 }
 
-
-description_of_memory_construct_subagent = '''
-The below <agent_memory> was loaded in from files in your filesystem. As you learn from your interactions with the user, you can save new knowledge by calling the `memory-construct-expert` sub-agent.
-
-    **Learning from feedback:**
-    - One of your MAIN PRIORITIES is to learn from your interactions with the user. These learnings can be implicit or explicit. This means that in the future, you will remember this important information.
-    - When you need to remember something, updating memory must be your FIRST, IMMEDIATE action - before responding to the user, before calling other tools, before doing anything else. Just update memory immediately.
-    - Each correction is a chance to improve permanently - don't just fix the immediate issue.
-    - A great opportunity to update your memories is when the user interrupts a tool call and provides feedback. You should update your memories immediately before revising the tool call.
-    - The user might not explicitly ask you to remember something, but if they provide information that is useful for future use, you should update your memories immediately.
-
-    **Asking for information:**
-    - If you lack context to perform an action (e.g. send a Slack DM, requires a user ID/email) you should explicitly ask the user for this information.
-    - It is preferred for you to ask for information, don't assume anything that you do not know!
-    - When the user provides information that is useful for future use, you should update your memories immediately.
-
-    **When to update memories:**
-    - When the user explicitly asks you to remember something (e.g., "remember my email", "save this preference")
-    - When the user describes your role or how you should behave (e.g., "you are a web researcher", "always do X")
-    - When the user gives feedback on your work
-    - When the user provides information required for tool use (e.g., slack channel ID, email addresses)
-    - When the user provides context useful for future tasks, such as how to use tools, or which actions to take in a particular situation
-    - When you discover new patterns or preferences
-
-    **When to NOT update memories:**
-    - When the information is temporary or transient (e.g., "I'm running late", "I'm on my phone right now")
-    - When the information is a one-time task request (e.g., "Find me a recipe", "What's 25 * 4?")
-    - When the information is a simple question that doesn't reveal lasting preferences (e.g., "What day is it?", "Can you explain X?")
-    - When the information is an acknowledgment or small talk (e.g., "Sounds good!", "Hello", "Thanks for that")
-    - When the information is stale or irrelevant in future conversations
-
-    **Critical Rule:**
-    - When a memory update is needed, you MUST call `memory-construct-expert` FIRST before responding or calling other tools.
-'''
-    
 def make_backend(runtime):
     root = Path(CACHE_DIR).resolve()
     user_id = None
@@ -153,16 +117,7 @@ def make_backend(runtime):
             "/shared/": FilesystemBackend(root / user_id,virtual_mode=True),
         },
     )
-    
-memory_construct_subagent = {
-    "name": "memory-construct-expert",
-    "description": description_of_memory_construct_subagent,
-    "system_prompt": get_subagent_prompt("memory-construct-expert"),
-    "middleware": [
-        MemoryMiddleware(backend=make_backend),
-        DebugLLMContextMiddleware(name="memory_construct_subagent")
-    ]
-}
+
 
 pdf_parser_subagent = {
     "name": "pdf-parser-subagent",
