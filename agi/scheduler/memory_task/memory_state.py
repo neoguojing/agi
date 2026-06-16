@@ -99,6 +99,8 @@ MemoryStateKey = Literal[
 
 ALLOWED_MEMORY_KEYS = set(get_args(MemoryStateKey))
 
+THREAD_SPECIFIC_KEYS = {"summary_record", "episodic_records", "episodic_message_index"}
+
 INDEX_KEY_MAP: Dict[MemoryTarget, str] = {
     "profile": "profile_message_index",
     "episodic": "episodic_message_index",
@@ -137,6 +139,12 @@ class MemoryManager:
         self._lock = RWLock()
         self._is_initialized = False
         self._processing_cursors: Dict[str, int] = {}
+
+    def _get_key(self, key: str) -> str:
+        """Returns the thread-specific key if applicable, otherwise returns the original key."""
+        if key in THREAD_SPECIFIC_KEYS:
+            return f"{self.runtime.thread_id}:{key}"
+        return key
 
     @property
     def config(self) -> dict:
@@ -184,20 +192,22 @@ class MemoryManager:
             if self.runtime.store:
                 for key in keys_to_load:
                     try:
+                        effective_key = self._get_key(key)
                         # Note: Summary records are stored as specific keys per thread in store
                         # aget for "summary_record" will be handled as a generic load
-                        raw_data = await self.runtime.store.aget(namespace=self.namespace, key=key)
+                        raw_data = await self.runtime.store.aget(namespace=self.namespace, key=effective_key)
                         if raw_data is not None:
                             container_cls = CONTAINER_MAPPING.get(key)
                             if container_cls:
                                 container_instance = container_cls.model_validate(raw_data.value)
-                                local_state_updates[key] = container_instance.root
+                                local_state_updates[effective_key] = container_instance.root
                             else:
-                                local_state_updates[key] = raw_data
+                                local_state_updates[effective_key] = raw_data
                     except Exception as e:
                         logger.warning("Failed to load key '%s': %s", key, str(e))
-                        if "index" in key: local_state_updates[key] = 0
-                        else: local_state_updates[key] = {}
+                        effective_key = self._get_key(key)
+                        if "index" in key: local_state_updates[effective_key] = 0
+                        else: local_state_updates[effective_key] = {}
 
             self._state.update(local_state_updates)
             self._is_initialized = True
@@ -206,31 +216,40 @@ class MemoryManager:
     async def repair_memory_index(self, task_type: MemoryTarget) -> int:
         cursor_key = INDEX_KEY_MAP.get(task_type)
         if not cursor_key: return 0
+        effective_key = self._get_key(cursor_key)
         async with self._lock.reader:
             message_count = len(self._messages)
-            cursor = self._state.get(cursor_key, 0)
+            cursor = self._state.get(effective_key, 0)
         if cursor <= message_count: return cursor
         repaired_cursor = 0 if self.CURSOR_RECOVERY_MODE == self.CURSOR_RECOVERY_RESET else message_count
         if self.runtime.store:
             try:
-                await self.runtime.store.aput(namespace=self.namespace, key=cursor_key, value=SafeScalarContainer(repaired_cursor).model_dump(mode="json"))
+                await self.runtime.store.aput(namespace=self.namespace, key=effective_key, value=SafeScalarContainer(repaired_cursor).model_dump(mode="json"))
             except Exception: logger.exception("cursor repair failed")
         async with self._lock.writer:
-            self._state[cursor_key] = repaired_cursor
+            self._state[effective_key] = repaired_cursor
         return repaired_cursor
 
     async def get_incremental_messages(self, task_type: MemoryTarget) -> list:
         await self.ensure_initialized()
         await self.refresh_messages()
         cursor = await self.repair_memory_index(task_type)
+
+        cursor_key = INDEX_KEY_MAP.get(task_type)
+        effective_key = self._get_key(cursor_key) if cursor_key else None
         async with self._lock.writer:
             current_len = len(self._messages)
-            if cursor >= current_len:
-                self._processing_cursors[task_type] = current_len
-                return []
-            incremental = self._messages[cursor:current_len]
-            self._processing_cursors[task_type] = current_len
-            return incremental.copy()
+            if effective_key:
+                if cursor >= current_len:
+                    self._processing_cursors[effective_key] = current_len
+                    return []
+                incremental = self._messages[cursor:current_len]
+                self._processing_cursors[effective_key] = current_len
+                return incremental.copy()
+
+            # Fallback if no key is mapped (should not happen for valid targets)
+            if cursor >= current_len: return []
+            return self._messages[cursor:current_len].copy()
 
     # ==================== Summary-Specific State Management (Isolated) ====================
 
@@ -240,9 +259,10 @@ class MemoryManager:
         Isolated from structured memory targets.
         """
         await self.ensure_initialized()
+        effective_key = self._get_key("summary_record")
         async with self._lock.reader:
             # The state should contain the summary record for the current active thread
-            return self._state.get("summary_record")
+            return self._state.get(effective_key)
 
     async def set_current_summary(self, record: SummaryRecord) -> None:
         """
@@ -250,10 +270,11 @@ class MemoryManager:
         Implements LastValue behavior: overwrite regardless of previous state.
         """
         await self.ensure_initialized()
+        effective_key = self._get_key("summary_record")
 
         async with self._lock.writer:
             # Update local state
-            self._state["summary_record"] = record
+            self._state[effective_key] = record
 
         # Persist to remote store as a thread-specific snapshot
         if self.runtime.store:
@@ -263,7 +284,7 @@ class MemoryManager:
                 # Use SummaryContainer to wrap the record if needed,
                 # but since it's a single record, we can just dump it if it's a Pydantic model.
                 native_val = record.model_dump(mode="json") if hasattr(record, "model_dump") else record
-                await self.runtime.store.aput(namespace=self.namespace, key="summary_record", value=native_val)
+                await self.runtime.store.aput(namespace=self.namespace, key=effective_key, value=native_val)
             except Exception as e:
                 logger.exception("summary snapshot persist failed {e}")
 
@@ -327,12 +348,16 @@ class MemoryManager:
 
     async def commit_incremental_memory(self, task_type: MemoryTarget, memory_value: object, reason: str) -> None:
         await self.ensure_initialized()
+
+        cursor_key = INDEX_KEY_MAP.get(task_type)
+        effective_key = self._get_key(cursor_key) if cursor_key else None
+
         async with self._lock.reader:
-            target_cursor = self._processing_cursors.get(task_type)
+            target_cursor = self._processing_cursors.get(effective_key) if effective_key else None
+
         if target_cursor is None:
             async with self._lock.reader:
-                cursor_key = INDEX_KEY_MAP.get(task_type)
-                target_cursor = self._state.get(cursor_key, 0)
+                target_cursor = self._state.get(effective_key, 0) if effective_key else 0
         await self.commit_memory(task_type=task_type, memory_value=memory_value, cursor=target_cursor, reason=reason)
 
     async def commit_memory(self, task_type: MemoryTarget, memory_value: object, cursor: int, reason: str) -> None:
@@ -341,9 +366,12 @@ class MemoryManager:
         if not cursor_key or not memory_key:
             raise ValueError(f"cursor or memory key not found for task: {task_type}")
 
+        effective_cursor_key = self._get_key(cursor_key)
+        effective_memory_key = self._get_key(memory_key)
+
         async with self._lock.reader:
-            current_cursor = self._state.get(cursor_key, 0)
-            current_memory = self._state.get(memory_key, {})
+            current_cursor = self._state.get(effective_cursor_key, 0)
+            current_memory = self._state.get(effective_memory_key, {})
 
         if cursor <= current_cursor: return
 
@@ -351,32 +379,35 @@ class MemoryManager:
 
         if self.runtime.store:
             try:
-                await self.runtime.store.aput(namespace=self.namespace, key=cursor_key, value=SafeScalarContainer(cursor).model_dump(mode="json"))
+                await self.runtime.store.aput(namespace=self.namespace, key=effective_cursor_key, value=SafeScalarContainer(cursor).model_dump(mode="json"))
                 if memory_value:
                     container_cls = CONTAINER_MAPPING.get(memory_key)
                     if container_cls:
                         native_payload = container_cls(merged_memory).model_dump(mode="json")
-                        await self.runtime.store.aput(namespace=self.namespace, key=memory_key, value=native_payload)
+                        await self.runtime.store.aput(namespace=self.namespace, key=effective_memory_key, value=native_payload)
                 await self.runtime.store.aput(namespace=self.namespace, key="organization_reason", value=SafeScalarContainer(reason).model_dump(mode="json"))
             except Exception: logger.exception("memory commit failed")
 
         async with self._lock.writer:
-            self._state[memory_key] = merged_memory
-            self._state[cursor_key] = cursor
+            self._state[effective_memory_key] = merged_memory
+            self._state[effective_cursor_key] = cursor
             self._state["organization_reason"] = reason
-            if self._processing_cursors.get(task_type) == cursor:
-                self._processing_cursors.pop(task_type, None)
+
+            if self._processing_cursors.get(effective_cursor_key) == cursor:
+                self._processing_cursors.pop(effective_cursor_key, None)
 
     def _to_record_list(self, target: MemoryTarget) -> list:
         state_key = MEMORY_KEY_MAP.get(target)
         if not state_key: return []
-        data = self._state.get(state_key)
+        effective_key = self._get_key(state_key)
+        data = self._state.get(effective_key)
         return list(data.values()) if isinstance(data, dict) else (data or [])
 
     def log_state_summary(self) -> None:
         def _get(k: str, default: object) -> Any:
-            return self.state.get(k, default) if isinstance(self.state, dict) else getattr(self.state, k, default)
-        
+            effective_key = self._get_key(k)
+            return self.state.get(effective_key, default) if isinstance(self.state, dict) else getattr(self.state, effective_key, default)
+
         p_dict = _get("profile_records", {})
         e_dict = _get("episodic_records", {})
         s_dict = _get("semantic_records", {})
