@@ -184,7 +184,7 @@ class PlanValidator:
 # Tool
 # ============================================================
 
-@tool
+@tool(description="Create workflow DAG plan")
 def write_plan(
     plan: WorkflowPlan,
     tool_call_id: Annotated[str, InjectedToolCallId],

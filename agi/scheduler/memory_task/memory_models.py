@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field, field_validator, field_serializer, RootMo
 class BaseMemoryRecord(BaseModel):
     pass
 
-MemoryTarget = Literal["profile", "episodic", "semantic", "summary"]
+MemoryTarget = Literal["profile", "episodic", "semantic"]
 
 # =========================================================
 # Profile Memory

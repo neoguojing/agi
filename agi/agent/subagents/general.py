@@ -2,7 +2,12 @@
 import asyncio
 from agi.agent.middlewares.debug_middleware import DebugLLMContextMiddleware
 from agi.agent.tools import RemoteImageEditTool,RemoteImageGenTool,RemoteMultiModalTool,RemoteTranscriptionTool,RemoteTTSTool,search_web,get_context_info
-from agi.agent.middlewares import BrowserMiddleware,FfmpegMiddleware,StockMiddleware
+from agi.agent.middlewares import (
+    BrowserMiddleware,
+    FfmpegMiddleware,
+    StockMiddleware,
+    PlannerMiddleware,
+)
 from agi.agent.models import ModelProvider
 from agi.agent.sandbox.docker import DockerSandbox
 from agi.agent.prompt import get_subagent_prompt
@@ -139,6 +144,19 @@ stock_analyse_subagent = {
     "middleware": [
         stock_middleware,
         DebugLLMContextMiddleware(name="stock_analyse_subagent")
+    ]
+}
+
+planner_subagent = {
+    "name": "planner",
+    "description": (
+        "Converts high-level goals into executable task DAGs, "
+        "defining dependencies, execution roles, and validation checkpoints."
+    ),
+    "system_prompt": '',
+    "middleware": [
+        PlannerMiddleware(),
+        DebugLLMContextMiddleware(name="planner_subagent")
     ]
 }
 
