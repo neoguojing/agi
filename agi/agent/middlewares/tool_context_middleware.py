@@ -118,7 +118,7 @@ class ToolContextMiddleware(AgentMiddleware[StateT, ContextT, ResponseT]):
         """异步工具拦截：保持完整入参运行，过长出参进行分流并提供 LLM 行动引导"""
         tool_name = request.tool_call.get("name", "unknown_tool")
         tool_call_id = request.tool_call.get("id", "call_default_id")
-        config = getattr(request.runtime.config, "configurable")
+        config = request.runtime.config.get("configurable")
         thread_id =  config.get("thread_id","default")
 
         # 1. 运行期绝对不能改入参请求，直接交付底层 Handler 执行
