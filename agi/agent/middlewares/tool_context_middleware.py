@@ -107,8 +107,77 @@ class ToolContextMiddleware(AgentMiddleware[StateT, ContextT, ResponseT]):
         
         return await handler(request)
 
-    # =====================================================================
-    # 核心逻辑 2：Tool 侧 —— 运行期不改参数，结果过长时截取文本预览并提示 Read 工具
+    async def _process_tool_message(
+        self,
+        result: Any,
+        tool_name: str,
+        tool_call_id: str,
+        thread_id: str,
+        runtime: Any
+    ) -> ToolMessage:
+        """处理工具输出：归一化消息结构并处理超长内容转储"""
+        if isinstance(result, ToolMessage):
+            final_message = result
+        else:
+            final_message = ToolMessage(content=str(result), tool_call_id=tool_call_id, name=tool_name)
+
+        content_str = final_message.content if isinstance(final_message.content, str) else json.dumps(final_message.content, ensure_ascii=False)
+
+        # 如果结果没有超长，直接返回
+        if len(content_str) <= CONTEXT_MAX_TOOL_OUTPUT_LENGTH:
+            return final_message
+
+        # 结果超长，触发转储离线文件逻辑
+        total_chars = len(content_str)
+        logger.info(f"Tool output for '{tool_name}' exceeds limit ({CONTEXT_MAX_TOOL_OUTPUT_LENGTH} chars). Total length: {total_chars}. Offloading to file.")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+
+        file_name = f"{thread_id}_{tool_name}_{timestamp}.txt"
+        file_path = f"/conversation_history/{file_name}"
+        backend_instance = self._get_backend(runtime)
+
+        try:
+            # 异步或同步写入存储后端
+            await backend_instance.awrite(file_path, content_str.encode("utf-8"))
+
+            logger.info(f"Successfully dumped massive output for tool '{tool_name}' to {file_path}")
+
+            # 提取部分文本作为 Preview
+            preview_text = content_str[:CONTEXT_PREVIEW_TOOL_TEXT_LENGTH]
+
+            # 构建提示 LLM 具有明确 Call to Action 的返回话术
+            guided_content = (
+                f"--- TOOL OUTPUT PREVIEW ({tool_name}) ---\n"
+                f"{preview_text}\n"
+                f"... [Remaining {len(content_str) - CONTEXT_PREVIEW_TOOL_TEXT_LENGTH} characters hidden due to context length limits] ...\n\n"
+                f"⚠️ SYSTEM NOTICE TO LLM:\n"
+                f"The complete output of this tool is too large and has been safely saved to a backend file: `{file_name}`.\n"
+                f"If the preview above does not contain all the details you need, please explicitly invoke your file reading tool "
+                f"(e.g., `read_file(path='{file_name}')`) to inspect the remaining content."
+            )
+
+            return ToolMessage(
+                content=guided_content,
+                tool_call_id=final_message.tool_call_id,
+                artifact={"full_output_path": file_path, "original_content": final_message.content, "file_name": file_name},
+                status=final_message.status,
+                name=final_message.name
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to offload massive tool output to storage: {e}")
+            # 本地 IO 异常降级兜底：只能强制截断
+            fallback_text = (
+                f"{content_str[:CONTEXT_MAX_TOOL_OUTPUT_LENGTH]}\n"
+                f"... [Content truncated due to storage IO failure: {str(e)}]"
+            )
+            return ToolMessage(
+                content=fallback_text,
+                tool_call_id=final_message.tool_call_id,
+                status="error",
+                name=tool_name
+            )
+
     # =====================================================================
     async def awrap_tool_call(
         self,
@@ -125,6 +194,16 @@ class ToolContextMiddleware(AgentMiddleware[StateT, ContextT, ResponseT]):
         raw_result = await handler(request)
 
         if isinstance(raw_result, Command):
+            if "update" in raw_result and "messages" in raw_result.update:
+                messages = raw_result.update["messages"]
+                new_messages = []
+                for msg in messages:
+                    if isinstance(msg, ToolMessage):
+                        # 处理嵌套的 ToolMessage
+                        new_messages.append(await self._process_tool_message(msg, tool_name, tool_call_id, thread_id, request.runtime))
+                    else:
+                        new_messages.append(msg)
+                raw_result.update["messages"] = new_messages
             return raw_result
 
         # 2. 归一化提取工具返回的 Message 结构
