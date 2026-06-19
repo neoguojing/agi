@@ -172,30 +172,30 @@ my_model_pool = [
         # extra_params={"project": GOOGLE_CLOUD_PROJECT}
     ),
 
-    # ModelNode(
-    #     provider="openrouter",
-    #     model_name="deepseek/deepseek-v4-flash",
-    #     priority=3,
-    #     api_key=OPENROUTER_API_KEY,
-    #     extra_params={"temperature": 0.2,"base_url": "https://openrouter.ai/api/v1"}
-    # ),
+    ModelNode(
+        provider="openrouter",
+        model_name="deepseek/deepseek-v4-flash",
+        priority=3,
+        api_key=OPENROUTER_API_KEY,
+        extra_params={"temperature": 0.2,"base_url": "https://openrouter.ai/api/v1"}
+    ),
     
-    # ModelNode(
-    #     provider="ollama",
-    #     model_name="gemma4:31b-cloud",
-    #     priority=4,
-    #     api_key="",
+    ModelNode(
+        provider="ollama",
+        model_name="gemma4:31b-cloud",
+        priority=4,
+        api_key="",
 
-    #     extra_params={"base_url": OLLAMA_API_BASE_URL, "temperature": 0.2}
-    # ),
+        extra_params={"base_url": OLLAMA_API_BASE_URL, "temperature": 0.2}
+    ),
 
-    # ModelNode(
-    #     provider="ollama",
-    #     model_name="gemma4:12b-it-q8_0",
-    #     priority=6,
-    #     api_key="",
-    #     extra_params={"base_url": OLLAMA_API_BASE_URL, "temperature": 0.2,'num_ctx': OLLAMA_CONTEXT_SIZE}
-    # ),
+    ModelNode(
+        provider="ollama",
+        model_name="gemma4:12b-it-q8_0",
+        priority=6,
+        api_key="",
+        extra_params={"base_url": OLLAMA_API_BASE_URL, "temperature": 0.2,'num_ctx': OLLAMA_CONTEXT_SIZE}
+    ),
     
     
 ]

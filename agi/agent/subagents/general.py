@@ -7,6 +7,7 @@ from agi.agent.middlewares import (
     FfmpegMiddleware,
     StockMiddleware,
     PlannerMiddleware,
+    ToolContextMiddleware,
 )
 from agi.agent.models import ModelProvider
 from agi.agent.sandbox.docker import DockerSandbox
@@ -14,6 +15,7 @@ from agi.agent.prompt import get_subagent_prompt
 from agi.agent.middlewares.pdf_middleware import PDFMiddleware
 from pathlib import Path
 from deepagents.backends import CompositeBackend,StateBackend,FilesystemBackend
+from deepagents.middleware.filesystem import FilesystemMiddleware
 from agi.config import CACHE_DIR
 
 image_gen_tool = RemoteImageGenTool()
@@ -143,6 +145,8 @@ stock_analyse_subagent = {
     # "tools": stock_tools,
     "middleware": [
         stock_middleware,
+        FilesystemMiddleware(backend=make_backend),
+        ToolContextMiddleware(backend=make_backend),
         DebugLLMContextMiddleware(name="stock_analyse_subagent")
     ]
 }

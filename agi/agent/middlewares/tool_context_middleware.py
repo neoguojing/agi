@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Callable, List, Optional, Sequence, TypeVar, Union
 from collections.abc import Awaitable
-
+from deepagents.backends.protocol import BackendProtocol
 from langchain_core.messages import AIMessage, AnyMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langgraph.types import Command
@@ -39,12 +39,12 @@ class ToolContextMiddleware(AgentMiddleware[StateT, ContextT, ResponseT]):
     2. awrap_tool_call: 运行期不做截断。返回过长时，保留一部分文本预览 + 写入文件名，并引导 LLM 使用 read 工具读取。
     """
 
-    def __init__(self, backend: Optional[Any] = None):
+    def __init__(self, backend: Optional[BackendProtocol] = None):
         super().__init__()
         self.backend = backend
         self.tools = []
 
-    def _get_backend(self, runtime: Any) -> Optional[Any]:
+    def _get_backend(self, runtime: Any) -> Optional[BackendProtocol]:
         if callable(self.backend):
             return self.backend(runtime)
         return self.backend
@@ -147,12 +147,7 @@ class ToolContextMiddleware(AgentMiddleware[StateT, ContextT, ResponseT]):
 
         try:
             # 异步或同步写入存储后端
-            if backend_instance and hasattr(backend_instance, "awrite"):
-                await backend_instance.awrite(file_path, content_str.encode("utf-8"))
-            else:
-                os.makedirs(os.path.dirname(file_path), exist_ok=True)
-                with open(file_path, "w", encoding="utf-8") as f:
-                    f.write(content_str)
+            await backend_instance.awrite(file_path, content_str.encode("utf-8"))
 
             logger.info(f"Successfully dumped massive output for tool '{tool_name}' to {file_path}")
 

@@ -7,6 +7,7 @@ from .common_middleware import MultimodalBase64Middleware
 from .pdf_middleware import PDFMiddleware
 from .stock_middleware import StockMiddleware
 from langchain.chat_models import BaseChatModel
+from .tool_context_middleware import ToolContextMiddleware
 from .planner_middleware import PlannerMiddleware
 from deepagents.backends.protocol import BACKEND_TYPES
 from deepagents.middleware.summarization import SummarizationMiddleware
@@ -59,4 +60,5 @@ __all__ = [
            "PDFMiddleware",
            "StockMiddleware",
            "PlannerMiddleware",
+           "ToolContextMiddleware",
 ]

@@ -18,7 +18,9 @@ from agi.agent.middlewares import (
     ContextEngineeringMiddleware,
     DebugLLMContextMiddleware,
     MultimodalBase64Middleware,
+    ToolContextMiddleware,
 )
+from agi.agent.middlewares.tool_context_middleware import ToolContextMiddleware
 from agi.agent.models import ModelProvider
 from agi.agent.subagents import buildin_agents, buildin_async_agents, make_backend
 from agi.agent.tools import buildin_tools
@@ -93,6 +95,7 @@ def create_main_agent(
         "subagents": [*buildin_agents, *buildin_async_agents],
         "middleware": [
             ContextEngineeringMiddleware(backend=backend, llm=fallback_llm),
+            ToolContextMiddleware(backend=backend),
             ModelFallbackMiddleware(llm, *ModelProvider.get_chat_models()[1:]),
             MultimodalBase64Middleware(),
             DebugLLMContextMiddleware(),
