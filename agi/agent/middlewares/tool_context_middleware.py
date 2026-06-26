@@ -138,7 +138,7 @@ class ToolContextMiddleware(AgentMiddleware[StateT, ContextT, ResponseT]):
 
         try:
             # 异步或同步写入存储后端
-            await backend_instance.awrite(file_path, content_str.encode("utf-8"))
+            await backend_instance.awrite(file_path, content_str)
 
             logger.info(f"Successfully dumped massive output for tool '{tool_name}' to {file_path}")
 
@@ -194,8 +194,9 @@ class ToolContextMiddleware(AgentMiddleware[StateT, ContextT, ResponseT]):
         raw_result = await handler(request)
 
         if isinstance(raw_result, Command):
-            if "update" in raw_result and "messages" in raw_result.update:
-                messages = raw_result.update["messages"]
+            update = getattr(raw_result, "update", None)
+            if update and isinstance(update, dict) and "messages" in update:
+                messages = update["messages"]
                 new_messages = []
                 for msg in messages:
                     if isinstance(msg, ToolMessage):
@@ -226,7 +227,7 @@ class ToolContextMiddleware(AgentMiddleware[StateT, ContextT, ResponseT]):
 
         try:
             # 异步或同步写入存储后端
-            await backend_instance.awrite(file_path, content_str.encode("utf-8"))
+            await backend_instance.awrite(file_path, content_str)
 
             logger.info(f"Successfully dumped massive output for tool '{tool_name}' to {file_path}")
 
@@ -241,7 +242,7 @@ class ToolContextMiddleware(AgentMiddleware[StateT, ContextT, ResponseT]):
                 f"⚠️ SYSTEM NOTICE TO LLM:\n"
                 f"The complete output of this tool is too large and has been safely saved to a backend file: `{file_name}`.\n"
                 f"If the preview above does not contain all the details you need, please explicitly invoke your file reading tool "
-                f"(e.g., `read_file(path='{file_name}')`) to inspect the remaining content."
+                f"(e.g., `read_file(path='{file_path}')`) to inspect the remaining content."
             )
 
             return ToolMessage(
